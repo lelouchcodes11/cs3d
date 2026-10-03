@@ -3,7 +3,9 @@
 A native Windows desktop app built on the engine of [CloudStream](https://github.com/recloudstream/cloudstream): the same extension
 system, search, library and player logic, with a Windows 11 (Fluent) interface instead of the Android one in a window.
 
-> **Pre-release.** Version 0.1.x is an early build. Expect rough edges and report them in the issues of this repository.
+> **Pre-release.** Version 0.1.x is an early build. Expect rough edges.
+
+**Found a problem or have an idea?** Report it in the [GitHub issues](../../issues) or in the [Telegram group](https://t.me/+QYV8hdldi_w0MDBl).
 
 ## Install
 
@@ -14,6 +16,11 @@ system, search, library and player logic, with a Windows 11 (Fluent) interface i
 Requires Windows 10 or 11, 64-bit. The MSI is not code-signed yet, so Windows SmartScreen may ask for confirmation.
 
 Your settings, extensions and downloads are kept in `%APPDATA%\CloudStream` and survive upgrades and uninstalling.
+
+## Support and bug reports
+
+- [GitHub issues](../../issues): bugs and feature requests. Say what you did, what you expected and what happened, and attach `crash.log` (Settings > About > Crash log) if there is one.
+- [Telegram group](https://t.me/+QYV8hdldi_w0MDBl): questions, problems and ideas.
 
 ## Extensions and content
 
