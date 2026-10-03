@@ -731,3 +731,6 @@ not started (nothing on screen for seconds), and when a source failed and the ne
 - **Tools**: ffmpeg's own messages (`DASH request for url`, `old fragment`, `new fragment`, `Failed to open fragment`) only show with `msg-level` set for the module; the quickest way is a temporary
   `mpv_set_option_string(ctx, "msg-level", "all=no,ffmpeg/demuxer=v,lavf=v,ad=v,cplayer=v,curl=v")` before `mpv_initialize` (no video-decoder trace: `ffmpeg=trace` writes 20 MB/min). `dashdec.c` of the
   bundled libavformat 63.7 matches FFmpeg master (github.com/FFmpeg/FFmpeg, libavformat/dashdec.c: `get_current_fragment`, `refresh_manifest`, `read_data`).
+- **Release v0.1.1** (pre-release, tag on d25e040): `desktopVersion` 0.1.1, `installerMsi` with the WiX 3.14 binaries from the session-11 scratchpad (4 min), MSI 359 MB, SHA-256 4649949e...c7311,
+  ProductVersion 0.1.1 with the same upgrade code, `DashProxy` in the app jar; published through the GitHub API (draft, upload, size/digest check, publish) like 0.1.0. The packaged app was
+  not started with JIO TV (the build's start-up training run starts it and visits every screen; the runtime has `jdk.httpserver`). Real upgrade 0.1.0 -> 0.1.1 over an installed MSI still NOT tested.
