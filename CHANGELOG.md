@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (pre-release)
 
 - Fixed live DASH channels (for example JIO TV) repeating the last two seconds after a while: the channel's manifest lags behind its segments, which made the player fetch and play the same segment several times in a row. Every segment is played once now.
 
