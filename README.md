@@ -3,7 +3,7 @@
 A native Windows app for movies, series, anime and live TV. It runs on the [CloudStream](https://github.com/recloudstream/cloudstream) engine, so it works with the same extensions, but it looks and feels like a real Windows 11 app.
 
 <p align="center">
-  <a href="https://t.me/+QYV8hdldi_w0MDBl"><b>💬 Join the Telegram channel</b></a><br>
+  <a href="https://t.me/+QYV8hdldi_w0MDBl"><b>💬 Join the Telegram group</b></a><br>
   <sub>News, new versions, help and feedback: this is where everything happens.</sub>
 </p>
 
