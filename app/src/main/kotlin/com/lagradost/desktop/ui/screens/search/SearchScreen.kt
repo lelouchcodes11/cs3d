@@ -32,6 +32,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.widthIn
+import com.lagradost.desktop.ui.Toasts
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
+import com.lagradost.desktop.ui.fluent.shimmer
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -78,7 +90,7 @@ import com.lagradost.desktop.ui.shell.TopBarHeight
 import androidx.compose.ui.semantics.Role
 import kotlinx.coroutines.launch
 
-private val gutter = 24.dp
+private val gutter = 36.dp
 
 private fun typeName(t: TvType): String = when (t) {
     TvType.Movie -> "Movies"
@@ -139,10 +151,14 @@ fun SearchScreen(route: Route.Search) {
         if (query.isNotEmpty()) run() else vm.clearSearch()
     }
 
+
     val current by vm.currentSearch.observeAsState()
     val response by vm.searchResponse.observeAsState()
     val history by vm.currentHistory.observeAsState()
+    val progress by vm.progress.observeAsState()
     val loading = response is Resource.Loading
+    val pending = progress?.pending.orEmpty()
+    val total = progress?.total ?: 0
     // a search made while extensions are still loading finds nothing in the ones that are not there yet: when more of them have loaded
     // and the page is still empty, ask again (every extension that loads raises the event, hence the wait)
     var loadedEpoch by remember { mutableStateOf(0) }
@@ -157,42 +173,48 @@ fun SearchScreen(route: Route.Search) {
         if (response !is Resource.Loading && current.orEmpty().values.none { it.list.isNotEmpty() }) run()
     }
     val validTypes = remember(route.nonce) {
-        DesktopBootstrap.activityOrNull()?.let { runCatching { it.filterProviderByPreferredMedia().flatMap { api -> api.supportedTypes }.distinct().sorted() }.getOrNull() }.orEmpty()
+        DesktopBootstrap.activityOrNull()?.let { runCatching { it.filterProviderByPreferredMedia().flatMap { api -> api.supportedTypes }.distinct().filter { t -> t != TvType.Torrent }.sorted() }.getOrNull() }.orEmpty()
     }
+    // rows that were already shown do not fade in again when they scroll back into view
+    val seen = remember(route.nonce) { HashSet<String>() }
+    val listState = remember(route.nonce) { androidx.compose.foundation.lazy.LazyListState() }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val cardWidth = if (maxWidth >= 1008.dp) 168.dp else 148.dp
+        val cardWidth = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width * (if (maxWidth >= 1008.dp) 1.05f else 0.92f)
         if (query.isEmpty()) {
-            HistoryPage(history.orEmpty(), vm)
+            HistoryPage(history.orEmpty(), vm, validTypes, types) { types = it; DataStoreHelper.searchPreferenceTags = it }
             return@BoxWithConstraints
         }
+        // every extension shows up as soon as it answers; the ones without results are left out
         val results = current.orEmpty().filterValues { it.list.isNotEmpty() }
-        val mergedList = (response as? Resource.Success)?.value?.list.orEmpty()
+        val searched = (total - pending.size).coerceAtLeast(0)
+        val header: @Composable () -> Unit = {
+            ResultsHeader(query, loading, searched, total, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } })
+        }
 
+        val mergedList = if (merged) interleave(results.values.map { it.list }) else emptyList()
         if (merged && mergedList.isNotEmpty()) {
             PosterGrid(mergedList, showType = true, header = {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    ResultsHeader(query, loading, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } })
-                }
+                item(span = { GridItemSpan(maxLineSpan) }) { header() }
             })
         } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp)) {
-                item(key = "header") {
-                    ResultsHeader(query, loading, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } })
-                }
-                if (results.isEmpty()) {
-                    if (loading) items(3, key = { "sk$it" }) { SkeletonRow(cardWidth) }
-                    else item(key = "none") { NoResults(query) }
-                }
+            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp)) {
+                item(key = "header") { header() }
                 results.entries.forEach { (name, list) ->
                     item(key = "p-$name") {
-                        Column(Modifier.padding(bottom = 24.dp)) {
-                            SectionHeader(
-                                "$name  ·  ${list.list.size}${if (list.hasNext) "+" else ""}",
-                                Modifier.padding(horizontal = gutter),
+                        val fresh = remember { name !in seen }
+                        val appear = remember { androidx.compose.animation.core.Animatable(if (fresh) 0f else 1f) }
+                        LaunchedEffect(Unit) {
+                            seen += name
+                            if (fresh) appear.animateTo(1f, androidx.compose.animation.core.tween(260))
+                        }
+                        Column(Modifier.padding(bottom = 30.dp).graphicsLayer { alpha = appear.value }) {
+                            com.lagradost.desktop.ui.fluent.RichSectionHeader(
+                                name, Modifier.padding(horizontal = gutter),
+                                subtitle = "${list.list.size}${if (list.hasNext) "+" else ""} result${if (list.list.size == 1) "" else "s"}",
                                 onSeeAll = { Navigator.go(Route.Section("$query · $name", list.list)) },
                             )
-                            Box(Modifier.height(8.dp))
+                            Box(Modifier.height(12.dp))
                             val state = rememberLazyListState()
                             if (list.hasNext) {
                                 LaunchedEffect(state, list.list.size) {
@@ -201,21 +223,45 @@ fun SearchScreen(route: Route.Search) {
                                     }
                                 }
                             }
-                            Shelf(list.list, cardWidth, state = state, key = { it.url }) { card ->
+                            Shelf(list.list, cardWidth, gutter = gutter, spacing = 14.dp, state = state, key = { it.url }) { card ->
                                 PosterCard(card, { openCard(card) }, cardWidth)
                             }
                         }
                     }
+                }
+                // a placeholder for the extensions that are still searching (a few of them, the rest is counted)
+                if (pending.isNotEmpty()) {
+                    items(pending.take(3), key = { "sk-$it" }) { name -> SkeletonRow(name, cardWidth) }
+                    if (pending.size > 3) item(key = "more") {
+                        FText("${pending.size - 3} more extension${if (pending.size - 3 == 1) "" else "s"} still searching…", Modifier.padding(horizontal = gutter), color = Fluent.colors.textTertiary)
+                    }
+                } else if (!loading && results.isEmpty()) {
+                    item(key = "none") { NoResults(query) }
                 }
             }
         }
     }
 }
 
+/** Results of several extensions as one list, best matches first (the first of each extension, then the second of each, ...) */
+private fun interleave(lists: List<List<com.lagradost.cloudstream3.SearchResponse>>): List<com.lagradost.cloudstream3.SearchResponse> {
+    val out = ArrayList<com.lagradost.cloudstream3.SearchResponse>()
+    var index = 0
+    while (true) {
+        var added = 0
+        for (sub in lists) if (sub.size > index) { out.add(sub[index]); added++ }
+        if (added == 0) break
+        index++
+    }
+    return out.distinctBy { it.url }
+}
+
 @Composable
 private fun ResultsHeader(
     query: String,
     loading: Boolean,
+    searched: Int,
+    total: Int,
     only: String?,
     onSearchAll: () -> Unit,
     types: List<TvType>,
@@ -225,33 +271,42 @@ private fun ResultsHeader(
     onMerged: (Boolean) -> Unit,
     onProviders: () -> Unit,
 ) {
-    val c = Fluent.colors
-    Column(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 16.dp)) {
-        FText("Results for “$query”", style = Fluent.type.title, maxLines = 2)
-        Box(Modifier.height(12.dp))
-        if (loading) {
-            ProgressBar(null, Modifier.fillMaxWidth())
-            Box(Modifier.height(12.dp))
+    Column(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp)) {
+        val subtitle = when {
+            only != null -> "Searching $only"
+            loading && total > 0 -> "Searched $searched of $total extensions"
+            loading -> "Searching…"
+            else -> "Results from your extensions"
         }
+        com.lagradost.desktop.ui.fluent.PageHeader("“$query”", subtitle = subtitle) {
+            if (only == null) {
+                com.lagradost.desktop.ui.fluent.PillTabs(listOf("By extension", "All results"), if (merged) 1 else 0, { onMerged(it == 1) })
+                Button("Extensions", onProviders, icon = Icons.Filter, height = 36.dp)
+            }
+        }
+        Box(Modifier.height(14.dp))
+        // a slot of fixed height, so nothing below moves when the search ends
+        Box(Modifier.fillMaxWidth().height(3.dp)) {
+            if (loading) {
+                val shown by androidx.compose.animation.core.animateFloatAsState(if (total > 0) (searched.toFloat() / total).coerceIn(0.04f, 1f) else 0.04f, androidx.compose.animation.core.tween(300))
+                ProgressBar(shown, Modifier.fillMaxWidth())
+            }
+        }
+        Box(Modifier.height(14.dp))
         if (only != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Chip("Only in $only", true, {})
-                Button("Search all extensions", onSearchAll, icon = Icons.Search)
+                Button("Search all extensions", onSearchAll, icon = Icons.Search, height = 36.dp)
             }
             return
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.foundation.lazy.LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(validTypes, key = { it.name }) { t ->
-                    Chip(typeName(t), t in types, onClick = {
-                        val next = if (t in types) types - t else types + t
-                        onTypes(next)
-                    })
-                }
+        androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(validTypes, key = { it.name }) { t ->
+                Chip(typeName(t), t in types, onClick = {
+                    val next = if (t in types) types - t else types + t
+                    onTypes(next)
+                })
             }
-            Button("Providers", onProviders, icon = Icons.Filter)
-            Chip("By provider", !merged, { onMerged(false) })
-            Chip("All results", merged, { onMerged(true) })
         }
     }
 }
@@ -262,7 +317,7 @@ private fun chooseProviders(selected: Set<String>, onDone: (Set<String>) -> Unit
     val working = androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(selected.filter { it in all }) }
     Overlays.show(
         Overlays.Dialog(
-            title = "Search providers",
+            title = "Search extensions",
             primary = "Apply",
             close = "Cancel",
             onPrimary = { onDone(working.toSet()) },
@@ -286,60 +341,119 @@ private fun chooseProviders(selected: Set<String>, onDone: (Set<String>) -> Unit
 
 @Composable
 private fun SkeletonRow(cardWidth: androidx.compose.ui.unit.Dp) {
-    Column(Modifier.padding(bottom = 24.dp, start = gutter)) {
-        Box(Modifier.size(180.dp, 22.dp).clip(RoundedCornerShape(4.dp)).background(Fluent.colors.card))
+    Column(Modifier.padding(bottom = 30.dp, start = gutter)) {
+        Box(Modifier.size(220.dp, 24.dp).clip(RoundedCornerShape(FluentShapes.control)).shimmer())
+        Box(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) { repeat(8) { PosterSkeleton(cardWidth) } }
+    }
+}
+
+/** The placeholder of an extension that is still searching */
+@Composable
+private fun SkeletonRow(name: String, cardWidth: androidx.compose.ui.unit.Dp) {
+    Column(Modifier.padding(bottom = 30.dp)) {
+        Row(Modifier.padding(horizontal = gutter), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FText(name, style = Fluent.type.subtitle.copy(fontSize = 21.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = Fluent.colors.textTertiary, maxLines = 1)
+            FText("searching…", style = Fluent.type.caption, color = Fluent.colors.textTertiary)
+        }
         Box(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { repeat(8) { PosterSkeleton(cardWidth) } }
+        Row(Modifier.padding(start = gutter), horizontalArrangement = Arrangement.spacedBy(14.dp)) { repeat(8) { PosterSkeleton(cardWidth) } }
     }
 }
 
 @Composable
 private fun NoResults(query: String) {
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = 64.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(Icons.Search, size = 40.dp, tint = Fluent.colors.textTertiary)
-        FText("No results for “$query”", style = Fluent.type.subtitle)
-        FText("Check the spelling, pick more providers, or try fewer filters.", color = Fluent.colors.textSecondary)
-    }
+    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Search, "No results for “$query”", "Check the spelling, pick more extensions, or try fewer filters.")
 }
 
+private val landingWidth = 680.dp
+
+/** The Search page before anything is typed: one search box, the kinds of title to look for, the last searches */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel) {
+private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel, validTypes: List<TvType>, types: List<TvType>, onTypes: (List<TvType>) -> Unit) {
     val c = Fluent.colors
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = gutter, end = gutter, top = TopBarHeight + 16.dp, bottom = 32.dp)) {
-        item {
-            FText("Search", style = Fluent.type.title)
-            Box(Modifier.height(4.dp))
-            FText("Find movies, series and anime across all your installed providers.", color = c.textSecondary)
-            Box(Modifier.height(24.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FText("Recent searches", Modifier.weight(1f), style = Fluent.type.subtitle)
-                if (history.isNotEmpty()) Button("Clear all", {
-                    Overlays.message("Clear search history?", "All recent searches will be removed.", primary = "Clear", onPrimary = {
-                        removeKeys("$currentAccount/$SEARCH_HISTORY_KEY")
-                        vm.updateHistory()
-                    })
-                }, kind = ButtonKind.Subtle)
+    var text by remember { mutableStateOf("") }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = gutter, end = gutter, top = TopBarHeight + 64.dp, bottom = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        item(key = "field") {
+            Column(Modifier.widthIn(max = landingWidth).fillMaxWidth()) {
+                SearchField(text, { text = it }, focus) { q ->
+                    val query = q.trim()
+                    if (query.isNotEmpty()) { ShellState.searchText = query; Navigator.search(query) }
+                }
+                if (validTypes.isNotEmpty()) {
+                    Box(Modifier.height(16.dp))
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        validTypes.forEach { t ->
+                            Chip(typeName(t), t in types, onClick = { onTypes(if (t in types) types - t else types + t) })
+                        }
+                    }
+                }
+                Box(Modifier.height(40.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FText("Recent", Modifier.weight(1f), style = Fluent.type.bodyStrong, color = c.textSecondary)
+                    if (history.isNotEmpty()) Button("Clear", {
+                        Overlays.message("Clear search history?", "All recent searches will be removed.", primary = "Clear", onPrimary = {
+                            removeKeys("$currentAccount/$SEARCH_HISTORY_KEY")
+                            vm.updateHistory()
+                        })
+                    }, kind = ButtonKind.Subtle)
+                }
+                Box(Modifier.height(6.dp))
+                if (history.isEmpty()) FText("Your searches show up here.", color = c.textTertiary, modifier = Modifier.padding(vertical = 10.dp))
             }
-            Box(Modifier.height(8.dp))
         }
-        if (history.isEmpty()) {
-            item {
-                FText("Nothing yet. Use the search box above (Ctrl+K).", color = c.textTertiary)
+        items(history.take(8), key = { it.key }) { item ->
+            Box(Modifier.widthIn(max = landingWidth).fillMaxWidth()) {
+                HistoryRow(item, onOpen = { ShellState.searchText = item.searchText; Navigator.search(item.searchText) }, onRemove = {
+                    removeKey("$currentAccount/$SEARCH_HISTORY_KEY", item.key)
+                    vm.updateHistory()
+                })
             }
-        }
-        items(history, key = { it.key }) { item ->
-            HistoryRow(item, onOpen = { ShellState.searchText = item.searchText; Navigator.search(item.searchText) }, onRemove = {
-                removeKey("$currentAccount/$SEARCH_HISTORY_KEY", item.key)
-                vm.updateHistory()
-            })
         }
     }
 }
 
+/** The search box of the Search page: flat, no glow */
+@Composable
+private fun SearchField(text: String, onText: (String) -> Unit, focus: androidx.compose.ui.focus.FocusRequester, onSubmit: (String) -> Unit) {
+    val c = Fluent.colors
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(50)
+    val border by androidx.compose.animation.animateColorAsState(if (focused) c.accent else c.stroke, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(140))
+    Row(
+        Modifier.fillMaxWidth().height(52.dp)
+            .clip(shape).background(c.card, shape).border(if (focused) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, border, shape)
+            .padding(start = 20.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Search, size = 18.dp, tint = if (focused) c.accentText else c.textSecondary)
+        Box(Modifier.width(14.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (text.isEmpty()) FText("Search movies, series, anime…", style = Fluent.type.bodyLarge, color = c.textTertiary, maxLines = 1)
+            androidx.compose.foundation.text.BasicTextField(
+                text, onText,
+                Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { focused = it.isFocused }
+                    .onPreviewKeyEvent { e -> if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && (e.key == androidx.compose.ui.input.key.Key.Enter || e.key == androidx.compose.ui.input.key.Key.NumPadEnter)) { onSubmit(text); true } else false },
+                singleLine = true,
+                textStyle = Fluent.type.bodyLarge.copy(color = c.text),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+            )
+        }
+        // always there (invisible while empty), so the box does not change when typing starts
+        Box(Modifier.graphicsLayer { alpha = if (text.isEmpty()) 0f else 1f }) {
+            com.lagradost.desktop.ui.fluent.PillButton("Search", null, primary = true, onClick = { if (text.isNotEmpty()) onSubmit(text) }, height = 40.dp)
+        }
+    }
+}
+
+/** One earlier search: the remove button sits in a reserved slot, hovering only changes colours */
 @Composable
 private fun HistoryRow(item: SearchHistoryItem, onOpen: () -> Unit, onRemove: () -> Unit) {
     val c = Fluent.colors
@@ -347,18 +461,15 @@ private fun HistoryRow(item: SearchHistoryItem, onOpen: () -> Unit, onRemove: ()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(FluentShapes.control)
     Row(
-        Modifier
-            .fillMaxWidth()
-            .height(40.dp)
-            .clip(shape)
-            .background(if (hovered) c.subtleHover else Color.Transparent, shape)
-            .fluentClickable(source, true, shape, Role.Button, onOpen)
-            .padding(start = 12.dp, end = 4.dp),
+        Modifier.fillMaxWidth().height(44.dp).clip(shape).background(if (hovered) c.cardHover else Color.Transparent, shape)
+            .hoverable(source).fluentClickable(source, true, shape, Role.Button, onOpen).padding(start = 12.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.History, size = 14.dp, tint = c.textSecondary)
-        Box(Modifier.width(12.dp))
+        Icon(Icons.History, size = 15.dp, tint = c.textTertiary)
+        Box(Modifier.width(14.dp))
         FText(item.searchText, Modifier.weight(1f), maxLines = 1)
-        if (hovered) IconButton(Icons.Close, onRemove, size = 32.dp, iconSize = 10.dp, tooltip = "Remove")
+        Box(Modifier.size(32.dp).graphicsLayer { alpha = if (hovered) 1f else 0f }) {
+            IconButton(Icons.Close, onRemove, size = 32.dp, iconSize = 10.dp, tooltip = "Remove")
+        }
     }
 }

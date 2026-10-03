@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.lagradost.desktop.ui.fluent.glass
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -86,16 +87,19 @@ fun DownloadsScreen() {
     LaunchedEffect(folder) { folder?.let { vm.updateChildList(ctx, getFolderName(DOWNLOAD_EPISODE_CACHE, it.data.id.toString())) } }
 
     Column(Modifier.fillMaxSize().padding(top = TopBarHeight)) {
-        Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (folder != null) IconButton(Icons.Back, { folder = null; vm.clearChildren() }, tooltip = "All downloads", kind = ButtonKind.Standard)
-                FText(folder?.data?.name ?: "Downloads", Modifier.weight(1f), style = Fluent.type.title, maxLines = 1)
-                IconButton(Icons.Refresh, { vm.updateHeaderList(ctx) }, tooltip = "Refresh", kind = ButtonKind.Standard)
+        Column(Modifier.padding(horizontal = 36.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (folder != null) IconButton(Icons.Back, { folder = null; vm.clearChildren() }, tooltip = "All downloads", kind = ButtonKind.Standard, size = 40.dp)
+                com.lagradost.desktop.ui.fluent.PageHeader(folder?.data?.name ?: "Downloads", Modifier.weight(1f), subtitle = if (folder == null) "Titles saved on this PC" else "Episodes") {
+                    IconButton(Icons.Refresh, { vm.updateHeaderList(ctx) }, tooltip = "Refresh", kind = ButtonKind.Standard, size = 36.dp)
+                }
             }
             val total = (used ?: 0L) + (free ?: 0L)
             if (total > 0) {
-                ProgressBar(((downloaded ?: 0L).toFloat() / total).coerceIn(0f, 1f), height = 6.dp)
-                FText("${size(downloaded ?: 0L)} downloaded  ·  ${size(free ?: 0L)} free on this drive", style = Fluent.type.caption, color = c.textSecondary)
+                Column(Modifier.fillMaxWidth().glass(com.lagradost.desktop.ui.fluent.FluentShapes.card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ProgressBar(((downloaded ?: 0L).toFloat() / total).coerceIn(0.01f, 1f), height = 8.dp)
+                    FText("${size(downloaded ?: 0L)} downloaded  ·  ${size(free ?: 0L)} free on this drive", style = Fluent.type.caption, color = c.textSecondary)
+                }
             }
         }
         val res = if (folder == null) headers else children
@@ -104,12 +108,9 @@ fun DownloadsScreen() {
             is Resource.Failure -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FText(res.errorString, color = c.textSecondary) }
             is Resource.Success -> {
                 val items = res.value
-                if (items.isEmpty()) Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    Icon(Icons.Download, size = 40.dp, tint = c.textTertiary)
-                    Box(Modifier.height(12.dp))
-                    FText("No downloads yet", style = Fluent.type.subtitle)
-                    FText("Use the download action of an episode or movie to keep it offline.", color = c.textSecondary)
-                } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (items.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Download, "No downloads yet", "Use the download action of an episode or movie to keep it offline.")
+                } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 36.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(items, key = { it.data.id }) { item -> DownloadRow(item, onOpenFolder = { if (it is VisualDownloadCached.Header) folder = it }) }
                 }
             }

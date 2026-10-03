@@ -469,8 +469,9 @@ object AppContextUtils {
         } ?: default
         val langs = this.getApiProviderLangSettings()
         val hasUniversal = langs.contains(AllLanguagesName)
+        // desktop: no torrents (providers that only have torrents are not listed)
         val allApis =
-            apis.filter { api -> (hasUniversal || langs.contains(api.lang)) && (api.hasMainPage || !hasHomePageIsRequired) }
+            apis.filter { api -> (hasUniversal || langs.contains(api.lang)) && (api.hasMainPage || !hasHomePageIsRequired) && api.supportedTypes.any { it != TvType.Torrent } }
         return if (currentPrefMedia.isEmpty()) {
             allApis
         } else {

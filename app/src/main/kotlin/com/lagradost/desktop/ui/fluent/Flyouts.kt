@@ -38,6 +38,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -379,14 +381,17 @@ object Overlays {
 fun DialogLayer() {
     val top = Overlays.dialogs.lastOrNull()
     val c = Fluent.colors
-    AnimatedVisibility(top != null, enter = fadeIn(tween(167)), exit = fadeOut(tween(100))) {
+    AnimatedVisibility(top != null, enter = fadeIn(FluentMotion.tweenIn(200)), exit = fadeOut(FluentMotion.tweenOut(120))) {
         // keep the last dialog drawn while the exit animation runs
         val shown = remember(top) { top }
+        // the card rises and grows into place
+        val appear = remember(shown) { androidx.compose.animation.core.Animatable(0f) }
+        androidx.compose.runtime.LaunchedEffect(shown) { appear.animateTo(1f, FluentMotion.tweenIn(320)) }
         Box(
-            Modifier.fillMaxSize().background(c.scrim).pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } },
+            Modifier.fillMaxSize().background(c.scrim.copy(alpha = (c.scrim.alpha * 1.4f).coerceAtMost(0.75f))).pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } },
             contentAlignment = Alignment.Center,
         ) {
-            if (shown != null) ContentDialogCard(shown)
+            if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.94f + 0.06f * a; scaleX = s; scaleY = s; translationY = (1f - a) * 18f * density }) { ContentDialogCard(shown) }
         }
     }
 }
@@ -400,14 +405,15 @@ private fun ContentDialogCard(d: Overlays.Dialog) {
         Modifier
             .padding(24.dp)
             .width(d.width)
+            .shadow(48.dp, shape, clip = false)
             .background(c.flyout, shape)
             .border(androidx.compose.ui.unit.Dp.Hairline, if (c.dark) Color(0x66757575) else Color(0x33000000), shape)
             .clip(shape),
     ) {
         Column(Modifier.padding(24.dp)) {
             if (d.title != null) {
-                FText(d.title, style = Fluent.type.subtitle, maxLines = 3)
-                Box(Modifier.height(12.dp))
+                FText(d.title, style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 3)
+                Box(Modifier.height(14.dp))
             }
             Box(Modifier.heightIn(max = 520.dp)) { d.body(dismiss) }
         }

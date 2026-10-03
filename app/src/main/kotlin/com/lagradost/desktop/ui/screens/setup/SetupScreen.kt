@@ -29,6 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -84,7 +86,7 @@ fun SetupScreen() {
     Box(Modifier.fillMaxSize().background(c.bg), contentAlignment = Alignment.Center) {
         Column(
             Modifier.widthIn(max = 760.dp).fillMaxWidth().fillMaxHeight(0.92f).padding(24.dp)
-                .background(c.layer, RoundedCornerShape(FluentShapes.card)).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.card)),
+                .shadow(40.dp, RoundedCornerShape(FluentShapes.overlay)).background(c.layer, RoundedCornerShape(FluentShapes.overlay)).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.overlay)),
         ) {
             // progress dots
             Row(Modifier.fillMaxWidth().padding(24.dp, 20.dp, 24.dp, 0.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -130,8 +132,8 @@ private fun WelcomeStep() {
     var selected by remember { mutableStateOf(prefs.getString(ctx.getString(R.string.locale_key), null) ?: "en") }
     var filter by remember { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(Icons.Video, size = 36.dp, tint = c.accent)
-        FText("Welcome to CloudStream", style = Fluent.type.title)
+        com.lagradost.desktop.ui.components.brandLogo()?.let { androidx.compose.foundation.Image(it, "CloudStream", Modifier.size(64.dp)) }
+        FText("Welcome to CloudStream", style = Fluent.type.title.copy(fontSize = 34.sp, lineHeight = 42.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black))
         FText("Stream movies, series and anime from the extensions you add. First, pick the language of the app.", color = c.textSecondary)
         TextBox(filter, { filter = it }, Modifier.fillMaxWidth(), placeholder = "Search languages", leadingIcon = Icons.Language)
         val langs = appLanguages.filter { filter.isBlank() || it.first.contains(filter, true) || it.second.contains(filter, true) }
@@ -233,7 +235,7 @@ private fun ContentStep() {
     val prefs = remember { PreferenceManager.getDefaultSharedPreferences(ctx) }
     val typeKey = ctx.getString(R.string.prefer_media_type_key)
     val langKey = ctx.getString(R.string.provider_lang_key)
-    val types = remember { enumValues<TvType>().sorted() }
+    val types = remember { enumValues<TvType>().sorted().filter { it != TvType.Torrent } }
     val chosenTypes = remember {
         mutableStateListOf<TvType>().apply {
             val stored = prefs.getStringSet(typeKey, null)

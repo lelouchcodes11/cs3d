@@ -35,6 +35,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.lagradost.desktop.ui.fluent.Chip
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import com.lagradost.desktop.ui.fluent.shimmer
+import com.lagradost.desktop.ui.fluent.glass
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -107,7 +117,7 @@ import com.lagradost.desktop.ui.screens.home.openCard
 import com.lagradost.desktop.ui.screens.home.stripHtml
 import com.lagradost.desktop.ui.shell.TopBarOverlay
 
-private val gutter = 24.dp
+private val gutter = 36.dp
 
 private fun UiText?.str(): String? = this?.let { runCatching { it.asStringNull(DesktopBootstrap.activity) }.getOrNull() }
 
@@ -135,6 +145,14 @@ fun DetailsScreen(entry: Entry, route: Route.Details) {
     val page by vm.page.observeAsState()
     val popup by vm.selectPopup.observeAsState()
     val links by vm.loadedLinks.observeAsState()
+    // the tracker ids of the title (AniList / MAL / Simkl): what the status card below and the player's episode reports use
+    val loadedSyncData = (page as? Resource.Success)?.value?.syncData
+    LaunchedEffect(loadedSyncData) {
+        if (loadedSyncData != null && sync.addSyncs(loadedSyncData)) {
+            sync.updateMetaAndUser()
+            sync.updateSynced()
+        }
+    }
 
     // engine questions ("which source?", "which action?") are Fluent dialogs
     LaunchedEffect(popup) {
@@ -150,7 +168,7 @@ fun DetailsScreen(entry: Entry, route: Route.Details) {
                 vm.load(ctx, route.url, route.apiName, prefs.getBoolean(ctx.getString(R.string.show_fillers_key), false),
                     if (ctx.getApiDubstatusSettings().contains(DubStatus.Dubbed)) DubStatus.Dubbed else DubStatus.Subbed, null)
             }
-            is Resource.Success -> DetailsContent(vm, route, res.value)
+            is Resource.Success -> DetailsContent(vm, sync, route, res.value)
         }
         links?.let { LinkLoadingCard(it.linksLoaded, it.subsLoaded, { vm.skipLoading() }, { vm.cancelLinks() }) }
     }
@@ -223,29 +241,29 @@ private fun FailurePage(route: Route.Details, message: String, retry: () -> Unit
 @Composable
 private fun LinkLoadingCard(links: Int, subs: Int, skip: () -> Unit, cancel: () -> Unit) {
     val c = Fluent.colors
-    Box(Modifier.fillMaxSize().padding(bottom = 32.dp), contentAlignment = Alignment.BottomCenter) {
-        val shape = RoundedCornerShape(FluentShapes.card)
+    Box(Modifier.fillMaxSize().padding(bottom = 36.dp), contentAlignment = Alignment.BottomCenter) {
         Row(
-            Modifier.background(c.flyout, shape).border(androidx.compose.ui.unit.Dp.Hairline, c.strokeStrong.copy(alpha = 0.4f), shape).padding(horizontal = 20.dp, vertical = 14.dp),
+            Modifier.glass(FluentShapes.overlay, elevation = 28.dp, strong = true).padding(horizontal = 22.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            ProgressRing(size = 24.dp, strokeWidth = 3.dp)
+            ProgressRing(size = 26.dp, strokeWidth = 3.dp)
             Column {
                 FText("Finding sources…", style = Fluent.type.bodyStrong)
                 FText("$links link${if (links == 1) "" else "s"}  ·  $subs subtitle${if (subs == 1) "" else "s"}", style = Fluent.type.caption, color = c.textSecondary)
             }
-            if (links > 0) Button("Play now", skip, kind = ButtonKind.Accent)
-            Button("Cancel", cancel)
+            if (links > 0) Button("Play now", skip, kind = ButtonKind.Accent, icon = Icons.Play, height = 36.dp)
+            Button("Cancel", cancel, height = 36.dp)
         }
     }
 }
 
 // -------------------------------------------------------------------------------------------
 
+private enum class DetailsTab(val label: String) { Episodes("Episodes"), More("More like this"), Cast("Cast & crew") }
+
 @Composable
-private fun DetailsContent(vm: ResultViewModel2, route: Route.Details, d: ResultData) {
+private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Route.Details, d: ResultData) {
     val c = Fluent.colors
-    val ctx = DesktopBootstrap.activity
     val episodes by vm.episodes.observeAsState()
     val movie by vm.movie.observeAsState()
     val recommendations by vm.recommendations.observeAsState()
@@ -267,77 +285,128 @@ private fun DetailsContent(vm: ResultViewModel2, route: Route.Details, d: Result
     val listState = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 900.dp
-        val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 160 } }
+        val headerHeight = (maxHeight * 0.66f).coerceIn(460.dp, 700.dp)
+        val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 200 } }
         TopBarOverlay(scrolled)
         FluentScrollbar(listState, com.lagradost.desktop.ui.shell.TopBarHeight)
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
+        val cast = d.actors.orEmpty()
+        val recs = recommendations.orEmpty()
+        val isMovie = movie != null
+        val tabs = buildList {
+            if (!isMovie) add(DetailsTab.Episodes)
+            if (recs.isNotEmpty()) add(DetailsTab.More)
+            if (cast.isNotEmpty() || d.actorsText.str() != null) add(DetailsTab.Cast)
+        }
+        var tab by remember(route.url) { mutableStateOf<DetailsTab?>(null) }
+        val shown = tab?.takeIf { it in tabs } ?: tabs.firstOrNull()
+        // episode cards per row from the room there is
+        val columns = ((maxWidth - gutter * 2 + 18.dp) / (250.dp + 18.dp)).toInt().coerceIn(1, 6)
+        val pageWidth = maxWidth
+
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 48.dp)) {
             item(key = "header") {
-                Header(vm, d, route, wide, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty(), trailers?.firstOrNull()?.mirros?.firstOrNull()?.second)
+                Header(vm, d, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty(), trailers?.firstOrNull()?.mirros?.firstOrNull()?.second)
             }
-            val cast = d.actors.orEmpty()
-            val isMovie = movie != null
-            if (!isMovie) {
-                item(key = "episodes-head") {
-                    Column(Modifier.padding(horizontal = gutter).padding(top = 8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FText("Episodes", style = Fluent.type.subtitle)
-                            count.str()?.let { FText(it, color = c.textSecondary) }
-                            Box(Modifier.weight(1f))
+            item(key = "trackers") { TrackerCard(sync) }
+            if (tabs.isNotEmpty()) item(key = "tabs") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    com.lagradost.desktop.ui.fluent.PillTabs(
+                        tabs.map { it.label }, tabs.indexOf(shown).coerceAtLeast(0), { tab = tabs[it] },
+                        counts = tabs.map { t -> when (t) { DetailsTab.More -> recs.size; DetailsTab.Cast -> cast.size.takeIf { it > 0 }; else -> null } },
+                    )
+                    Box(Modifier.weight(1f))
+                    if (shown == DetailsTab.Episodes) count.str()?.let { FText(it, color = c.textSecondary) }
+                }
+            }
+            when (shown) {
+                DetailsTab.Episodes -> {
+                    item(key = "ep-tools") {
+                        val seasonList = seasons.orEmpty()
+                        Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (seasonList.size in 2..10) {
+                                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    seasonList.forEachIndexed { i, (label, value) ->
+                                        Chip(label.str() ?: "Season $value", i == (seasonIdx ?: 0), onClick = { vm.changeSeason(value) })
+                                    }
+                                }
+                            } else {
+                                if (seasonList.size > 10) ComboBox(seasonList.map { it.second }, seasonList.getOrNull(seasonIdx ?: 0)?.second, { s -> seasonList.firstOrNull { it.second == s }?.first.str() ?: "Season $s" }, { vm.changeSeason(it) }, minWidth = 160.dp)
+                                Box(Modifier.weight(1f))
+                            }
                             if (dubs.orEmpty().size > 1) ComboBox(dubs.orEmpty().map { it.second }, dubs.orEmpty().getOrNull(dubIdx ?: 0)?.second, { dubLabel(dubs.orEmpty(), it) }, { vm.changeDubStatus(it) }, minWidth = 100.dp)
-                            if (seasons.orEmpty().size > 1) ComboBox(seasons.orEmpty().map { it.second }, seasons.orEmpty().getOrNull(seasonIdx ?: 0)?.second, { s -> seasons.orEmpty().firstOrNull { it.second == s }?.first.str() ?: "Season $s" }, { vm.changeSeason(it) }, minWidth = 140.dp)
                             if (ranges.orEmpty().size > 1) ComboBox(ranges.orEmpty().map { it.second }, ranges.orEmpty().getOrNull(rangeIdx ?: 0)?.second, { r -> ranges.orEmpty().firstOrNull { it.second == r }?.first.str() ?: "${r.startEpisode}-${r.endEpisode}" }, { vm.changeRange(it) }, minWidth = 120.dp)
                             if (sorts.orEmpty().size > 1) ComboBox(sorts.orEmpty().map { it.second }, sorts.orEmpty().getOrNull(sortIdx ?: 0)?.second, { s -> sorts.orEmpty().firstOrNull { it.second == s }?.first.str() ?: "Sort" }, { vm.setSort(it) }, icon = Icons.Sort, minWidth = 120.dp)
                         }
-                        Box(Modifier.height(12.dp))
                     }
-                }
-                when (val res = episodes) {
-                    null, is Resource.Loading -> item(key = "ep-loading") {
-                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { ProgressRing() }
-                    }
-                    is Resource.Failure -> item(key = "ep-failure") {
-                        FText("Episodes could not be loaded: ${res.errorString}", color = c.textSecondary, modifier = Modifier.padding(gutter))
-                    }
-                    is Resource.Success -> {
-                        if (res.value.isEmpty()) item(key = "ep-empty") {
-                            FText(d.noEpisodesFoundText.str() ?: "No episodes found.", color = c.textSecondary, modifier = Modifier.padding(horizontal = gutter, vertical = 16.dp))
+                    when (val res = episodes) {
+                        null, is Resource.Loading -> item(key = "ep-loading") {
+                            Row(Modifier.padding(horizontal = gutter), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                                repeat(columns) { Box(Modifier.weight(1f).aspectRatio(16f / 9f).clip(RoundedCornerShape(FluentShapes.card)).shimmer()) }
+                            }
                         }
-                        items(res.value, key = { it.id.toString() + "-" + it.index }) { ep ->
-                            EpisodeRow(vm, ep, wide)
+                        is Resource.Failure -> item(key = "ep-failure") {
+                            com.lagradost.desktop.ui.fluent.EmptyState(Icons.Warning, "Episodes could not be loaded", res.errorString)
                         }
-                    }
-                }
-            }
-            if (cast.isNotEmpty()) item(key = "cast") {
-                Column(Modifier.padding(top = 28.dp)) {
-                    SectionHeader("Cast", Modifier.padding(horizontal = gutter))
-                    Box(Modifier.height(8.dp))
-                    LazyRow(contentPadding = PaddingValues(horizontal = gutter), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        items(cast.take(40)) { a ->
-                            Column(Modifier.width(96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(Modifier.size(80.dp).clip(CircleShape).background(c.card)) {
-                                    RemoteImage(a.actor.image, null, a.actor.name, Modifier.fillMaxSize(), ContentScale.Crop)
+                        is Resource.Success -> {
+                            if (res.value.isEmpty()) item(key = "ep-empty") {
+                                com.lagradost.desktop.ui.fluent.EmptyState(Icons.Video, d.noEpisodesFoundText.str() ?: "No episodes found")
+                            }
+                            val rows = res.value.chunked(columns)
+                            items(rows.size, key = { i -> "eprow-" + (rows[i].firstOrNull()?.id ?: i) + "-" + i }) { i ->
+                                Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                                    rows[i].forEach { ep -> Box(Modifier.weight(1f)) { EpisodeCard(vm, ep, d.backgroundPosterUrl ?: d.posterImage, d.posterHeaders) } }
+                                    repeat(columns - rows[i].size) { Box(Modifier.weight(1f)) }
                                 }
-                                Box(Modifier.height(6.dp))
-                                FText(a.actor.name, style = Fluent.type.caption, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                a.roleString?.takeIf { it.isNotBlank() }?.let { FText(it, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1) }
                             }
                         }
                     }
                 }
-            }
-            d.actorsText.str()?.let { text ->
-                item(key = "cast-text") { FText(text, color = c.textSecondary, modifier = Modifier.padding(horizontal = gutter, vertical = 16.dp).widthIn(max = 900.dp)) }
-            }
-            val recs = recommendations.orEmpty()
-            if (recs.isNotEmpty()) item(key = "recs") {
-                Column(Modifier.padding(top = 28.dp)) {
-                    SectionHeader("More like this", Modifier.padding(horizontal = gutter))
-                    Box(Modifier.height(8.dp))
-                    Shelf(recs, 148.dp, key = { it.url }) { card -> PosterCard(card, { openCard(card) }, 148.dp) }
+                DetailsTab.More -> item(key = "recs") {
+                    val w = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width
+                    val perRow = ((pageWidth - gutter * 2 + 16.dp) / (w + 16.dp)).toInt().coerceAtLeast(2)
+                    Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        recs.chunked(perRow).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                row.forEach { card -> PosterCard(card, { openCard(card) }, w) }
+                            }
+                        }
+                    }
                 }
+                DetailsTab.Cast -> item(key = "cast") {
+                    Column(Modifier.padding(horizontal = gutter)) {
+                        val perRow = ((pageWidth - gutter * 2) / 150.dp).toInt().coerceAtLeast(3)
+                        cast.take(60).chunked(perRow).forEach { row ->
+                            Row(Modifier.padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                                row.forEach { a -> CastCard(a.actor.name, a.actor.image, a.roleString) }
+                            }
+                        }
+                        d.actorsText.str()?.let { text -> FText(text, color = c.textSecondary, modifier = Modifier.padding(vertical = 8.dp).widthIn(max = 900.dp)) }
+                    }
+                }
+                null -> {}
             }
         }
+    }
+}
+
+@Composable
+private fun CastCard(name: String, image: String?, role: String?) {
+    val c = Fluent.colors
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1.06f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200))
+    Column(Modifier.width(132.dp).hoverable(source), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(112.dp).graphicsLayer { scaleX = scale; scaleY = scale }.shadow(if (hovered) 18.dp else 4.dp, CircleShape).clip(CircleShape).background(c.layer)
+                .border(if (hovered) 2.dp else androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.accent else c.stroke, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            FText(name.split(' ').mapNotNull { it.firstOrNull()?.uppercase() }.take(2).joinToString(""), style = Fluent.type.subtitle, color = c.textTertiary)
+            RemoteImage(image, null, name, Modifier.fillMaxSize(), ContentScale.Crop)
+        }
+        Box(Modifier.height(10.dp))
+        FText(name, style = Fluent.type.bodyStrong, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        role?.takeIf { it.isNotBlank() }?.let { FText(it, style = Fluent.type.caption, color = c.textTertiary, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
     }
 }
 
@@ -350,6 +419,7 @@ private fun Header(
     d: ResultData,
     route: Route.Details,
     wide: Boolean,
+    height: androidx.compose.ui.unit.Dp,
     watch: WatchType?,
     favorite: Boolean?,
     subscribed: Boolean?,
@@ -359,41 +429,56 @@ private fun Header(
     trailerUrl: String?,
 ) {
     val c = Fluent.colors
-    val ctx = DesktopBootstrap.activity
     val backdrop = d.backgroundPosterUrl ?: d.posterBackgroundImage
     val poster = d.posterImage
-    Box(Modifier.fillMaxWidth().height(if (wide) 500.dp else 460.dp).background(Color(0xFF101010))) {
-        if (backdrop != null) RemoteImage(backdrop, d.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop, alignment = Alignment.TopCenter)
-        else com.lagradost.desktop.ui.components.SoftImage(poster, d.posterHeaders, Modifier.fillMaxSize(), alpha = 0.5f)
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xF2101010), 0.6f to Color(0xA6101010), 1f to Color(0x33101010))))
-        Box(Modifier.fillMaxWidth().height(96.dp).background(Brush.verticalGradient(listOf(Color(0x99000000), Color.Transparent))))
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to c.layer)))
+    com.lagradost.desktop.ui.shell.AmbientArtwork(backdrop ?: poster, d.posterHeaders)
+    Box(Modifier.fillMaxWidth().height(height)) {
+        // the artwork (slow zoom) fades out into the page at the bottom, whatever the backdrop style
+        val zoom = if (com.lagradost.desktop.ui.fluent.Appearance.motion == com.lagradost.desktop.ui.fluent.Motion.Off) null else
+            androidx.compose.animation.core.rememberInfiniteTransition(label = "kb").animateFloat(1f, 1.06f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(18000, easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "zoom")
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(Brush.verticalGradient(0.55f to Color.Black, 1f to Color.Transparent), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+                },
+        ) {
+            Box(Modifier.fillMaxSize().graphicsLayer { val s = zoom?.value ?: 1f; scaleX = s; scaleY = s }) {
+                if (backdrop != null) RemoteImage(backdrop, d.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop, alignment = Alignment.TopCenter)
+                else com.lagradost.desktop.ui.components.SoftImage(poster, d.posterHeaders, Modifier.fillMaxSize(), alpha = 0.6f)
+            }
+            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xF20B0B0E), 0.5f to Color(0x990B0B0E), 1f to Color(0x140B0B0E))))
+            Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
+        }
 
-        Row(Modifier.align(Alignment.BottomStart).padding(start = gutter, end = gutter, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Bottom) {
+        Row(Modifier.align(Alignment.BottomStart).padding(start = gutter, end = gutter, bottom = 28.dp), horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.Bottom) {
             if (wide && poster != null) {
-                Box(Modifier.width(200.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(FluentShapes.card)).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x33FFFFFF), RoundedCornerShape(FluentShapes.card)).background(c.card)) {
+                val shape = RoundedCornerShape(FluentShapes.card)
+                Box(Modifier.width(230.dp).aspectRatio(2f / 3f).shadow(44.dp, shape).clip(shape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x33FFFFFF), shape).background(c.card)) {
                     RemoteImage(poster, d.posterHeaders, d.title, Modifier.fillMaxSize(), ContentScale.Crop)
                 }
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    d.typeText.str()?.let { Badge(it, accent = true) }
-                    d.apiName.str()?.let { Badge(it) }
-                    d.contentRatingText.str()?.takeIf { it.isNotBlank() }?.let { Badge(it) }
-                    d.onGoingText.str()?.let { Badge(it) }
+                    d.typeText.str()?.let { com.lagradost.desktop.ui.fluent.ArtChip(it, accent = true) }
+                    d.apiName.str()?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
+                    d.contentRatingText.str()?.takeIf { it.isNotBlank() }?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
+                    d.onGoingText.str()?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
                 }
-                if (d.logoUrl != null) RemoteImage(d.logoUrl, d.posterHeaders, d.title, Modifier.height(80.dp).widthIn(max = 420.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
-                else FText(d.title, style = Fluent.type.titleLarge, color = Color.White, maxLines = 3)
+                if (d.logoUrl != null) RemoteImage(d.logoUrl, d.posterHeaders, d.title, Modifier.height(96.dp).widthIn(max = 460.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
+                else FText(d.title, style = Fluent.type.titleLarge.copy(fontSize = 48.sp, lineHeight = 56.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = 3)
                 val meta = listOfNotNull(d.ratingText.str(), d.yearText.str(), d.durationText.str()) + d.tags.take(4)
-                if (meta.isNotEmpty()) FText(meta.joinToString("  ·  "), color = Color(0xCCFFFFFF), maxLines = 2)
+                if (meta.isNotEmpty()) FText(meta.joinToString("   •   "), style = Fluent.type.bodyStrong, color = Color(0xD9FFFFFF), maxLines = 2)
                 d.nextAiringEpisode.str()?.let { ep -> FText("$ep ${d.nextAiringDate.str().orEmpty()}", color = c.accentText, maxLines = 1) }
                 var expanded by remember { mutableStateOf(false) }
                 val plot = stripHtml(d.plotText.str().orEmpty())
                 if (plot.isNotBlank()) {
-                    FText(plot, style = Fluent.type.bodyLarge, color = Color(0xE6FFFFFF), maxLines = if (expanded) 40 else 3, modifier = Modifier.widthIn(max = 760.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(4.dp), Role.Button) { expanded = !expanded })
+                    FText(plot, style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xD9FFFFFF), maxLines = if (expanded) 40 else 3, modifier = Modifier.widthIn(max = 780.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(4.dp), Role.Button) { expanded = !expanded })
                 }
                 d.vpnText.str()?.let { FText(it, style = Fluent.type.caption, color = c.caution) }
-                ActionRow(vm, d, route, watch, favorite, subscribed, playEpisode, resumeText, hasTrailer, trailerUrl)
+                Box(Modifier.height(4.dp))
+                ActionRow(vm, d, watch, favorite, subscribed, playEpisode, resumeText, hasTrailer, trailerUrl)
             }
         }
     }
@@ -403,7 +488,6 @@ private fun Header(
 private fun ActionRow(
     vm: ResultViewModel2,
     d: ResultData,
-    route: Route.Details,
     watch: WatchType?,
     favorite: Boolean?,
     subscribed: Boolean?,
@@ -415,17 +499,19 @@ private fun ActionRow(
     val ctx = DesktopBootstrap.activity
     var bookmarkOpen by remember { mutableStateOf(false) }
     var moreOpen by remember { mutableStateOf(false) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         if (playEpisode != null) {
             val label = when {
                 playEpisode.tvType.isMovieType() -> if (playEpisode.getRealPosition() > 0) "Resume" else "Play"
                 else -> (if (playEpisode.getRealPosition() > 0) "Resume " else "Play ") + (if (playEpisode.season != null) "S${playEpisode.season} · " else "") + "E${playEpisode.episode}"
             }
-            Button(label, { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode)) }, kind = ButtonKind.Accent, icon = Icons.Play, height = 36.dp, contentPadding = PaddingValues(horizontal = 20.dp))
-            resumeText?.takeIf { it.isNotBlank() }?.let { FText(it, color = Color(0xCCFFFFFF), style = Fluent.type.caption) }
+            Column {
+                com.lagradost.desktop.ui.fluent.PillButton(label, Icons.Play, primary = true, onClick = { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode)) }, height = 48.dp)
+            }
+            resumeText?.takeIf { it.isNotBlank() }?.let { FText(it, color = Color(0xCCFFFFFF), style = Fluent.type.caption, maxLines = 2, modifier = Modifier.widthIn(max = 90.dp)) }
         }
         Box {
-            Button(watchLabel(watch), { bookmarkOpen = true }, icon = if (watch != null && watch != WatchType.NONE) Icons.BookmarkFilled else Icons.Bookmark, height = 36.dp)
+            com.lagradost.desktop.ui.fluent.PillButton(watchLabel(watch), if (watch != null && watch != WatchType.NONE) Icons.BookmarkFilled else Icons.Bookmark, primary = false, onClick = { bookmarkOpen = true }, height = 48.dp)
             if (bookmarkOpen) {
                 MenuFlyout(
                     WatchType.entries.map { t -> MenuItem(ctx.getString(t.stringRes), checked = t == watch) { vm.updateWatchStatus(t, ctx) } },
@@ -434,18 +520,18 @@ private fun ActionRow(
             }
         }
         favorite?.let { fav ->
-            IconButton(if (fav) Icons.FavoriteFilled else Icons.Favorite, {
+            com.lagradost.desktop.ui.fluent.GlassCircleButton(if (fav) Icons.FavoriteFilled else Icons.Favorite, if (fav) "Remove from favourites" else "Add to favourites", {
                 vm.toggleFavoriteStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "Added to favourites" else "Removed from favourites", false) }
-            }, tooltip = if (fav) "Remove from favourites" else "Add to favourites", kind = ButtonKind.Standard, size = 36.dp, tint = if (fav) Fluent.colors.critical else null)
+            }, active = fav, size = 48.dp)
         }
         subscribed?.let { sub ->
-            IconButton(Icons.Notification, {
+            com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Notification, if (sub) "Unsubscribe from new episodes" else "Get notified about new episodes", {
                 vm.toggleSubscriptionStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "You will be told about new episodes" else "Subscription removed", false) }
-            }, tooltip = if (sub) "Unsubscribe from new episodes" else "Get notified about new episodes", kind = if (sub) ButtonKind.Accent else ButtonKind.Standard, size = 36.dp)
+            }, active = sub, size = 48.dp)
         }
-        if (hasTrailer && trailerUrl != null) IconButton(Icons.Video, { DesktopPlatform.openExternalBrowser(trailerUrl) }, tooltip = "Watch trailer", kind = ButtonKind.Standard, size = 36.dp)
+        if (hasTrailer && trailerUrl != null) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { DesktopPlatform.openExternalBrowser(trailerUrl) }, size = 48.dp)
         Box {
-            IconButton(Icons.More, { moreOpen = true }, tooltip = "More", kind = ButtonKind.Standard, size = 36.dp)
+            com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.More, "More", { moreOpen = true }, size = 48.dp)
             if (moreOpen) {
                 val url = d.url
                 MenuFlyout(
@@ -466,11 +552,14 @@ private fun watchLabel(w: WatchType?): String =
 
 // -------------------------------------------------------------------------------------------
 
+/** One episode: a 16:9 still with its number, progress and a play disc on hover; title, length and synopsis under it */
 @Composable
-private fun EpisodeRow(vm: ResultViewModel2, ep: ResultEpisode, wide: Boolean) {
+private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: String?, fallbackHeaders: Map<String, String>?) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
+    val lift by androidx.compose.animation.core.animateFloatAsState(if (hovered && com.lagradost.desktop.ui.fluent.Appearance.hoverZoom) 1.03f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(220))
+    val glow by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1f else 0f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200))
     val shape = RoundedCornerShape(FluentShapes.card)
     val progress = if (ep.duration > 0) (ep.position.toFloat() / ep.duration).coerceIn(0f, 1f) else 0f
     val watched = ep.videoWatchState == com.lagradost.cloudstream3.ui.result.VideoWatchState.Watched || progress > 0.95f
@@ -486,33 +575,99 @@ private fun EpisodeRow(vm: ResultViewModel2, ep: ResultEpisode, wide: Boolean) {
             MenuItem("Download", Icons.Download) { vm.handleAction(EpisodeClickEvent(ACTION_DOWNLOAD_EPISODE, ep)) },
         )
     }
-    ContextMenuArea(menu, Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
-        Row(
-            Modifier.fillMaxWidth().clip(shape)
-                .background(if (hovered) c.cardHover else Color.Transparent, shape)
-                .fluentClickable(source, true, shape, Role.Button) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) }
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Box(Modifier.width(if (wide) 192.dp else 128.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(6.dp)).background(c.card)) {
-                RemoteImage(ep.poster, null, ep.name, Modifier.fillMaxSize(), ContentScale.Crop)
-                if (hovered) Box(Modifier.fillMaxSize().background(Color(0x66000000)), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(36.dp).background(Color(0xB3000000), CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x55FFFFFF), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Play, size = 16.dp, tint = Color.White) }
+    ContextMenuArea(menu) {
+        Column(Modifier.fillMaxWidth().hoverable(source).fluentClickable(source, true, shape, Role.Button) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) }) {
+            Box(
+                Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                    .graphicsLayer { scaleX = lift; scaleY = lift; shadowElevation = 22f * glow * density; this.shape = shape; clip = false }
+                    .clip(shape).background(c.card).border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, shape),
+            ) {
+                if (ep.poster.isNullOrBlank()) {
+                    // no still: the show's artwork, soft, under a big episode number
+                    com.lagradost.desktop.ui.components.SoftImage(fallback, fallbackHeaders, Modifier.matchParentSize().graphicsLayer { scaleX = 1.3f; scaleY = 1.3f }, alpha = 0.9f)
+                    Box(Modifier.matchParentSize().background(Color(0x59000000)))
+                    FText(ep.episode.toString(), Modifier.align(Alignment.Center), style = Fluent.type.display.copy(fontSize = 56.sp, lineHeight = 60.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black), color = Color(0xCCFFFFFF), maxLines = 1)
+                } else RemoteImage(ep.poster, null, ep.name, Modifier.fillMaxSize(), ContentScale.Crop)
+                Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0x99000000))))
+                Box(Modifier.align(Alignment.TopStart).padding(10.dp).background(Color(0xB3000000), RoundedCornerShape(50)).padding(horizontal = 9.dp, vertical = 2.dp)) {
+                    FText(if (ep.season != null) "S${ep.season} · E${ep.episode}" else "E${ep.episode}", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color.White, maxLines = 1, softWrap = false)
                 }
-                if (progress > 0f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()) { ProgressBar(progress, height = 3.dp) }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FText("${ep.episode}.", color = c.textSecondary, style = Fluent.type.bodyStrong)
-                    FText(ep.name ?: "Episode ${ep.episode}", Modifier.weight(1f, fill = false), style = Fluent.type.bodyStrong, maxLines = 1)
-                    if (ep.isFiller == true) Badge("Filler")
-                    if (watched) Icon(Icons.Check, size = 14.dp, tint = c.success)
+                if (watched) Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(24.dp).background(c.success, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Check, size = 12.dp, tint = Color.Black) }
+                if (glow > 0.01f) Box(Modifier.matchParentSize().graphicsLayer { alpha = glow }.background(Color(0x4D000000)), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(52.dp).background(c.accent, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Play, size = 20.dp, tint = c.onAccent) }
                 }
-                val meta = listOfNotNull(ep.season?.let { "Season $it" }, ep.runTime?.takeIf { it > 0 }?.let { "$it min" }, ep.score?.let { "★ " + it.toString(10, 1) })
-                if (meta.isNotEmpty()) FText(meta.joinToString("  ·  "), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
-                ep.description?.takeIf { it.isNotBlank() }?.let { FText(stripHtml(it), style = Fluent.type.caption, color = c.textSecondary, maxLines = 2) }
+                ep.runTime?.takeIf { it > 0 }?.let { rt ->
+                    Box(Modifier.align(Alignment.BottomEnd).padding(10.dp).background(Color(0xB3000000), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp)) {
+                        FText("$rt min", style = Fluent.type.caption, color = Color.White, maxLines = 1, softWrap = false)
+                    }
+                }
+                if (progress > 0f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color(0x40FFFFFF))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(c.accent))
+                }
             }
+            Box(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FText(ep.name ?: "Episode ${ep.episode}", Modifier.weight(1f, fill = false), style = Fluent.type.bodyStrong.copy(fontSize = 15.sp), maxLines = 1)
+                if (ep.isFiller == true) Badge("Filler")
+                ep.score?.let { FText("★ " + it.toString(10, 1), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1) }
+            }
+            ep.description?.takeIf { it.isNotBlank() }?.let { FText(stripHtml(it), style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 3.dp)) }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+
+/**
+ * The title on the services the user is signed in to (AniList, MyAnimeList, Simkl): list status, score and watched episodes, saved to
+ * all of them with "Save". Only there when the title is known to such a service (its page gave the id, or its address maps to one).
+ */
+@Composable
+private fun TrackerCard(sync: SyncViewModel) {
+    val c = Fluent.colors
+    val ctx = DesktopBootstrap.activity
+    // the model changes the status object in place and posts the same object again: a plain observeAsState would see "no change"
+    var version by remember(sync) { mutableStateOf(0) }
+    DisposableEffect(sync) {
+        val bump = androidx.lifecycle.Observer<Any?> { version++ }
+        sync.userData.observeForever(bump)
+        sync.synced.observeForever(bump)
+        sync.metadata.observeForever(bump)
+        onDispose {
+            sync.userData.removeObserver(bump)
+            sync.synced.removeObserver(bump)
+            sync.metadata.removeObserver(bump)
+        }
+    }
+    @Suppress("UNUSED_EXPRESSION") version
+    val names = sync.synced.value.orEmpty().filter { it.isSynced && it.hasAccount }.map { it.name }
+    if (names.isEmpty()) return
+    val user = sync.userData.value
+    val status = (user as? Resource.Success)?.value
+    val total = status?.maxEpisodes ?: (sync.metadata.value as? Resource.Success)?.value?.totalEpisodes
+
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp).glass(FluentShapes.overlay).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            FText("Tracking", style = Fluent.type.bodyStrong)
+            FText(names.joinToString(" · "), style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+        }
+        when {
+            user is Resource.Loading -> ProgressRing(size = 22.dp, strokeWidth = 2.dp)
+            status != null -> {
+                val kinds = com.lagradost.cloudstream3.ui.SyncWatchType.entries
+                ComboBox(kinds, status.status, { ctx.getString(it.stringRes) }, { sync.setStatus(it.internalId) }, icon = Icons.Bookmark, minWidth = 150.dp, height = 36.dp)
+                ComboBox((0..10).toList(), status.score?.toInt(10) ?: 0, { if (it == 0) "No score" else "$it / 10" }, { sync.setScore(if (it == 0) null else com.lagradost.cloudstream3.Score.from(it, 10)) }, icon = Icons.Star, minWidth = 120.dp, height = 36.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(Icons.ChevronLeftSmall, { sync.setEpisodesDelta(-1) }, tooltip = "One episode less", size = 32.dp, iconSize = 12.dp)
+                    FText("${status.watchedEpisodes ?: 0}${total?.let { " / $it" } ?: ""} ep", Modifier.padding(horizontal = 6.dp), maxLines = 1, softWrap = false)
+                    IconButton(Icons.ChevronRightSmall, { sync.setEpisodesDelta(1) }, tooltip = "One episode more", size = 32.dp, iconSize = 12.dp)
+                }
+                Button("Save", { sync.publishUserData() }, kind = ButtonKind.Accent, height = 36.dp)
+            }
+            else -> FText("Not found on these services", style = Fluent.type.caption, color = c.textTertiary)
         }
     }
 }

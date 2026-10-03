@@ -22,7 +22,12 @@ import java.util.concurrent.TimeUnit
  * *again*, until the manifest has caught up (4 to 7 times in a row, every copy valid media). The player plays each copy, so the sound
  * repeats the same two seconds while the picture goes on, and the playback speed drops.
  *
- * The fix is to never answer the same live segment twice in a row. A repeat is answered `404` (after a short pause) and the demuxer
+ * A related fault: the demuxer works out the numbers of live segments from the clock and asks for the next one before the CDN
+ * has published it. ffmpeg skips a segment that answers 404 and later comes back to ones it played already (sound jumps back two
+ * seconds, the picture slows down to meet it: "out of sync, slow motion" after a seek or a while of playing). Such a request is held
+ * here until the segment exists.
+ *
+ * The fix for the loop is to never answer the same live segment twice in a row. A repeat is answered `404` (after a short pause) and the demuxer
  * then does what it does for a segment that is not there yet: it reads the manifest again and tries the next position, until the
  * manifest has caught up and the real next segment is asked for.
  *
@@ -32,6 +37,9 @@ import java.util.concurrent.TimeUnit
 object DashProxy {
     private const val TAG = "DashProxy"
     private const val RETRIES = 3
+
+    /** How long a request for a live segment that the CDN does not have yet is held (a segment is 2 to 6 s; the player times out after 15 s) */
+    private const val PUBLISH_WAIT_MS = 6_000L
 
     /** A segment of a live stream is told by the long number (time or sequence number) before its extension; the init segment has none */
     private val TIMED = Regex("""\d{6,}(\.[A-Za-z0-9]+)$""")
@@ -48,12 +56,75 @@ object DashProxy {
 
         @Volatile
         var repeats = 0
+
+        @Volatile
+        var waits = 0
+
+        /** The segments the newest manifest lists (live manifests with segment templates) */
+        @Volatile
+        var timeline: DashTimeline? = null
+
+        /** server clock minus this PC's clock (the manifest response's Date), for templates whose segments follow the clock */
+        @Volatile
+        var clockOffsetMs = 0L
+
+        @Volatile
+        var manifestAt = 0L
+        val manifestLock = Any()
+
+        fun serverNow() = System.currentTimeMillis() + clockOffsetMs
+    }
+
+    /** A live manifest was read (by the player or by [refreshManifest]): what it lists, and the server's clock */
+    private fun learn(entry: Entry, bytes: ByteArray, date: String?) {
+        entry.manifestAt = System.currentTimeMillis()
+        date?.let { d -> runCatching { java.time.ZonedDateTime.parse(d, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }.getOrNull() }
+            ?.let { entry.clockOffsetMs = it - System.currentTimeMillis() }
+        val parsed = DashTimeline.parse(String(bytes, Charsets.UTF_8))
+        if (parsed != null) {
+            if (entry.timeline == null) Log.i(TAG, "live timeline: ${parsed.tracks.size} streams, segments ${parsed.tracks.first().segmentMs} ms")
+            entry.timeline = parsed
+        }
+    }
+
+    /** Reads the manifest again (at most once a second, shared by all waiting requests) */
+    private fun refreshManifest(entry: Entry) {
+        synchronized(entry.manifestLock) {
+            if (System.currentTimeMillis() - entry.manifestAt < 1000) return
+            runCatching {
+                val builder = Request.Builder().url(entry.url.toHttpUrlOrNull() ?: return)
+                for ((k, v) in entry.headers) if (!k.equals("Host", true) && !k.equals("Range", true) && !k.equals("Content-Length", true)) runCatching { builder.header(k, v) }
+                if (entry.headers.keys.none { it.equals("User-Agent", true) }) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
+                builder.cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
+                client.newCall(builder.build()).execute().use { r -> if (r.isSuccessful) learn(entry, r.body.bytes(), r.header("Date")) else entry.manifestAt = System.currentTimeMillis() }
+            }.onFailure { entry.manifestAt = System.currentTimeMillis() }
+        }
+    }
+
+    /**
+     * The player asks for live segments from its own idea of the clock, often before the CDN has them. Asking the CDN then is
+     * worse than waiting: the 404 is cached at the edge for seconds and ffmpeg skips the segment, later jumping back to it. The
+     * request is held until the manifest lists the segment (or the template's clock says it exists), up to a few segment lengths.
+     */
+    private fun waitForListing(entry: Entry, trackId: String, value: Long, address: String) {
+        fun track() = entry.timeline?.tracks?.firstOrNull { it.id == trackId }
+        val first = track() ?: return
+        if (value <= first.newest(entry.serverNow())) return
+        val started = System.currentTimeMillis()
+        val deadline = started + (3 * first.segmentMs + 4000).coerceIn(6000, 12_000)
+        while (System.currentTimeMillis() < deadline) {
+            refreshManifest(entry)
+            val t = track() ?: return
+            if (value <= t.newest(entry.serverNow())) break
+            Thread.sleep(250)
+        }
+        if (entry.waits++ % 50 == 0) Log.i(TAG, "live segment held until listed (${entry.waits}): ${System.currentTimeMillis() - started} ms for ${address.takeLast(60)}")
     }
 
     private val entries = ConcurrentHashMap<String, Entry>()
 
     private val client by lazy {
-        com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(0, TimeUnit.SECONDS).connectTimeout(8, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
+        com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(0, TimeUnit.SECONDS).connectTimeout(5, TimeUnit.SECONDS).readTimeout(6, TimeUnit.SECONDS).build()
     }
     private val freshClient by lazy {
         client.newBuilder().connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS)).protocols(listOf(okhttp3.Protocol.HTTP_1_1)).build()
@@ -66,6 +137,9 @@ object DashProxy {
             start()
         }
     }
+
+    /** Whether a [wrap] address plays a live (dynamic) manifest */
+    fun isLive(address: String): Boolean = address.substringAfter("/d/", "").substringBefore("/").let { entries[it]?.live == true }
 
     /** Address to give the player instead of [url] (the manifest); segments are asked for next to it */
     fun wrap(url: String, headers: Map<String, String>): String {
@@ -97,8 +171,11 @@ object DashProxy {
         val rest = path.substringAfter('/', "")
         val isManifest = rest == entry.name
         val url = if (isManifest) entry.url else entry.baseDir + rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: "")
+        // the segment's place in the live manifest: which stream, which number (or time)
+        val matched = if (!isManifest && entry.live) entry.timeline?.match(rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: "")) else null
+        if (matched != null) waitForListing(entry, matched.first.id, matched.second, rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: ""))
         // a segment of a live stream that was sent just now is not sent again, see the notes above
-        val key = if (!isManifest && entry.live) rest.replace(TIMED, "$1").takeIf { it != rest } else null
+        val key = if (matched != null) "track:" + matched.first.id else if (!isManifest && entry.live) rest.replace(TIMED, "$1").takeIf { it != rest } else null
         if (key != null && entry.last[key] == rest) {
             if (entry.repeats++ % 25 == 0) Log.i(TAG, "live segment asked for again, refused (${entry.repeats}): ${rest.takeLast(60)}")
             Thread.sleep(250)
@@ -107,12 +184,23 @@ object DashProxy {
         }
         var failure: IOException? = null
         var started = false
-        for (attempt in 1..RETRIES) {
+        // a live segment that is listed but not on this CDN edge yet is waited for (it usually is there within a moment)
+        val waitUntil = System.currentTimeMillis() + PUBLISH_WAIT_MS
+        var attempt = 0
+        while (attempt < RETRIES) {
+            attempt++
             try {
                 upstream(entry, url, ex, fresh = attempt > 1).use { r ->
+                    if (r.code == 404 && key != null && System.currentTimeMillis() < waitUntil) {
+                        // ffmpeg's answer to a 404 at the live edge is to skip to the next number and later come back to
+                        // segments it has played already: the sound jumped back two seconds and the picture slowed down to
+                        // meet it again. Holding the request until the segment exists keeps the demuxer in order.
+                        attempt--
+                        if (entry.waits++ % 50 == 0) Log.i(TAG, "live segment not published yet, waiting (${entry.waits}): ${rest.takeLast(60)}")
+                        Thread.sleep(400)
+                        return@use
+                    }
                     if (r.code !in 200..299) {
-                        // not published yet: the demuxer asks again at once, do not let it spin
-                        if (r.code == 404 && key != null) Thread.sleep(150)
                         ex.sendResponseHeaders(r.code, -1)
                         return
                     }
@@ -123,6 +211,7 @@ object DashProxy {
                             entry.live = true
                             Log.i(TAG, "live manifest: repeated segments are refused")
                         }
+                        if (entry.live) learn(entry, bytes, r.header("Date"))
                         ex.responseHeaders.add("Content-Type", r.header("Content-Type") ?: "application/dash+xml")
                         ex.sendResponseHeaders(200, bytes.size.toLong())
                         if (!ex.requestMethod.equals("HEAD", true)) ex.responseBody.write(bytes)

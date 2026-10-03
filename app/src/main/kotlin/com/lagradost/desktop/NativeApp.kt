@@ -1,5 +1,8 @@
 package com.lagradost.desktop
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import com.lagradost.desktop.ui.shell.ExternalTitleBar
+import com.lagradost.desktop.ui.shell.RevealedTitleBar
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -85,7 +88,7 @@ fun ApplicationScope.NativeWindow() {
         DesktopUiHost.windowState = state
         remember { window.minimumSize = Dimension(760, 520) }
         remember { com.lagradost.desktop.platform.AppIcon.install(window) }
-        remember { FluentSettings.load() }
+        remember { FluentSettings.load(); com.lagradost.desktop.ui.fluent.Appearance.load() }
         FluentTheme {
             val c = Fluent.colors
             val fullscreenNow = com.lagradost.desktop.platform.WinChrome.fullscreen
@@ -121,7 +124,11 @@ fun ApplicationScope.NativeWindow() {
                 else runCatching {
                     val skip = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.DesktopBootstrap.activity)
                         .getBoolean(com.lagradost.desktop.DesktopBootstrap.activity.getString(R.string.skip_startup_account_select_key), false)
-                    if (!skip && com.lagradost.cloudstream3.utils.DataStoreHelper.getAccounts(com.lagradost.desktop.DesktopBootstrap.activity).size > 1) com.lagradost.desktop.ui.shell.showAccountPicker(forStartup = true)
+                    if (!skip && com.lagradost.cloudstream3.utils.DataStoreHelper.getAccounts(com.lagradost.desktop.DesktopBootstrap.activity).size > 1) {
+                        // after the start screen
+                        com.lagradost.desktop.ui.Startup.revealed.await()
+                        com.lagradost.desktop.ui.shell.showAccountPicker(forStartup = true)
+                    }
                 }
             }
             val density = LocalDensity.current
@@ -141,12 +148,23 @@ fun ApplicationScope.NativeWindow() {
                         }
                     },
             ) {
-                AppShell()
-                com.lagradost.desktop.ui.FluentRequestDialogs()
-                LegacyOverlays()
-                // above the engine's Android dialogs: a prompt raised by an extension's settings sheet must be seen
-                com.lagradost.desktop.ui.fluent.DialogLayer()
-                com.lagradost.desktop.ui.shell.BoxScopeCaptionButtons(Modifier.align(androidx.compose.ui.Alignment.TopEnd))
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+                    // a window that is not maximized has its title bar above the app, not over it
+                    ExternalTitleBar()
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        com.lagradost.desktop.ui.fluent.ScaledContent {
+                            com.lagradost.desktop.ui.StartupReveal {
+                                AppShell()
+                            }
+                            com.lagradost.desktop.ui.FluentRequestDialogs()
+                            LegacyOverlays()
+                            // above the engine's Android dialogs: a prompt raised by an extension's settings sheet must be seen
+                            com.lagradost.desktop.ui.fluent.DialogLayer()
+                        }
+                    }
+                }
+                // a maximized window shows it over the app while the pointer is at the top edge
+                RevealedTitleBar()
             }
         }
     }

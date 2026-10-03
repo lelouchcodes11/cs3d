@@ -38,7 +38,8 @@ class AniListApi : SyncAPI() {
     override var name = "AniList"
     override val idPrefix = "anilist"
 
-    private val key = BuildConfig.ANILIST_KEY
+    // desktop: the client ID is entered by the user (Settings > Accounts > Sign-in keys), the build has none
+    private val key: String get() = com.lagradost.cloudstream3.syncproviders.ApiKeys.aniList
     override val redirectUrlIdentifier = "anilistlogin"
     override var requireLibraryRefresh = true
     override val hasOAuth2 = true

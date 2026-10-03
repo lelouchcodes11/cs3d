@@ -51,12 +51,12 @@ fun PosterGrid(
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
     FluentScrollbar(state, TopBarHeight)
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(160.dp),
+        columns = GridCells.Adaptive(com.lagradost.desktop.ui.fluent.Appearance.posterSize.width),
         state = state,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = TopBarHeight + 8.dp, bottom = 32.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        contentPadding = PaddingValues(start = 36.dp, end = 36.dp, top = TopBarHeight + 20.dp, bottom = 40.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         header?.invoke(this)
         items(unique, key = { it.url + it.apiName }) { card ->
@@ -71,10 +71,7 @@ fun PosterGrid(
 fun SectionPage(route: Route.Section) {
     PosterGrid(route.items, header = {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            Column(Modifier.padding(bottom = 4.dp)) {
-                FText(route.title, style = Fluent.type.title, maxLines = 2)
-                FText("${route.items.size} titles", color = Fluent.colors.textSecondary)
-            }
+            com.lagradost.desktop.ui.fluent.PageHeader(route.title, Modifier.padding(bottom = 8.dp), subtitle = "${route.items.size} titles")
         }
     })
 }

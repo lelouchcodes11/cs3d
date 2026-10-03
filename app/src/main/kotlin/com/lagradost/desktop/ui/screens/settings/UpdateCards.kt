@@ -36,7 +36,7 @@ fun UpdateCards() {
         }
         Button("Check now", { AppUpdater.checkNow() }, enabled = !busy)
     }
-    SettingsCard("Check for updates automatically", "A few seconds after start the app asks GitHub (${AppUpdater.repo}) for the list of releases, at most every few hours. Nothing else is sent.") {
+    SettingsCard("Check for updates automatically", "A few seconds after start, and again every few hours while the app stays open, it asks GitHub (${AppUpdater.repo}) for the list of releases. A new version is shown once, never during a video. Nothing else is sent.") {
         FText(if (AppUpdater.autoCheckEnabled) "On" else "Off", color = c.textSecondary, style = Fluent.type.caption)
         Box(Modifier.width(8.dp))
         ToggleSwitch(AppUpdater.autoCheckEnabled, { AppUpdater.setAutoCheck(it) })

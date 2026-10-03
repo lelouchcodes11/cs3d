@@ -62,6 +62,9 @@ import kotlinx.serialization.Serializable
 import java.io.File
 
 const val SUBTITLE_KEY = "subtitle_settings"
+
+/** desktop: the size (sp) and edge the subtitles have until the user picks others */
+const val DEFAULT_SUBTITLE_SIZE = 17.0f
 const val SUBTITLE_AUTO_SELECT_KEY = "subs_auto_select"
 const val SUBTITLE_DOWNLOAD_KEY = "subs_auto_download"
 
@@ -174,8 +177,8 @@ class SubtitlesFragment : BaseDialogFragment<SubtitleSettingsBinding>(
             view.clipToPadding = false
             view.clipChildren = false
 
-            // we default to 25sp, this is needed as RoundedBackgroundColorSpan breaks on override sizes
-            val size = data.fixedTextSize ?: 25.0f
+            // we default to DEFAULT_SUBTITLE_SIZE sp, this is needed as RoundedBackgroundColorSpan breaks on override sizes
+            val size = data.fixedTextSize ?: DEFAULT_SUBTITLE_SIZE
             view.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, size)
             view.setBottomPaddingFraction(0.0f)
             /*if (size != null) {
@@ -324,12 +327,12 @@ class SubtitlesFragment : BaseDialogFragment<SubtitleSettingsBinding>(
             foregroundColor = getDefColor(0),
             backgroundColor = getDefColor(2),
             windowColor = getDefColor(3),
-            edgeType = CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+            edgeType = CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
             edgeColor = getDefColor(1),
             font = null,
             typefaceFilePath = null,
             elevation = DEF_SUBS_ELEVATION,
-            fixedTextSize = null,
+            fixedTextSize = DEFAULT_SUBTITLE_SIZE,
         )
         val subtitleStyleState =
             mutableStateOf((getKey<SaveCaptionStyle>(SUBTITLE_KEY) ?: defaultSubtitleStyle))
@@ -608,7 +611,7 @@ class SubtitlesFragment : BaseDialogFragment<SubtitleSettingsBinding>(
             }
 
             subsEdgeType.setOnLongClickListener {
-                state = state.copy(edgeType = CaptionStyleCompat.EDGE_TYPE_OUTLINE)
+                state = state.copy(edgeType = CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW)
                 it.context.updateState()
                 showToast(R.string.subs_default_reset_toast, Toast.LENGTH_SHORT)
                 return@setOnLongClickListener true
@@ -680,7 +683,7 @@ class SubtitlesFragment : BaseDialogFragment<SubtitleSettingsBinding>(
             }
 
             subsFontSize.setOnLongClickListener { _ ->
-                state = state.copy(fixedTextSize = null)
+                state = state.copy(fixedTextSize = DEFAULT_SUBTITLE_SIZE)
                 context?.updateState()
                 showToast(activity, R.string.subs_default_reset_toast, Toast.LENGTH_SHORT)
                 return@setOnLongClickListener true

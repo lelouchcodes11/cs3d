@@ -44,10 +44,13 @@ fun NavigationPane(
     modifier: Modifier = Modifier,
     footer: @Composable () -> Unit = {},
     showMenuButton: Boolean = true,
+    header: @Composable () -> Unit = {},
+    showBack: Boolean = true,
 ) {
-    val width by animateDpAsState(if (expanded) NavPaneOpen.dp else NavPaneCompact.dp, tween(167))
+    val width by animateDpAsState(if (expanded) NavPaneOpen.dp else NavPaneCompact.dp, FluentMotion.tweenIn(220))
     Column(modifier.width(width).fillMaxHeight().padding(vertical = 4.dp).noWindowDrag("pane")) {
-        NavButton(Icons.Back, "", expanded, false, canGoBack, onBack, tooltip = "Back (Alt+Left)")
+        header()
+        if (showBack) NavButton(Icons.Back, "", expanded, false, canGoBack, onBack, tooltip = "Back (Alt+Left)")
         if (showMenuButton) NavButton(Icons.Menu, "", expanded, false, true, onToggle, tooltip = if (expanded) "Close navigation" else "Open navigation")
         Box(Modifier.height(4.dp))
         for (item in items) NavButton(item.glyph, item.label, expanded, item.id == selectedId, true, { onSelect(item) }, tooltip = if (expanded) null else item.label)
@@ -72,15 +75,15 @@ private fun NavButton(
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(FluentShapes.control)
     val body = @Composable {
-        Box(Modifier.padding(horizontal = 4.dp, vertical = 1.dp).fillMaxWidth().height(40.dp)) {
+        Box(Modifier.padding(horizontal = 4.dp, vertical = 2.dp).fillMaxWidth().height(42.dp)) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .height(40.dp)
+                    .height(42.dp)
                     .clip(shape)
                     .background(
                         when {
-                            selected -> c.subtleHover
+                            selected -> c.accent.copy(alpha = if (c.dark) 0.14f else 0.1f)
                             hovered && enabled -> c.subtleHover
                             else -> androidx.compose.ui.graphics.Color.Transparent
                         }, shape,
@@ -89,15 +92,17 @@ private fun NavButton(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-                    Icon(glyph, size = 16.dp, tint = if (enabled) c.text else c.textDisabled)
+                    Icon(glyph, size = 18.dp, tint = if (!enabled) c.textDisabled else if (selected) c.accentText else c.text)
                 }
                 if (expanded && label.isNotEmpty()) {
-                    FText(label, Modifier.padding(end = 12.dp), color = if (enabled) c.text else c.textDisabled, maxLines = 1, softWrap = false)
+                    FText(label, Modifier.padding(end = 12.dp), style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (enabled) c.text else c.textDisabled, maxLines = 1, softWrap = false)
                 }
             }
-            if (selected) {
+            // the indicator grows in when the page is chosen
+            val bar by animateDpAsState(if (selected) 16.dp else 0.dp, FluentMotion.tweenIn(250))
+            if (bar > 0.dp) {
                 Box(
-                    Modifier.align(Alignment.CenterStart).padding(start = 0.dp).size(3.dp, 16.dp)
+                    Modifier.align(Alignment.CenterStart).padding(start = 0.dp).size(3.dp, bar)
                         .background(c.accent, RoundedCornerShape(2.dp)),
                 )
             }

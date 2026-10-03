@@ -229,12 +229,46 @@ object AppUpdater {
 
     /** Some seconds after the start: once every few hours at most, and not for a version that was skipped */
     fun startAutoCheck() {
+        // checked while the start screen shows (it waits for this, at most a few seconds); an offer is shown once the app is on screen
         scope.launch {
-            delay(12_000)
-            if (!autoCheckEnabled || System.currentTimeMillis() - lastChecked < CHECK_EVERY_MS) return@launch
-            val s = check() as? Status.Available ?: return@launch
-            if (runCatching { prefs.getString(KEY_SKIPPED, "") }.getOrNull() == s.release.tag) return@launch
-            showUpdateDialog(s.release)
+            val found = try {
+                if (!autoCheckEnabled || System.currentTimeMillis() - lastChecked < CHECK_EVERY_MS) null
+                else kotlinx.coroutines.withTimeoutOrNull(3_000) { check() } as? Status.Available
+            } finally {
+                com.lagradost.desktop.ui.Startup.updateChecked.complete(Unit)
+            }
+            if (found == null) return@launch
+            if (skippedTag() == found.release.tag) return@launch
+            com.lagradost.desktop.ui.Startup.revealed.await()
+            delay(1500)
+            offeredTag = found.release.tag
+            showUpdateDialog(found.release)
+        }
+        keepCheckingWhileOpen()
+    }
+
+    /** The tag of the release the dialog was shown for in this run: it is not shown again until a newer one appears */
+    @Volatile private var offeredTag: String? = null
+
+    private fun skippedTag(): String? = runCatching { prefs.getString(KEY_SKIPPED, "") }.getOrNull()
+
+    /**
+     * The app is often left open for days, so it asks again while it runs: every few hours (the same limit as at the start), and an
+     * offer waits until no video is playing. Each version is offered once per run, and never when it was skipped.
+     */
+    private fun keepCheckingWhileOpen() {
+        scope.launch {
+            while (true) {
+                delay(30L * 60 * 1000)
+                if (!autoCheckEnabled || System.currentTimeMillis() - lastChecked < CHECK_EVERY_MS) continue
+                val found = check() as? Status.Available ?: continue
+                val tag = found.release.tag
+                if (tag == offeredTag || skippedTag() == tag) continue
+                // not in the middle of a film
+                while (com.lagradost.desktop.core.Navigator.current.route is com.lagradost.desktop.core.Route.Player) delay(60_000)
+                offeredTag = tag
+                showUpdateDialog(found.release)
+            }
         }
     }
 

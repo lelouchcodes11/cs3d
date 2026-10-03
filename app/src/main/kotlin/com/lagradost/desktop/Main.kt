@@ -162,6 +162,13 @@ fun main(args: Array<String>) {
         }
     }, AWTEvent.MOUSE_EVENT_MASK)
 
+    // objects that hold Compose state are created here, on the UI thread before the first composition: created later by a
+    // background thread (the update check) inside a running composition, their state could not be read and the window stayed blank
+    EventQueue.invokeAndWait {
+        com.lagradost.desktop.ui.Startup.stage
+        com.lagradost.desktop.ui.fluent.Appearance.navPosition
+    }
+
     application(exitProcessOnExit = false) {
         // An exception in the UI (e.g. an extension view) is logged, the window keeps running.
         // Compose's default handler shows a modal dialog that stops the whole window.

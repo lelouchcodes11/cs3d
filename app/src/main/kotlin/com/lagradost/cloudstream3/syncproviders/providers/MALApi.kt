@@ -37,7 +37,8 @@ class MALApi : SyncAPI() {
     override var name = "MAL"
     override val idPrefix = "mal"
 
-    private val key = BuildConfig.MAL_KEY
+    // desktop: the client ID is entered by the user (Settings > Accounts > Sign-in keys), the build has none
+    private val key: String get() = com.lagradost.cloudstream3.syncproviders.ApiKeys.mal
     private val apiUrl = "https://api.myanimelist.net"
     override val hasOAuth2 = true
     override val redirectUrlIdentifier: String? = "mallogin"

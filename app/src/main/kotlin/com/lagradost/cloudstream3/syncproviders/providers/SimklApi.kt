@@ -174,8 +174,9 @@ class SimklApi : SyncAPI() {
     }
 
     companion object {
-        private const val CLIENT_ID: String = BuildConfig.SIMKL_CLIENT_ID
-        private const val CLIENT_SECRET: String = BuildConfig.SIMKL_CLIENT_SECRET
+        // desktop: entered by the user (Settings > Accounts > Sign-in keys), the build has none
+        private val CLIENT_ID: String get() = com.lagradost.cloudstream3.syncproviders.ApiKeys.simklId
+        private val CLIENT_SECRET: String get() = com.lagradost.cloudstream3.syncproviders.ApiKeys.simklSecret
         const val SIMKL_CACHED_LIST: String = "simkl_cached_list"
         const val SIMKL_CACHED_LIST_TIME: String = "simkl_cached_time"
 
@@ -249,7 +250,7 @@ class SimklApi : SyncAPI() {
             @JsonProperty("code") @SerialName("code") val code: String,
             @JsonProperty("client_id") @SerialName("client_id") val clientId: String = CLIENT_ID,
             @JsonProperty("client_secret") @SerialName("client_secret") val clientSecret: String = CLIENT_SECRET,
-            @JsonProperty("redirect_uri") @SerialName("redirect_uri") val redirectUri: String = "$APP_STRING://simkl",
+            @JsonProperty("redirect_uri") @SerialName("redirect_uri") val redirectUri: String = com.lagradost.desktop.net.OAuthCallback.redirectUrl("simkl"),
             @JsonProperty("grant_type") @SerialName("grant_type") val grantType: String = "authorization_code",
         ) {
             object Serializer : NonEmptySerializer<TokenRequest>(TokenRequest.generatedSerializer())
@@ -988,7 +989,7 @@ class SimklApi : SyncAPI() {
 
     override fun loginRequest(): AuthLoginPage? {
         val lastLoginState = BigInteger(130, SecureRandom()).toString(32)
-        val url = "https://simkl.com/oauth/authorize?response_type=code&client_id=$CLIENT_ID&redirect_uri=$APP_STRING://$redirectUrlIdentifier&state=$lastLoginState"
+        val url = "https://simkl.com/oauth/authorize?response_type=code&client_id=$CLIENT_ID&redirect_uri=${com.lagradost.desktop.net.OAuthCallback.redirectUrl(redirectUrlIdentifier)}&state=$lastLoginState"
         return AuthLoginPage(
             url = url,
             payload = lastLoginState,
@@ -1095,7 +1096,7 @@ class SimklApi : SyncAPI() {
 
     override suspend fun pinRequest(): AuthPinData? {
         val pinAuthResp = app.get(
-            "$mainUrl/oauth/pin?client_id=$CLIENT_ID&redirect_uri=$APP_STRING://$redirectUrlIdentifier"
+            "$mainUrl/oauth/pin?client_id=$CLIENT_ID&redirect_uri=${com.lagradost.desktop.net.OAuthCallback.redirectUrl(redirectUrlIdentifier)}"
         ).parsedSafe<PinAuthResponse>() ?: return null
         return AuthPinData(
             deviceCode = pinAuthResp.deviceCode,

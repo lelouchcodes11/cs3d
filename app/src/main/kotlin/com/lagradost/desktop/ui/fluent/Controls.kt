@@ -430,15 +430,17 @@ fun TextBox(
     height: Dp = 32.dp,
     clearable: Boolean = true,
     visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+    /** rounded ends and an accent ring when focused (search boxes) */
+    pill: Boolean = false,
 ) {
     val c = Fluent.colors
     var focused by remember { mutableStateOf(false) }
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.control)
+    val shape = if (pill) RoundedCornerShape(50) else RoundedCornerShape(FluentShapes.control)
     val fill = when {
         !enabled -> c.controlDisabled
-        focused -> if (c.dark) Color(0xFF1F1F1F) else Color.White
+        focused -> if (c.dark) c.flyout else Color.White
         hovered -> c.controlHover
         else -> c.control
     }
@@ -447,20 +449,20 @@ fun TextBox(
             .heightIn(min = height)
             .clip(shape)
             .background(fill, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape)
+            .border(if (pill && focused) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, if (pill && focused) c.accent else c.stroke, shape)
             .hoverable(source)
             .drawWithContent {
                 drawContent()
-                if (focused) {
+                if (focused && !pill) {
                     val h = 2.dp.toPx()
                     drawRect(c.accent, Offset(0f, size.height - h), Size(size.width, h))
                 }
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = if (pill) 16.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (leadingIcon != null) {
-                Icon(leadingIcon, size = 14.dp, tint = c.textSecondary)
+                Icon(leadingIcon, size = if (pill) 15.dp else 14.dp, tint = if (focused && pill) c.accentText else c.textSecondary)
                 Box(Modifier.width(8.dp))
             }
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {

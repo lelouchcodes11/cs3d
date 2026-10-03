@@ -64,13 +64,14 @@ fun RemoteImage(
  * but costs nothing per frame (a real blur of a window-sized image made every redraw of those screens slow).
  */
 @Composable
-fun SoftImage(url: String?, headers: Map<String, String>? = null, modifier: Modifier = Modifier, alpha: Float = 1f) {
+fun SoftImage(url: String?, headers: Map<String, String>? = null, modifier: Modifier = Modifier, alpha: Float = 1f, tiny: Boolean = false) {
     val context = coil3.compose.LocalPlatformContext.current
-    val request = remember(url, headers) {
+    val request = remember(url, headers, tiny) {
         if (url.isNullOrBlank()) return@remember null
         ImageRequest.Builder(context)
             .data(url)
-            .size(coil3.size.Size(40, 60))
+            .memoryCacheKey(if (tiny) "tiny:$url" else null)
+            .size(if (tiny) coil3.size.Size(10, 14) else coil3.size.Size(40, 60))
             .precision(coil3.size.Precision.INEXACT)
             .crossfade(160)
             .httpHeaders(NetworkHeaders.Builder().also { builder ->
@@ -101,3 +102,10 @@ fun UiImageView(
     }
 }
 
+
+private val appLogo by lazy {
+    runCatching { androidx.compose.ui.graphics.painter.BitmapPainter(Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")!!.use { androidx.compose.ui.res.loadImageBitmap(it) }) }.getOrNull()
+}
+
+/** The app's logo as a painter (null if the resource is missing) */
+fun brandLogo(): androidx.compose.ui.graphics.painter.Painter? = appLogo

@@ -111,7 +111,12 @@ object SettingsAccountScreen : SearchableSettings, BiometricAuthenticator.Biomet
                                 addAccount(activity, api)
                             }
                         })
-                } + Preference.PreferenceItem.SwitchPreference(
+                } + Preference.PreferenceItem.TextPreference(
+                    title = "Sign-in keys",
+                    subtitle = "API clients of AniList, MyAnimeList and Simkl (needed to sign in and sync)",
+                    icon = painterResource(R.drawable.ic_outline_account_circle_24),
+                    onClick = { com.lagradost.desktop.ui.showApiKeysDialog() },
+                ) + Preference.PreferenceItem.SwitchPreference(
                     preference = settings.security.skipAccountSelection,
                     title = stringResource(R.string.skip_startup_account_select_pref),
                     icon = painterResource(R.drawable.ic_outline_account_circle_24)

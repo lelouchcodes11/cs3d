@@ -30,6 +30,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.hoverable
+import com.lagradost.desktop.ui.fluent.glass
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -104,60 +109,72 @@ fun ExtensionsScreen() {
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val compact = maxWidth < 900.dp
-        Row(Modifier.fillMaxSize().padding(top = TopBarHeight)) {
-            // ---- repositories
-            Column(Modifier.width(if (compact) 240.dp else 320.dp).fillMaxHeight().padding(start = 16.dp, end = 8.dp, top = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FText("Repositories", Modifier.weight(1f), style = Fluent.type.subtitle)
-                    Button("Add", { addRepositoryDialog(ext) }, kind = ButtonKind.Accent, icon = Icons.Add)
-                }
-                Box(Modifier.height(4.dp))
+        val compact = maxWidth < 1000.dp
+        Column(Modifier.fillMaxSize().padding(top = TopBarHeight + 12.dp)) {
+            // ---- header with numbers
+            Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                com.lagradost.desktop.ui.fluent.PageHeader("Extensions", Modifier.weight(1f), subtitle = "Providers come from repositories: add one, then install what you want")
                 stats?.let { s ->
-                    FText("${s.downloaded} installed · ${s.notDownloaded} available" + if (s.disabled > 0) " · ${s.disabled} disabled" else "", style = Fluent.type.caption, color = c.textSecondary)
-                }
-                Box(Modifier.height(12.dp))
-                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    item(key = INSTALLED) {
-                        RepoRow("Installed extensions", "Everything downloaded or loaded locally", null, selected == INSTALLED, Icons.Download, { selected = INSTALLED }, null)
-                    }
-                    items(repoList.toList(), key = { it.url }) { repo ->
-                        RepoRow(repo.name, repo.url, repo.iconUrl, selected == repo.url, Icons.Extensions, { selected = repo.url }, repo)
-                    }
-                    if (repoList.isEmpty()) item(key = "no-repos") {
-                        FText("No repositories yet. Add one with its URL (or a short code), then install the providers you want.", color = c.textSecondary, style = Fluent.type.caption, modifier = Modifier.padding(8.dp))
+                    if (!compact) {
+                        StatTile(Icons.Download, s.downloaded.toString(), "installed")
+                        StatTile(Icons.Extensions, s.notDownloaded.toString(), "available")
+                        if (s.disabled > 0) StatTile(Icons.Warning, s.disabled.toString(), "disabled")
                     }
                 }
+                com.lagradost.desktop.ui.fluent.PillButton("Add repository", Icons.Add, primary = true, onClick = { addRepositoryDialog(ext) }, height = 42.dp)
             }
-            Box(Modifier.width(1.dp).fillMaxHeight().background(c.divider))
-            // ---- plugins of the selected repository
-            Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 20.dp, vertical = 8.dp)) {
-                val sel = selected
-                val repo = repoList.firstOrNull { it.url == sel }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        FText(if (sel == INSTALLED) "Installed extensions" else repo?.name ?: "Extensions", style = Fluent.type.subtitle, maxLines = 1)
-                        if (repo != null) FText(repo.url, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+            Box(Modifier.height(22.dp))
+            Row(Modifier.fillMaxSize()) {
+                // ---- repositories
+                Column(Modifier.width(if (compact) 250.dp else 320.dp).fillMaxHeight().padding(start = 36.dp, end = 8.dp)) {
+                    FText("REPOSITORIES", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, letterSpacing = 1.2.sp), color = c.textTertiary)
+                    Box(Modifier.height(10.dp))
+                    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+                        item(key = INSTALLED) {
+                            RepoRow("Installed", "Everything downloaded or loaded locally", null, selected == INSTALLED, Icons.Download, { selected = INSTALLED }, null)
+                        }
+                        items(repoList.toList(), key = { it.url }) { repo ->
+                            RepoRow(repo.name, repo.url, repo.iconUrl, selected == repo.url, Icons.Extensions, { selected = repo.url }, repo)
+                        }
+                        if (repoList.isEmpty()) item(key = "no-repos") {
+                            FText("No repositories yet. Add one with its URL (or a short code), then install the providers you want.", color = c.textSecondary, style = Fluent.type.caption, modifier = Modifier.padding(8.dp))
+                        }
                     }
-                    if (repo != null) Button("Install all", { PluginsViewModel.downloadAll(ctx, repo, plugins) }, icon = Icons.Download)
-                    TextBox(
-                        query, { query = it; plugins.search(it.ifBlank { null }) }, Modifier.width(260.dp),
-                        placeholder = "Filter extensions", leadingIcon = Icons.Search,
-                    )
                 }
-                Box(Modifier.height(12.dp))
-                val items = list?.second.orEmpty()
-                if (sel == null || (list == null)) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ProgressRing() }
-                } else if (items.isEmpty()) {
-                    EmptyPlugins(sel == INSTALLED)
-                } else {
-                    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-                    Box(Modifier.fillMaxSize()) {
-                        FluentScrollbar(listState)
-                        LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 24.dp, end = 12.dp)) {
-                            items(items, key = { it.pluginWrapper.plugin.url + "|" + it.pluginWrapper.plugin.internalName }) { item ->
-                                PluginRow(item, plugins, repo?.let { listOf(it) } ?: emptyList(), sel == INSTALLED)
+                // ---- plugins of the selected repository
+                Column(Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, end = 28.dp)) {
+                    val sel = selected
+                    val repo = repoList.firstOrNull { it.url == sel }
+                    Row(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            FText(if (sel == INSTALLED) "Installed extensions" else repo?.name ?: "Extensions", style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 1)
+                            FText(repo?.url ?: "${list?.second?.size ?: 0} extensions", style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+                        }
+                        TextBox(
+                            query, { query = it; plugins.search(it.ifBlank { null }) }, Modifier.width(if (compact) 200.dp else 280.dp),
+                            placeholder = "Filter extensions", leadingIcon = Icons.Search,
+                        )
+                        if (repo != null) Button("Install all", { PluginsViewModel.downloadAll(ctx, repo, plugins) }, icon = Icons.Download, height = 34.dp)
+                    }
+                    Box(Modifier.height(16.dp))
+                    val items = list?.second.orEmpty()
+                    if (sel == null || (list == null)) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ProgressRing() }
+                    } else if (items.isEmpty()) {
+                        EmptyPlugins(sel == INSTALLED)
+                    } else {
+                        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+                        val columns = ((this@BoxWithConstraints.maxWidth - (if (compact) 250.dp else 320.dp) - 44.dp) / 380.dp).toInt().coerceIn(1, 3)
+                        val rows = items.chunked(columns)
+                        Box(Modifier.fillMaxSize()) {
+                            FluentScrollbar(listState)
+                            LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 32.dp, end = 12.dp)) {
+                                items(rows.size, key = { i -> rows[i].joinToString("|") { it.pluginWrapper.plugin.url + "|" + it.pluginWrapper.plugin.internalName } }) { i ->
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        rows[i].forEach { item -> Box(Modifier.weight(1f)) { PluginCard(item, plugins, repo?.let { listOf(it) } ?: emptyList(), sel == INSTALLED) } }
+                                        repeat(columns - rows[i].size) { Box(Modifier.weight(1f)) }
+                                    }
+                                }
                             }
                         }
                     }
@@ -168,14 +185,25 @@ fun ExtensionsScreen() {
 }
 
 @Composable
-private fun EmptyPlugins(installed: Boolean) {
+private fun StatTile(glyph: String, value: String, label: String) {
     val c = Fluent.colors
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(Icons.Extensions, size = 40.dp, tint = c.textTertiary)
-        Box(Modifier.height(12.dp))
-        FText(if (installed) "No extensions installed" else "No extensions found", style = Fluent.type.subtitle)
-        FText(if (installed) "Pick a repository on the left and install providers." else "This repository is empty, still loading, or filtered out.", color = c.textSecondary)
+    Row(Modifier.glass(FluentShapes.card).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(30.dp).background(c.accent.copy(alpha = 0.16f), CircleShape), contentAlignment = Alignment.Center) { Icon(glyph, size = 14.dp, tint = c.accentText) }
+        Box(Modifier.width(10.dp))
+        Column {
+            FText(value, style = Fluent.type.bodyStrong.copy(fontSize = 17.sp), maxLines = 1)
+            FText(label, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+        }
     }
+}
+
+@Composable
+private fun EmptyPlugins(installed: Boolean) {
+    com.lagradost.desktop.ui.fluent.EmptyState(
+        Icons.Extensions,
+        if (installed) "No extensions installed" else "No extensions found",
+        if (installed) "Pick a repository on the left and install providers." else "This repository is empty, still loading, or filtered out.",
+    )
 }
 
 @Composable
@@ -190,22 +218,23 @@ private fun RepoRow(name: String, url: String, iconUrl: String?, selected: Boole
             MenuItem("Remove repository", Icons.Delete, destructive = true) { confirmRemove(repo) },
         )
     }
+    val bg = if (selected) c.accent.copy(alpha = if (c.dark) 0.18f else 0.13f) else if (hovered) c.cardHover else c.card
     ContextMenuArea(menu) {
         Row(
-            Modifier.fillMaxWidth().clip(shape)
-                .background(if (selected) c.cardHover else if (hovered) c.card else Color.Transparent, shape)
-                .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) c.accent.copy(alpha = 0.6f) else Color.Transparent, shape)
+            Modifier.fillMaxWidth()
+                .clip(shape).background(bg, shape)
+                .border(if (selected) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, if (selected) c.accent.copy(alpha = 0.7f) else c.stroke, shape)
                 .fluentClickable(source, true, shape, Role.Tab, onClick)
-                .padding(10.dp),
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(c.control), contentAlignment = Alignment.Center) {
-                Icon(fallbackIcon, size = 18.dp, tint = c.textSecondary)
-                if (iconUrl != null) RemoteImage(iconUrl, null, null, Modifier.size(36.dp), ContentScale.Crop)
+            Box(Modifier.size(42.dp).clip(RoundedCornerShape(FluentShapes.small)).background(if (selected) c.accent.copy(alpha = 0.2f) else c.control), contentAlignment = Alignment.Center) {
+                Icon(fallbackIcon, size = 18.dp, tint = if (selected) c.accentText else c.textSecondary)
+                if (iconUrl != null) RemoteImage(iconUrl, null, null, Modifier.size(42.dp), ContentScale.Crop)
             }
             Column(Modifier.weight(1f)) {
                 FText(name, style = Fluent.type.bodyStrong, maxLines = 1)
-                FText(url, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+                FText(url, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
             }
             if (repo != null && hovered) IconButton(Icons.Delete, { confirmRemove(repo) }, tooltip = "Remove repository", size = 28.dp, iconSize = 14.dp)
         }
@@ -213,7 +242,7 @@ private fun RepoRow(name: String, url: String, iconUrl: String?, selected: Boole
 }
 
 @Composable
-private fun PluginRow(item: PluginViewData, vm: PluginsViewModel, repos: List<RepositoryData>, local: Boolean) {
+private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<RepositoryData>, local: Boolean) {
     val c = Fluent.colors
     val ctx = DesktopBootstrap.activity
     val p = item.pluginWrapper.plugin
@@ -223,33 +252,39 @@ private fun PluginRow(item: PluginViewData, vm: PluginsViewModel, repos: List<Re
     val repoList = if (repos.isEmpty()) listOf(item.pluginWrapper.repositoryData) else repos
     var busy by remember(item) { mutableStateOf(false) }
     LaunchedEffect(item) { busy = false }
-    Row(
-        Modifier.fillMaxWidth().background(c.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape).padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    Column(
+        Modifier.fillMaxWidth().height(196.dp).hoverable(source)
+            .clip(shape).background(if (hovered) c.cardHover else c.card, shape)
+            .border(if (hovered) 1.dp else androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.accent.copy(alpha = 0.55f) else if (item.isDownloaded) c.accent.copy(alpha = 0.4f) else c.stroke, shape)
+            .padding(16.dp),
     ) {
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(c.control), contentAlignment = Alignment.Center) {
-            Icon(Icons.Extensions, size = 20.dp, tint = c.textTertiary)
-            p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")?.let { RemoteImage(it, null, null, Modifier.size(44.dp), ContentScale.Crop) }
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FText(p.name, style = Fluent.type.bodyStrong, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
-                FText("v${p.version}", style = Fluent.type.caption, color = c.textTertiary)
-                p.language?.takeIf { it.isNotBlank() }?.let { Badge(fromTagToLanguageName(it) ?: it) }
-                if (p.status == PROVIDER_STATUS_DOWN) Badge("Down")
-                if (item.isDownloaded) Badge("Installed", accent = true)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.size(52.dp).shadow(8.dp, RoundedCornerShape(FluentShapes.small)).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
+                Icon(Icons.Extensions, size = 22.dp, tint = c.textTertiary)
+                p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")?.let { RemoteImage(it, null, null, Modifier.size(52.dp), ContentScale.Crop) }
             }
-            p.description?.takeIf { it.isNotBlank() }?.let { FText(it, style = Fluent.type.caption, color = c.textSecondary, maxLines = 2) }
-            val meta = listOfNotNull(p.authors.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "by $it" }, p.tvTypes?.take(5)?.joinToString(" · "))
-            if (meta.isNotEmpty()) FText(meta.joinToString("   "), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+            Column(Modifier.weight(1f)) {
+                FText(p.name, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)
+                FText("v${p.version}" + (p.authors.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "  ·  by $it" } ?: ""), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+            }
+            if (hasSettings) IconButton(Icons.Settings, {
+                try { instance?.openSettings?.invoke(ctx) } catch (t: Throwable) { logError(t); Toasts.show("Could not open settings: ${t.message}", true) }
+            }, tooltip = "Extension settings", kind = ButtonKind.Standard, size = 34.dp)
         }
-        if (hasSettings) IconButton(Icons.Settings, {
-            try { instance?.openSettings?.invoke(ctx) } catch (t: Throwable) { logError(t); Toasts.show("Could not open settings: ${t.message}", true) }
-        }, tooltip = "Extension settings", kind = ButtonKind.Standard)
-        if (item.isDownloaded) {
-            Button("Uninstall", { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, local) }, enabled = !busy, icon = Icons.Delete)
-        } else {
-            Button(if (busy) "Installing…" else "Install", { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, false) }, kind = ButtonKind.Accent, enabled = !busy, icon = Icons.Download)
+        Box(Modifier.height(10.dp))
+        FText(p.description?.takeIf { it.isNotBlank() } ?: (p.tvTypes?.take(5)?.joinToString(" · ") ?: ""), style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            p.language?.takeIf { it.isNotBlank() }?.let { Badge(fromTagToLanguageName(it) ?: it) }
+            if (p.status == PROVIDER_STATUS_DOWN) Badge("Down")
+            p.tvTypes?.firstOrNull()?.let { Badge(it) }
+            Box(Modifier.weight(1f))
+            if (item.isDownloaded) {
+                Button("Uninstall", { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, local) }, enabled = !busy, icon = Icons.Delete, height = 34.dp)
+            } else {
+                com.lagradost.desktop.ui.fluent.PillButton(if (busy) "Installing…" else "Install", Icons.Download, primary = true, onClick = { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, false) } }, height = 34.dp)
+            }
         }
     }
 }

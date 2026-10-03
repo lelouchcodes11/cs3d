@@ -99,8 +99,11 @@ object LinkLab {
                 // -Dlinklab.headers=Name=value;;Name=value
                 headers = System.getProperty("linklab.headers")?.split(";;")?.filter { it.contains('=') }?.associate { it.substringBefore('=') to it.substringAfter('=') } ?: emptyMap()
             }
-            println("exo: ${exoProbe(link)}")
-            println("mpv: ${mpvProbe(link)}")
+            val liveSeconds = System.getProperty("linklab.live")?.toIntOrNull()
+            if (liveSeconds != null) println("live: ${liveProbe(link, liveSeconds)}") else {
+                println("exo: ${exoProbe(link)}")
+                println("mpv: ${mpvProbe(link)}")
+            }
             com.lagradost.desktop.runtime.LogBuffer.snapshot().filter { it.contains(" mpv:") || it.contains("NetProxy") || it.contains("HlsProxy") }.takeLast(40).forEach { println("   $it") }
             kotlin.system.exitProcess(0)
         }
@@ -110,6 +113,17 @@ object LinkLab {
         val apis = com.lagradost.cloudstream3.APIHolder.apis.filter { api -> filters.any { api.name.lowercase().contains(it) } }
         println("providers: ${apis.joinToString { it.name }}")
         if (System.getProperty("linklab.mains") != null) { apis.forEach { println("main ${it.name} ${it.mainUrl}") }; kotlin.system.exitProcess(0) }
+
+        // live channels: -Dlinklab.live=<seconds of playback per link>; channels come from the main page (maxLinks = channels per provider)
+        System.getProperty("linklab.live")?.toIntOrNull()?.let { seconds ->
+            val probes = apis.map { api -> async(Dispatchers.IO) { collectLive(api, maxLinks) } }.awaitAll().flatten()
+            println("probing ${probes.size} live links, $seconds s each")
+            val limit = Semaphore(System.getProperty("linklab.parallel")?.toIntOrNull() ?: 3)
+            probes.map { p -> async(Dispatchers.IO) { limit.withPermit { p.mpv = liveProbe(p.link, seconds); println("[live] ${p.provider} | ${p.scenario} | ${p.link.name.take(24)} | ${p.mpv}") } } }.awaitAll()
+            report(probes, File(dataDir, "livelab-report-" + java.text.SimpleDateFormat("HHmmss").format(java.util.Date()) + ".txt"))
+            File(dataDir, "livelab-log.txt").writeText(com.lagradost.desktop.runtime.LogBuffer.snapshot().joinToString("\n"))
+            kotlin.system.exitProcess(0)
+        }
 
         // 1. collect links
         val collected = ConcurrentHashMap<String, List<Probe>>()
@@ -175,6 +189,112 @@ object LinkLab {
             if (round >= 3) break
         }
         return picked.map { Probe(it, api.name, query) }
+    }
+
+    /** Channels spread over the main page lists of a live provider, first link of each */
+    private suspend fun collectLive(api: MainAPI, channels: Int): List<Probe> {
+        val items = ArrayList<com.lagradost.cloudstream3.SearchResponse>()
+        for (page in api.mainPage.take(4)) {
+            val r = runCatching { api.getMainPage(1, com.lagradost.cloudstream3.MainPageRequest(page.name, page.data, page.horizontalImages)) }
+                .onFailure { println("   ${api.name}: main page '${page.name}' failed: ${it.javaClass.simpleName} ${it.message?.take(80)}") }.getOrNull()
+            r?.items?.forEach { list -> items.addAll(list.list.take(channels)) }
+        }
+        println("   ${api.name}: ${items.size} channels on the main page")
+        // -Dlinklab.linkname=WILLOW: the first channels that have a link of that name
+        val wanted = System.getProperty("linklab.linkname")
+        val step = maxOf(1, items.size / maxOf(1, channels))
+        val picked = if (wanted != null) items.take(25) else items.filterIndexed { i, _ -> i % step == 0 }.take(channels)
+        var found = 0
+        return picked.mapNotNull { item ->
+            val response = runCatching { api.load(item.url) }.onFailure { println("   ${api.name} / ${item.name}: load failed: ${it.javaClass.simpleName} ${it.message?.take(80)}") }.getOrNull()
+            val data = when (response) {
+                is LiveStreamLoadResponse -> response.dataUrl
+                is MovieLoadResponse -> response.dataUrl
+                is TvSeriesLoadResponse -> response.episodes.firstOrNull()?.data
+                else -> null
+            } ?: run { println("   ${api.name} / ${item.name}: no data (${response?.javaClass?.simpleName})"); return@mapNotNull null }
+            val links = ArrayList<ExtractorLink>()
+            withTimeoutOrNull(60_000) { runCatching { api.loadLinks(data, false, {}, { synchronized(links) { links.add(it) } }) }.onFailure { println("   ${api.name} / ${item.name}: loadLinks: ${it.message?.take(80)}") } }
+            if (wanted != null && found >= channels) return@mapNotNull null
+            val link = synchronized(links) { if (wanted != null) links.firstOrNull { it.name.contains(wanted, true) }?.also { found++ } else links.firstOrNull() } ?: run { println("   ${api.name} / ${item.name}: no links"); return@mapNotNull null }
+            Probe(link, api.name, item.name)
+        }
+    }
+
+    /** Plays a live link for [seconds] and reports how it went: speed of the media clock against the wall clock, backward jumps, stalls, A/V sync, drops */
+    private suspend fun liveProbe(link: ExtractorLink, seconds: Int): String {
+        val player = MpvPlayer()
+        val outcome = CompletableDeferred<String>()
+        player.initCallbacks({ event ->
+            when (event) {
+                is StatusEvent -> if (event.isPlaying == CSPlayerLoading.IsPlaying) outcome.complete("opened")
+                is ErrorEvent -> outcome.complete("ERR ${event.error.message?.take(80)}")
+                else -> {}
+            }
+        })
+        return try {
+            val t0 = System.currentTimeMillis()
+            player.loadPlayer(DesktopBootstrap.activity, false, link, null, null, emptySet(), null, true, false)
+            val first = withTimeoutOrNull(40_000) { outcome.await() } ?: "TIMEOUT opening"
+            if (first != "opened") return first
+            val openS = (System.currentTimeMillis() - t0) / 1000.0
+            fun d(name: String) = player.getMpvPropertyString(name)?.toDoubleOrNull()
+            var lastPos: Double? = null
+            var lastWall = 0L
+            var playWall = 0.0
+            var playMedia = 0.0
+            var back = 0
+            var stalls = 0
+            var stallS = 0.0
+            var wasStalled = false
+            var maxSync = 0.0
+            val end = System.currentTimeMillis() + seconds * 1000L
+            // -Dlinklab.seek=<s>: after 12 s of playback jump forward like the seek keys do (absolute position + s)
+            val seekBy = System.getProperty("linklab.seek")?.toDoubleOrNull()
+            if (seekBy != null) {
+                kotlinx.coroutines.delay(12_000)
+                val before = d("time-pos") ?: 0.0
+                println("   seek: pos=$before duration=${d("duration")} start=${d("demuxer-start-time")} cache=${d("demuxer-cache-duration")} -> ${before + seekBy}")
+                val target = if (System.getProperty("linklab.clamp") != null) minOf(before + seekBy, d("duration") ?: (before + seekBy)) else before + seekBy
+                println("   seekable=${player.getMpvPropertyString("seekable")} partially=${player.getMpvPropertyString("partially-seekable")} state=${player.getMpvPropertyString("demuxer-cache-state")?.take(300)} target=$target")
+                player.seekTo((target * 1000).toLong(), com.lagradost.cloudstream3.ui.player.PlayerEventSource.UI)
+                kotlinx.coroutines.delay(1000)
+            }
+            while (System.currentTimeMillis() < end) {
+                kotlinx.coroutines.delay(2000)
+                val now = System.currentTimeMillis()
+                val pos = d("time-pos")
+                val stalled = player.getMpvPropertyString("paused-for-cache") == "yes" || player.getMpvPropertyString("core-idle") == "yes"
+                d("avsync")?.let { if (!stalled) maxSync = maxOf(maxSync, kotlin.math.abs(it)) }
+                if (stalled && !wasStalled) stalls++
+                if (stalled) stallS += (now - lastWall).coerceAtMost(2500) / 1000.0
+                val lp = lastPos
+                if (pos != null && lp != null && !stalled && !wasStalled) {
+                    val dw = (now - lastWall) / 1000.0
+                    val dm = pos - lp
+                    if (dm < -0.5) back++ else if (dm < dw * 3) { playWall += dw; playMedia += dm }
+                }
+                if (seekBy != null) println("   t=${(now - t0) / 1000}s pos=$pos avsync=${d("avsync")} speed=${d("speed")} cache=${d("demuxer-cache-duration")} stalled=$stalled drops=${player.getMpvPropertyString("frame-drop-count")}")
+                wasStalled = stalled
+                lastPos = pos
+                lastWall = now
+            }
+            val speed = if (playWall > 0) playMedia / playWall else 0.0
+            val codec = player.getMpvPropertyString("video-codec")?.substringBefore(' ') ?: "-"
+            val size = (player.getMpvPropertyString("video-params/w") ?: "?") + "x" + (player.getMpvPropertyString("video-params/h") ?: "?")
+            val fps = player.getMpvPropertyString("container-fps")?.toDoubleOrNull()?.let { "%.0f".format(it) } ?: "?"
+            val drops = "${player.getMpvPropertyString("decoder-frame-drop-count") ?: "?"}/${player.getMpvPropertyString("frame-drop-count") ?: "?"}"
+            val verdict = when {
+                playWall < seconds * 0.3 -> "STALLED"
+                speed < 0.95 || back > 0 || maxSync > 0.3 -> "BAD"
+                else -> "PLAY"
+            }
+            "$verdict speed=${"%.2f".format(speed)} back=$back stalls=$stalls (${"%.0f".format(stallS)} s) avsync=${"%.2f".format(maxSync)} drops=$drops open=${"%.1f".format(openS)}s $codec $size ${fps}fps hw=${player.getMpvPropertyString("hwdec-current") ?: "-"} type=${link.type}"
+        } catch (t: Throwable) {
+            "EXC ${t.javaClass.simpleName}: ${t.message?.take(60)}"
+        } finally {
+            runCatching { player.release() }
+        }
     }
 
     /** What ExoPlayer would see: OkHttp with the app's client, headers of the link and the default user agent */

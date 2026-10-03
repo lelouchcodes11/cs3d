@@ -52,6 +52,67 @@ object WinChrome {
     var pip by mutableStateOf(false)
         private set
 
+    private const val REVEAL_DWELL_MS = 140L
+    private var hotSince = 0L
+
+    /** The caption buttons are hidden (maximized window, pointer away from the top): the hit test then reports the band as a drag area only */
+    @Volatile
+    var captionHidden = false
+        private set
+
+    /** Compose: the hidden caption bar is shown now (the pointer is at the top edge of the maximized window) */
+    var revealed by mutableStateOf(false)
+        private set
+
+    /** The caption bar hides itself while the window is maximized (not in full screen, where there is none) */
+    val autoHides: Boolean get() = enabled && maximized && !fullscreen && !pip
+
+    /** The title bar is a row of its own above the app (a window that is not maximized, with the integrated title bar) */
+    val windowedBar: Boolean get() = enabled && !maximized && !fullscreen && !pip
+
+    /** Dev: a pretend pointer position (window px) used instead of the real pointer by [pollReveal] */
+    @Volatile
+    var debugPointer: IntArray? = null
+
+    private var leftTopSince = 0L
+
+    /**
+     * Called ~25 times a second: reveals the bar when the pointer touches the top edge of the maximized window and hides it again
+     * a moment after the pointer left the bar.
+     */
+    fun pollReveal() {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        if (!autoHides) {
+            if (revealed) revealed = false
+            captionHidden = false
+            return
+        }
+        val p = IntArray(2)
+        val inside = runCatching { api.GetCursorPos(p) }.getOrDefault(false)
+        val origin = intArrayOf(0, 0)
+        api.ClientToScreen(hwnd, origin)
+        val client = IntArray(4)
+        api.GetClientRect(hwnd, client)
+        val dpi = runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96
+        val scale = dpi / 96.0
+        val x = debugPointer?.get(0) ?: (p[0] - origin[0])
+        val y = debugPointer?.get(1) ?: (p[1] - origin[1])
+        val fake = debugPointer
+        val over = if (fake != null) true else inside && x >= 0 && x < client[2] - client[0] && y >= -2
+        val now = System.currentTimeMillis()
+        // a thin strip at the very edge, and the pointer has to stay there a moment (a flick past the edge does not show the bar)
+        val hot = (2 * scale).toInt().coerceAtLeast(2)
+        val keep = (BUTTON_HEIGHT_DP * scale).toInt() + 2
+        // shown at the top edge; hidden at once when the pointer is off the bar (or off the window)
+        if (over && y <= hot) {
+            if (hotSince == 0L) hotSince = now
+            if (now - hotSince >= REVEAL_DWELL_MS) revealed = true
+        } else hotSince = 0L
+        if (revealed && !(over && y <= keep)) revealed = false
+        captionHidden = !revealed
+    }
+
     /** Areas of the band that are controls (search box, avatar, back button, ...): window coordinates, px */
     private val noDrag = ConcurrentHashMap<Any, IntArray>()
 
@@ -71,6 +132,7 @@ object WinChrome {
         fun GetWindowLongPtrW(hwnd: WinDef.HWND, index: Int): Long
         fun CallWindowProcW(prev: Pointer, hwnd: WinDef.HWND, msg: Int, wParam: Long, lParam: Long): Long
         fun GetWindowRect(hwnd: WinDef.HWND, rect: IntArray): Boolean
+        fun GetCursorPos(point: IntArray): Boolean
         fun GetClientRect(hwnd: WinDef.HWND, rect: IntArray): Boolean
         fun ClientToScreen(hwnd: WinDef.HWND, point: IntArray): Boolean
         fun IsZoomed(hwnd: WinDef.HWND): Boolean
@@ -138,8 +200,8 @@ object WinChrome {
     private var topHwnd: WinDef.HWND? = null
 
     private const val BUTTON_WIDTH_DP = 46
-    private const val BUTTON_HEIGHT_DP = 32
-    const val DRAG_HEIGHT_DP = 40
+    private const val BUTTON_HEIGHT_DP = 36
+    const val DRAG_HEIGHT_DP = 36
 
     private fun hwndOf(window: Window): WinDef.HWND = WinDef.HWND(Pointer(Native.getComponentID(window)))
 
@@ -427,7 +489,7 @@ object WinChrome {
         // caption buttons
         val bw = (BUTTON_WIDTH_DP * scale).toInt()
         val bh = (BUTTON_HEIGHT_DP * scale).toInt()
-        if (y < bh && !pip) {
+        if (y < bh && !pip && !captionHidden) {
             val fromRight = width - x
             when {
                 fromRight in 0 until bw -> return HTCLOSE
@@ -442,6 +504,14 @@ object WinChrome {
             if (!inControl) return HTCAPTION
         }
         return HTCLIENT
+    }
+
+    /** Dev: maximize or restore the window */
+    fun toggleMaximized(on: Boolean) {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        api.ShowWindow(hwnd, if (on) 3 else 9)
+        maximized = api.IsZoomed(hwnd)
     }
 
     fun isInstalled(): Boolean = enabled

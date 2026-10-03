@@ -165,6 +165,16 @@ object JcefRuntime {
      * gets the last snapshot and a refresh runs beside it.
      */
     fun allCookies(timeoutMs: Long = 5000): List<CefCookie> {
+        // A running browser answers in milliseconds (the sentinel cookie makes the visitor run even for an empty jar), so the UI
+        // thread reads the real jar, briefly. Logins read the cookie their page has just set in onPageFinished (FebBox `ui`
+        // in StreamPlay / CineStream): the last snapshot did not have it yet and the token was never saved.
+        if (EventQueue.isDispatchThread() && isReady) {
+            val fresh = runCatching { readCookies(700) }.getOrNull()
+            if (fresh != null && fresh.isNotEmpty()) {
+                cookieSnapshot.set(fresh)
+                return fresh
+            }
+        }
         if (EventQueue.isDispatchThread()) {
             if (cookieRefreshPosted.compareAndSet(false, true)) {
                 cookieReads.execute {
@@ -182,6 +192,17 @@ object JcefRuntime {
         return fresh
     }
 
+    /** Reads the jar into the snapshot (off the UI thread, at most [timeoutMs]), then runs [then] */
+    fun refreshCookiesThen(timeoutMs: Long = 3000, then: () -> Unit) {
+        cookieReads.execute {
+            try {
+                runCatching { cookieSnapshot.set(readCookies(timeoutMs)) }
+            } finally {
+                then()
+            }
+        }
+    }
+
     private fun readCookies(timeoutMs: Long): List<CefCookie> {
         val cm = cookieManager() ?: return emptyList()
         val result = ArrayList<CefCookie>()
@@ -193,7 +214,7 @@ object JcefRuntime {
         }
         if (!cm.visitAllCookies(visitor)) return emptyList()
         latch.await(timeoutMs, TimeUnit.MILLISECONDS)
-        return synchronized(result) { result.filter { it.domain != "cloudstream-cookie-sentinel.invalid" } }
+        return synchronized(result) { result.filter { it.domain?.removePrefix(".") != "cloudstream-cookie-sentinel.invalid" } }
     }
 
     private fun domainMatches(host: String, domain: String): Boolean {

@@ -141,7 +141,7 @@ object SettingsGeneralScreen : SearchableSettings {
                     title = stringResource(R.string.preferred_media_settings),
                     icon = painterResource(R.drawable.movie_edit_24px),
                     preference = settings.provider.preferredMedia,
-                    entries = TvType.entries.associate {
+                    entries = TvType.entries.filter { it != TvType.Torrent }.associate {
                         it.ordinal.toString() to stringResource(it.toStringRes())
                     }
                         // Ok this looks strange af, but we do this to avoid double movie

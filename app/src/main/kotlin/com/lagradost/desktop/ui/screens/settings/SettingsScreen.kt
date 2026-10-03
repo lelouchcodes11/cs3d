@@ -27,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -61,15 +63,15 @@ import com.lagradost.desktop.ui.shell.TopBarHeight
 import com.lagradost.desktop.update.AppUpdater
 import com.mihon.presentation.settings.Preference
 
-private enum class Page(val id: String, val title: String, val glyph: String, val hidden: Boolean = false) {
-    General("general", "General", Icons.Settings),
-    Player("player", "Player", Icons.Play),
-    Appearance("ui", "Appearance", Icons.Theme),
-    Updates("updates", "Updates & backup", Icons.Update),
-    Accounts("account", "Accounts & security", Icons.Person),
-    About("about", "About", Icons.Info),
+private enum class Page(val id: String, val title: String, val glyph: String, val tint: Long, val about: String, val hidden: Boolean = false) {
+    General("general", "General", Icons.Settings, 0xFF6E7BF2, "Language, providers, downloads and behaviour"),
+    Player("player", "Player", Icons.Play, 0xFFE5484D, "Playback, sources, subtitles and controls"),
+    Appearance("ui", "Appearance", Icons.Theme, 0xFFD6409F, "Theme, colours, layout and motion"),
+    Updates("updates", "Updates & backup", Icons.Update, 0xFF30A46C, "App and extension updates, backups"),
+    Accounts("account", "Accounts & security", Icons.Person, 0xFFF76B15, "Sync accounts, profiles and lock"),
+    About("about", "About", Icons.Info, 0xFF00A2C7, "Version, credits and links"),
     /** Reached from Player, Subtitles; no entry of its own in the list */
-    Subtitles("subtitles", "Subtitles", Icons.Subtitles, hidden = true),
+    Subtitles("subtitles", "Subtitles", Icons.Subtitles, 0xFFFFB224, "How subtitles look", hidden = true),
 }
 
 /** Lets a preference row (built by upstream code) ask the settings screen to open a page */
@@ -83,14 +85,21 @@ private val androidOnly = setOf(
     "Double tap to seek", "Double tap to pause", "LongPress Speed Toggle", "Extra brightness", "Player Shown - Seek Amount",
     "Player Hidden - Seek Amount", "Chromecast Subtitles", "Primary color", "App theme", "App Layout", "Overscan",
     "Install pre-release version", "APK Installer", "Confirm before exiting",
+    // no meaning (or no effect) in this app: the player has its own controls, there is no torrent, TV or log sharing
+    "Give a benene to the devs", "Seekbar preview", "Software decoding", "Test all Extensions", "Show cast panel",
+    "Show Player Metadata Overlay", "Show real time clock", "Random Button", "Hide selected video quality in search results",
+    "Poster title location", "Poster size", "Player resize button", "Playback speed", "Start videos paused",
+    "Video cache on disk", "Video buffer size", "Video buffer length",
 )
-private val androidOnlyGroups = setOf("Android TV", "Looks")
+private val androidOnlyGroups = setOf("Android TV", "Looks", "Links", "Gestures", "Layout", "Toggle UI elements on poster")
+
+private fun denied(title: String) = title in androidOnly || title.startsWith("Show Logcat")
 
 @Composable
 private fun prefsOf(page: Page): List<Preference> = rawPrefsOf(page).mapNotNull { p ->
     when (p) {
-        is Preference.PreferenceGroup -> if (p.title in androidOnlyGroups) null else p.copy(preferenceItems = p.preferenceItems.filter { it.title !in androidOnly }).takeIf { it.preferenceItems.isNotEmpty() }
-        is Preference.PreferenceItem<*, *> -> if (p.title in androidOnly) null else p
+        is Preference.PreferenceGroup -> if (p.title in androidOnlyGroups) null else p.copy(preferenceItems = p.preferenceItems.filter { !denied(it.title) }).takeIf { it.preferenceItems.isNotEmpty() }
+        is Preference.PreferenceItem<*, *> -> if (denied(p.title)) null else p
     }
 }
 
@@ -126,16 +135,15 @@ fun SettingsScreen(route: Route.Settings) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 800.dp
         Row(Modifier.fillMaxSize().padding(top = TopBarHeight)) {
-            Column(Modifier.width(if (compact) 200.dp else 270.dp).fillMaxHeight().padding(start = 12.dp, end = 8.dp, top = 8.dp)) {
+            Column(Modifier.width(if (compact) 220.dp else 290.dp).fillMaxHeight().padding(start = 20.dp, end = 8.dp, top = 12.dp)) {
                 AccountHeader()
                 Box(Modifier.height(12.dp))
                 TextBox(query, { query = it }, Modifier.fillMaxWidth(), placeholder = "Find a setting", leadingIcon = Icons.Search)
                 Box(Modifier.height(12.dp))
-                Page.entries.filter { !it.hidden }.forEach { p -> CategoryRow(p.title, p.glyph, selected = query.isEmpty() && (p == page || (page == Page.Subtitles && p == Page.Player))) { query = ""; page = p } }
+                Page.entries.filter { !it.hidden }.forEach { p -> CategoryRow(p.title, p.glyph, Color(p.tint), selected = query.isEmpty() && (p == page || (page == Page.Subtitles && p == Page.Player))) { query = ""; page = p } }
                 Box(Modifier.weight(1f))
-                CategoryRow("Extensions", Icons.Extensions, selected = false) { Navigator.goTab(Tab.Extensions) }
+                CategoryRow("Extensions", Icons.Extensions, Color(0xFF8E4EC6), selected = false) { Navigator.goTab(Tab.Extensions) }
             }
-            Box(Modifier.width(1.dp).fillMaxHeight().background(c.divider))
             val scroll = rememberScrollState()
             Box(Modifier.weight(1f).fillMaxHeight()) {
             FluentScrollbar(scroll)
@@ -157,7 +165,13 @@ fun SettingsScreen(route: Route.Settings) {
 @Composable
 private fun PageContent(page: Page) {
     if (page == Page.Subtitles) Button("Player", { SettingsNav.page = "player" }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, icon = Icons.ChevronLeft, modifier = Modifier.padding(bottom = 4.dp))
-    FText(page.title, style = Fluent.type.title, modifier = Modifier.padding(bottom = 16.dp))
+    Row(Modifier.padding(bottom = 22.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(52.dp).shadow(14.dp, RoundedCornerShape(FluentShapes.card), ambientColor = Color(page.tint), spotColor = Color(page.tint)).background(Brush.linearGradient(listOf(Color(page.tint), Color(page.tint).copy(alpha = 0.6f))), RoundedCornerShape(FluentShapes.card)), contentAlignment = Alignment.Center) {
+            Icon(page.glyph, size = 22.dp, tint = Color.White)
+        }
+        Box(Modifier.width(16.dp))
+        com.lagradost.desktop.ui.fluent.PageHeader(page.title, subtitle = page.about)
+    }
     when (page) {
         Page.About -> AboutPage()
         Page.Subtitles -> SubtitleStyleEditor()
@@ -206,22 +220,22 @@ private fun AccountHeader() {
 }
 
 @Composable
-private fun CategoryRow(title: String, glyph: String, selected: Boolean, onClick: () -> Unit) {
+private fun CategoryRow(title: String, glyph: String, tint: Color, selected: Boolean, onClick: () -> Unit) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.control)
-    Box(Modifier.padding(vertical = 1.dp).fillMaxWidth().height(40.dp)) {
-        Row(
-            Modifier.fillMaxWidth().height(40.dp).clip(shape)
-                .background(if (selected || hovered) c.subtleHover else Color.Transparent, shape)
-                .fluentClickable(source, true, shape, Role.Tab, onClick).padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(glyph, size = 16.dp)
-            FText(title, maxLines = 1)
+    val shape = RoundedCornerShape(FluentShapes.card)
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) c.accent.copy(alpha = if (c.dark) 0.16f else 0.12f) else if (hovered) c.subtleHover else Color.Transparent, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(160))
+    Row(
+        Modifier.padding(vertical = 2.dp).fillMaxWidth().height(48.dp).clip(shape)
+            .background(bg, shape)
+            .fluentClickable(source, true, shape, Role.Tab, onClick).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(32.dp).background(Brush.linearGradient(listOf(tint, tint.copy(alpha = 0.65f))), RoundedCornerShape(FluentShapes.small)), contentAlignment = Alignment.Center) {
+            Icon(glyph, size = 15.dp, tint = Color.White)
         }
-        if (selected) Box(Modifier.align(Alignment.CenterStart).size(3.dp, 16.dp).background(c.accent, RoundedCornerShape(2.dp)))
+        FText(title, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, maxLines = 1)
     }
 }
 
@@ -248,6 +262,7 @@ private fun AppearanceCards() {
             }
         }
     }
+    LayoutAndStyleCards()
 }
 
 @Composable

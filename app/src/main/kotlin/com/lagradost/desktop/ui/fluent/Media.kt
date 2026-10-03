@@ -133,7 +133,9 @@ fun PosterCard(
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val lift by animateFloatAsState(if (hovered) 1.03f else 1f, tween(120))
+    val zoomOn = Appearance.hoverZoom
+    val lift by animateFloatAsState(if (hovered && zoomOn) 1.055f else 1f, FluentMotion.tweenIn(260))
+    val glow by animateFloatAsState(if (hovered) 1f else 0f, FluentMotion.tweenIn(220))
     val shape = RoundedCornerShape(FluentShapes.card)
     val body = @Composable {
         Column(
@@ -147,16 +149,20 @@ fun PosterCard(
                 Modifier
                     .fillMaxWidth()
                     .aspectRatio(if (landscape) 16f / 9f else 2f / 3f)
-                    .graphicsLayer { scaleX = lift; scaleY = lift }
+                    .graphicsLayer { scaleX = lift; scaleY = lift; shadowElevation = 22f * glow * density; this.shape = shape; clip = false }
                     .clip(shape)
                     .border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, shape),
             ) {
-                PosterImage(item, Modifier.fillMaxSize())
-                // hover: scrim + play
-                if (hovered) {
-                    Box(Modifier.fillMaxSize().background(Color(0x66000000)), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(44.dp).background(Color(0xB3000000), CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x55FFFFFF), CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Play, size = 18.dp, tint = Color.White)
+                PosterImage(item, Modifier.fillMaxSize().graphicsLayer { val s = 1f + 0.04f * glow; scaleX = s; scaleY = s })
+                // hover: a soft scrim from the bottom and a play button that rises in
+                if (glow > 0.01f) {
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = glow }.background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color(0xB3000000))), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier.graphicsLayer { translationY = (1f - glow) * 14f * density; val s = 0.85f + 0.15f * glow; scaleX = s; scaleY = s }
+                                .size(46.dp).background(c.accent, CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x55FFFFFF), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Play, size = 18.dp, tint = c.onAccent)
                         }
                     }
                 }
@@ -183,7 +189,7 @@ fun PosterCard(
 
 @Composable
 private fun Overlay(text: String) {
-    Box(Modifier.background(Color(0xB3000000), RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp)) {
+    Box(Modifier.background(Color(0xA6000000), RoundedCornerShape(50)).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x26FFFFFF), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
         FText(text, style = Fluent.type.caption, color = Color.White, maxLines = 1, softWrap = false)
     }
 }
@@ -193,9 +199,9 @@ fun PosterSkeleton(width: Dp, landscape: Boolean = false) {
     Column(Modifier.width(width)) {
         Box(Modifier.fillMaxWidth().aspectRatio(if (landscape) 16f / 9f else 2f / 3f).clip(RoundedCornerShape(FluentShapes.card)).shimmer())
         Box(Modifier.height(8.dp))
-        Box(Modifier.fillMaxWidth(0.8f).height(14.dp).clip(RoundedCornerShape(4.dp)).shimmer())
+        Box(Modifier.fillMaxWidth(0.8f).height(14.dp).clip(RoundedCornerShape(FluentShapes.control)).shimmer())
         Box(Modifier.height(4.dp))
-        Box(Modifier.fillMaxWidth(0.4f).height(10.dp).clip(RoundedCornerShape(4.dp)).shimmer())
+        Box(Modifier.fillMaxWidth(0.4f).height(10.dp).clip(RoundedCornerShape(FluentShapes.control)).shimmer())
     }
 }
 

@@ -47,6 +47,12 @@ class SearchViewModel : ViewModel() {
     private val _searchSuggestions: MutableLiveData<List<String>> = MutableLiveData()
     val searchSuggestions: LiveData<List<String>> get() = _searchSuggestions
 
+    // desktop: which extensions are still searching (the page shows each extension as soon as it answers)
+    data class SearchProgress(val pending: List<String>, val total: Int)
+
+    private val _progress: MutableLiveData<SearchProgress> = MutableLiveData(SearchProgress(emptyList(), 0))
+    val progress: LiveData<SearchProgress> get() = _progress
+
     private var suggestionJob: Job? = null
 
     private var repos = apis.withLock { apis.map { APIRepository(it) } }
@@ -54,7 +60,14 @@ class SearchViewModel : ViewModel() {
     fun clearSearch() {
         _searchResponse.postValue(Resource.Success(ExpandableSearchList(emptyList(), 0, false)))
         _currentSearch.postValue(emptyMap())
-        expandableSearches.clear()
+        _progress.postValue(SearchProgress(emptyList(), 0))
+        synchronized(expandableSearches) { expandableSearches.clear() }
+    }
+
+    // a copy, so the page sees a changed value (the live map is edited in place by the searches that are running)
+    private fun publishSearches() {
+        val copy = synchronized(expandableSearches) { LinkedHashMap(expandableSearches.mapValues { it.value.copy() }) }
+        _currentSearch.postValue(copy)
     }
 
     var lastQuery: String? = null
@@ -165,8 +178,8 @@ class SearchViewModel : ViewModel() {
                 current.hasNext = false
             }
 
-            _searchResponse.postValue(Resource.Success(bundleSearch(expandableSearches)))
-            _currentSearch.postValue(expandableSearches)
+            _searchResponse.postValue(Resource.Success(synchronized(expandableSearches) { bundleSearch(expandableSearches) }))
+            publishSearches()
         }
 
         lock -= name
@@ -233,16 +246,20 @@ class SearchViewModel : ViewModel() {
             }
 
             refreshRepos()
+            val chosen = repos.filter { a ->
+                (ignoreSettings || (providersActive.isEmpty() || providersActive.contains(a.name))) && (!isQuickSearch || a.hasQuickSearch)
+            }
+            // desktop: every extension that answers is published at once, the ones still searching stay listed as pending
+            val pending = LinkedHashSet(chosen.map { it.name })
+            synchronized(expandableSearches) { expandableSearches.clear() }
             _searchResponse.postValue(Resource.Loading())
             _currentSearch.postValue(emptyMap())
-            expandableSearches.clear()
+            _progress.postValue(SearchProgress(pending.toList(), chosen.size))
 
             lastQuery = query
 
             withContext(Dispatchers.IO) { // This interrupts UI otherwise
-                repos.filter { a ->
-                    (ignoreSettings || (providersActive.isEmpty() || providersActive.contains(a.name))) && (!isQuickSearch || a.hasQuickSearch)
-                }.amap { a -> // Parallel
+                chosen.amap { a -> // Parallel
                     var search = if (isQuickSearch) a.quickSearch(query) else a.search(query, 1)
                     // desktop: a provider that failed (timeout, dropped connection, busy host) is asked again, up to twice;
                     // flaky hosts usually answer the second time, otherwise the user sees results from "some sources only"
@@ -255,19 +272,22 @@ class SearchViewModel : ViewModel() {
                     }
                     if (search is Resource.Failure) android.util.Log.w("SearchVM", "${a.name} failed: ${search.errorString.take(200)}")
                     if (currentSearchIndex != currentIndex) return@amap
-                    if (search is Resource.Success) {
-                        val searchValue = search.value
-                        expandableSearches[a.name] =
-                            ExpandableSearchList(searchValue.items, 1, searchValue.hasNext)
+                    synchronized(expandableSearches) {
+                        if (search is Resource.Success && search.value.items.isNotEmpty()) {
+                            val searchValue = search.value
+                            expandableSearches[a.name] =
+                                ExpandableSearchList(searchValue.items, 1, searchValue.hasNext)
+                        }
+                        pending.remove(a.name)
                     }
-
-                    _currentSearch.postValue(expandableSearches)
+                    publishSearches()
+                    _progress.postValue(SearchProgress(synchronized(expandableSearches) { pending.toList() }, chosen.size))
                 }
 
                 if (currentSearchIndex != currentIndex) return@withContext // this should prevent rewrite of existing data bug
 
-                _currentSearch.postValue(expandableSearches)
-                val list = bundleSearch(expandableSearches)
+                publishSearches()
+                val list = synchronized(expandableSearches) { bundleSearch(expandableSearches) }
 
                 _searchResponse.postValue(Resource.Success(list))
             }

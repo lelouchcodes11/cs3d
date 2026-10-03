@@ -52,16 +52,25 @@ object WindowsProtocols {
         return null
     }
 
+    /**
+     * Writes the scheme with the registry API. (It used to run `reg add`: Java does not escape the quotes inside an argument on
+     * Windows, so the command value `"<exe>" "%1"` was "Invalid syntax", only the empty scheme keys were written, and Windows had
+     * no program to hand `cloudstreamapp://` links to: AniList / MAL / Simkl logins never came back to the app.)
+     */
     private fun registerScheme(scheme: String, exePath: String) {
         try {
-            val baseKey = "HKCU\\Software\\Classes\\$scheme"
-            val commandKey = "$baseKey\\shell\\open\\command"
-            val commandVal = "\"$exePath\" \"%1\""
-
-            ProcessBuilder("reg", "add", baseKey, "/ve", "/d", "URL:$scheme Protocol", "/f").start().waitFor()
-            ProcessBuilder("reg", "add", baseKey, "/v", "URL Protocol", "/d", "", "/f").start().waitFor()
-            ProcessBuilder("reg", "add", commandKey, "/ve", "/d", commandVal, "/f").start().waitFor()
-            Log.d(TAG, "Registered protocol: $scheme -> $commandVal")
+            val root = com.sun.jna.platform.win32.WinReg.HKEY_CURRENT_USER
+            val base = "Software\\Classes\\$scheme"
+            val command = "$base\\shell\\open\\command"
+            val value = "\"$exePath\" \"%1\""
+            com.sun.jna.platform.win32.Advapi32Util.registryCreateKey(root, "Software\\Classes", scheme)
+            com.sun.jna.platform.win32.Advapi32Util.registrySetStringValue(root, base, "", "URL:$scheme Protocol")
+            com.sun.jna.platform.win32.Advapi32Util.registrySetStringValue(root, base, "URL Protocol", "")
+            com.sun.jna.platform.win32.Advapi32Util.registryCreateKey(root, base, "shell\\open\\command")
+            com.sun.jna.platform.win32.Advapi32Util.registrySetStringValue(root, command, "", value)
+            // read back: a failed write must show in the log
+            val written = com.sun.jna.platform.win32.Advapi32Util.registryGetStringValue(root, command, "")
+            if (written == value) Log.i(TAG, "Registered protocol: $scheme -> $value") else Log.w(TAG, "Protocol $scheme reads back as $written")
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to register scheme $scheme: $t")
         }

@@ -73,11 +73,11 @@ private fun fluentColors(dark: Boolean, a: AccentPalette): FluentColors =
         dark = true,
         accent = a.light2, accentHover = a.light2.copy(alpha = 0.9f), accentPressed = a.light2.copy(alpha = 0.8f),
         onAccent = Color.Black, accentText = a.light3,
-        bg = Color(0xFF202020), bgPane = Color(0xFF1C1C1C), layer = Color(0xFF272727),
-        card = Color(0x0DFFFFFF), cardHover = Color(0x15FFFFFF), cardPressed = Color(0x0AFFFFFF),
+        bg = Color(0xFF0E0F13), bgPane = Color(0xFF0E0F13), layer = Color(0xFF15161B),
+        card = Color(0x0CFFFFFF), cardHover = Color(0x16FFFFFF), cardPressed = Color(0x09FFFFFF),
         control = Color(0x0FFFFFFF), controlHover = Color(0x15FFFFFF), controlPressed = Color(0x08FFFFFF), controlDisabled = Color(0x0BFFFFFF),
         subtleHover = Color(0x0FFFFFFF), subtlePressed = Color(0x0AFFFFFF),
-        flyout = Color(0xFF2C2C2C), stroke = Color(0x14FFFFFF), strokeStrong = Color(0x33FFFFFF), divider = Color(0x15FFFFFF),
+        flyout = Color(0xFF1D1F25), stroke = Color(0x14FFFFFF), strokeStrong = Color(0x33FFFFFF), divider = Color(0x15FFFFFF),
         text = Color(0xFFFFFFFF), textSecondary = Color(0xC5FFFFFF), textTertiary = Color(0x87FFFFFF), textDisabled = Color(0x5DFFFFFF),
         success = Color(0xFF6CCB5F), caution = Color(0xFFFCE100), critical = Color(0xFFFF99A4), scrim = Color(0x99000000),
     ) else FluentColors(
@@ -142,10 +142,12 @@ object FluentFonts {
     }
 }
 
+/** Corner radii, from the user's corner radius ([Appearance.cornerRadius]): read in composition, so a change redraws */
 object FluentShapes {
-    val control = 4.dp
-    val card = 8.dp
-    val overlay = 8.dp
+    val control: androidx.compose.ui.unit.Dp get() = (Appearance.cornerRadius * 0.5f).dp
+    val card: androidx.compose.ui.unit.Dp get() = Appearance.cornerRadius.dp
+    val overlay: androidx.compose.ui.unit.Dp get() = (Appearance.cornerRadius * 1.2f).coerceAtMost(28f).dp
+    val small: androidx.compose.ui.unit.Dp get() = (Appearance.cornerRadius * 0.7f).dp
 }
 
 val LocalFluentColors = compositionLocalOf<FluentColors> { error("FluentTheme missing") }
@@ -213,7 +215,27 @@ fun FluentTheme(content: @Composable () -> Unit) {
         androidx.compose.ui.graphics.lerp(override, Color.White, 0.15f), override, androidx.compose.ui.graphics.lerp(override, Color.Black, 0.15f),
         androidx.compose.ui.graphics.lerp(override, Color.Black, 0.3f), androidx.compose.ui.graphics.lerp(override, Color.Black, 0.45f),
     )
-    val colors = remember(dark, accent) { fluentColors(dark, accent) }
+    val black = Appearance.backdrop == Backdrop.Black
+    val colors = remember(dark, accent, black) { fluentColors(dark, accent).let { if (dark && black) it.oled() else it } }
     val type = remember { fluentType(FluentFonts.text) }
     CompositionLocalProvider(LocalFluentColors provides colors, LocalFluentType provides type, content = content)
 }
+
+/** Everything but the window's caption buttons (which the title bar hit test places at the Windows scale) follows the UI scale */
+@Composable
+fun ScaledContent(content: @Composable () -> Unit) {
+    val base = androidx.compose.ui.platform.LocalDensity.current
+    val scale = Appearance.uiScale
+    val density = remember(base, scale) { if (scale == 1f) base else androidx.compose.ui.unit.Density(base.density * scale, base.fontScale) }
+    CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides density, content = content)
+}
+
+/** Pure black surfaces (OLED) with the same text and accent colours */
+private fun FluentColors.oled() = FluentColors(
+    dark = dark, accent = accent, accentHover = accentHover, accentPressed = accentPressed, onAccent = onAccent, accentText = accentText,
+    bg = Color.Black, bgPane = Color.Black, layer = Color(0xFF080808), card = Color(0x0AFFFFFF), cardHover = Color(0x12FFFFFF), cardPressed = Color(0x08FFFFFF),
+    control = control, controlHover = controlHover, controlPressed = controlPressed, controlDisabled = controlDisabled,
+    subtleHover = subtleHover, subtlePressed = subtlePressed, flyout = Color(0xFF151515), stroke = stroke, strokeStrong = strokeStrong, divider = divider,
+    text = text, textSecondary = textSecondary, textTertiary = textTertiary, textDisabled = textDisabled,
+    success = success, caution = caution, critical = critical, scrim = scrim,
+)

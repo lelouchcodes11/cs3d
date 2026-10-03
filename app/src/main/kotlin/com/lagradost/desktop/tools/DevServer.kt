@@ -510,6 +510,42 @@ object DevServer {
                 q["set"]?.let { p.setMpvProperty(name, it) }
                 ok(ex, "$name=${p.getMpvPropertyString(name)}")
             }
+            "/videostats" -> {
+                // dev: how the video frames keep up (render thread) and what mpv says about timing
+                val p = com.lagradost.desktop.player.MpvPlayer.active ?: return ok(ex, "no player")
+                val surface = com.lagradost.desktop.ui.screens.player.PlayerSession.active?.surface
+                val props = listOf("time-pos", "speed", "avsync", "total-avsync-change", "frame-drop-count", "decoder-frame-drop-count", "vo-delayed-frame-count", "mistimed-frame-count", "container-fps", "estimated-vf-fps", "video-params/w", "video-params/h", "hwdec-current", "paused-for-cache", "demuxer-cache-duration")
+                ok(ex, "surface: ${surface?.stats?.last}\n" + props.joinToString("\n") { "$it=${p.getMpvPropertyString(it)}" })
+            }
+            "/mpvsample" -> {
+                // dev: hitches in the picture and in the audio timeline: /mpvsample?s=30 samples the frame counter, time-pos and audio-pts every 5 ms and
+                // lists every gap of 70+ ms between frames and every jump of the audio clock against the wall clock
+                val p = com.lagradost.desktop.player.MpvPlayer.active ?: return ok(ex, "no player")
+                val seconds = q["s"]?.toInt() ?: 30
+                val sb = StringBuilder()
+                val t0 = System.nanoTime()
+                var lastFrame = -1L; var lastFrameAt = 0.0
+                var lastAudio = Double.NaN; var lastAudioAt = 0.0
+                var frames = 0; var gaps = 0; var jumps = 0; var maxGap = 0.0
+                while ((System.nanoTime() - t0) / 1e9 < seconds) {
+                    val now = (System.nanoTime() - t0) / 1e9
+                    val frame = p.getMpvPropertyString("estimated-frame-number")?.toLongOrNull()
+                    if (frame != null && frame != lastFrame) {
+                        if (lastFrame >= 0) { frames++; val gap = (now - lastFrameAt) * 1000; if (gap > maxGap) maxGap = gap; if (gap >= 70) { gaps++; sb.append("frame gap %.0f ms at %.2f s (frame %d)\n".format(gap, now, frame)) } }
+                        lastFrame = frame; lastFrameAt = now
+                    }
+                    val audio = p.getMpvPropertyString("audio-pts")?.toDoubleOrNull()
+                    if (audio != null && audio != lastAudio) {
+                        if (!lastAudio.isNaN()) {
+                            val drift = (audio - lastAudio) - (now - lastAudioAt)
+                            if (kotlin.math.abs(drift) > 0.08) { jumps++; sb.append("audio clock jump %+.0f ms at %.2f s\n".format(drift * 1000, now)) }
+                        }
+                        lastAudio = audio; lastAudioAt = now
+                    }
+                    Thread.sleep(5)
+                }
+                ok(ex, sb.toString() + "frames=$frames gaps(70+ms)=$gaps maxGap=%.0f ms audioJumps=$jumps".format(maxGap))
+            }
             "/osdl" -> {
                 // dev: the OpenSubtitles download request in several variants (which one is answered with the link and which with a block page)
                 val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
@@ -576,6 +612,106 @@ object DevServer {
                     "results=${list.size} first=${list.take(3).map { it.name }}\n" + (list.getOrNull(n)?.let { "apply[$n]: " + s.applyOnlineSubtitle(it) } ?: "no result $n")
                 }
                 ok(ex, out)
+            }
+            "/vlctest" -> {
+                // dev: hand a link to VLC the way the VLC action does: /vlctest?url=https://...mp4 (VLC opens; it quits itself after 4 s)
+                val link = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.utils.newExtractorLink("test", "test", q["url"]!!) {} }
+                val outcome = com.lagradost.desktop.player.ExternalPlayers.openInVlc(link, "CloudStream test", emptyList(), null, listOf("--play-and-exit", "--run-time=4", "--no-audio"))
+                ok(ex, "ok=${outcome.ok} ${outcome.message ?: ""} vlc=${com.lagradost.desktop.player.ExternalPlayers.vlcPath()}")
+            }
+            "/windows" -> {
+                // dev: the AWT windows of the app (class, title, shown, bounds in screen px)
+                ok(ex, java.awt.Window.getWindows().joinToString("\n") { w -> "${w.javaClass.simpleName} '${(w as? java.awt.Dialog)?.title ?: (w as? java.awt.Frame)?.title ?: ""}' shown=${w.isShowing} ${w.bounds.x},${w.bounds.y} ${w.bounds.width}x${w.bounds.height}" })
+            }
+            "/playurl" -> {
+                // dev: play a plain link in the player to look at its controls: /playurl?url=https://...mp4&name=Title
+                val link = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.utils.newExtractorLink(q["name"] ?: "Test source", q["name"] ?: "Test source", q["url"]!!) { quality = 1080 } }
+                onEdt {
+                    com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(link), emptyList()), 0, null))
+                }
+                ok(ex)
+            }
+            "/pref" -> {
+                // dev: set a string preference: /pref?key=player_default_key&value=...
+                val act = com.lagradost.desktop.DesktopBootstrap.activity
+                if (q["value"] != null) androidx.preference.PreferenceManager.getDefaultSharedPreferences(act).edit().putString(q["key"]!!, q["value"]!!).apply()
+                val now = androidx.preference.PreferenceManager.getDefaultSharedPreferences(act).getString(q["key"]!!, null)
+                ok(ex, "value=$now action=${com.lagradost.cloudstream3.ui.result.EpisodeAdapter.getPlayerAction(act)} ids=${com.lagradost.cloudstream3.actions.VideoClickActionHolder.allVideoClickActions.map { it.uniqueId() }}")
+            }
+            "/maximize" -> {
+                // dev: /maximize?on=0 restores the window, on=1 maximizes it
+                com.lagradost.desktop.platform.WinChrome.toggleMaximized(q["on"] != "0")
+                ok(ex)
+            }
+            "/pointer" -> {
+                // dev: pretend the pointer is at window pixel (x, y) for the auto-hiding window bar: /pointer?x=900&y=2 ; /pointer?off=1 goes back to the real one
+                com.lagradost.desktop.platform.WinChrome.debugPointer = if (q["off"] != null) null else intArrayOf(q["x"]!!.toInt(), q["y"]!!.toInt())
+                ok(ex)
+            }
+            "/link" -> {
+                // dev: a deep link as if Windows had started the app with it (OAuth redirects): /link?u=cloudstreamapp://anilistlogin%23access_token=x
+                val u = q["u"]!!
+                onEdt { com.lagradost.desktop.NativeLinks.open(u) }
+                ok(ex)
+            }
+            "/cookietest" -> {
+                // dev: what a plugin login sees: a WebView page sets a cookie, onPageFinished reads it with CookieManager.getCookie (UI thread)
+                val url = q["url"] ?: "https://httpbin.org/cookies/set?ui=test${System.currentTimeMillis() % 100000}"
+                val result = java.util.concurrent.CompletableFuture<String>()
+                onEdt {
+                    val wv = android.webkit.WebView(com.lagradost.desktop.DesktopBootstrap.activity)
+                    wv.getSettings().setJavaScriptEnabled(true)
+                    wv.setWebViewClient(object : android.webkit.WebViewClient() {
+                        override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                            val c = android.webkit.CookieManager.getInstance().getCookie(url)
+                            val jar = com.lagradost.desktop.runtime.web.JcefRuntime.allCookies().joinToString { it.domain + "|" + it.name + "|" + it.path }
+                            result.complete("page=$url cookie=$c jar=[$jar] ready=${com.lagradost.desktop.runtime.web.JcefRuntime.isReady}")
+                            view?.destroy()
+                        }
+                    })
+                    wv.loadUrl(url)
+                }
+                ok(ex, runCatching { result.get(40, java.util.concurrent.TimeUnit.SECONDS) }.getOrElse { "timeout: ${it.message}" })
+            }
+            "/look" -> {
+                // dev: change the appearance without saving it: /look?nav=Top&radius=20&backdrop=Solid&player=Classic&style=Labels
+                val a = com.lagradost.desktop.ui.fluent.Appearance
+                onEdt {
+                    q["nav"]?.let { v -> a.navPosition = com.lagradost.desktop.ui.fluent.NavPosition.valueOf(v) }
+                    q["style"]?.let { v -> a.navStyle = com.lagradost.desktop.ui.fluent.NavStyle.valueOf(v) }
+                    q["radius"]?.let { v -> a.cornerRadius = v.toInt() }
+                    q["backdrop"]?.let { v -> a.backdrop = com.lagradost.desktop.ui.fluent.Backdrop.valueOf(v) }
+                    q["player"]?.let { v -> a.playerStyle = com.lagradost.desktop.ui.fluent.PlayerStyle.valueOf(v) }
+                    q["scale"]?.let { v -> a.uiScale = v.toFloat() }
+                    q["poster"]?.let { v -> a.posterSize = com.lagradost.desktop.ui.fluent.PosterSize.valueOf(v) }
+                }
+                ok(ex, "nav=${a.navPosition} style=${a.navStyle} radius=${a.cornerRadius} backdrop=${a.backdrop} player=${a.playerStyle} scale=${a.uiScale}")
+            }
+            "/playlive" -> {
+                // dev: open a live channel in the player: /playlive?provider=livxow&link=WILLOW (first main-page item with such a link)
+                val providerName = q["provider"]!!.lowercase()
+                val wanted = q["link"]!!
+                val api = com.lagradost.cloudstream3.APIHolder.apis.firstOrNull { it.name.lowercase().contains(providerName) } ?: return ok(ex, "no provider")
+                val found = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    for (page in api.mainPage.take(3)) {
+                        val home = runCatching { api.getMainPage(1, com.lagradost.cloudstream3.MainPageRequest(page.name, page.data, page.horizontalImages)) }.getOrNull() ?: continue
+                        for (item in home.items.flatMap { it.list }.take(20)) {
+                            val data = when (val r = runCatching { api.load(item.url) }.getOrNull()) {
+                                is com.lagradost.cloudstream3.LiveStreamLoadResponse -> r.dataUrl
+                                is com.lagradost.cloudstream3.MovieLoadResponse -> r.dataUrl
+                                else -> null
+                            } ?: continue
+                            val links = java.util.Collections.synchronizedList(ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>())
+                            kotlinx.coroutines.withTimeoutOrNull(40_000) { runCatching { api.loadLinks(data, false, {}, { links.add(it) }) } }
+                            links.firstOrNull { it.name.contains(wanted, true) }?.let { return@runBlocking item.name to it }
+                        }
+                    }
+                    null
+                } ?: return ok(ex, "no such link")
+                onEdt {
+                    com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(found.second), emptyList()), 0, null))
+                }
+                ok(ex, "playing ${found.first} / ${found.second.name}")
             }
             "/provider" -> {
                 // dev: select the Home provider by name, optionally search in it only: /provider?name=Kisskh&q=squid

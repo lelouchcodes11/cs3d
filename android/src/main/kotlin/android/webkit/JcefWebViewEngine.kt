@@ -542,10 +542,14 @@ internal class JcefWebViewEngine(private val view: WebView) {
                 if (url == "about:blank" && lastUrl == null) return
                 lastUrl = url
                 progress = 100
-                main.post {
-                    view.chromeClient?.onProgressChanged(view, 100)
-                    view.client.onPageCommitVisible(view, url)
-                    view.client.onPageFinished(view, url)
+                // the cookies the page has just set are read before onPageFinished: logins look for their cookie there with
+                // CookieManager.getCookie (FebBox `ui` in StreamPlay / CineStream), and the UI thread only sees the last snapshot
+                com.lagradost.desktop.runtime.web.JcefRuntime.refreshCookiesThen {
+                    main.post {
+                        view.chromeClient?.onProgressChanged(view, 100)
+                        view.client.onPageCommitVisible(view, url)
+                        view.client.onPageFinished(view, url)
+                    }
                 }
                 setupExecutor.execute {
                     try {

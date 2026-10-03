@@ -32,6 +32,12 @@ object HlsProxy {
     private val headersById = ConcurrentHashMap<String, Map<String, String>>()
     private val keyCache = ConcurrentHashMap<String, String>()
 
+    // wrapped streams (by id) with a media playlist that has no end: live
+    private val liveIds = java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+
+    /** Whether a [wrap] address plays a live playlist (known once a media playlist was read) */
+    fun isLive(address: String): Boolean = address.substringAfter("h=", "").substringBefore("&").let { it.isNotEmpty() && it in liveIds }
+
     private val server: HttpServer by lazy {
         HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 32).apply {
             executor = Executors.newCachedThreadPool { r -> Thread(r, "HlsProxy").apply { isDaemon = true } }
@@ -125,6 +131,7 @@ object HlsProxy {
                 } else {
                     val text = String(bytes, Charsets.UTF_8)
                     val body = rewrite(text, url, id, headers).toByteArray(Charsets.UTF_8)
+                    if (text.contains("#EXTINF") && !text.contains("#EXT-X-ENDLIST")) liveIds.add(id)
                     future.complete(Fetched(200, body, text.contains("#EXT-X-ENDLIST")))
                 }
             } catch (t: Throwable) {

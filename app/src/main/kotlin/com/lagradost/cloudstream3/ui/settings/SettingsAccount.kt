@@ -393,6 +393,11 @@ class SettingsAccount : BasePreferenceFragmentCompat(), BiometricCallback {
 
         @UiThread
         fun addAccount(activity: Activity, api: AuthRepo) {
+            // desktop: AniList / MyAnimeList / Simkl need the keys of an API client the user registered (this build has none)
+            if (com.lagradost.cloudstream3.syncproviders.ApiKeys.missingFor(api.idPrefix).isNotEmpty()) {
+                com.lagradost.desktop.ui.showApiKeysDialog(api.name)
+                return
+            }
             try {
                 if (api.hasPin && !isLayout(PHONE)) {
                     showPin(activity, api)

@@ -18,6 +18,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import com.lagradost.desktop.ui.fluent.FluentShapes
+import com.lagradost.desktop.ui.fluent.glass
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.syncproviders.SyncAPI
@@ -79,10 +84,12 @@ fun LibraryScreen() {
                 menu = { card -> listOf(MenuItem("Open", Icons.Play) { openCard(card) }) },
                 header = {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        Column(Modifier.padding(bottom = 8.dp)) {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FText("Library", Modifier.weight(1f), style = Fluent.type.title)
-                                TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.width(220.dp), placeholder = "Search library", leadingIcon = Icons.Search)
+                        Column(Modifier.padding(bottom = 10.dp)) {
+                            com.lagradost.desktop.ui.fluent.PageHeader("Library", subtitle = "${titles?.sumOf { it.items.size } ?: 0} titles${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}")
+                            Box(Modifier.height(18.dp))
+                            Row(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)
+                                Box(Modifier.weight(0.01f))
                                 if (vm.sortingMethods.size > 1) ComboBox(
                                     vm.sortingMethods, vm.currentSortingMethod, { ctx.getString(it.stringRes) },
                                     { vm.sort(it, query.ifBlank { null }) }, icon = Icons.Sort, minWidth = 150.dp,
@@ -90,16 +97,16 @@ fun LibraryScreen() {
                                 if (apis.size > 1) ComboBox(apis, apiName?.takeIf { it in apis } ?: apis.firstOrNull(), { it }, { vm.switchList(it) }, icon = Icons.Cloud, minWidth = 140.dp)
                                 IconButton(Icons.Refresh, { vm.reloadPages(true) }, tooltip = "Refresh", kind = ButtonKind.Standard)
                             }
-                            Box(Modifier.height(12.dp))
+                            Box(Modifier.height(18.dp))
                             if (titles != null && titles.isNotEmpty()) {
-                                TabBar(titles.map { "${it.title.asStringNull(ctx) ?: ""}  ${it.items.size}" }, index, { vm.switchPage(it) })
+                                Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                                    com.lagradost.desktop.ui.fluent.PillTabs(titles.map { it.title.asStringNull(ctx) ?: "" }, index, { vm.switchPage(it) }, counts = titles.map { it.items.size })
+                                }
+                                Box(Modifier.height(8.dp))
                             }
                             if (items.isEmpty()) {
-                                Column(Modifier.fillMaxWidth().padding(vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(Icons.Library, size = 40.dp, tint = c.textTertiary)
-                                    FText("Nothing here yet", style = Fluent.type.subtitle)
-                                    FText("Use “Add to library” on a title to collect it in a list.", color = c.textSecondary)
-                                    Button("Browse titles", { Navigator.goTab(Tab.Home) }, kind = ButtonKind.Accent, icon = Icons.Home)
+                                com.lagradost.desktop.ui.fluent.EmptyState(Icons.Library, "Nothing here yet", "Use “Add to library” on a title to collect it in this list.") {
+                                    Button("Browse titles", { Navigator.goTab(Tab.Home) }, kind = ButtonKind.Accent, icon = Icons.Home, height = 36.dp)
                                 }
                             }
                         }

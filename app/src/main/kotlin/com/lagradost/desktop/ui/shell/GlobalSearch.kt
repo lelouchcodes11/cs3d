@@ -75,6 +75,8 @@ fun GlobalSearchBox(modifier: Modifier = Modifier, only: String? = null) {
             onSubmit = { submit(text) },
             onFocusChange = { focused = it },
             modifier = Modifier.fillMaxWidth(),
+            pill = true,
+            height = 38.dp,
         )
         if (focused && rows.isNotEmpty()) {
             Popup(popupPositionProvider = BelowAnchor(4), properties = PopupProperties(focusable = false)) {

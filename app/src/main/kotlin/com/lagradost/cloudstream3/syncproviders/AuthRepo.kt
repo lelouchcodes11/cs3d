@@ -44,9 +44,21 @@ abstract class AuthRepo(open val api: AuthAPI) {
 
     @Throws
     fun openOAuth2Page(): Boolean {
+        // desktop: without the user's own client ID the page says client_id=null / "Client authentication failed":
+        // ask for the keys first (Sign-in keys dialog) instead of opening a page that cannot work
+        if (ApiKeys.missingFor(idPrefix, browserFlow = true).isNotEmpty()) {
+            com.lagradost.desktop.ui.showApiKeysDialog(name)
+            return true
+        }
         val page = api.loginRequest() ?: return false
         synchronized(oauthPayload) {
             oauthPayload.put(idPrefix, page.payload)
+        }
+        // the service sends the browser back to http://localhost:52526/<service> (a page of this app), which hands the answer to the
+        // same login code as the old cloudstreamapp:// link did; that link still works for clients registered with it
+        com.lagradost.desktop.net.OAuthCallback.arm { link ->
+            com.lagradost.desktop.ui.DesktopUiHost.window?.let { it.isVisible = true; it.toFront() }
+            com.lagradost.desktop.NativeLinks.open(link)
         }
         openBrowser(page.url)
         return true

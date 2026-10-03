@@ -39,6 +39,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
@@ -72,6 +80,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lagradost.cloudstream3.ui.player.CSPlayerLoading
 import com.lagradost.cloudstream3.ui.player.PlayerGeneratorViewModel
 import com.lagradost.cloudstream3.ui.result.SyncViewModel
@@ -126,6 +135,7 @@ fun PlayerScreen(entry: Entry, route: Route.Player) {
             generator = route.generator,
             index = route.index,
             sync = entry.vms.get<SyncViewModel>(),
+            syncData = route.syncData,
             exit = { Navigator.back() },
         )
     }
@@ -182,6 +192,8 @@ private fun PlayerContent(s: PlayerSession) {
     var bottomBounds by remember { mutableStateOf<Rect?>(null) }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val paused = s.status != CSPlayerLoading.IsPlaying
+    var rootHeight by remember { mutableStateOf(0) }
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
     val fullscreen = AndroidRuntime.host.isFullscreen()
     val pip = com.lagradost.desktop.platform.WinChrome.pip
 
@@ -208,6 +220,8 @@ private fun PlayerContent(s: PlayerSession) {
         visible = false
     }
     LaunchedEffect(Unit) { focus.requestFocus() }
+    // subtitles stay above the controls
+    LaunchedEffect(visible, pip, rootHeight, density) { s.liftSubtitles(visible && !pip, rootHeight, density) }
     // the window changes size and may lose the keyboard focus when it enters or leaves full screen
     LaunchedEffect(fullscreen, pip) { delay(250); runCatching { focus.requestFocus() } }
     // the keyboard comes back to the player when a dialog (tracks, sources, search) closes
@@ -277,6 +291,7 @@ private fun PlayerContent(s: PlayerSession) {
             .fillMaxSize()
             .background(Color.Black)
             .onGloballyPositioned { origin = it.positionInRoot() }
+            .onSizeChanged { rootHeight = it.height }
             .focusRequester(focus)
             .onFocusChanged { rootFocused = it.hasFocus }
             .focusable()
@@ -325,43 +340,8 @@ private fun PlayerContent(s: PlayerSession) {
 
         if (pip) {
             PipControls(s, visible)
-        } else AnimatedVisibility(visible, enter = fadeIn(tween(167)), exit = fadeOut(tween(300))) {
-            Box(Modifier.fillMaxSize()) {
-                // top bar
-                Box(
-                    Modifier.align(Alignment.TopStart).fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent)))
-                        .padding(start = 12.dp, end = 16.dp + com.lagradost.desktop.ui.shell.captionInset, top = 12.dp, bottom = 40.dp),
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().onGloballyPositioned { topBounds = it.boundsInRoot() },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("playerBack"), tooltip = "Back (Esc)", size = 40.dp, iconSize = 18.dp, tint = Color.White)
-                        Box(Modifier.width(8.dp))
-                        Column(Modifier.weight(1f)) {
-                            FText(s.title, style = Fluent.type.subtitle, color = Color.White, maxLines = 1)
-                            s.episodeLabel?.let { FText(it, color = Color(0xCCFFFFFF), maxLines = 1) }
-                            // the source that plays, under the title
-                            s.sourceName?.let { name ->
-                                FText(listOfNotNull(name, s.resolution, if (s.loadingMore) "more sources loading…" else null).joinToString("  ·  "), style = Fluent.type.caption, color = Color(0x99FFFFFF), maxLines = 1)
-                            }
-                        }
-                    }
-                }
-                // bottom bar
-                Box(
-                    Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000))))
-                        .padding(horizontal = 20.dp).padding(top = 40.dp, bottom = 12.dp),
-                ) {
-                    Column(Modifier.fillMaxWidth().onGloballyPositioned { bottomBounds = it.boundsInRoot() }) {
-                        SeekBar(s)
-                        Box(Modifier.height(4.dp))
-                        ControlRow(s, fullscreen, { menusOpen += it }, { showEpisodes = !showEpisodes }, ::toggleFullscreen)
-                    }
-                }
-            }
+        } else AnimatedVisibility(visible, enter = fadeIn(tween(200)), exit = fadeOut(tween(350))) {
+            PlayerChrome(s, fullscreen, { menusOpen += it }, { showEpisodes = !showEpisodes }, ::toggleFullscreen, { topBounds = it }, { bottomBounds = it })
         }
 
         HudOverlay(s, Modifier.align(Alignment.TopCenter).padding(top = if (pip) 36.dp else 56.dp))
@@ -418,7 +398,10 @@ private fun VideoSurface(s: PlayerSession, modifier: Modifier) {
 
 @Composable
 private fun LoadingOverlay(s: PlayerSession) {
-    Box(Modifier.fillMaxSize().background(Color(0xE6101010)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF0B0B0B)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
+        // the title's artwork, softly, behind the progress
+        com.lagradost.desktop.ui.components.SoftImage(com.lagradost.desktop.ui.shell.ShellState.ambientUrl, com.lagradost.desktop.ui.shell.ShellState.ambientHeaders, Modifier.fillMaxSize(), alpha = 0.4f)
+        Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0x99000000), Color(0xE6000000)))))
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             ProgressRing(size = 56.dp, color = Color.White)
             FText(s.title, style = Fluent.type.subtitle, color = Color.White, maxLines = 2)
@@ -464,8 +447,12 @@ private fun BufferingRing(on: Boolean, modifier: Modifier) {
 /** A round "paused" mark in the middle of the picture; a click resumes */
 @Composable
 private fun PausedBadge(s: PlayerSession, modifier: Modifier) {
+    val appear = remember { androidx.compose.animation.core.Animatable(0.6f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, androidx.compose.animation.core.spring(0.5f, 420f)) }
     Box(
-        modifier.size(76.dp).clip(CircleShape).background(Color(0x99000000)).pointerInput(Unit) { detectTapGestures { s.play() } },
+        modifier.size(88.dp).graphicsLayer { scaleX = appear.value; scaleY = appear.value; alpha = ((appear.value - 0.6f) / 0.4f).coerceIn(0f, 1f) }
+            .clip(CircleShape).background(Color(0x73000000)).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x4DFFFFFF), CircleShape)
+            .pointerInput(Unit) { detectTapGestures { s.play() } },
         contentAlignment = Alignment.Center,
     ) {
         Icon(Icons.Play, size = 34.dp, tint = Color.White)
@@ -490,6 +477,109 @@ private fun FailureOverlay(s: PlayerSession) {
 
 // ------------------------------------------------------------------------------------------------
 
+/**
+ * The controls over the picture. Modern: a soft shade at the top (back, title, what plays) and one at the bottom with the seek
+ * bar and the buttons right on the picture; Classic: the same in a solid full-width band. Both report where they are so the
+ * 2 s auto-hide knows the pointer is on them.
+ */
+@Composable
+private fun PlayerChrome(
+    s: PlayerSession,
+    fullscreen: Boolean,
+    menuDelta: (Int) -> Unit,
+    toggleEpisodes: () -> Unit,
+    toggleFullscreen: () -> Unit,
+    onTop: (Rect) -> Unit,
+    onBottom: (Rect) -> Unit,
+) {
+    val modern = com.lagradost.desktop.ui.fluent.Appearance.playerStyle == com.lagradost.desktop.ui.fluent.PlayerStyle.Modern
+    Box(Modifier.fillMaxSize()) {
+        // as on Android the tracks button only exists when there is something to choose: more than one video or audio track
+        val hasTrackChoice = remember(s.listsVersion, s.status) { s.videoTracks().size > 1 || s.audioTracks().size > 1 }
+        // top: back, title, what plays
+        Box(
+            Modifier.align(Alignment.TopStart).fillMaxWidth()
+                .background(Brush.verticalGradient(0f to Color(if (modern) 0xB8000000 else 0xE6000000), 0.3f to Color(if (modern) 0x85000000 else 0xC0000000), 0.62f to Color(if (modern) 0x33000000 else 0x66000000), 0.85f to Color(if (modern) 0x0F000000 else 0x1A000000), 1f to Color.Transparent))
+                .padding(start = 20.dp, end = 20.dp + com.lagradost.desktop.ui.shell.captionInset, top = 16.dp, bottom = 64.dp),
+        ) {
+            Row(Modifier.fillMaxWidth().onGloballyPositioned { onTop(it.boundsInRoot()) }, verticalAlignment = Alignment.CenterVertically) {
+                GlassIconButton(Icons.Back, "Back (Esc)", Modifier.noWindowDrag("playerBack")) { Navigator.back() }
+                Box(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    FText(s.title, style = Fluent.type.subtitle.copy(fontSize = 19.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color.White, maxLines = 1)
+                    s.episodeLabel?.let { FText(it, color = Color(0xB3FFFFFF), maxLines = 1) }
+                    // what plays: the source in use and its picture size, quietly, under the title
+                    s.sourceName?.let { name ->
+                        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            InfoChip(name.lineSequence().first())
+                            s.resolution?.let { InfoChip(it) }
+                            if (s.loadingMore) FText("more sources loading…", style = Fluent.type.caption, color = Color(0x99FFFFFF), maxLines = 1, softWrap = false)
+                        }
+                    }
+                }
+                // the two dialogs, named, at the top right: where the picture comes from, and which audio / video tracks play
+                Row(Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextPill("Sources", "Sources and subtitles") { openSourcesDialog(s) }
+                    if (hasTrackChoice) TextPill("Tracks", "Audio and video tracks") { openTracksDialog(s) }
+                }
+            }
+        }
+        // bottom: seek bar and buttons
+        Box(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .background(if (modern) Brush.verticalGradient(0f to Color.Transparent, 0.15f to Color(0x0F000000), 0.38f to Color(0x4D000000), 0.7f to Color(0x9E000000), 1f to Color(0xE0000000)) else Brush.verticalGradient(listOf(Color(0xE6000000), Color(0xE6000000))))
+                .padding(top = if (modern) 110.dp else 0.dp),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = if (modern) 0.dp else 10.dp, bottom = if (modern) 14.dp else 10.dp)
+                    .onGloballyPositioned { onBottom(it.boundsInRoot()) },
+            ) {
+                SeekRow(s)
+                ControlRow(s, fullscreen, menuDelta, toggleEpisodes, toggleFullscreen)
+            }
+        }
+    }
+}
+
+/** Elapsed time, the seek bar and the length of the video (a live channel has only the bar) */
+@Composable
+private fun SeekRow(s: PlayerSession) {
+    val time = Fluent.type.bodyStrong.copy(fontFeatureSettings = "tnum")
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (!s.live) FText(fmt(s.positionMs), Modifier.widthIn(min = 52.dp), style = time, color = Color.White, maxLines = 1, softWrap = false)
+        Box(Modifier.weight(1f)) { SeekBar(s) }
+        if (!s.live) FText(fmt(s.durationMs), Modifier.widthIn(min = 52.dp), style = time.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal), color = Color(0xB3FFFFFF), maxLines = 1, softWrap = false, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+    }
+}
+
+
+/** A round see-through button for use on the picture */
+@Composable
+private fun GlassIconButton(glyph: String, tooltip: String, modifier: Modifier = Modifier, size: Dp = 40.dp, onClick: () -> Unit) {
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val bg by androidx.compose.animation.animateColorAsState(if (hovered) Color(0x40FFFFFF) else Color(0x1FFFFFFF), com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(140))
+    com.lagradost.desktop.ui.fluent.Tooltip(tooltip) {
+        Box(
+            modifier.size(size).clip(CircleShape).background(bg, CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x33FFFFFF), CircleShape)
+                .fluentClickable(source, true, CircleShape, Role.Button, onClick),
+            contentAlignment = Alignment.Center,
+        ) { Icon(glyph, size = 16.dp, tint = Color.White) }
+    }
+}
+
+@Composable
+private fun InfoChip(text: String) {
+    Box(Modifier.background(Color(0x26FFFFFF), RoundedCornerShape(50)).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x1AFFFFFF), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp)) {
+        FText(text, style = Fluent.type.caption, color = Color(0xE6FFFFFF), maxLines = 1, softWrap = false)
+    }
+}
+
+/**
+ * Seek bar: thin at rest, thicker under the pointer with a glowing accent fill, the buffered part, skip markers and a time
+ * bubble. For a live channel it spans the buffered window and its end is "live".
+ */
 @Composable
 private fun SeekBar(s: PlayerSession) {
     val c = Fluent.colors
@@ -502,70 +592,70 @@ private fun SeekBar(s: PlayerSession) {
     val shown = dragFraction ?: (s.positionMs.toFloat() / duration).coerceIn(0f, 1f)
     val buffered = (s.bufferedMs.toFloat() / duration).coerceIn(0f, 1f)
     val stamps = s.stampFractions(duration)
+    val active = hovered || dragFraction != null
+    val trackH by androidx.compose.animation.core.animateDpAsState(if (active) 7.dp else 4.dp, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(160))
+    val thumb by androidx.compose.animation.core.animateFloatAsState(if (active) 1f else 0f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(180))
+    val accent = c.accent
 
-    Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
-        FText(fmt((shown * duration).toLong()), style = Fluent.type.caption, color = Color.White, modifier = Modifier.width(52.dp))
-        Box(
-            Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .hoverable(source)
-                .onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }
-                .pointerInput(s.durationMs) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val e = awaitPointerEvent()
-                            val x = e.changes.first().position.x
-                            when (e.type) {
-                                PointerEventType.Move, PointerEventType.Enter -> {
-                                    hoverX = x
-                                    if (e.buttons.isPrimaryPressed) dragFraction = (x / width).coerceIn(0f, 1f)
-                                }
-                                PointerEventType.Exit -> { hoverX = null }
-                                PointerEventType.Press -> if (e.buttons.isPrimaryPressed) { dragFraction = (x / width).coerceIn(0f, 1f); e.changes.forEach { it.consume() } }
-                                PointerEventType.Release -> {
-                                    dragFraction?.let { f -> s.seekTo((f * s.durationMs).toLong()) }
-                                    dragFraction = null
-                                }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(26.dp)
+            .hoverable(source)
+            .onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }
+            .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
+            .pointerInput(s.durationMs) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        val x = e.changes.first().position.x
+                        when (e.type) {
+                            PointerEventType.Move, PointerEventType.Enter -> {
+                                hoverX = x
+                                if (e.buttons.isPrimaryPressed) dragFraction = (x / width).coerceIn(0f, 1f)
+                            }
+                            PointerEventType.Exit -> { hoverX = null }
+                            PointerEventType.Press -> if (e.buttons.isPrimaryPressed) { dragFraction = (x / width).coerceIn(0f, 1f); e.changes.forEach { it.consume() } }
+                            PointerEventType.Release -> {
+                                dragFraction?.let { f -> s.seekTo((f * s.durationMs).toLong()) }
+                                dragFraction = null
                             }
                         }
                     }
-                },
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            val trackH = if (hovered || dragFraction != null) 6.dp else 4.dp
-            Box(Modifier.fillMaxWidth().height(trackH).background(Color(0x55FFFFFF), RoundedCornerShape(3.dp)))
-            Box(Modifier.fillMaxWidth(buffered).height(trackH).background(Color(0x66FFFFFF), RoundedCornerShape(3.dp)))
-            Box(Modifier.fillMaxWidth(shown).height(trackH).background(c.accent, RoundedCornerShape(3.dp)))
-            // skip markers (intro / outro)
-            for ((from, to) in stamps) {
-                Box(
-                    Modifier.fillMaxWidth().height(trackH).drawBehind {
-                        drawRect(Color(0xCCFFD54F), Offset(size.width * from, 0f), Size(size.width * (to - from), size.height))
-                    },
-                )
-            }
-            if (hovered || dragFraction != null) {
-                Box(
-                    Modifier.fillMaxWidth().height(16.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    Box(
-                        Modifier.offset2(shown * width - 8f).size(16.dp).background(Color.White, CircleShape)
-                            .border(3.dp, c.accent, CircleShape),
-                    )
                 }
             }
-            hoverX?.let { x ->
-                val f = (x / width).coerceIn(0f, 1f)
-                Box(Modifier.align(Alignment.TopStart).offset2((x - 28f).coerceIn(0f, width - 56f)).offsetY(-34f)) {
-                    Box(Modifier.background(c.flyout, RoundedCornerShape(4.dp)).border(androidx.compose.ui.unit.Dp.Hairline, c.strokeStrong.copy(alpha = 0.4f), RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                        FText(fmt((f * s.durationMs).toLong()), style = Fluent.type.caption, maxLines = 1, softWrap = false)
-                    }
+            .drawBehind {
+                val h = trackH.toPx()
+                val y = (size.height - h) / 2
+                val r = androidx.compose.ui.geometry.CornerRadius(h / 2, h / 2)
+                drawRoundRect(Color(0x33FFFFFF), Offset(0f, y), Size(size.width, h), r)
+                drawRoundRect(Color(0x4DFFFFFF), Offset(0f, y), Size(size.width * buffered, h), r)
+                // skip markers (intro / outro)
+                for ((from, to) in stamps) drawRect(Color(0xCCFFD54F), Offset(size.width * from, y), Size(size.width * (to - from), h))
+                // the played part: a flat accent fill (no glow)
+                drawRoundRect(accent, Offset(0f, y), Size(size.width * shown, h), r)
+                hoverX?.let { hx -> if (!s.live) drawRect(Color(0x66FFFFFF), Offset(hx - 1f, y), Size(2f, h)) }
+                if (thumb > 0f) {
+                    val cx = size.width * shown
+                    drawCircle(Color.White, 7.dp.toPx() * thumb, Offset(cx, size.height / 2))
+                }
+            },
+    ) {
+        hoverX?.let { x ->
+            val f = (x / width).coerceIn(0f, 1f)
+            val at = (f * s.durationMs).toLong()
+            val stamp = s.stampLabelAt(at)
+            val label = if (s.live) "-" + fmt((s.durationMs - at).coerceAtLeast(0)) else fmt(at)
+            Box(Modifier.align(Alignment.TopStart).offset2((x - 44f).coerceIn(0f, (width - 88f).coerceAtLeast(0f))).offsetY(-40f)) {
+                Column(
+                    Modifier.background(Color(0xE61C1C1C), RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x33FFFFFF), RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (stamp != null) FText(stamp, style = Fluent.type.caption, color = Color(0xFFFFD54F), maxLines = 1, softWrap = false)
+                    FText(label, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1, softWrap = false)
                 }
             }
         }
-        FText("-" + fmt((s.durationMs - (shown * duration).toLong()).coerceAtLeast(0)), style = Fluent.type.caption, color = Color.White, modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
     }
 }
 
@@ -583,32 +673,114 @@ private fun PlayerSession.stampFractions(duration: Long): List<Pair<Float, Float
 @Composable
 private fun ControlRow(s: PlayerSession, fullscreen: Boolean, menuDelta: (Int) -> Unit, toggleEpisodes: () -> Unit, toggleFullscreen: () -> Unit) {
     val white = Color.White
-    // as on Android the tracks button only exists when there is something to choose: more than one video or audio track
-    val hasTrackChoice = remember(s.listsVersion, s.status) { s.videoTracks().size > 1 || s.audioTracks().size > 1 }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        IconButton(if (s.status == CSPlayerLoading.IsPlaying) Icons.Pause else Icons.Play, { s.togglePlay() }, tooltip = "Play / Pause (Space)", size = 40.dp, iconSize = 20.dp, tint = white)
-        if (s.hasPrev) IconButton(Icons.Previous, { s.prevEpisode() }, tooltip = "Previous episode (Ctrl+Left)", size = 36.dp, tint = white)
-        IconButton(Icons.Rewind, { s.seekBy(-10_000) }, tooltip = "Back 10 s (J)", size = 36.dp, tint = white)
-        IconButton(Icons.FastForward, { s.seekBy(10_000) }, tooltip = "Forward 10 s (L)", size = 36.dp, tint = white)
-        if (s.hasNext) IconButton(Icons.Next, { s.nextEpisode() }, tooltip = "Next episode (Ctrl+Right)", size = 36.dp, tint = white)
+    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        PlayPauseButton(s)
         Box(Modifier.width(8.dp))
-        IconButton(if (s.muted || s.volume == 0) Icons.Mute else Icons.Volume, { s.toggleMute() }, tooltip = "Mute (M)", size = 36.dp, tint = white)
-        Slider(
-            value = if (s.muted) 0f else s.volume.toFloat(), onValueChange = { s.changeVolume(it.toInt()) },
-            valueRange = 0f..200f, modifier = Modifier.width(96.dp),
-        )
-        FText("${s.volume}%", style = Fluent.type.caption, color = Color(0xCCFFFFFF), modifier = Modifier.width(40.dp).padding(start = 6.dp))
+        if (s.hasPrev) IconButton(Icons.Previous, { s.prevEpisode() }, tooltip = "Previous episode (Ctrl+Left)", size = 40.dp, iconSize = 18.dp, tint = white)
+        IconButton(Icons.Rewind, { s.seekBy(-10_000) }, tooltip = "Back 10 s (J)", size = 40.dp, iconSize = 20.dp, tint = white)
+        IconButton(Icons.FastForward, { s.seekBy(10_000) }, tooltip = "Forward 10 s (L)", size = 40.dp, iconSize = 20.dp, tint = white)
+        if (s.hasNext) IconButton(Icons.Next, { s.nextEpisode() }, tooltip = "Next episode (Ctrl+Right)", size = 40.dp, iconSize = 18.dp, tint = white)
+        Box(Modifier.width(4.dp))
+        VolumeControl(s)
+        if (s.live) { Box(Modifier.width(12.dp)); LivePill(s) }
         Box(Modifier.weight(1f))
-        if (s.speed != 1f) FText("${s.speed}×", color = white, style = Fluent.type.bodyStrong, modifier = Modifier.padding(end = 8.dp))
+        if (s.speed != 1f) Box(Modifier.padding(end = 8.dp)) { InfoChip("${s.speed}×") }
 
-        // like Android: one button for sources and subtitles, one for audio and video tracks
-        IconButton(Icons.Subtitles, { openSourcesDialog(s) }, tooltip = "Sources and subtitles", size = 36.dp, tint = white)
-        if (hasTrackChoice) IconButton(Icons.Audio, { openTracksDialog(s) }, tooltip = "Audio and video tracks", size = 36.dp, tint = white)
         FlyoutButton(Icons.Speed, "Playback speed", menuDelta) { speedEntries(s) }
         FlyoutButton(Icons.Aspect, "Picture size (Z)", menuDelta) { resizeEntries(s) }
-        IconButton(Icons.List, toggleEpisodes, tooltip = "Episodes (E)", size = 36.dp, tint = white)
-        IconButton(Icons.Pip, { s.togglePip() }, tooltip = "Picture in picture (I)", size = 36.dp, tint = white)
-        IconButton(if (fullscreen) Icons.ExitFullscreen else Icons.Fullscreen, toggleFullscreen, tooltip = if (fullscreen) "Exit full screen (F)" else "Full screen (F)", size = 36.dp, tint = white)
+        FlyoutButton(Icons.OpenInNewWindow, "Open in another player", menuDelta) { externalEntries(s) }
+        IconButton(Icons.List, toggleEpisodes, tooltip = "Episodes (E)", size = 40.dp, iconSize = 18.dp, tint = white)
+        IconButton(Icons.Pip, { s.togglePip() }, tooltip = "Picture in picture (I)", size = 40.dp, iconSize = 18.dp, tint = white)
+        IconButton(if (fullscreen) Icons.ExitFullscreen else Icons.Fullscreen, toggleFullscreen, tooltip = if (fullscreen) "Exit full screen (F)" else "Full screen (F)", size = 40.dp, iconSize = 18.dp, tint = white)
+    }
+}
+
+/** A see-through pill with a name only (no icon) */
+@Composable
+private fun TextPill(label: String, tooltip: String, onClick: () -> Unit) {
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val bg by androidx.compose.animation.animateColorAsState(if (hovered) Color(0x47FFFFFF) else Color(0x24FFFFFF), com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(140))
+    val shape = RoundedCornerShape(50)
+    Tooltip(tooltip) {
+        Box(
+            Modifier.height(36.dp).noWindowDrag("playerPill-$label").clip(shape).background(bg, shape)
+                .fluentClickable(source, true, shape, Role.Button, onClick)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            FText(label, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+/** The main button: an accent disc that swaps its glyph with a little turn */
+@Composable
+private fun PlayPauseButton(s: PlayerSession) {
+    val c = Fluent.colors
+    val playing = s.status == CSPlayerLoading.IsPlaying
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val pressed by source.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.92f else if (hovered) 1.06f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(140))
+    com.lagradost.desktop.ui.fluent.Tooltip("Play / Pause (Space)") {
+        Box(
+            Modifier.size(42.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(c.accent, CircleShape)
+                .fluentClickable(source, true, CircleShape, Role.Button) { s.togglePlay() },
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.animation.AnimatedContent(playing, transitionSpec = {
+                (fadeIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(160)) + androidx.compose.animation.scaleIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200), initialScale = 0.6f)) togetherWith
+                    (fadeOut(com.lagradost.desktop.ui.fluent.FluentMotion.tweenOut(100)) + androidx.compose.animation.scaleOut(com.lagradost.desktop.ui.fluent.FluentMotion.tweenOut(100), targetScale = 0.6f))
+            }) { p -> Icon(if (p) Icons.Pause else Icons.Play, size = 18.dp, tint = c.onAccent) }
+        }
+    }
+}
+
+/** Mute button; the slider slides out while the pointer is on it */
+@Composable
+private fun VolumeControl(s: PlayerSession) {
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    var dragging by remember { mutableStateOf(false) }
+    val open = hovered || dragging
+    val w by androidx.compose.animation.core.animateDpAsState(if (open) 104.dp else 0.dp, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(220))
+    Row(Modifier.hoverable(source), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(if (s.muted || s.volume == 0) Icons.Mute else Icons.Volume, { s.toggleMute() }, tooltip = "Mute (M) · wheel: volume", size = 36.dp, tint = Color.White)
+        Box(Modifier.width(w).clipToBounds()) {
+            Row(Modifier.width(104.dp), verticalAlignment = Alignment.CenterVertically) {
+                Slider(
+                    value = if (s.muted) 0f else s.volume.toFloat(), onValueChange = { dragging = true; s.changeVolume(it.toInt()) },
+                    valueRange = 0f..200f, modifier = Modifier.width(66.dp), onValueChangeFinished = { dragging = false },
+                )
+                FText("${s.volume}", style = Fluent.type.caption, color = Color(0xCCFFFFFF), modifier = Modifier.padding(start = 8.dp), maxLines = 1, softWrap = false)
+            }
+        }
+    }
+}
+
+/** Live: a red dot and LIVE at the live point; behind it, how far, and a click goes back to live */
+@Composable
+private fun LivePill(s: PlayerSession) {
+    val behind = s.liveBehindS ?: 0.0
+    val atLive = behind < 12.0
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition()
+    val a by pulse.animateFloat(0.45f, 1f, androidx.compose.animation.core.infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse))
+    val shape = RoundedCornerShape(50)
+    com.lagradost.desktop.ui.fluent.Tooltip(if (atLive) "Live" else "Go to the live picture") {
+        Row(
+            Modifier.height(28.dp).clip(shape)
+                .background(if (atLive) Color(0x33FF4040) else if (hovered) Color(0x40FFFFFF) else Color(0x26FFFFFF), shape)
+                .fluentClickable(source, !atLive, shape, Role.Button) { s.goLive() }
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(8.dp).graphicsLayer { alpha = if (atLive) a else 1f }.background(if (atLive) Color(0xFFFF4545) else Color(0xFF9E9E9E), CircleShape))
+            Box(Modifier.width(8.dp))
+            FText(if (atLive) "LIVE" else "LIVE  −${behind.toInt()} s", style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1, softWrap = false)
+        }
     }
 }
 
@@ -632,6 +804,11 @@ private fun FlyoutButton(glyph: String, tooltip: String, menuDelta: (Int) -> Uni
 
 private fun speedEntries(s: PlayerSession): List<MenuEntry> =
     listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f).map { v -> MenuItem(if (v == 1f) "Normal" else "${v}×", checked = s.speed == v) { s.changeSpeed(v) } }
+
+private fun externalEntries(s: PlayerSession): List<MenuEntry> = listOf(
+    MenuItem("Open in VLC", Icons.Play) { s.openExternal(vlc = true) },
+    MenuItem("Open in browser", Icons.OpenInNewWindow) { s.openExternal(vlc = false) },
+)
 
 private fun resizeEntries(s: PlayerSession): List<MenuEntry> =
     Resize.entries.map { r -> MenuItem(r.label, checked = s.resize == r) { s.changeResize(r) } }
@@ -774,3 +951,4 @@ private fun HudOverlay(s: PlayerSession, modifier: Modifier) {
         }
     }
 }
+

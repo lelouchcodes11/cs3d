@@ -21,6 +21,12 @@ open class MpvPlayer : IPlayer {
     companion object {
         private const val TAG = "MpvPlayer"
 
+        /** A live seek stops this far (s) before the newest buffered picture: a reserve for segments that come late */
+        private const val LIVE_MARGIN_S = 6.0
+
+        /** A live channel waiting this long for data is opened again (ms) */
+        private const val LIVE_STALL_MS = 12_000L
+
         /** Client errors that bounded ranges, headers and the app's HTTP client can cure; 404/410 and rate limits (429) they cannot */
         private val RANGE_RETRY_STATUS = setOf(400, 403, 405, 406, 416)
 
@@ -238,6 +244,8 @@ open class MpvPlayer : IPlayer {
         runCatching { SubtitleStyler.prepareFonts(); mpv.mpv_set_option_string(ctx, "sub-fonts-dir", SubtitleStyler.fontsDir.absolutePath) }
         // AudioManager STREAM_MUSIC + LoudnessEnhancer boost (up to 200%)
         mpv.mpv_set_option_string(ctx, "volume-max", "200")
+        // a longer audio buffer (mpv's default is 0.2 s) rides out a busy moment of the PC without a crackle
+        mpv.mpv_set_option_string(ctx, "audio-buffer", "0.4")
         mpv.mpv_set_option_string(ctx, "volume", DesktopAudioVolume.format())
         // a stalled connection ends in an error (and the next source) instead of waiting for ever; plenty of read-ahead
         mpv.mpv_set_option_string(ctx, "network-timeout", "15")
@@ -252,6 +260,8 @@ open class MpvPlayer : IPlayer {
         mpv.mpv_set_option_string(ctx, "demuxer-max-bytes", "150MiB")
         mpv.mpv_set_option_string(ctx, "demuxer-max-back-bytes", "32MiB")
 
+        // debugging: ffmpeg demuxer messages only show with a module level, e.g. -Dcloudstream.mpvmsglevel=all=no,ffmpeg/demuxer=v,cplayer=v
+        System.getProperty("cloudstream.mpvmsglevel")?.let { mpv.mpv_set_option_string(ctx, "msg-level", it) }
         val res = mpv.mpv_initialize(ctx)
         if (res < 0) {
             Log.e(TAG, "Failed to initialize mpv: ${mpv.mpv_error_string(res)}")
@@ -338,6 +348,12 @@ open class MpvPlayer : IPlayer {
                     }
                     Mpv.MPV_EVENT_FILE_LOADED -> {
                         fileLoaded = true
+                        liveStream = detectLive()
+                        // the pause mpv puts on itself at the end of the failed source (keep-open) can land after our "play" for this one
+                        ensurePlaying()
+                        mainHandler.postDelayed({ ensurePlaying() }, 600)
+                        mainHandler.postDelayed({ ensurePlaying() }, 2000)
+                        if (liveStream) Log.i(TAG, "live stream: seeks stay inside the buffered part")
                         isBuffering = false
                         isEnded = false
                         Log.i(TAG, "timing: file opened ${System.currentTimeMillis() - loadStartedAt} ms after loadfile")
@@ -451,6 +467,8 @@ open class MpvPlayer : IPlayer {
                 if (data != null && format == Mpv.MPV_FORMAT_FLAG) {
                     val bufferingFlag = data.getInt(0)
                     isBuffering = (bufferingFlag != 0)
+                    mainHandler.removeCallbacks(liveStallCheck)
+                    if (isBuffering) { bufferingSince = System.currentTimeMillis(); mainHandler.postDelayed(liveStallCheck, LIVE_STALL_MS) } else bufferingSince = 0L
                     isPlaying = !isPaused && !isBuffering && !isEnded
                     updateStatus()
                 }
@@ -565,11 +583,91 @@ open class MpvPlayer : IPlayer {
     override fun getPosition(): Long? = currentPositionMs
 
     override fun seekTime(time: Long, source: PlayerEventSource) {
+        if (liveStream) return seekTo(currentPositionMs + time, source)
         mpvCommand("seek", (time / 1000.0).toString(), "relative")
     }
 
     override fun seekTo(time: Long, source: PlayerEventSource) {
-        mpvCommand("seek", (time / 1000.0).toString(), "absolute")
+        val target = if (liveStream) liveTarget(time / 1000.0) else time / 1000.0
+        mpvCommand("seek", String.format(java.util.Locale.ROOT, "%.3f", target), "absolute")
+    }
+
+    // ---- live streams ------------------------------------------------------------------------------------------------
+
+    /** The address mpv plays (a proxy address for HLS / DASH) */
+    @Volatile
+    private var playingAddress: String? = null
+
+    /** A live channel: a dynamic DASH manifest, an HLS playlist without an end, or a timeline that counts from the wall clock */
+    @Volatile
+    var liveStream = false
+        private set
+
+    private fun detectLive(): Boolean {
+        val a = playingAddress ?: return false
+        if (DashProxy.isLive(a) || HlsProxy.isLive(a)) return true
+        return (getMpvPropertyString("demuxer-start-time")?.toDoubleOrNull() ?: 0.0) > 1.0e9
+    }
+
+    /** The buffered stretch (time-pos seconds) that playback can move in; null when mpv does not say */
+    fun liveRange(): Pair<Double, Double>? {
+        val state = getMpvPropertyString("demuxer-cache-state") ?: return null
+        val ranges = Regex("""\{"start":(-?[\d.eE+-]+),"end":(-?[\d.eE+-]+)\}""").findAll(state.substringAfter("seekable-ranges", ""))
+            .mapNotNull { m -> val s = m.groupValues[1].toDoubleOrNull(); val e = m.groupValues[2].toDoubleOrNull(); if (s != null && e != null && e > s) s to e else null }.toList()
+        if (ranges.isEmpty()) return null
+        val pos = currentPositionMs / 1000.0
+        return ranges.firstOrNull { pos >= it.first - 1 && pos <= it.second + 1 } ?: ranges.last()
+    }
+
+    /**
+     * Where a seek in a live stream may go. ffmpeg cannot seek in live DASH/HLS (its seek answers "not supported"), so mpv can
+     * only move inside what it has buffered; a target past that (+1 min on a channel whose buffer is 20 s) left the demuxer
+     * stuck for good, and a target right at the end of the buffer played at the live edge with nothing in reserve (stalls,
+     * picture and sound drifting apart). The target stays inside the buffer and [LIVE_MARGIN_S] short of its end.
+     */
+    private fun liveTarget(wanted: Double): Double {
+        val (start, end) = liveRange() ?: return currentPositionMs / 1000.0
+        val low = start + 0.3
+        val high = maxOf(low, if (end - LIVE_MARGIN_S > low) end - LIVE_MARGIN_S else (start + end) / 2)
+        val target = wanted.coerceIn(low, high)
+        if (target != wanted) Log.i(TAG, "live seek to ${"%.1f".format(wanted)} kept inside the buffer: ${"%.1f".format(target)} (buffer ${"%.1f".format(start)}..${"%.1f".format(end)})")
+        return target
+    }
+
+    /** Live: back to the newest picture (as close to the live point as the buffer allows) */
+    fun goLive() {
+        if (!liveStream) return
+        val range = liveRange() ?: return
+        seekTo((range.second * 1000).toLong(), PlayerEventSource.UI)
+    }
+
+    /** How far (s) playback is behind the newest buffered picture of a live stream */
+    fun liveLatency(): Double? = if (!liveStream) null else liveRange()?.let { (it.second - currentPositionMs / 1000.0).coerceAtLeast(0.0) }
+
+    // a live channel that waits for data for this long is opened again at the live point (a stuck demuxer never recovers)
+    @Volatile
+    private var bufferingSince = 0L
+    private var lastLiveReopen = 0L
+    private val liveStallCheck = Runnable {
+        val since = bufferingSince
+        if (liveStream && isBuffering && !isPaused && fileLoaded && since > 0 && System.currentTimeMillis() - since >= LIVE_STALL_MS - 500 && System.currentTimeMillis() - lastLiveReopen > 30_000) {
+            val link = currentLink
+            val ctx = currentContext
+            if (link != null && ctx != null) {
+                lastLiveReopen = System.currentTimeMillis()
+                Log.i(TAG, "live stream waited ${LIVE_STALL_MS / 1000} s for data: opening it again at the live point")
+                loadPlayer(ctx, true, link, currentUri, null, activeSubtitles, preferredSubtitle, true, false)
+            }
+        }
+    }
+
+    /** Not paused by the user, the file is open and mpv is paused anyway: play */
+    private fun ensurePlaying() {
+        if (userPaused || isEnded || !fileLoaded) return
+        if (getMpvPropertyString("pause") == "yes") {
+            Log.i(TAG, "paused by mpv itself after a source change: playing")
+            setMpvProperty("pause", "no")
+        }
     }
 
     override fun getSubtitleOffset(): Long = currentSubtitleOffsetMs
@@ -701,6 +799,8 @@ open class MpvPlayer : IPlayer {
             data != null -> data.uri.toString()
             else -> null
         }
+        playingAddress = url
+        liveStream = false
 
         if (url != null) {
             // the start position is an option of the file that opens next: a seek sent right after loadfile is lost
@@ -889,11 +989,6 @@ open class MpvPlayer : IPlayer {
             val html = response.okhttpResponse.header("Content-Type")?.contains("html", true) == true || head.startsWith("<!") || head.startsWith("<html", true) || head.startsWith("<meta", true)
             if (!response.isSuccessful || bytes.isEmpty() || html) {
                 Log.w(TAG, "subtitle download ${response.code} ${bytes.size} bytes, ${if (html) "an HTML page, not a subtitle" else "no subtitle"}: ${head.take(100)}")
-                val host = runCatching { java.net.URI(url).host }.getOrNull() ?: "The subtitle server"
-                com.lagradost.desktop.ui.Toasts.show(
-                    if (html) "$host answered with a web page instead of the subtitle (some subtitle sites block downloads from some countries and networks). Pick another subtitle."
-                    else "$host did not return the subtitle (HTTP ${response.code})", true,
-                )
                 DownloadedSubtitle(null, html)
             } else {
                 val ext = sub.mimeType.let { m -> when { m.contains("vtt") -> ".vtt"; m.contains("ass") || m.contains("ssa") -> ".ass"; else -> ".srt" } }
@@ -929,7 +1024,7 @@ open class MpvPlayer : IPlayer {
         val id = if (sub.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO) sub.url.toIntOrNull() else ensureExternal(sub)
         Log.i(TAG, "subtitle selection: ${sub.name} -> track $id")
         if (id != null) setMpvProperty("sid", id.toString())
-        else com.lagradost.desktop.ui.Toasts.show("Could not load the subtitles \"${sub.name.trim()}\"", false)
+        else Log.w(TAG, "could not load the subtitles \"${sub.name.trim()}\"")
     }
 
     override fun setActiveSubtitles(subtitles: Set<SubtitleData>) {
@@ -1111,7 +1206,7 @@ open class MpvPlayer : IPlayer {
             // picture stands still meanwhile. Opening the stream with the track chosen takes ~6 s and needs no seek.
             dashAudio = link.url to id
             // a live manifest counts its time from the wall clock (a start time in the billions of seconds): carry on live, not at a position
-            val live = (getMpvPropertyString("demuxer-start-time")?.toDoubleOrNull() ?: 0.0) > 1.0e9
+            val live = liveStream
             loadPlayer(ctx, true, link, currentUri, if (live) null else currentPositionMs.takeIf { it > 0 }, activeSubtitles, preferredSubtitle, !userPaused, false)
         } else if (id != null) {
             setMpvProperty("aid", id)

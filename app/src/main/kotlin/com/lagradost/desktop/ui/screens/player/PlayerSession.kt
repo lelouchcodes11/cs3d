@@ -76,6 +76,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class Resize(val label: String, val keepAspect: Boolean, val panscan: Double) {
     Fit("Fit", true, 0.0),
@@ -93,6 +94,8 @@ class PlayerSession(
     generator: VideoGenerator<*>,
     index: Int,
     private val sync: SyncViewModel,
+    /** AniList / MAL / Simkl ids of the title (from its page): what the watched episode is reported to */
+    syncData: Map<String, String>? = null,
     private val exit: () -> Unit,
 ) {
     private val ctx = DesktopBootstrap.activity
@@ -203,6 +206,8 @@ class PlayerSession(
         updateTitle()
         applyVolume()
         vm.attachGenerator(generator, index)
+        // like GeneratorPlayer: without the title's tracker ids nothing is ever reported to AniList / MAL / Simkl
+        sync.addSyncs(syncData)
         sync.updateUserData()
 
         fun <T> LiveData<T>.watch(block: (T?) -> Unit) {
@@ -264,6 +269,8 @@ class PlayerSession(
                     if (loadingText == null && positionMs > 0) resumeMs = positionMs
                     player.getDuration()?.let { if (it > 0) durationMs = it }
                     bufferedMs = runCatching { (player.exoPlayer.bufferedPosition) }.getOrDefault(0L)
+                    if (player.liveStream != live) live = player.liveStream
+                    if (live && ++liveTicks % 4 == 0) liveBehindS = withContext(Dispatchers.IO) { player.liveLatency() }
                     val pos = positionMs
                     val stamp = vm.state.stamps.firstOrNull { pos >= it.timestamp.startMs && pos < it.timestamp.endMs }
                     if (stamp != activeStamp) activeStamp = stamp
@@ -687,7 +694,7 @@ class PlayerSession(
         val current = currentSubtitle()
         val next = if (current == null) list.first() else list.getOrNull(list.indexOf(current) + 1)
         selectSubtitle(next)
-        Toasts.show(next?.name?.trim() ?: "Subtitles off", false)
+        showHud(Icons.Subtitles, next?.name?.trim() ?: "Subtitles off")
     }
 
     /** Adds subtitle tracks, reloads the player at the same position and selects the first one */
@@ -700,7 +707,7 @@ class PlayerSession(
         player.setActiveSubtitles(vm.state.subtitles)
         applySubtitle(selected, false)
         listsVersion++
-        Toasts.show("Loaded subtitles: ${selected.name.trim()}", false)
+        showHud(Icons.Subtitles, selected.name.trim())
     }
 
     /** Native file dialog for a local .srt/.vtt/.ass file */
@@ -741,7 +748,7 @@ class PlayerSession(
                 async(Dispatchers.IO) {
                     when (val r = Resource.fromResult(provider.search(search))) {
                         is Resource.Success -> r.value.also { android.util.Log.i("PlayerSession", "subtitle search ${provider.idPrefix}: ${it.size} result(s)") }
-                        is Resource.Failure -> { android.util.Log.w("PlayerSession", "subtitle search ${provider.idPrefix}: ${r.errorString}"); Toasts.show("${provider.name}: ${r.errorString}", false); emptyList() }
+                        is Resource.Failure -> { android.util.Log.w("PlayerSession", "subtitle search ${provider.idPrefix}: ${r.errorString}"); emptyList() }
                         else -> emptyList()
                     }
                 }
@@ -756,8 +763,7 @@ class PlayerSession(
     /** Downloads one chosen search result and selects it */
     suspend fun applyOnlineSubtitle(entity: SubtitleEntity): String {
         val provider = GeneratorPlayer.subsProviders.firstOrNull { it.idPrefix == entity.idPrefix }
-        if (provider == null) { Toasts.show("Subtitle provider ${entity.idPrefix} is not available", true); return "no provider ${entity.idPrefix}" }
-        Toasts.show("Downloading subtitles…", false)
+        if (provider == null) { android.util.Log.w("PlayerSession", "subtitle provider ${entity.idPrefix} is not available"); return "no provider ${entity.idPrefix}" }
         return when (val r = Resource.fromResult(provider.resource(entity))) {
             is Resource.Success -> {
                 val subs = r.value.getSubtitles().map { res ->
@@ -765,14 +771,14 @@ class PlayerSession(
                 }
                 android.util.Log.i("PlayerSession", "online subtitle ${entity.idPrefix} '${entity.name}': ${subs.size} file(s) ${subs.map { it.url.take(200) }}")
                 if (subs.isEmpty()) {
-                    Toasts.show("${provider.name} could not provide this subtitle file. Try another result, or check your connection.", true)
+                    android.util.Log.w("PlayerSession", "${provider.name} gave no subtitle file for ${entity.name}")
                     "no files"
                 } else {
                     kotlinx.coroutines.withContext(Dispatchers.Main) { addAndSelectSubtitles(*subs.toTypedArray()) }
                     "ok ${subs.size}"
                 }
             }
-            is Resource.Failure -> { android.util.Log.w("PlayerSession", "online subtitle failed: ${r.errorString}"); Toasts.show(r.errorString, true); "failed ${r.errorString}" }
+            is Resource.Failure -> { android.util.Log.w("PlayerSession", "online subtitle failed: ${r.errorString}"); "failed ${r.errorString}" }
             else -> "loading"
         }
     }
@@ -800,9 +806,8 @@ class PlayerSession(
     /** Searches the subtitle providers for the title and loads the first result */
     fun addFirstOnlineSubtitle() {
         scope.launch(Dispatchers.IO) {
-            Toasts.show("Loading subtitles…", false)
             val first = searchSubtitles(defaultSubtitleQuery, getAutoSelectLanguageTagIETF()).firstOrNull()
-            if (first == null) Toasts.show("No subtitles found", false) else applyOnlineSubtitle(first)
+            if (first == null) android.util.Log.i("PlayerSession", "no online subtitles found") else applyOnlineSubtitle(first)
         }
     }
 
@@ -942,6 +947,47 @@ class PlayerSession(
 
     // ------------------------------------------------------------------ transport
 
+    /** Hands the playing link to VLC or the browser; the picture here stops (VLC starts where it was) */
+    fun openExternal(vlc: Boolean) {
+        val link = selectedLink?.first
+        if (link == null) { Toasts.show("This source can not be handed to another player", false); return }
+        val name = listOfNotNull(title, episodeLabel).joinToString(" - ")
+        val at = positionMs / 1000.0
+        val subs = vm.state.subtitles.toList()
+        pause()
+        scope.launch(Dispatchers.IO) {
+            val outcome = if (vlc) com.lagradost.desktop.player.ExternalPlayers.openInVlc(link, name, subs, at) else com.lagradost.desktop.player.ExternalPlayers.openInBrowser(link)
+            if (!outcome.ok) {
+                if (vlc && com.lagradost.desktop.player.ExternalPlayers.vlcPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.vlcMissing()
+                else Toasts.show(outcome.message ?: "Could not open the other player", true)
+            }
+        }
+    }
+
+    private var subtitleLiftJob: kotlinx.coroutines.Job? = null
+
+    /** The subtitles rise above the controls while these are on screen and settle back afterwards (bottom aligned subtitles only) */
+    fun liftSubtitles(controls: Boolean, heightPx: Int, density: Float) {
+        if (heightPx <= 0) return
+        val style = com.lagradost.cloudstream3.ui.subtitles.SubtitlesFragment.subtitleStyleState.value
+        val bottom = (style.alignment ?: com.lagradost.cloudstream3.ui.player.CustomDecoder.SSA_ALIGNMENT_BOTTOM_CENTER) in 1..3
+        // the bar is ~128 dp high; mpv counts margins in a picture 720 high
+        val target = if (controls && bottom) 128f * density / heightPx * 720f else 0f
+        subtitleLiftJob?.cancel()
+        subtitleLiftJob = scope.launch(Dispatchers.IO) {
+            val from = com.lagradost.desktop.player.SubtitleStyler.extraMarginY
+            val steps = 8
+            for (i in 1..steps) {
+                val t = i / steps.toFloat()
+                val eased = 1f - (1f - t) * (1f - t)
+                val v = from + (target - from) * eased
+                com.lagradost.desktop.player.SubtitleStyler.extraMarginY = v
+                runCatching { player.setMpvProperty("sub-margin-y", (style.elevation + 2 + v.toInt()).toString()) }
+                delay(22)
+            }
+        }
+    }
+
     fun togglePlay() = player.handleEvent(CSPlayerEvent.PlayPauseToggle)
     fun play() = player.handleEvent(CSPlayerEvent.Play)
     fun pause() {
@@ -964,6 +1010,21 @@ class PlayerSession(
     }
 
     fun stampRanges(): List<Pair<Long, Long>> = vm.state.stamps.map { it.timestamp.startMs to it.timestamp.endMs }
+
+    /** The name of the skip stamp (intro, recap, credits ...) at [ms], for the seek bar bubble */
+    fun stampLabelAt(ms: Long): String? = vm.state.stamps.firstOrNull { ms >= it.timestamp.startMs && ms < it.timestamp.endMs }
+        ?.let { it.timestamp.label ?: it.timestamp.type.name.replace(Regex("(?<=[a-z])(?=[A-Z])"), " ") }
+
+    /** A live channel: the seek bar is the buffered window, and [liveBehindS] says how far playback is from its end */
+    var live by mutableStateOf(false); private set
+    var liveBehindS by mutableStateOf<Double?>(null); private set
+    private var liveTicks = 0
+
+    /** Back to the newest picture of a live channel */
+    fun goLive() {
+        player.goLive()
+        showHud(Icons.Play, "Live")
+    }
 
     fun skipStamp() {
         val stamp = activeStamp ?: return

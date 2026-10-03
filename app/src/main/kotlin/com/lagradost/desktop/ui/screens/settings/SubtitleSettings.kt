@@ -113,7 +113,7 @@ fun SubtitlePreview(style: SaveCaptionStyle, modifier: Modifier = Modifier) {
         ) {
             val text = "Subtitles look like this.\nSecond line of text."
             val family = remember(style.font, style.typefaceFilePath) { previewFont(style) }
-            val size = ((style.fixedTextSize ?: 25f) * 0.62f).sp
+            val size = ((style.fixedTextSize ?: com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE) * 0.62f).sp
             val align = when (horizontal) { Alignment.Start -> TextAlign.Start; Alignment.End -> TextAlign.End; else -> TextAlign.Center }
             val base = TextStyle(
                 fontSize = size, fontFamily = family, fontWeight = if (style.bold) FontWeight.Bold else FontWeight.Normal,

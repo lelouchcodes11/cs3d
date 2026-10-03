@@ -18,6 +18,10 @@ object SubtitleStyler {
     /** mpv's own default size (55) for the engine's default 25 */
     private const val SIZE_FACTOR = 2.2
 
+    /** Extra distance (mpv virtual units) of the subtitles from the bottom: they rise above the player controls while these are shown */
+    @Volatile
+    var extraMarginY = 0f
+
     private fun argb(color: Int) = String.format("#%02X%02X%02X%02X", (color ushr 24) and 0xFF, (color shr 16) and 0xFF, (color shr 8) and 0xFF, color and 0xFF)
 
     private fun num(v: Double) = String.format(java.util.Locale.ROOT, "%.2f", v)
@@ -58,7 +62,7 @@ object SubtitleStyler {
             else -> null
         }
         out += "sub-font" to (family ?: "sans-serif")
-        out += "sub-font-size" to num((style.fixedTextSize ?: 25f) * SIZE_FACTOR)
+        out += "sub-font-size" to num((style.fixedTextSize ?: com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE) * SIZE_FACTOR)
         out += "sub-color" to argb(style.foregroundColor)
         out += "sub-bold" to if (style.bold) "yes" else "no"
         out += "sub-italic" to if (style.italic) "yes" else "no"
@@ -82,7 +86,7 @@ object SubtitleStyler {
         val alignment = style.alignment ?: CustomDecoder.SSA_ALIGNMENT_BOTTOM_CENTER
         out += "sub-align-x" to when (alignment) { 1, 4, 7 -> "left"; 3, 6, 9 -> "right"; else -> "center" }
         out += "sub-align-y" to when (alignment) { in 7..9 -> "top"; in 4..6 -> "center"; else -> "bottom" }
-        out += "sub-margin-y" to (style.elevation + 2).toString()
+        out += "sub-margin-y" to (style.elevation + 2 + extraMarginY.toInt()).toString()
         // inside the picture, not in the black bars around it where the controls cover it
         out += "sub-use-margins" to "no"
         // [Knocking on door], (laughs) and the like

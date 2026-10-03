@@ -282,7 +282,7 @@ fun openSubtitleSettings(s: PlayerSession) {
                     Button("+100 ms", { s.setSubtitleDelay(s.subtitleDelayMs + 100) })
                 }
                 // the saved style's size: the same as Settings > Subtitles, kept for every video
-                val size = com.lagradost.cloudstream3.ui.subtitles.SubtitlesFragment.subtitleStyleState.value.fixedTextSize ?: 25f
+                val size = com.lagradost.cloudstream3.ui.subtitles.SubtitlesFragment.subtitleStyleState.value.fixedTextSize ?: com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
                         FText("Size")
@@ -292,7 +292,7 @@ fun openSubtitleSettings(s: PlayerSession) {
                     FText("${Math.round(size)}", Modifier.width(48.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
                 }
                 Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                    Button("Reset", { s.setSubtitleDelay(0); s.changeSubtitleSize(25f) }, enabled = s.subtitleDelayMs != 0L || size != 25f)
+                    Button("Reset", { s.setSubtitleDelay(0); s.changeSubtitleSize(com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE) }, enabled = s.subtitleDelayMs != 0L || size != com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE)
                 }
             }
         },
