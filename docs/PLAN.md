@@ -687,7 +687,7 @@ not started (nothing on screen for seconds), and when a source failed and the ne
 
 ## 19. Session 12 (2026-10-03): repository clean-up, update checker, v0.1.0 installer
 
-- **Repository** (github.com/lelouchcodes11/cs3d): `git init` done, remote `origin` set, nothing committed. Build output, caches, `dist/` and the upstream checkout `reference/` are
+- **Repository** (github.com/lelouchcodes11/cs3d): pushed 2026-10-03 (commit e6df1a6 on top of the placeholder README commit); release v0.1.0 (pre-release) published with the MSI (SHA-256 3e1ea1bd...5b3c6). Build output, caches, `dist/` and the upstream checkout `reference/` are
   in `.gitignore`. The only file above GitHub's 100 MB limit, `app/src/main/resources/win32-x86-64/mpv-2.dll` (libmpv 0.41, 115 MB), is stored with Git LFS
   (`.gitattributes`; `git lfs install` before cloning/pushing). A second identical copy (`app/src/main/natives/windows-x64`, a dev convenience) was removed; a dev run unpacks
   the resource like the packaged app. No secrets or personal data in the sources (scanned: keys, tokens, sync URL, e-mail, local paths).
