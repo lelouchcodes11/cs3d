@@ -708,3 +708,26 @@ not started (nothing on screen for seconds), and when a source failed and the ne
   `msiexec /a` (administrative extract) fails with 1603 for this per-user MSI: test the packaged app from `app/build/installer/CloudStream` instead.
 - **Gotchas**: a few `build/` folders were left with files that Windows would not let anyone delete (access denied even to takeown, ACL of another sandbox user); the folders were
   moved out of the project to `%TEMP%\cs-stale-build`. Do not kill processes by image name (`java.exe`, `CloudStream.exe`) while the user may run the app: filter by path.
+
+## 20. Session 13 (2026-10-03): live DASH channels looped two seconds ("JIO TV videos play in a 2 sec loop after some time")
+
+- **Cause** (measured with ffmpeg's demuxer log, `-Dcloudstream.mpvlog=v` plus `msg-level=ffmpeg/demuxer=v`): JIO TV's manifest (Broadpeak packager, `type=dynamic`, SegmentTimeline with
+  `$Time$`, `timeShiftBufferDepth` 60 s, `minimumUpdatePeriod` 2 s) is cached by the CDN and runs one or two segments behind what the CDN already serves (a segment is there ~2 s before the
+  manifest lists it; one that is not there yet is a 404). ffmpeg's `dashdec.c` keeps a position into the list: at the live edge it asks for the "next" segment, which maps to the end of the
+  stale list, so it gets that segment (valid), then asks for the next position, which maps to the *same* time again, and so on until the manifest has caught up: the same audio (and video)
+  segment 2 to 7 times in a row (log: `new fragment: min[0] max[29]` with an identical `DASH request for url` each time; mpv: `Invalid audio PTS: 122.005 -> 120.000` every 2 s,
+  `Audio/Video desynchronisation detected`, playback speed 0.7x). It starts when the demuxer has caught up with the live edge (the first ~20 s read the 60 s backlog at full speed),
+  hence "after some time". The player starts 60 s behind live: ffmpeg's start position for a dynamic timeline is "60 seconds before the end".
+- **Fix** `player/DashProxy.kt` (loopback server like `HlsProxy`/`RangeProxy`, used for every DASH link; `MpvPlayer.loadPlayer`, with the same "try the other way once" fallback after an error):
+  manifest and segments (addressed relative to it) are fetched with the app's client and the link's headers and passed on unchanged (status, Range, content type, retry on a new connection);
+  for a live manifest a segment (its address ends in a number of 6+ digits) that was just sent completely is not sent again: the repeat gets a `404` after 250 ms, ffmpeg reads the manifest
+  again and goes on to the next position, until the real next segment is asked for (a not yet published segment also gets a short pause before its 404, ffmpeg would spin). Every segment
+  is delivered once. Static (on-demand) manifests are passed through.
+- **Checked** (dev instance, copy of the data folder with a dead sync address, JIO TV > Pogo Hindi): before, glitches from ~1 min after the open (`Invalid audio PTS` back by 2 s, playback speed
+  0.7-0.8x for a minute or more); with the proxy 12+ min with no backward jump, speed exactly 1.00x, A/V sync 0.00001 s; pause 80 s and resume (plays the cache, then continues live; the
+  ~25 s forward jumps in the log are the live content that was not kept); audio language switch (`A` key reopens the stream with `aid`) works; on-demand DASH (Akamai bbb_30fps.mpd, 4K h264)
+  plays through the proxy (`runLinkLab -Pjvm="-Dlinklab.url=..."`). NOT tested: other live DASH channels (Cricify, SKTech), a manifest with an absolute `BaseURL` (its segments bypass the proxy
+  and are not protected), pauses longer than a few minutes.
+- **Tools**: ffmpeg's own messages (`DASH request for url`, `old fragment`, `new fragment`, `Failed to open fragment`) only show with `msg-level` set for the module; the quickest way is a temporary
+  `mpv_set_option_string(ctx, "msg-level", "all=no,ffmpeg/demuxer=v,lavf=v,ad=v,cplayer=v,curl=v")` before `mpv_initialize` (no video-decoder trace: `ffmpeg=trace` writes 20 MB/min). `dashdec.c` of the
+  bundled libavformat 63.7 matches FFmpeg master (github.com/FFmpeg/FFmpeg, libavformat/dashdec.c: `get_current_fragment`, `refresh_manifest`, `read_data`).

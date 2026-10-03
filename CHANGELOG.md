@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed live DASH channels (for example JIO TV) repeating the last two seconds after a while: the channel's manifest lags behind its segments, which made the player fetch and play the same segment several times in a row. Every segment is played once now.
+
 ## 0.1.0 (pre-release)
 
 First public build of CloudStream for Windows: a native Windows 11 (Fluent) app on the CloudStream 4.8.0 engine.

@@ -363,7 +363,7 @@ open class MpvPlayer : IPlayer {
                             val message = mpv.mpv_error_string(end.error) ?: "error ${end.error}"
                             val failed = currentLink
                             val wrapper = failed?.url?.contains("enc-dec.app/api/parse-", ignoreCase = true) == true
-                            if (failed != null && !proxyTried && isHls(failed) && !(wrapper && useProxy)) {
+                            if (failed != null && !proxyTried && (isHls(failed) || isDash(failed)) && !(wrapper && useProxy)) {
                                 // once more the other way: plain when the playlist server failed, through it when the plain address did
                                 proxyTried = true
                                 useProxy = !useProxy
@@ -623,8 +623,9 @@ open class MpvPlayer : IPlayer {
         if (link != null && link.url != lastLinkUrl) {
             lastLinkUrl = link.url
             // HLS goes through the local playlist server: it loads the many playlists of a master at the same time (ffmpeg asks
-            // for them one after the other, ~10 s for a service that lists dozens of subtitle playlists) and repairs wrappers
-            useProxy = isHls(link) && link.url.startsWith("http", ignoreCase = true) && !link.url.contains("127.0.0.1")
+            // for them one after the other, ~10 s for a service that lists dozens of subtitle playlists) and repairs wrappers;
+            // DASH goes through DashProxy, which keeps live channels from repeating a segment (the "2 second loop")
+            useProxy = (isHls(link) || isDash(link)) && link.url.startsWith("http", ignoreCase = true) && !link.url.contains("127.0.0.1")
             proxyTried = false
             useRangeProxy = false
             rangeTried = false
@@ -687,12 +688,15 @@ open class MpvPlayer : IPlayer {
                     if (link.headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) put("User-Agent", defaultUserAgent)
                     putAll(link.headers)
                     if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
-                }) else if (useProxy) HlsProxy.wrap(address, buildMap {
-                    // the playlists are fetched with what mpv would have sent
-                    if (link.headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) put("User-Agent", defaultUserAgent)
-                    putAll(link.headers)
-                    if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
-                }) else address
+                }) else if (useProxy) {
+                    // the playlists (DASH: the manifest and the segments) are fetched with what mpv would have sent
+                    val sent = buildMap {
+                        if (link.headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) put("User-Agent", defaultUserAgent)
+                        putAll(link.headers)
+                        if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
+                    }
+                    if (isDash(link)) DashProxy.wrap(address, sent) else HlsProxy.wrap(address, sent)
+                } else address
             }
             data != null -> data.uri.toString()
             else -> null
@@ -727,6 +731,9 @@ open class MpvPlayer : IPlayer {
 
     private fun isHls(link: ExtractorLink): Boolean =
         link.type == com.lagradost.cloudstream3.utils.ExtractorLinkType.M3U8 || link.url.contains(".m3u8", ignoreCase = true)
+
+    private fun isDash(link: ExtractorLink): Boolean =
+        link.type == com.lagradost.cloudstream3.utils.ExtractorLinkType.DASH || link.url.substringBefore('?').endsWith(".mpd", ignoreCase = true)
 
     /** A single http(s) file (not a playlist, DASH manifest, torrent or local server address) */
     private fun isPlainFile(link: ExtractorLink): Boolean =
