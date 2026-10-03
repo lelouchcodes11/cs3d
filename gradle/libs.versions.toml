@@ -1,0 +1,104 @@
+# Versions mirror the official CloudStream catalog (reference/cloudstream/gradle/libs.versions.toml)
+# so that extensions see the exact same library APIs as on Android.
+[versions]
+annotation = "1.10.0"
+animeDb = "1.0.2"
+conscrypt = "2.5.2"
+jmdns = "3.6.1"
+bouncycastle = "1.81"
+buildkonfigGradlePlugin = "0.21.2"
+coil = "3.3.0"
+cryptography = "0.6.0"
+dex2jar = "2.4.38"
+gson = "2.11.0"
+fuzzywuzzy = "1.4.0"
+jacksonModuleKotlin = { strictly = "2.13.1" }
+jcefmaven = "146.0.10"
+jcefNatives = "jcef-d3de827+cef-146.0.10+g8219561+chromium-146.0.7680.179"
+jna = "5.17.0"
+json = "20260522"
+jsoup = "1.22.1"
+juniversalchardet = "2.5.0"
+kotlinGradlePlugin = "2.4.0"
+kotlinxAtomicfu = "0.33.0"
+kotlinxCollectionsImmutable = "0.4.0"
+kotlinxCoroutines = "1.11.0"
+kotlinxDatetime = "0.8.0"
+kotlinxIOCore = "0.9.1"
+kotlinxSerializationJson = "1.11.0"
+kxml2 = "2.3.0"
+ksoup = "0.2.6"
+ktor = "3.5.0"
+newpipeextractor = "v0.26.3"
+nicehttp = "0.4.18"
+rhino = { strictly = "1.8.1" }
+composeMaterial3 = "1.12.0-alpha03"
+composeMultiplatform = "1.12.0"
+lifecycleViewmodelCompose = "2.11.0"
+lifecycle = "2.11.0"
+qrcodeKotlin = "4.5.0"
+
+[libraries]
+annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }
+anime-db = { module = "com.github.recloudstream:anime-db", version.ref = "animeDb" }
+conscrypt = { module = "org.conscrypt:conscrypt-openjdk-uber", version.ref = "conscrypt" }
+jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
+bouncycastle = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+coil = { module = "io.coil-kt.coil3:coil", version.ref = "coil" }
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
+coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptography" }
+cryptography-provider-optimal = { module = "dev.whyoleg.cryptography:cryptography-provider-optimal", version.ref = "cryptography" }
+dex-translator = { module = "de.femtopedia.dex2jar:dex-translator", version.ref = "dex2jar" }
+dex-tools = { module = "de.femtopedia.dex2jar:dex-tools", version.ref = "dex2jar" }
+fuzzywuzzy = { module = "me.xdrop:fuzzywuzzy", version.ref = "fuzzywuzzy" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jacksonModuleKotlin" }
+jcefmaven = { module = "me.friwi:jcefmaven", version.ref = "jcefmaven" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+json = { module = "org.json:json", version.ref = "json" }
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+juniversalchardet = { module = "com.github.albfernandez:juniversalchardet", version.ref = "juniversalchardet" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlinGradlePlugin" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlinGradlePlugin" }
+kotlinx-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "kotlinxAtomicfu" }
+kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
+kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinxIOCore" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+kxml2 = { module = "net.sf.kxml:kxml2", version.ref = "kxml2" }
+ksoup = { module = "com.fleeksoft.ksoup:ksoup", version.ref = "ksoup" }
+ktor-client-java = { module = "io.ktor:ktor-client-java", version.ref = "ktor" }
+ktor-http = { module = "io.ktor:ktor-http", version.ref = "ktor" }
+lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle" }
+lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "lifecycle" }
+newpipeextractor = { module = "com.github.teamnewpipe:NewPipeExtractor", version.ref = "newpipeextractor" }
+nicehttp = { module = "com.github.Blatzar:NiceHttp", version.ref = "nicehttp" }
+qrcode-kotlin = { module = "io.github.g0dkar:qrcode-kotlin", version.ref = "qrcodeKotlin" }
+rhino = { module = "org.mozilla:rhino", version.ref = "rhino" }
+
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "composeMaterial3" }
+compose-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
+compose-ui-tooling-preview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
+lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
+
+[plugins]
+buildkonfig = { id = "com.codingfeline.buildkonfig", version.ref = "buildkonfigGradlePlugin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlinGradlePlugin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlinGradlePlugin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlinGradlePlugin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlinGradlePlugin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+
+[bundles]
+cryptography = ["cryptography-core", "cryptography-provider-optimal"]
+compose = ["compose-foundation", "compose-material3", "compose-resources", "compose-runtime", "compose-ui", "compose-ui-tooling-preview", "lifecycle-viewmodel-compose", "coil-compose"]

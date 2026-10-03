@@ -1,0 +1,364 @@
+package com.lagradost.desktop.ui.screens.search
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.lagradost.cloudstream3.APIHolder.getApiFromNameNull
+import com.lagradost.cloudstream3.R
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.CloudStreamApp.Companion.removeKey
+import com.lagradost.cloudstream3.CloudStreamApp.Companion.removeKeys
+import com.lagradost.cloudstream3.mvvm.Resource
+import com.lagradost.cloudstream3.ui.search.SEARCH_HISTORY_KEY
+import com.lagradost.cloudstream3.ui.search.SearchHistoryItem
+import com.lagradost.cloudstream3.ui.search.SearchViewModel
+import com.lagradost.cloudstream3.utils.AppContextUtils.filterProviderByPreferredMedia
+import com.lagradost.cloudstream3.utils.AppContextUtils.getApiSettings
+import com.lagradost.cloudstream3.utils.DataStoreHelper
+import com.lagradost.cloudstream3.utils.DataStoreHelper.currentAccount
+import com.lagradost.desktop.DesktopBootstrap
+import com.lagradost.desktop.core.Navigator
+import com.lagradost.desktop.core.Route
+import com.lagradost.desktop.core.appVm
+import com.lagradost.desktop.core.observeAsState
+import com.lagradost.desktop.ui.fluent.Button
+import com.lagradost.desktop.ui.fluent.ButtonKind
+import com.lagradost.desktop.ui.fluent.CheckBox
+import com.lagradost.desktop.ui.fluent.Chip
+import com.lagradost.desktop.ui.fluent.FText
+import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.FluentShapes
+import com.lagradost.desktop.ui.fluent.Icon
+import com.lagradost.desktop.ui.fluent.IconButton
+import com.lagradost.desktop.ui.fluent.Icons
+import com.lagradost.desktop.ui.fluent.Overlays
+import com.lagradost.desktop.ui.fluent.PosterCard
+import com.lagradost.desktop.ui.fluent.PosterSkeleton
+import com.lagradost.desktop.ui.fluent.ProgressBar
+import com.lagradost.desktop.ui.fluent.SectionHeader
+import com.lagradost.desktop.ui.fluent.Shelf
+import com.lagradost.desktop.ui.fluent.fluentClickable
+import com.lagradost.desktop.ui.fluent.rememberInteraction
+import com.lagradost.desktop.ui.screens.common.PosterGrid
+import com.lagradost.desktop.ui.screens.home.openCard
+import com.lagradost.desktop.ui.shell.ShellState
+import com.lagradost.desktop.ui.shell.TopBarHeight
+import androidx.compose.ui.semantics.Role
+import kotlinx.coroutines.launch
+
+private val gutter = 24.dp
+
+private fun typeName(t: TvType): String = when (t) {
+    TvType.Movie -> "Movies"
+    TvType.TvSeries -> "TV series"
+    TvType.Anime -> "Anime"
+    TvType.AnimeMovie -> "Anime movies"
+    TvType.OVA -> "OVA"
+    TvType.Cartoon -> "Cartoons"
+    TvType.AsianDrama -> "Asian dramas"
+    TvType.Documentary -> "Documentaries"
+    TvType.Live -> "Live streams"
+    TvType.Torrent -> "Torrents"
+    TvType.NSFW -> "NSFW"
+    TvType.Others -> "Others"
+    TvType.Music -> "Music"
+    TvType.AudioBook -> "Audiobooks"
+    TvType.CustomMedia -> "Media"
+    TvType.Audio -> "Audio"
+    TvType.Podcast -> "Podcasts"
+    TvType.Video -> "Videos"
+}
+
+/** Same provider selection as the Android search: preferred media types, language, chosen types and providers */
+private fun activeProviders(types: List<TvType>, selectedApis: Set<String>): Set<String> {
+    val ctx = DesktopBootstrap.activityOrNull() ?: return selectedApis
+    val default = enumValues<TvType>().sorted().filter { it != TvType.NSFW }.map { it.ordinal.toString() }.toSet()
+    val preferredTypes = (androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+        .getStringSet(ctx.getString(R.string.prefer_media_type_key), default)
+        ?.ifEmpty { default } ?: default).mapNotNull { it.toIntOrNull() }
+    val settings = ctx.getApiSettings()
+    val notFiltered = selectedApis.filter { settings.contains(it) }
+        .map { name -> name to getApiFromNameNull(name)?.supportedTypes }
+        .filter { (_, t) -> t?.any { preferredTypes.contains(it.ordinal) } == true }
+    return notFiltered.filter { (_, t) -> t?.any { types.contains(it) } == true }
+        .ifEmpty { notFiltered }.map { it.first }.toSet()
+}
+
+@Composable
+fun SearchScreen(route: Route.Search) {
+    val c = Fluent.colors
+    val vm = appVm<SearchViewModel>()
+    val scope = rememberCoroutineScope()
+    var types by remember { mutableStateOf(DataStoreHelper.searchPreferenceTags) }
+    var apis by remember { mutableStateOf(DataStoreHelper.searchPreferenceProviders.toSet()) }
+    var merged by remember { mutableStateOf(false) }
+    val query = route.query?.trim().orEmpty()
+
+    fun run() {
+        if (query.length > 1) {
+            // from the Home page: only the extension chosen there (the provider filters of the Search page do not apply)
+            if (route.only != null) vm.searchAndCancel(query, setOf(route.only))
+            else vm.searchAndCancel(query, activeProviders(types, apis))
+        }
+    }
+    LaunchedEffect(route.nonce) {
+        ShellState.searchText = query
+        vm.updateHistory()
+        if (query.isNotEmpty()) run() else vm.clearSearch()
+    }
+
+    val current by vm.currentSearch.observeAsState()
+    val response by vm.searchResponse.observeAsState()
+    val history by vm.currentHistory.observeAsState()
+    val loading = response is Resource.Loading
+    // a search made while extensions are still loading finds nothing in the ones that are not there yet: when more of them have loaded
+    // and the page is still empty, ask again (every extension that loads raises the event, hence the wait)
+    var loadedEpoch by remember { mutableStateOf(0) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val onLoaded: (Boolean) -> Unit = { loadedEpoch++ }
+        com.lagradost.cloudstream3.MainActivity.afterPluginsLoadedEvent += onLoaded
+        onDispose { com.lagradost.cloudstream3.MainActivity.afterPluginsLoadedEvent -= onLoaded }
+    }
+    LaunchedEffect(loadedEpoch) {
+        if (loadedEpoch == 0 || query.length <= 1) return@LaunchedEffect
+        kotlinx.coroutines.delay(2_000)
+        if (response !is Resource.Loading && current.orEmpty().values.none { it.list.isNotEmpty() }) run()
+    }
+    val validTypes = remember(route.nonce) {
+        DesktopBootstrap.activityOrNull()?.let { runCatching { it.filterProviderByPreferredMedia().flatMap { api -> api.supportedTypes }.distinct().sorted() }.getOrNull() }.orEmpty()
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val cardWidth = if (maxWidth >= 1008.dp) 168.dp else 148.dp
+        if (query.isEmpty()) {
+            HistoryPage(history.orEmpty(), vm)
+            return@BoxWithConstraints
+        }
+        val results = current.orEmpty().filterValues { it.list.isNotEmpty() }
+        val mergedList = (response as? Resource.Success)?.value?.list.orEmpty()
+
+        if (merged && mergedList.isNotEmpty()) {
+            PosterGrid(mergedList, showType = true, header = {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ResultsHeader(query, loading, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } })
+                }
+            })
+        } else {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp)) {
+                item(key = "header") {
+                    ResultsHeader(query, loading, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } })
+                }
+                if (results.isEmpty()) {
+                    if (loading) items(3, key = { "sk$it" }) { SkeletonRow(cardWidth) }
+                    else item(key = "none") { NoResults(query) }
+                }
+                results.entries.forEach { (name, list) ->
+                    item(key = "p-$name") {
+                        Column(Modifier.padding(bottom = 24.dp)) {
+                            SectionHeader(
+                                "$name  ·  ${list.list.size}${if (list.hasNext) "+" else ""}",
+                                Modifier.padding(horizontal = gutter),
+                                onSeeAll = { Navigator.go(Route.Section("$query · $name", list.list)) },
+                            )
+                            Box(Modifier.height(8.dp))
+                            val state = rememberLazyListState()
+                            if (list.hasNext) {
+                                LaunchedEffect(state, list.list.size) {
+                                    snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }.collect { last ->
+                                        if (last >= list.list.size - 3 && list.hasNext) scope.launch { vm.expandAndReturn(name) }
+                                    }
+                                }
+                            }
+                            Shelf(list.list, cardWidth, state = state, key = { it.url }) { card ->
+                                PosterCard(card, { openCard(card) }, cardWidth)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultsHeader(
+    query: String,
+    loading: Boolean,
+    only: String?,
+    onSearchAll: () -> Unit,
+    types: List<TvType>,
+    validTypes: List<TvType>,
+    merged: Boolean,
+    onTypes: (List<TvType>) -> Unit,
+    onMerged: (Boolean) -> Unit,
+    onProviders: () -> Unit,
+) {
+    val c = Fluent.colors
+    Column(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 16.dp)) {
+        FText("Results for “$query”", style = Fluent.type.title, maxLines = 2)
+        Box(Modifier.height(12.dp))
+        if (loading) {
+            ProgressBar(null, Modifier.fillMaxWidth())
+            Box(Modifier.height(12.dp))
+        }
+        if (only != null) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Chip("Only in $only", true, {})
+                Button("Search all extensions", onSearchAll, icon = Icons.Search)
+            }
+            return
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.lazy.LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(validTypes, key = { it.name }) { t ->
+                    Chip(typeName(t), t in types, onClick = {
+                        val next = if (t in types) types - t else types + t
+                        onTypes(next)
+                    })
+                }
+            }
+            Button("Providers", onProviders, icon = Icons.Filter)
+            Chip("By provider", !merged, { onMerged(false) })
+            Chip("All results", merged, { onMerged(true) })
+        }
+    }
+}
+
+private fun chooseProviders(selected: Set<String>, onDone: (Set<String>) -> Unit) {
+    val ctx = DesktopBootstrap.activityOrNull() ?: return
+    val all = runCatching { ctx.filterProviderByPreferredMedia().map { it.name }.sorted() }.getOrNull().orEmpty()
+    val working = androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(selected.filter { it in all }) }
+    Overlays.show(
+        Overlays.Dialog(
+            title = "Search providers",
+            primary = "Apply",
+            close = "Cancel",
+            onPrimary = { onDone(working.toSet()) },
+            width = 480.dp,
+        ) {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button("Select all", { working.clear(); working.addAll(all) }, kind = ButtonKind.Subtle)
+                    Button("Select none", { working.clear() }, kind = ButtonKind.Subtle)
+                }
+                Box(Modifier.height(8.dp))
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(all, key = { it }) { name ->
+                        CheckBox(name in working, { on -> if (on) working.add(name) else working.remove(name) }, Modifier.fillMaxWidth().padding(vertical = 6.dp), label = name)
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun SkeletonRow(cardWidth: androidx.compose.ui.unit.Dp) {
+    Column(Modifier.padding(bottom = 24.dp, start = gutter)) {
+        Box(Modifier.size(180.dp, 22.dp).clip(RoundedCornerShape(4.dp)).background(Fluent.colors.card))
+        Box(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { repeat(8) { PosterSkeleton(cardWidth) } }
+    }
+}
+
+@Composable
+private fun NoResults(query: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 64.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Search, size = 40.dp, tint = Fluent.colors.textTertiary)
+        FText("No results for “$query”", style = Fluent.type.subtitle)
+        FText("Check the spelling, pick more providers, or try fewer filters.", color = Fluent.colors.textSecondary)
+    }
+}
+
+@Composable
+private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel) {
+    val c = Fluent.colors
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = gutter, end = gutter, top = TopBarHeight + 16.dp, bottom = 32.dp)) {
+        item {
+            FText("Search", style = Fluent.type.title)
+            Box(Modifier.height(4.dp))
+            FText("Find movies, series and anime across all your installed providers.", color = c.textSecondary)
+            Box(Modifier.height(24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FText("Recent searches", Modifier.weight(1f), style = Fluent.type.subtitle)
+                if (history.isNotEmpty()) Button("Clear all", {
+                    Overlays.message("Clear search history?", "All recent searches will be removed.", primary = "Clear", onPrimary = {
+                        removeKeys("$currentAccount/$SEARCH_HISTORY_KEY")
+                        vm.updateHistory()
+                    })
+                }, kind = ButtonKind.Subtle)
+            }
+            Box(Modifier.height(8.dp))
+        }
+        if (history.isEmpty()) {
+            item {
+                FText("Nothing yet. Use the search box above (Ctrl+K).", color = c.textTertiary)
+            }
+        }
+        items(history, key = { it.key }) { item ->
+            HistoryRow(item, onOpen = { ShellState.searchText = item.searchText; Navigator.search(item.searchText) }, onRemove = {
+                removeKey("$currentAccount/$SEARCH_HISTORY_KEY", item.key)
+                vm.updateHistory()
+            })
+        }
+    }
+}
+
+@Composable
+private fun HistoryRow(item: SearchHistoryItem, onOpen: () -> Unit, onRemove: () -> Unit) {
+    val c = Fluent.colors
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(FluentShapes.control)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .clip(shape)
+            .background(if (hovered) c.subtleHover else Color.Transparent, shape)
+            .fluentClickable(source, true, shape, Role.Button, onOpen)
+            .padding(start = 12.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.History, size = 14.dp, tint = c.textSecondary)
+        Box(Modifier.width(12.dp))
+        FText(item.searchText, Modifier.weight(1f), maxLines = 1)
+        if (hovered) IconButton(Icons.Close, onRemove, size = 32.dp, iconSize = 10.dp, tooltip = "Remove")
+    }
+}

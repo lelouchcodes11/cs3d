@@ -1,0 +1,9 @@
+# The bundled player library (libmpv, 115 MB) is above GitHub's 100 MB file limit: it is stored with Git LFS.
+# Install Git LFS once (https://git-lfs.com, `git lfs install`) before cloning or pushing.
+*.dll filter=lfs diff=lfs merge=lfs -text
+
+# Scripts that must keep their line endings
+gradlew text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

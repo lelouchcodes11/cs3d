@@ -1,0 +1,30 @@
+# Build output and caches
+.gradle/
+.kotlin/
+build/
+out/
+
+# Packaged apps, installers, portable copies (and the data folder of a portable copy)
+dist/
+
+# Local checkout of upstream CloudStream used for reference while porting (a repository of its own)
+reference/
+
+# Secrets and machine specific settings (API keys for the build go in here, see README)
+local.properties
+*.jks
+*.keystore
+
+# Logs and crash dumps
+*.log
+hs_err_pid*
+replay_pid*
+*.hprof
+
+# Editors and OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
