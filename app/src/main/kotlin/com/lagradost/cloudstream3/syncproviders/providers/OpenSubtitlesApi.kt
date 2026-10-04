@@ -44,6 +44,24 @@ class OpenSubtitlesApi : SubtitleAPI() {
         var currentCoolDown: Long = 0L
         const val userAgent = "Cloudstream3 v0.2"
         val headers = mapOf("user-agent" to userAgent, "Api-Key" to API_KEY)
+
+        /** The token and the reason (in OpenSubtitles' words) of a login answer, whatever its shape */
+        internal fun readLoginAnswer(text: String): Pair<String?, String?> {
+            val node = runCatching { com.fasterxml.jackson.databind.ObjectMapper().readTree(text) }.getOrNull()
+            if (node == null || !node.isObject) return null to null
+            val token = node.path("token").asText("").takeIf { it.isNotBlank() && it != "null" }
+            val reason = node.path("message").asText("").trim().takeIf { it.isNotEmpty() }
+            return token to reason
+        }
+
+        /** What the user is told when the login did not give a token */
+        internal fun loginFailure(code: Int, reason: String?): String = when {
+            code == 429 -> "OpenSubtitles says too many tries: wait a minute and sign in again."
+            reason != null && reason.contains("invalid username", ignoreCase = true) ->
+                "OpenSubtitles: ${reason.trimEnd('.')}. Use your user name, not your e-mail, and the password of the opensubtitles.com account (an account made with Google has no password)."
+            reason != null -> "OpenSubtitles: ${reason.trimEnd('.')}."
+            else -> "OpenSubtitles did not give a login (HTTP $code)."
+        }
     }
 
     private fun canDoRequest(): Boolean {
@@ -61,8 +79,18 @@ class OpenSubtitlesApi : SubtitleAPI() {
         throw ErrorLoadingException("Too many requests")
     }
 
+    /**
+     * A token lasts 24 hours and every search runs through here first. A refresh that cannot be done (the login server is blocked, a timeout, the
+     * rate limit) must not make the search fail: without an account the search and the older interface's download still work, so no token is
+     * returned and the caller carries on without one.
+     */
     override suspend fun refreshToken(token: AuthToken): AuthToken? {
-        return login(parseJson<AuthLoginResponse>(token.payload ?: return null))
+        return try {
+            login(parseJson<AuthLoginResponse>(token.payload ?: return null))
+        } catch (t: Throwable) {
+            Log.w(TAG, "token refresh failed, going on without an account: ${t.message}")
+            null
+        }
     }
 
     override suspend fun user(token: AuthToken?): AuthUser? {
@@ -75,10 +103,11 @@ class OpenSubtitlesApi : SubtitleAPI() {
     }
 
     override suspend fun login(form: AuthLoginResponse): AuthToken? {
-        val username = form.username ?: return null
-        val password = form.password ?: return null
+        val username = form.username?.trim().orEmpty()
+        val password = form.password.orEmpty()
+        if (username.isEmpty() || password.isEmpty()) throw ErrorLoadingException("Enter your OpenSubtitles user name and password.")
 
-        val response = app.post(
+        val answer = app.post(
             url = "$HOST/login",
             headers = mapOf(
                 "Content-Type" to "application/json",
@@ -87,11 +116,17 @@ class OpenSubtitlesApi : SubtitleAPI() {
                 "username" to username,
                 "password" to password
             ),
-        ).parsed<OAuthToken>()
+        )
+        // some countries get a web page (a court order in India) instead of the login server: say that, not a parser error
+        if (answer.text.trimStart().startsWith("<")) {
+            OpenSubtitlesLegacy.markComBlocked()
+            throw ErrorLoadingException("OpenSubtitles' login server is blocked on this network (your internet provider answers with a web page). Subtitle search and downloads still work without an account; try the sign-in again later or on another network.")
+        }
+        val (token, reason) = readLoginAnswer(answer.text)
 
         return AuthToken(
-            accessToken = response.token
-                ?: throw ErrorLoadingException("Invalid password or username"),
+            accessToken = token
+                ?: throw ErrorLoadingException(loginFailure(answer.code, reason)),
             /// JWT token is valid 24 hours after successfully authentication of user
             accessTokenLifetime = APIHolder.unixTime + 60 * 60 * 24,
             payload = form.toJson()

@@ -76,8 +76,14 @@ fun showFluentAppLogin(api: AuthRepo) {
             if (req.username) TextBox(username, { username = it }, Modifier.fillMaxWidth(), placeholder = "User name", leadingIcon = Icons.Person, enabled = !busy, onSubmit = ::submit, height = 36.dp)
             if (req.email) TextBox(email, { email = it }, Modifier.fillMaxWidth(), placeholder = "Email", leadingIcon = Icons.Person, enabled = !busy, onSubmit = ::submit, height = 36.dp)
             if (req.server) TextBox(server, { server = it }, Modifier.fillMaxWidth(), placeholder = "Server", leadingIcon = Icons.Settings, enabled = !busy, onSubmit = ::submit, height = 36.dp)
-            if (req.password) TextBox(password, { password = it }, Modifier.fillMaxWidth(), placeholder = "Password", leadingIcon = Icons.Settings, enabled = !busy, onSubmit = ::submit, height = 36.dp, clearable = false, visualTransformation = PasswordVisualTransformation())
-            error?.let { FText(it, color = c.critical, style = Fluent.type.caption, maxLines = 4) }
+            if (req.password) TextBox(password, { password = it }, Modifier.fillMaxWidth(), placeholder = if (api.idPrefix == "subdl") "Password or API key" else "Password", leadingIcon = Icons.Settings, enabled = !busy, onSubmit = ::submit, height = 36.dp, clearable = false, visualTransformation = PasswordVisualTransformation())
+            // what to enter: the two services have their own pitfalls (an account made with Google has no password, OpenSubtitles wants the user name)
+            when (api.idPrefix) {
+                "subdl" -> "Made your SubDL account with Google? Leave the e-mail empty and paste your API key (subdl.com, Panel, API) in the password field."
+                "opensubtitles" -> "Use your user name, not your e-mail. Searching and downloading subtitles also work without an account."
+                else -> null
+            }?.let { FText(it, color = c.textSecondary, style = Fluent.type.caption, maxLines = 3) }
+            error?.let { FText(it, color = c.critical, style = Fluent.type.caption, maxLines = 6) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button("Sign in", ::submit, Modifier.weight(1f), ButtonKind.Accent, enabled = !busy)
                 Button("Cancel", { dismiss() }, Modifier.weight(1f), enabled = !busy)

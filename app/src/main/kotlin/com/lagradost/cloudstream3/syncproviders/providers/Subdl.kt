@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.syncproviders.providers
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.lagradost.cloudstream3.ErrorLoadingException
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.subtitles.AbstractSubtitleEntities
@@ -29,27 +30,52 @@ class SubDlApi : SubtitleAPI() {
         const val APIURL = "https://api.subdl.com"
         const val APIENDPOINT = "$APIURL/api/v1/subtitles"
         const val DOWNLOADENDPOINT = "https://dl.subdl.com"
+        const val GOOGLE_HINT = "Signed up with Google? Leave the e-mail empty and paste your API key (subdl.com, Panel, API) in the password field."
+
+        /**
+         * What a SubDL answer says: the value of [field] (null when absent) and the reason in SubDL's own words. A wrong login is answered with
+         * HTTP 200 and {"status":false,"error":"Email or password is not valid."}, which used to be parsed as a login and failed with an internal
+         * "missing value for creator parameter token" message; and the account fields that the old class demanded (country, scStepCode ...) are not needed.
+         */
+        internal fun readLoginAnswer(text: String, field: String): Pair<String?, String?> {
+            val node = runCatching { com.fasterxml.jackson.databind.ObjectMapper().readTree(text) }.getOrNull()
+            if (node == null || !node.isObject) return null to null
+            val value = if (field.isEmpty()) null else node.path(field).asText("").takeIf { it.isNotBlank() && it != "null" }
+            val reason = listOf("error", "message").firstNotNullOfOrNull { node.path(it).asText("").trim().takeIf { s -> s.isNotEmpty() } }
+            return value to reason
+        }
     }
 
+    /**
+     * E-mail and password, or (the e-mail left empty) the API key in the password field: an account made with "Sign in with Google" has no password,
+     * and the key is all that this app needs from the account (the login only exists to fetch it).
+     */
     override suspend fun login(form: AuthLoginResponse): AuthToken? {
-        val email = form.email ?: return null
-        val password = form.password ?: return null
-        val tokenResponse = app.post(
-            url = "$APIURL/login",
-            json = mapOf(
-                "email" to email,
-                "password" to password
-            )
-        ).parsed<OAuthTokenResponse>()
+        val email = form.email?.trim().orEmpty()
+        val secret = form.password?.trim().orEmpty()
+        if (secret.isEmpty()) throw ErrorLoadingException("Enter your password, or your SubDL API key if you sign in with Google.")
+        if (email.isEmpty()) return loginWithApiKey(secret)
 
-        val apiResponse = app.get(
-            url = "$APIURL/user/userApi",
-            headers = mapOf(
-                "Authorization" to "Bearer ${tokenResponse.token}"
+        val response = app.post(url = "$APIURL/login", json = mapOf("email" to email, "password" to secret))
+        val (token, reason) = readLoginAnswer(response.text, "token")
+        if (token == null) {
+            throw ErrorLoadingException(
+                (if (reason != null) "SubDL: ${reason.trimEnd('.')}. " else "SubDL did not answer with a login (HTTP ${response.code}). ") + GOOGLE_HINT,
             )
-        ).parsed<ApiKeyResponse>()
+        }
+        val keyAnswer = app.get(url = "$APIURL/user/userApi", headers = mapOf("Authorization" to "Bearer $token"))
+        val apiKey = readLoginAnswer(keyAnswer.text, "api_key").first
+            ?: throw ErrorLoadingException("SubDL signed you in but did not give an API key. Paste your API key (subdl.com, Panel, API) in the password field and leave the e-mail empty.")
+        return AuthToken(accessToken = apiKey, payload = email)
+    }
 
-        return AuthToken(accessToken = apiResponse.apiKey, payload = email)
+    /** The key is checked with a search: a wrong key is answered with 403 "not_authorized" */
+    private suspend fun loginWithApiKey(key: String): AuthToken {
+        val response = app.get("$APIENDPOINT?api_key=${java.net.URLEncoder.encode(key, "UTF-8")}&film_name=test&languages=EN")
+        val (_, reason) = readLoginAnswer(response.text, "")
+        val denied = response.code == 401 || response.code == 403 || reason?.contains("authorized", ignoreCase = true) == true
+        if (denied || response.text.isBlank()) throw ErrorLoadingException("SubDL did not accept this API key" + (reason?.let { " ($it)" } ?: "") + ". Copy it again from subdl.com, Panel, API.")
+        return AuthToken(accessToken = key, payload = "API key ..." + key.takeLast(4))
     }
 
     override suspend fun user(token: AuthToken?): AuthUser? {

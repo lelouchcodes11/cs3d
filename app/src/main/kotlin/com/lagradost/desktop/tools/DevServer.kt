@@ -810,6 +810,20 @@ object DevServer {
                 com.lagradost.desktop.runtime.Notifications.post(null, 4242, n)
                 ok(ex)
             }
+            "/httpprobe" -> {
+                // dev: ONE request through the app's own HTTP client, nothing secret in it: /httpprobe?url=https://api.subdl.com/login&post=1 (empty JSON body)
+                // [&os=1 adds the headers OpenSubtitles wants]; prints the status, protocol, content type and the start of the body, or the exception
+                val url = q["url"]!!
+                val extra = if (q["os"] != null) com.lagradost.cloudstream3.syncproviders.providers.OpenSubtitlesApi.headers else emptyMap()
+                val out = kotlinx.coroutines.runBlocking {
+                    runCatching {
+                        val r = if (q["post"] != null) com.lagradost.cloudstream3.app.post(url, json = emptyMap<String, String>(), headers = extra, timeout = 20)
+                        else com.lagradost.cloudstream3.app.get(url, headers = extra, timeout = 20)
+                        "HTTP ${r.code} ${r.okhttpResponse.protocol} ${r.okhttpResponse.header("content-type")}\n${r.text.take(300)}"
+                    }.getOrElse { "FAILED ${it.javaClass.simpleName}: ${it.message}" }
+                }
+                ok(ex, out)
+            }
             "/netcheck" -> {
                 // dev: the app's own HTTP client asks url=<a,b> n times each (4 at a time, 12 s limit); prints ok/failed counts and the error kinds
                 val urls = (q["url"] ?: "https://api.themoviedb.org/3/").split(",")
