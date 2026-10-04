@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.6 (pre-release)
+
+Sign-in fixes for the subtitle services.
+
+**Accounts**
+- SubDL: a wrong e-mail or password now shows what SubDL says ("Email or password is not valid") instead of a long internal error.
+- SubDL accounts made with "Sign in with Google" have no password and could not be used. Leave the e-mail empty and paste your API key (subdl.com, Panel, API) in the password field instead.
+- OpenSubtitles: the sign-in tells you to use your user name (not your e-mail), and says clearly when OpenSubtitles' login server is blocked by your internet provider.
+- Subtitle search no longer fails when your OpenSubtitles sign-in has run out and the login server cannot be reached: it carries on without the account.
+
 ## 0.1.5 (pre-release)
 
 Subtitles that actually load, a calmer and smoother player, OpenSubtitles working again, and a safer installer.
