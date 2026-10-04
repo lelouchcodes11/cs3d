@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.1.4 (pre-release)
+## 0.1.5 (pre-release)
 
-Subtitles that actually load, a calmer and smoother player, and OpenSubtitles working again.
+Subtitles that actually load, a calmer and smoother player, OpenSubtitles working again, and a safer installer.
+
+**Installer and updates**
+- An update could delete your settings, accounts and extensions when they were kept in the install folder (a `data` folder next to `CloudStream.exe`). The new installer moves that folder out of the way during the update and puts it back, and later versions no longer delete the install folder at all. **If you are on 0.1.3 and the `data` folder next to `CloudStream.exe` matters to you, copy it somewhere safe before installing this update.** Version 0.1.4 had this problem and was withdrawn.
+- The app now stops Chromium's helper processes when it closes (one of them could stay alive for a day and make the installer fail with "another application has exclusive access to chrome_debug.log"), and the installer stops such leftovers.
 
 **Subtitles**
 - A small indicator at the top right says what is going on: loading, on, or could not be loaded. It also shows while an online subtitle is being downloaded.

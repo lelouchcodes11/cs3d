@@ -36,7 +36,7 @@ kotlin {
 val appVersion = "4.8.0"
 
 /** This desktop app's own release version: the installer, the About page and the update checker (a GitHub release tag `v<this>`) */
-val desktopVersion = "0.1.4"
+val desktopVersion = "0.1.5"
 
 /**
  * Generates com.lagradost.cloudstream3.R and packages the resources: the Android libraries' res/
@@ -944,9 +944,19 @@ tasks.register("installerMsi") {
         val proc = ProcessBuilder(command).directory(stage).redirectErrorStream(true).start()
         val log = proc.inputStream.bufferedReader().readText()
         if (proc.waitFor() != 0) throw GradleException("jpackage failed (is the WiX Toolset 3.x on PATH?):\n$log")
+        val built = File(stage, "CloudStream-$version.msi")
+        // jpackage's installer deletes the whole install folder when an older version is removed, data folder included (it wiped 826 MB of a user's
+        // data on an upgrade): tools/patch-msi.ps1 makes the upgrade keep the data and stops the product from wiping its folder
+        val patcher = ProcessBuilder(
+            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+            rootProject.layout.projectDirectory.file("tools/patch-msi.ps1").asFile.absolutePath, built.absolutePath,
+        ).redirectErrorStream(true).start()
+        val patchLog = patcher.inputStream.bufferedReader().readText()
+        if (patcher.waitFor() != 0) throw GradleException("patching the MSI failed:\n$patchLog")
+        println(patchLog.trim())
         val out = dest.asFile.also { it.mkdirs() }
         val msi = File(out, "CloudStream-$version-windows-x64.msi")
-        File(stage, "CloudStream-$version.msi").copyTo(msi, overwrite = true)
+        built.copyTo(msi, overwrite = true)
         println("installerMsi: ${msi.absolutePath} (${msi.length() / 1_048_576} MB)")
     }
 }

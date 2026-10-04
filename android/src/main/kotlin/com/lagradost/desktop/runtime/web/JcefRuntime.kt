@@ -83,10 +83,37 @@ object JcefRuntime {
         initFuture.thenAccept(block)
     }
 
+    /** Chromium's helper processes (jcef_helper.exe: gpu, renderer, network) that run from [dir] */
+    private fun helperProcesses(dir: File): List<ProcessHandle> {
+        val prefix = dir.absoluteFile.path.lowercase()
+        return runCatching {
+            ProcessHandle.allProcesses().filter { p ->
+                p.info().command().map { c -> c.lowercase().let { it.startsWith(prefix) && it.endsWith("jcef_helper.exe") } }.orElse(false)
+            }.toList()
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * The helpers are separate processes and the app ends with exitProcess(), CEF is never disposed: a helper that outlives the app keeps files of
+     * the data folder open for ever (one ran for 26 hours and made the installer fail with "another application has exclusive access to
+     * chrome_debug.log"). So the helpers of this run are stopped when the app ends, and the ones that a crashed or killed run left behind
+     * (their parent is gone) are stopped before the next start.
+     */
+    private fun stopStrayHelpers(dir: File) {
+        helperProcesses(dir).filter { it.parent().isEmpty }.forEach { runCatching { it.destroyForcibly() } }
+    }
+
+    private fun stopOwnHelpers(dir: File) {
+        val mine = runCatching { ProcessHandle.current().descendants().map { it.pid() }.toList().toSet() }.getOrDefault(emptySet())
+        helperProcesses(dir).filter { it.pid() in mine || it.parent().isEmpty }.forEach { runCatching { it.destroyForcibly() } }
+    }
+
     private fun init(): CefApp {
         val installDir = File(AndroidRuntime.dataDir, "jcef")
         val cacheDir = File(AndroidRuntime.dataDir, "webview")
         cacheDir.mkdirs()
+        stopStrayHelpers(installDir)
+        Runtime.getRuntime().addShutdownHook(Thread({ stopOwnHelpers(installDir) }, "jcef-helpers-stop"))
         val builder = CefAppBuilder()
         builder.setInstallDir(installDir)
         builder.setProgressHandler { state, percent ->
@@ -114,7 +141,8 @@ object JcefRuntime {
             "--disable-background-timer-throttling",
             "--disable-renderer-backgrounding",
             "--disable-backgrounding-occluded-windows",
-            "--disable-features=CalculateNativeWinOcclusion,HardwareMediaKeyHandling,MediaSessionService",
+            // the on-device AI model service is a helper process that outlives its parent for hours; nothing here needs it
+            "--disable-features=CalculateNativeWinOcclusion,HardwareMediaKeyHandling,MediaSessionService,OptimizationGuideModelExecution,OptimizationGuideOnDeviceModel,OnDeviceModelService",
             "--autoplay-policy=no-user-gesture-required",
             "--disable-blink-features=AutomationControlled",
             "--no-first-run",
