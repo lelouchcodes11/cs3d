@@ -219,7 +219,7 @@ fun openSourcesDialog(s: PlayerSession) {
             val sources = all.filter { it.usable || it.current }
             val hidden = all.size - sources.size
             if (sources.isNotEmpty() || s.loadingMore) Column(Modifier.weight(1f).fillMaxSize()) {
-                ColumnHeader("Sources") { if (s.loadingMore) ProgressRing(size = 16.dp) }
+                ColumnHeader("Sources") { if (s.loadingMore) FText("more loading…", style = Fluent.type.caption, color = Fluent.colors.textSecondary, maxLines = 1, softWrap = false) }
                 LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                     itemsIndexed(sources) { _, src ->
                         ChoiceRow(src.name + if (src.quality.isNotBlank()) "  ${src.quality}" else "", src.link == sourcePick) { sourcePick = src.link }

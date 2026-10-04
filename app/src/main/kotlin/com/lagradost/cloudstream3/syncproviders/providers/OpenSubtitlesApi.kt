@@ -106,7 +106,9 @@ class OpenSubtitlesApi : SubtitleAPI() {
         auth : AuthData?,
         query: AbstractSubtitleEntities.SubtitleSearch
     ): List<AbstractSubtitleEntities.SubtitleEntity>? {
-        throwIfCantDoRequest()
+        // www.opensubtitles.com is blocked at the ISP in some countries (a court-order page in India, for the search as well as for files):
+        // the older anonymous interface then answers the search
+        if (!canDoRequest() || OpenSubtitlesLegacy.comLooksBlocked()) return legacySearch(query)
         val langOpenSubTag = fromCodeToOpenSubtitlesTag(query.lang) ?: query.lang ?: ""
 
         val imdbId = query.imdbId?.replace("tt", "")?.toInt() ?: 0
@@ -124,18 +126,26 @@ class OpenSubtitlesApi : SubtitleAPI() {
             false -> "$HOST/subtitles?query=${queryText}&languages=${langOpenSubTag}$yearQuery$epQuery$seasonQuery"
         }
 
-        val req = app.get(
-            url = searchQueryUrl,
-            headers = mapOf(
-                Pair("Content-Type", "application/json")
-            ) + headers,
-        )
+        val req = try {
+            app.get(
+                url = searchQueryUrl,
+                headers = mapOf(
+                    Pair("Content-Type", "application/json")
+                ) + headers,
+            )
+        } catch (t: Throwable) {
+            Log.w(TAG, "search failed: ${t.message}")
+            return legacySearch(query)
+        }
         Log.i(TAG, "searchQueryUrl => ${searchQueryUrl}")
-        Log.i(TAG, "Search Req => ${req.text}")
-        if (!req.isSuccessful) {
+        val head = req.text.trimStart().take(300)
+        val webPage = head.startsWith("<")
+        Log.i(TAG, "Search Req => ${if (webPage) "a web page, not a result list: ${head.take(120)}" else req.text.take(300)}")
+        if (webPage) OpenSubtitlesLegacy.markComBlocked()
+        if (!req.isSuccessful || webPage) {
             if (req.code == 429)
                 throwGotTooManyRequests()
-            return null
+            return legacySearch(query)
         }
 
         val results = mutableListOf<AbstractSubtitleEntities.SubtitleEntity>()
@@ -180,7 +190,33 @@ class OpenSubtitlesApi : SubtitleAPI() {
                 }
             }
         }
+        // nothing from the new API: the older database may know the title
+        if (results.isEmpty()) return legacySearch(query)
         return results
+    }
+
+    /** The search through the older anonymous interface; the result's data carries the file link so that no second search is needed */
+    private suspend fun legacySearch(query: AbstractSubtitleEntities.SubtitleSearch): List<AbstractSubtitleEntities.SubtitleEntity> {
+        val imdb = query.imdbId?.takeIf { it.isNotBlank() }
+        return OpenSubtitlesLegacy.search(query.query, query.lang ?: "en", imdb, query.seasonNumber, query.epNumber)
+            .sortedByDescending { it.downloads?.toLongOrNull() ?: 0L }
+            .take(40)
+            .map { r ->
+                val season = r.season?.toIntOrNull()?.takeIf { it > 0 } ?: query.seasonNumber
+                val episode = r.episode?.toIntOrNull()?.takeIf { it > 0 } ?: query.epNumber
+                AbstractSubtitleEntities.SubtitleEntity(
+                    idPrefix = this.idPrefix,
+                    name = r.subFileName ?: r.releaseName ?: r.movieName ?: query.query,
+                    lang = fromCodeToLangTagIETF(r.language) ?: query.lang ?: "",
+                    data = "|${r.imdb ?: ""}|${r.subFileName ?: ""}|${r.downloadLink ?: ""}",
+                    type = if ((season ?: 0) > 0) TvType.TvSeries else TvType.Movie,
+                    source = this.name,
+                    epNumber = episode,
+                    seasonNumber = season,
+                    year = r.year?.toIntOrNull()?.takeIf { it > 0 } ?: query.year,
+                    isHearingImpaired = r.hearingImpaired == "1",
+                )
+            }
     }
 
     /**
@@ -231,8 +267,16 @@ class OpenSubtitlesApi : SubtitleAPI() {
         auth: AuthData?,
         subtitle: AbstractSubtitleEntities.SubtitleEntity
     ) {
-        val (_, imdb, fileName) = (subtitle.data + "||").split('|').let { Triple(it[0], it[1], it[2]) }
-        if (!OpenSubtitlesLegacy.comLooksBlocked()) {
+        val parts = (subtitle.data + "|||").split('|')
+        val fileId = parts[0]
+        val imdb = parts[1]
+        val fileName = parts[2]
+        val legacyLink = parts[3]
+        // a result of the older interface: its file is one request away
+        if (legacyLink.isNotBlank()) {
+            OpenSubtitlesLegacy.downloadResult(legacyLink, fileName.ifBlank { subtitle.name })?.let { addFile(it); return }
+        }
+        if (fileId.isNotBlank() && !OpenSubtitlesLegacy.comLooksBlocked()) {
             val link = try { load(auth, subtitle) } catch (t: Throwable) { Log.w(TAG, "download link: ${t.message}"); null }
             if (link != null) {
                 val fetched = OpenSubtitlesLegacy.fetch(link)

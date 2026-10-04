@@ -39,6 +39,9 @@ open class MpvSurfaceView @JvmOverloads constructor(
         }
 
     val stats = VideoFrameStats()
+
+    /** What the window did with the frames: how long a finished frame waited for the UI, frames the UI never drew, gaps between drawn frames */
+    val present = PresentStats()
     val frameVersion = mutableIntStateOf(0)
     var frame: Image? = null
         private set
@@ -89,6 +92,7 @@ open class MpvSurfaceView @JvmOverloads constructor(
             frame = image
             old?.close()
             frameVersion.intValue++
+            present.published(frameVersion.intValue)
         }
     }
 
@@ -157,6 +161,78 @@ class VideoFrameStats {
             late = 0; maxGapMs = 0; lateAt.setLength(0)
             if (System.getProperty("cloudstream.videostats") != null) android.util.Log.i("VideoSurface", last)
             frames = 0; wallNs = 0; cpuNs = 0; maxNs = 0; since = now
+        }
+    }
+}
+
+/** The monitor's refresh grid (System.nanoTime units), to tell which refresh a drawn frame is shown at; null / 0 = unknown */
+interface RefreshGrid {
+    /** The first refresh at or after [t]; 0 when the grid is not known */
+    fun refreshAtOrAfter(t: Long): Long
+    val periodNs: Long
+}
+
+/** Measured in the UI: published -> drawn latency, frames replaced before they were drawn, and long gaps between drawn frames */
+class PresentStats {
+    @Volatile private var publishedVersion = 0
+    @Volatile private var publishedAt = 0L
+    private var drawnVersion = 0
+    private var lastDrawAt = 0L
+    private var draws = 0
+    private var skipped = 0
+    private var latencyNs = 0L
+    private var maxLatencyNs = 0L
+    private var late = 0
+    private var maxGapMs = 0L
+    private var since = System.nanoTime()
+    // gaps between drawn frames in refresh intervals of 16.7 ms (1, 2, 3, 4, more), and how often a gap repeats the one before it (an even 3:2 cadence never does)
+    private val buckets = IntArray(5)
+    private var lastBucket = -1
+    private var repeats = 0
+    private var lastSlot = 0L
+    @Volatile var grid: RefreshGrid? = null
+
+    @Volatile
+    var last: String = "no frames drawn"
+        private set
+
+    fun published(version: Int) {
+        publishedAt = System.nanoTime()
+        publishedVersion = version
+    }
+
+    /** Called by the video's draw; [version] is the frame version that is being drawn */
+    fun drawn(version: Int) {
+        if (version == drawnVersion) return
+        val now = System.nanoTime()
+        if (drawnVersion != 0) {
+            skipped += (version - drawnVersion - 1).coerceAtLeast(0)
+            val gapMs = (now - lastDrawAt) / 1_000_000
+            if (gapMs > maxGapMs) maxGapMs = gapMs
+            if (gapMs > 56) late++
+            val g = grid
+            val slot = g?.refreshAtOrAfter(now + 2_000_000L) ?: 0L
+            if (g != null && slot != 0L && lastSlot != 0L && g.periodNs > 0) {
+                val bucket = (Math.round((slot - lastSlot).toDouble() / g.periodNs) - 1).toInt().coerceIn(0, 4)
+                buckets[bucket]++
+                if (bucket == lastBucket) repeats++
+                lastBucket = bucket
+            }
+            lastSlot = slot
+        } else lastSlot = grid?.refreshAtOrAfter(now + 2_000_000L) ?: 0L
+        if (version == publishedVersion) {
+            val l = now - publishedAt
+            latencyNs += l
+            if (l > maxLatencyNs) maxLatencyNs = l
+        }
+        drawnVersion = version
+        lastDrawAt = now
+        draws++
+        if (now - since >= 5_000_000_000L) {
+            val secs = (now - since) / 1e9
+            last = "drawn %.1f/s, skipped=$skipped, publish->draw %.1f ms avg / %.1f ms max, gaps: late(>56 ms)=$late max=${maxGapMs} ms, cadence by refresh shown at, 1/2/3/4/5+ = ${buckets.joinToString("/")} repeats=$repeats".format(draws / secs, latencyNs / 1e6 / draws.coerceAtLeast(1), maxLatencyNs / 1e6)
+            if (System.getProperty("cloudstream.videostats") != null) android.util.Log.i("VideoSurface", last)
+            draws = 0; skipped = 0; latencyNs = 0; maxLatencyNs = 0; late = 0; maxGapMs = 0; buckets.fill(0); repeats = 0; since = now
         }
     }
 }

@@ -48,6 +48,8 @@ interface Mpv : Library {
         // render.h: mpv_render_param_type and update flags
         const val MPV_RENDER_PARAM_INVALID = 0
         const val MPV_RENDER_PARAM_API_TYPE = 1
+        const val MPV_RENDER_PARAM_NEXT_FRAME_INFO = 11
+        const val MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME = 12
         const val MPV_RENDER_PARAM_SW_SIZE = 17
         const val MPV_RENDER_PARAM_SW_FORMAT = 18
         const val MPV_RENDER_PARAM_SW_STRIDE = 19
@@ -165,4 +167,17 @@ interface Mpv : Library {
     fun mpv_render_context_update(ctx: Pointer): Long
     fun mpv_render_context_render(ctx: Pointer, params: Pointer): Int
     fun mpv_render_context_free(ctx: Pointer)
+
+    /** mpv_render_param passed by value: {int type; void* data} */
+    @Structure.FieldOrder("type", "data")
+    open class RenderParam() : Structure(), Structure.ByValue {
+        @JvmField var type: Int = 0
+        @JvmField var data: Pointer? = null
+    }
+
+    /** Fills the mpv_render_frame_info that [param] points to (MPV_RENDER_PARAM_NEXT_FRAME_INFO) for the frame the next render call draws */
+    fun mpv_render_context_get_info(ctx: Pointer, param: RenderParam): Int
+
+    /** mpv's clock in microseconds (the clock of the target times that mpv_render_frame_info carries) */
+    fun mpv_get_time_us(ctx: Pointer): Long
 }

@@ -515,7 +515,7 @@ object DevServer {
                 val p = com.lagradost.desktop.player.MpvPlayer.active ?: return ok(ex, "no player")
                 val surface = com.lagradost.desktop.ui.screens.player.PlayerSession.active?.surface
                 val props = listOf("time-pos", "speed", "avsync", "total-avsync-change", "frame-drop-count", "decoder-frame-drop-count", "vo-delayed-frame-count", "mistimed-frame-count", "container-fps", "estimated-vf-fps", "video-params/w", "video-params/h", "hwdec-current", "paused-for-cache", "demuxer-cache-duration")
-                ok(ex, "surface: ${surface?.stats?.last}\n" + props.joinToString("\n") { "$it=${p.getMpvPropertyString(it)}" })
+                ok(ex, "surface: ${surface?.stats?.last}\npresent: ${surface?.present?.last}\n" + props.joinToString("\n") { "$it=${p.getMpvPropertyString(it)}" })
             }
             "/mpvsample" -> {
                 // dev: hitches in the picture and in the audio timeline: /mpvsample?s=30 samples the frame counter, time-pos and audio-pts every 5 ms and
@@ -597,6 +597,16 @@ object DevServer {
                 }
                 ok(ex)
             }
+            "/subdeliver" -> {
+                // dev: subtitles delivered by an "extension" while playing, left to the automatic choice: /subdeliver?urls=http://a.srt|http://b.srt&names=English 0|English 1&lang=en
+                val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
+                val names = q["names"]?.split('|') ?: emptyList()
+                val subs = q["urls"]!!.split('|').mapIndexed { i, url ->
+                    com.lagradost.cloudstream3.ui.player.SubtitleData(names.getOrNull(i) ?: "English $i", "", url, com.lagradost.cloudstream3.ui.player.SubtitleOrigin.URL, "application/x-subrip", emptyMap(), q["lang"] ?: "en")
+                }
+                onEdt { s.debugDeliverSubtitles(*subs.toTypedArray()) }
+                ok(ex)
+            }
             "/subfile" -> {
                 // dev: the "Add subtitle file" path without the native dialog: /subfile?file=C:/path/x.srt
                 val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
@@ -606,8 +616,10 @@ object DevServer {
             "/ossub" -> {
                 // dev: online subtitle search + apply of the n-th result in the playing video: /ossub?q=<title>&lang=en&n=0
                 val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
+                // &block=1 behaves as if www.opensubtitles.com were blocked (the older interface answers search and download)
+                if (q["block"] != null) com.lagradost.cloudstream3.syncproviders.providers.OpenSubtitlesLegacy.markComBlocked()
                 val out = kotlinx.coroutines.runBlocking {
-                    val list = s.searchSubtitles(q["q"] ?: s.defaultSubtitleQuery, q["lang"] ?: "en")
+                    val list = s.searchSubtitles(q["q"] ?: s.defaultSubtitleQuery, q["lang"] ?: "en").filter { q["provider"] == null || it.idPrefix == q["provider"] }
                     val n = q["n"]?.toInt() ?: 0
                     "results=${list.size} first=${list.take(3).map { it.name }}\n" + (list.getOrNull(n)?.let { "apply[$n]: " + s.applyOnlineSubtitle(it) } ?: "no result $n")
                 }
@@ -630,6 +642,22 @@ object DevServer {
                     com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(link), emptyList()), 0, null))
                 }
                 ok(ex)
+            }
+            "/playurls" -> {
+                // dev: several plain links as the sources of one video, best first: /playurls?urls=http://a.mp4%7Chttp://b.mp4&names=One%7CTwo
+                val urls = q["urls"]!!.split('|')
+                val names = q["names"]?.split('|') ?: emptyList()
+                val links = kotlinx.coroutines.runBlocking { urls.mapIndexed { i, u -> com.lagradost.cloudstream3.utils.newExtractorLink(names.getOrNull(i) ?: "Source $i", names.getOrNull(i) ?: "Source $i", u) { quality = 1000 - i * 100 } } }
+                onEdt { com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(links, emptyList()), 0, null)) }
+                ok(ex)
+            }
+            "/pick" -> {
+                // dev: choose the n-th source (0 = first in the list) as the Sources dialog does: /pick?n=1
+                val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
+                val list = s.sources()
+                val n = q["n"]!!.toInt()
+                onEdt { s.selectSource(list[n].link) }
+                ok(ex, "picked ${list[n].name} of ${list.joinToString { it.name + if (it.usable) "" else "(failed)" }}")
             }
             "/pref" -> {
                 // dev: set a string preference: /pref?key=player_default_key&value=...

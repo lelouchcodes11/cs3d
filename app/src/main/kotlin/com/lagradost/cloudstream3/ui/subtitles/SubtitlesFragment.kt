@@ -66,6 +66,7 @@ const val SUBTITLE_KEY = "subtitle_settings"
 /** desktop: the size (sp) and edge the subtitles have until the user picks others */
 const val DEFAULT_SUBTITLE_SIZE = 17.0f
 const val SUBTITLE_AUTO_SELECT_KEY = "subs_auto_select"
+private const val SHADOW_DEFAULT_KEY = "subtitle_shadow_default_applied"
 const val SUBTITLE_DOWNLOAD_KEY = "subs_auto_download"
 
 @Serializable
@@ -334,8 +335,16 @@ class SubtitlesFragment : BaseDialogFragment<SubtitleSettingsBinding>(
             elevation = DEF_SUBS_ELEVATION,
             fixedTextSize = DEFAULT_SUBTITLE_SIZE,
         )
-        val subtitleStyleState =
-            mutableStateOf((getKey<SaveCaptionStyle>(SUBTITLE_KEY) ?: defaultSubtitleStyle))
+        /** The default edge became the drop shadow: a saved "outline" (the old default) is switched once, later choices stay */
+        private fun loadSavedStyle(): SaveCaptionStyle {
+            val saved = getKey<SaveCaptionStyle>(SUBTITLE_KEY) ?: return defaultSubtitleStyle
+            if (getKey<Boolean>(SHADOW_DEFAULT_KEY) == true) return saved
+            setKey(SHADOW_DEFAULT_KEY, true)
+            if (saved.edgeType != CaptionStyleCompat.EDGE_TYPE_OUTLINE) return saved
+            return saved.copy(edgeType = CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW).also { setKey(SUBTITLE_KEY, it) }
+        }
+
+        val subtitleStyleState = mutableStateOf(loadSavedStyle())
 
         fun getCurrentSavedStyle(): SaveCaptionStyle {
             return subtitleStyleState.value

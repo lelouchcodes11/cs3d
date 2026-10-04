@@ -108,6 +108,7 @@ import com.lagradost.desktop.ui.fluent.Slider
 import com.lagradost.desktop.ui.fluent.Tooltip
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
+import com.lagradost.desktop.player.SubtitleLoadState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.awt.Point
@@ -192,8 +193,6 @@ private fun PlayerContent(s: PlayerSession) {
     var bottomBounds by remember { mutableStateOf<Rect?>(null) }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val paused = s.status != CSPlayerLoading.IsPlaying
-    var rootHeight by remember { mutableStateOf(0) }
-    val density = androidx.compose.ui.platform.LocalDensity.current.density
     val fullscreen = AndroidRuntime.host.isFullscreen()
     val pip = com.lagradost.desktop.platform.WinChrome.pip
 
@@ -220,8 +219,6 @@ private fun PlayerContent(s: PlayerSession) {
         visible = false
     }
     LaunchedEffect(Unit) { focus.requestFocus() }
-    // subtitles stay above the controls
-    LaunchedEffect(visible, pip, rootHeight, density) { s.liftSubtitles(visible && !pip, rootHeight, density) }
     // the window changes size and may lose the keyboard focus when it enters or leaves full screen
     LaunchedEffect(fullscreen, pip) { delay(250); runCatching { focus.requestFocus() } }
     // the keyboard comes back to the player when a dialog (tracks, sources, search) closes
@@ -291,7 +288,6 @@ private fun PlayerContent(s: PlayerSession) {
             .fillMaxSize()
             .background(Color.Black)
             .onGloballyPositioned { origin = it.positionInRoot() }
-            .onSizeChanged { rootHeight = it.height }
             .focusRequester(focus)
             .onFocusChanged { rootFocused = it.hasFocus }
             .focusable()
@@ -345,6 +341,11 @@ private fun PlayerContent(s: PlayerSession) {
         }
 
         HudOverlay(s, Modifier.align(Alignment.TopCenter).padding(top = if (pip) 36.dp else 56.dp))
+        // subtitles: fetching, on, or given up; at the top right, under the Sources pill while the controls are shown
+        if (!pip) {
+            val pillTop by androidx.compose.animation.core.animateDpAsState(if (visible) 64.dp else 16.dp, tween(200))
+            SubtitlePill(s, Modifier.align(Alignment.TopEnd).padding(top = pillTop, end = 20.dp + com.lagradost.desktop.ui.shell.captionInset))
+        }
 
         AnimatedVisibility(showEpisodes && !pip, Modifier.align(Alignment.CenterEnd), enter = fadeIn(tween(167)), exit = fadeOut(tween(120))) {
             EpisodesPanel(s, onClose = { showEpisodes = false })
@@ -389,8 +390,9 @@ private fun VideoSurface(s: PlayerSession, modifier: Modifier) {
         modifier
             .onSizeChanged { surface.setRenderSize(it.width, it.height) }
             .drawBehind {
-                surface.frameVersion.intValue
+                val version = surface.frameVersion.intValue
                 val image = surface.frame ?: return@drawBehind
+                surface.present.drawn(version)
                 drawIntoCanvas { c -> c.nativeCanvas.drawImageRect(image, org.jetbrains.skia.Rect.makeWH(size.width, size.height)) }
             },
     )
@@ -876,11 +878,22 @@ internal fun openSubtitleSearch(s: PlayerSession) {
             var searched by remember { mutableStateOf(false) }
             val scope = androidx.compose.runtime.rememberCoroutineScope()
             val tags = remember { com.lagradost.cloudstream3.utils.SubtitleHelper.languages.map { it.IETF_tag }.distinct() }
+            // a new search replaces the one that is running (Search, Enter, another language), instead of being ignored until it ends
+            val generation = remember { intArrayOf(0) }
+            val running = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
             fun search() {
-                if (busy) return
+                running[0]?.cancel()
+                val mine = ++generation[0]
                 busy = true
-                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    try { results = s.searchSubtitles(q, lang) } finally { busy = false; searched = true }
+                results = emptyList()
+                running[0] = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    // results show as each provider answers (one that times out must not hold the rest back)
+                    try {
+                        val all = s.searchSubtitles(q, lang) { partial -> if (mine == generation[0]) results = partial }
+                        if (mine == generation[0]) results = all
+                    } finally {
+                        if (mine == generation[0]) { busy = false; searched = true }
+                    }
                 }
             }
             LaunchedEffect(Unit) { search() }
@@ -899,7 +912,7 @@ internal fun openSubtitleSearch(s: PlayerSession) {
                         val shape = RoundedCornerShape(4.dp)
                         Row(
                             Modifier.fillMaxWidth().clip(shape).background(if (hovered) c.subtleHover else Color.Transparent, shape)
-                                .fluentClickable(source, true, shape, Role.Button) { scope.launch(kotlinx.coroutines.Dispatchers.IO) { s.applyOnlineSubtitle(entity) }; dismiss() }
+                                .fluentClickable(source, true, shape, Role.Button) { s.downloadOnlineSubtitle(entity); dismiss() }
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
@@ -914,6 +927,42 @@ internal fun openSubtitleSearch(s: PlayerSession) {
             }
         },
     )
+}
+
+/**
+ * Says what the subtitle loader is doing, so a subtitle that takes a while (or never comes) is not a mystery: a subtitles glyph while it is looked
+ * for or fetched, a check when it is on (gone after 2 s), a warning when it could not be loaded (gone after 5 s). Quick local loads do not flash it.
+ * No animation at all: a ring or a fade over the video made its frames arrive late (measured: publish->draw 0.8 ms -> 6.9 ms, late frames).
+ */
+@Composable
+private fun SubtitlePill(s: PlayerSession, modifier: Modifier) {
+    val status = s.subtitleIndicator
+    var shown by remember { mutableStateOf(false) }
+    // keyed by the status object itself: the timers below must follow the status that is shown, also when a new one has the same words
+    LaunchedEffect(status) {
+        when (status?.state) {
+            null -> shown = false
+            // a pill that is up stays up when the next step of the same load replaces it (download -> adding it to the video), no blink in between
+            SubtitleLoadState.Loading -> if (!shown) { delay(300); shown = true }
+            SubtitleLoadState.Loaded -> { shown = true; delay(2000); s.clearSubtitleStatus(status) }
+            SubtitleLoadState.Failed -> { shown = true; delay(5000); s.clearSubtitleStatus(status) }
+        }
+    }
+    if (shown && status != null) {
+        val st = status
+        val shape = RoundedCornerShape(50)
+        Row(
+            modifier.widthIn(max = 380.dp).background(Color(0xE6202020), shape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x26FFFFFF), shape).padding(start = 12.dp, end = 14.dp).height(32.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            when (st.state) {
+                SubtitleLoadState.Loading -> Icon(Icons.Subtitles, size = 14.dp, tint = Color(0xB3FFFFFF))
+                SubtitleLoadState.Loaded -> Icon(Icons.Check, size = 14.dp, tint = Color(0xFF6CCB5F))
+                SubtitleLoadState.Failed -> Icon(Icons.Warning, size = 14.dp, tint = Color(0xFFFFB74D))
+            }
+            FText(st.text, style = Fluent.type.caption, color = Color(0xE6FFFFFF), maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+    }
 }
 
 /** A small pill at the top of the picture that confirms volume, seek, speed and play/pause changes made with the keyboard */

@@ -68,6 +68,13 @@ object OpenSubtitlesLegacy {
         @JsonProperty("ISO639") val language: String? = null,
         @JsonProperty("SubDownloadsCnt") val downloads: String? = null,
         @JsonProperty("SubFormat") val format: String? = null,
+        @JsonProperty("MovieName") val movieName: String? = null,
+        @JsonProperty("MovieReleaseName") val releaseName: String? = null,
+        @JsonProperty("IDMovieImdb") val imdb: String? = null,
+        @JsonProperty("SeriesSeason") val season: String? = null,
+        @JsonProperty("SeriesEpisode") val episode: String? = null,
+        @JsonProperty("SubHearingImpaired") val hearingImpaired: String? = null,
+        @JsonProperty("MovieYear") val year: String? = null,
     )
 
     private fun enc(text: String) = URLEncoder.encode(text, "UTF-8").replace("+", "%20")
@@ -76,11 +83,8 @@ object OpenSubtitlesLegacy {
     private fun searchText(name: String): String =
         name.replace(Regex("""\.(srt|vtt|ass|ssa|sub|txt)$""", RegexOption.IGNORE_CASE), "").replace(Regex("""[^\p{L}\p{N}]+"""), " ").trim().lowercase()
 
-    /**
-     * Finds the subtitle (the same file when the name matches, else the most downloaded one of the language) and returns it unpacked
-     * in a temporary file. The parts of the search path have to be in alphabetical order.
-     */
-    suspend fun download(name: String, fileName: String?, lang: String, imdb: String?, season: Int?, episode: Int?): File? {
+    /** The interface's search: by IMDb number when the title has one the older database knows, else by name; only the language asked for */
+    suspend fun search(name: String, lang: String, imdb: String?, season: Int?, episode: Int?): List<Result> {
         val language2 = lang.substringBefore('-').lowercase().ifBlank { "en" }
         // the interface wants ISO 639-2 codes ("eng"); anything else (like "all") is answered with a broken redirect
         val language3 = com.lagradost.cloudstream3.utils.SubtitleHelper.languages.firstOrNull { it.ISO_639_1 == language2 }?.ISO_639_2_B?.takeIf { it.isNotBlank() } ?: "eng"
@@ -100,16 +104,27 @@ object OpenSubtitlesLegacy {
             Log.i(TAG, "search $path: ${found.size} result(s) in $language2")
             return found
         }
-        // by IMDb number when the title has one the older database knows, else by its name
         val hasImdb = imdb?.removePrefix("tt")?.toLongOrNull()?.let { it > 0 } == true
-        val results = (if (hasImdb) search(pathOf(true)) else emptyList()).ifEmpty { search(pathOf(false)) }
+        return (if (hasImdb) search(pathOf(true)) else emptyList()).ifEmpty { search(pathOf(false)) }
+    }
+
+    /** A result's file (gzip) downloaded and unpacked into a temporary file */
+    suspend fun downloadResult(link: String, name: String): File? {
+        val gz = runCatching { getBytes(link, USER_AGENT).second }.onFailure { Log.w(TAG, "download failed: ${it.message}") }.getOrNull() ?: return null
+        val text = runCatching { GZIPInputStream(gz.inputStream()).use { it.readBytes() } }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
+        Log.i(TAG, "downloaded '$name' (${text.size} bytes)")
+        return write(text, name)
+    }
+
+    /**
+     * Finds the subtitle (the same file when the name matches, else the most downloaded one of the language) and returns it unpacked
+     * in a temporary file. The parts of the search path have to be in alphabetical order.
+     */
+    suspend fun download(name: String, fileName: String?, lang: String, imdb: String?, season: Int?, episode: Int?): File? {
+        val results = search(name, lang, imdb, season, episode)
         val pick = results.firstOrNull { fileName != null && it.subFileName.equals(fileName, true) }
             ?: results.maxByOrNull { it.downloads?.toLongOrNull() ?: 0L } ?: return null
-
-        val gz = runCatching { getBytes(pick.downloadLink!!, USER_AGENT).second }.onFailure { Log.w(TAG, "download failed: ${it.message}") }.getOrNull() ?: return null
-        val text = runCatching { GZIPInputStream(gz.inputStream()).use { it.readBytes() } }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
-        Log.i(TAG, "downloaded '${pick.subFileName}' (${text.size} bytes)")
-        return write(text, pick.subFileName ?: name)
+        return downloadResult(pick.downloadLink!!, pick.subFileName ?: name)
     }
 
     /** A subtitle's bytes as a temporary file with a proper extension (mpv decides by the extension and the content) */

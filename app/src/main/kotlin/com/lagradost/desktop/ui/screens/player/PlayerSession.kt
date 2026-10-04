@@ -32,6 +32,8 @@ import com.lagradost.cloudstream3.ui.player.ResizedEvent
 import com.lagradost.cloudstream3.ui.player.StatusEvent
 import com.lagradost.cloudstream3.ui.player.SubtitleData
 import com.lagradost.cloudstream3.ui.player.SubtitleOrigin
+import com.lagradost.desktop.player.SubtitleLoadEvent
+import com.lagradost.desktop.player.SubtitleLoadState
 import com.lagradost.cloudstream3.ui.player.SubtitlesUpdatedEvent
 import com.lagradost.cloudstream3.ui.player.TimestampInvokedEvent
 import com.lagradost.cloudstream3.ui.player.TimestampSkippedEvent
@@ -157,6 +159,26 @@ class PlayerSession(
         if (hud === h) hud = null
     }
 
+    /** What the subtitle loader is doing (fetching a file, done, gave up), shown as a small pill at the top of the picture; null = nothing to say */
+    var subtitleStatus by mutableStateOf<SubtitleStatus?>(null); private set
+
+    /** What the pill shows: the loader's own progress, else "looking" while sources (and the subtitles they bring) are still being collected and none shows yet */
+    val subtitleIndicator: SubtitleStatus?
+        get() {
+            subtitleStatus?.let { return it }
+            listsVersion // the list of subtitles changed: look again
+            // not over the full-screen "Looking for sources…", which says the same
+            if (!loadingMore || loadingText != null || failure != null || subtitleChosenByUser || selectedSubtitle != null || preferredSubLang.isNullOrEmpty()) return null
+            return lookingStatus
+        }
+
+    // one object, so that the pill's timer follows the identity of what it shows
+    private val lookingStatus = SubtitleStatus(SubtitleLoadState.Loading, "Looking for subtitles…")
+
+    fun clearSubtitleStatus(status: SubtitleStatus) {
+        if (subtitleStatus === status) subtitleStatus = null
+    }
+
     /** Bumped when subtitle lists or track lists changed, so menus recompose */
     var listsVersion by mutableStateOf(0); private set
     var episodeVersion by mutableStateOf(0); private set
@@ -166,6 +188,8 @@ class PlayerSession(
     private var selectedSubtitle: SubtitleData? = null
     /** The viewer chose a subtitle (or none) in this episode: the language based automatic choice must not take it back */
     private var subtitleChosenByUser = false
+    /** Subtitles of this episode that could not be loaded: the automatic choice goes on with the next one */
+    private val failedSubtitles = HashSet<String>()
     private var preferredSubLang: String? = getAutoSelectLanguageTagIETF()
     private var playerActive = false
     private var isNextEpisode = false
@@ -417,11 +441,14 @@ class PlayerSession(
         }
         val subtitles = vm.state.subtitles
         val (url, uri) = link
+        // remembered as the wanted subtitle, so that the player's progress reports (and a dead file's replacement) are about it
+        val initialSubtitle = (if (sameEpisode) selectedSubtitle else null) ?: autoSubtitle(subtitles, settings = true, downloads = true)
+        selectedSubtitle = initialSubtitle
         player.loadPlayer(
             ctx, sameEpisode, url, uri,
             startPosition = resumeMs.takeIf { it > 0L },
             subtitles = subtitles,
-            subtitle = (if (sameEpisode) selectedSubtitle else null) ?: autoSubtitle(subtitles, settings = true, downloads = true),
+            subtitle = initialSubtitle,
             preview = true,
         )
         if (!sameEpisode) {
@@ -439,6 +466,9 @@ class PlayerSession(
         player.release()
         selectedSubtitle = null
         subtitleChosenByUser = false
+        failedSubtitles.clear()
+        subtitleStatus = null
+        fallbackLink = null
         selectedLink = null
         playerActive = false
         loadingText = "Looking for sources…"
@@ -449,7 +479,8 @@ class PlayerSession(
     private fun nextLink(): DisplayLink? {
         val links = vm.state.sortLinks(qualityProfile)
         val current = links.indexOfFirst { it.link == selectedLink }
-        return links.withIndex().firstOrNull { it.index > current && it.value.shouldUseLink }?.value
+        // while a source the viewer picked is being tried, the one that was playing before is kept for last
+        return links.withIndex().firstOrNull { it.index > current && it.value.shouldUseLink && it.value.link != fallbackLink }?.value
     }
 
     val hasNextMirror: Boolean get() = nextLink() != null
@@ -558,6 +589,7 @@ class PlayerSession(
             }
             is EmbeddedSubtitlesFetchedEvent -> vm.addSubtitles(event.tracks.toSet())
             is SubtitlesUpdatedEvent -> listsVersion++
+            is SubtitleLoadEvent -> onSubtitleLoad(event)
             is TimestampInvokedEvent -> activeStamp = event.timestamp
             is TimestampSkippedEvent -> activeStamp = null
             is DownloadEvent -> {}
@@ -638,11 +670,35 @@ class PlayerSession(
 
     private fun autoSubtitle(subtitles: Set<SubtitleData>, settings: Boolean, downloads: Boolean): SubtitleData? {
         val lang = preferredSubLang ?: return null
+        val usable = sortSubs(subtitles).filter { it.getId() !in failedSubtitles }
         if (downloads) {
-            sortSubs(subtitles).firstOrNull { it.origin == SubtitleOrigin.DOWNLOADED_FILE && it.matchesLanguageCode(lang) }?.let { return it }
+            usable.firstOrNull { it.origin == SubtitleOrigin.DOWNLOADED_FILE && it.matchesLanguageCode(lang) }?.let { return it }
         }
         if (!settings) return null
-        return sortSubs(subtitles).firstOrNull { it.matchesLanguageCode(lang) }
+        return usable.firstOrNull { it.matchesLanguageCode(lang) }
+    }
+
+    private fun onSubtitleLoad(event: SubtitleLoadEvent) {
+        val sub = event.subtitle
+        android.util.Log.i("PlayerSession", "subtitle ${event.state}: ${sub.name.trim()}${if (sub != selectedSubtitle) " (not the wanted one any more)" else ""}")
+        // a late report about a subtitle that is not the wanted one any more
+        if (sub != selectedSubtitle) return
+        val name = sub.name.trim().lineSequence().first().ifBlank { "Subtitle" }
+        when (event.state) {
+            SubtitleLoadState.Loading -> subtitleStatus = SubtitleStatus(SubtitleLoadState.Loading, "Loading subtitles · $name")
+            SubtitleLoadState.Loaded -> subtitleStatus = SubtitleStatus(SubtitleLoadState.Loaded, "Subtitles on · $name")
+            SubtitleLoadState.Failed -> {
+                failedSubtitles += sub.getId()
+                // an automatic choice that is dead is replaced by the next one of the language; what the viewer picked is left alone and reported
+                val next = if (!subtitleChosenByUser && failedSubtitles.size <= MAX_SUBTITLE_TRIES) autoSubtitle(vm.state.subtitles, settings = true, downloads = true) else null
+                if (next != null && next != sub) {
+                    android.util.Log.i("PlayerSession", "subtitle ${sub.name.trim()} failed, trying ${next.name.trim()}")
+                    subtitleStatus = SubtitleStatus(SubtitleLoadState.Loading, "Trying another subtitle…")
+                    applySubtitle(next, false)
+                } else subtitleStatus = SubtitleStatus(SubtitleLoadState.Failed, "Couldn't load subtitles · $name")
+            }
+        }
+        listsVersion++
     }
 
     private fun applySubtitle(sub: SubtitleData?, userInitiated: Boolean): Boolean {
@@ -661,6 +717,8 @@ class PlayerSession(
         if (subtitleChosenByUser) return
         runCatching {
             val lang = preferredSubLang
+            // the automatic pick stays while it loads or works: more subtitles arriving must not restart it
+            selectedSubtitle?.let { if (it.getId() !in failedSubtitles && (lang == null || it.matchesLanguageCode(lang))) return }
             val current = player.getCurrentPreferredSubtitle()
             val pick = if (current != null && (lang == null || current.matchesLanguageCode(lang))) current
             else if (!lang.isNullOrEmpty()) autoSubtitle(vm.state.subtitles, settings = true, downloads = false) else null
@@ -739,31 +797,61 @@ class PlayerSession(
 
     val defaultSubtitleQuery: String get() = (currentMeta as? ResultEpisode)?.headerName ?: title
 
-    /** Searches every subtitle provider, results interleaved so each provider is represented */
-    suspend fun searchSubtitles(query: String, lang: String?): List<SubtitleEntity> {
+    /**
+     * Searches every subtitle provider, results interleaved so each provider is represented. [onPartial] gets the list so far each time a provider
+     * has answered, so a slow one (a timeout takes 15 s) does not keep the results of the others from showing.
+     */
+    suspend fun searchSubtitles(query: String, lang: String?, onPartial: ((List<SubtitleEntity>) -> Unit)? = null): List<SubtitleEntity> {
         val search = subtitleSearchOf(query, lang)
+        val providers = GeneratorPlayer.subsProviders.toList()
+        val answers = java.util.concurrent.ConcurrentHashMap<String, List<SubtitleEntity>>()
+        fun merged(): List<SubtitleEntity> {
+            val lists = providers.map { answers[it.idPrefix] ?: emptyList() }
+            val max = lists.maxOfOrNull { it.size } ?: return emptyList()
+            val items = ArrayList<SubtitleEntity>()
+            for (index in 0 until max) for (list in lists) list.getOrNull(index)?.let { items.add(it) }
+            return items
+        }
         // every provider is asked at the same time: a slow or dead one must not hold the others back
-        val results = kotlinx.coroutines.coroutineScope {
-            GeneratorPlayer.subsProviders.toList().map { provider ->
+        kotlinx.coroutines.coroutineScope {
+            providers.map { provider ->
                 async(Dispatchers.IO) {
-                    when (val r = Resource.fromResult(provider.search(search))) {
+                    val found = when (val r = Resource.fromResult(provider.search(search))) {
                         is Resource.Success -> r.value.also { android.util.Log.i("PlayerSession", "subtitle search ${provider.idPrefix}: ${it.size} result(s)") }
                         is Resource.Failure -> { android.util.Log.w("PlayerSession", "subtitle search ${provider.idPrefix}: ${r.errorString}"); emptyList() }
                         else -> emptyList()
                     }
+                    answers[provider.idPrefix] = found
+                    if (found.isNotEmpty()) onPartial?.invoke(merged())
                 }
             }.awaitAll()
         }
-        val max = results.maxOfOrNull { it.size } ?: return emptyList()
-        val items = ArrayList<SubtitleEntity>()
-        for (index in 0 until max) for (list in results) list.getOrNull(index)?.let { items.add(it) }
-        return items
+        return merged()
     }
 
-    /** Downloads one chosen search result and selects it */
+    private suspend fun postSubtitleStatus(state: SubtitleLoadState, text: String) {
+        val status = SubtitleStatus(state, text)
+        kotlinx.coroutines.withContext(Dispatchers.Main.immediate) { subtitleStatus = status }
+    }
+
+    /**
+     * Starts [applyOnlineSubtitle] on the session's own scope. The search dialog closes the moment a result is clicked and the scope of its
+     * composition ends with it: a download started there was cancelled ("rememberCoroutineScope left the composition"), so no subtitle ever came.
+     */
+    fun downloadOnlineSubtitle(entity: SubtitleEntity) {
+        scope.launch(Dispatchers.IO) { applyOnlineSubtitle(entity) }
+    }
+
+    /** Downloads one chosen search result and selects it; the pill says what is going on (the download of a result can take seconds) */
     suspend fun applyOnlineSubtitle(entity: SubtitleEntity): String {
+        val label = entity.name.trim().lineSequence().first().ifBlank { "Subtitle" }
         val provider = GeneratorPlayer.subsProviders.firstOrNull { it.idPrefix == entity.idPrefix }
-        if (provider == null) { android.util.Log.w("PlayerSession", "subtitle provider ${entity.idPrefix} is not available"); return "no provider ${entity.idPrefix}" }
+        if (provider == null) {
+            android.util.Log.w("PlayerSession", "subtitle provider ${entity.idPrefix} is not available")
+            postSubtitleStatus(SubtitleLoadState.Failed, "Couldn't load subtitles · ${entity.source.ifBlank { entity.idPrefix }} is not available")
+            return "no provider ${entity.idPrefix}"
+        }
+        postSubtitleStatus(SubtitleLoadState.Loading, "Downloading subtitles · $label")
         return when (val r = Resource.fromResult(provider.resource(entity))) {
             is Resource.Success -> {
                 val subs = r.value.getSubtitles().map { res ->
@@ -772,13 +860,18 @@ class PlayerSession(
                 android.util.Log.i("PlayerSession", "online subtitle ${entity.idPrefix} '${entity.name}': ${subs.size} file(s) ${subs.map { it.url.take(200) }}")
                 if (subs.isEmpty()) {
                     android.util.Log.w("PlayerSession", "${provider.name} gave no subtitle file for ${entity.name}")
+                    postSubtitleStatus(SubtitleLoadState.Failed, "Couldn't download subtitles · $label")
                     "no files"
                 } else {
                     kotlinx.coroutines.withContext(Dispatchers.Main) { addAndSelectSubtitles(*subs.toTypedArray()) }
                     "ok ${subs.size}"
                 }
             }
-            is Resource.Failure -> { android.util.Log.w("PlayerSession", "online subtitle failed: ${r.errorString}"); "failed ${r.errorString}" }
+            is Resource.Failure -> {
+                android.util.Log.w("PlayerSession", "online subtitle failed: ${r.errorString}")
+                postSubtitleStatus(SubtitleLoadState.Failed, "Couldn't download subtitles · $label")
+                "failed ${r.errorString}"
+            }
             else -> "loading"
         }
     }
@@ -806,8 +899,12 @@ class PlayerSession(
     /** Searches the subtitle providers for the title and loads the first result */
     fun addFirstOnlineSubtitle() {
         scope.launch(Dispatchers.IO) {
+            postSubtitleStatus(SubtitleLoadState.Loading, "Searching subtitles online…")
             val first = searchSubtitles(defaultSubtitleQuery, getAutoSelectLanguageTagIETF()).firstOrNull()
-            if (first == null) android.util.Log.i("PlayerSession", "no online subtitles found") else applyOnlineSubtitle(first)
+            if (first == null) {
+                android.util.Log.i("PlayerSession", "no online subtitles found")
+                postSubtitleStatus(SubtitleLoadState.Failed, "No online subtitles found")
+            } else applyOnlineSubtitle(first)
         }
     }
 
@@ -878,20 +975,29 @@ class PlayerSession(
         SourceItem(l, l.first?.name ?: l.second?.name ?: "Source", q, it.shouldUseLink, l == selectedLink)
     }
 
-    // the source that was playing before the user picked another one: when the new one does not work, back to it
+    // the source that was playing before the user picked another one: when the new one does not work, the sources after it are tried
+    // first and only when none of those plays does it go back to this one
     private var fallbackLink: VideoLink? = null
 
     fun selectSource(link: VideoLink) {
         if (link == selectedLink) return
-        fallbackLink = selectedLink.takeIf { loadingText == null }
+        // a pick made while an earlier pick is still being tried keeps the source that really played
+        if (loadingText == null) fallbackLink = selectedLink
         loadLink(link, true)
     }
 
+    /** A source that was picked failed: true when it was handled (the next source after it, else the one that was playing) */
     private fun backToFallback(why: String): Boolean {
         val back = fallbackLink ?: return false
-        fallbackLink = null
         selectedLink?.let { bad -> vm.modifyState { addError(bad) } }
-        Toasts.show("$why Going back to the source that was playing.", false)
+        val next = nextLink()
+        if (next != null) {
+            android.util.Log.i("PlayerSession", "$why trying the next source after it")
+            loadLink(next.link, true, "$why Trying the next one…")
+            return true
+        }
+        fallbackLink = null
+        Toasts.show("$why No other source worked, going back to the one that was playing.", false)
         loadLink(back, true)
         return true
     }
@@ -960,30 +1066,6 @@ class PlayerSession(
             if (!outcome.ok) {
                 if (vlc && com.lagradost.desktop.player.ExternalPlayers.vlcPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.vlcMissing()
                 else Toasts.show(outcome.message ?: "Could not open the other player", true)
-            }
-        }
-    }
-
-    private var subtitleLiftJob: kotlinx.coroutines.Job? = null
-
-    /** The subtitles rise above the controls while these are on screen and settle back afterwards (bottom aligned subtitles only) */
-    fun liftSubtitles(controls: Boolean, heightPx: Int, density: Float) {
-        if (heightPx <= 0) return
-        val style = com.lagradost.cloudstream3.ui.subtitles.SubtitlesFragment.subtitleStyleState.value
-        val bottom = (style.alignment ?: com.lagradost.cloudstream3.ui.player.CustomDecoder.SSA_ALIGNMENT_BOTTOM_CENTER) in 1..3
-        // the bar is ~128 dp high; mpv counts margins in a picture 720 high
-        val target = if (controls && bottom) 128f * density / heightPx * 720f else 0f
-        subtitleLiftJob?.cancel()
-        subtitleLiftJob = scope.launch(Dispatchers.IO) {
-            val from = com.lagradost.desktop.player.SubtitleStyler.extraMarginY
-            val steps = 8
-            for (i in 1..steps) {
-                val t = i / steps.toFloat()
-                val eased = 1f - (1f - t) * (1f - t)
-                val v = from + (target - from) * eased
-                com.lagradost.desktop.player.SubtitleStyler.extraMarginY = v
-                runCatching { player.setMpvProperty("sub-margin-y", (style.elevation + 2 + v.toInt()).toString()) }
-                delay(22)
             }
         }
     }
@@ -1119,6 +1201,11 @@ class PlayerSession(
     fun debugEnd() = onEvent(VideoEndedEvent())
 
     /** One line for the dev server: what the page and the player think right now */
+    /** dev: subtitles that an extension delivers while the video plays (the same path as [vm.currentSubtitles]); the automatic choice decides */
+    fun debugDeliverSubtitles(vararg subs: SubtitleData) {
+        vm.addSubtitles(subs.toSet())
+    }
+
     fun debugLine(): String = "loading=${loadingText} status=$status failure=${failure?.take(60)} source=${sourceName?.lineSequence()?.firstOrNull()} links=$linksFound more=$loadingMore pos=$positionMs dur=$durationMs mpv[${player.debugState()}]"
 
     companion object {
@@ -1128,6 +1215,12 @@ class PlayerSession(
         const val AUDIO_LANG_KEY = "desktop_player_audio_lang"
     }
 }
+
+/** The subtitle pill: [state] picks the glyph, [text] says which subtitle */
+class SubtitleStatus(val state: SubtitleLoadState, val text: String)
+
+/** How many dead subtitles in a row the automatic choice tries before it stops */
+private const val MAX_SUBTITLE_TRIES = 8
 
 /** One on-screen feedback bubble */
 class Hud(val glyph: String, val text: String, val fraction: Float? = null)

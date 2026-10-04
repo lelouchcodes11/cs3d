@@ -18,10 +18,6 @@ object SubtitleStyler {
     /** mpv's own default size (55) for the engine's default 25 */
     private const val SIZE_FACTOR = 2.2
 
-    /** Extra distance (mpv virtual units) of the subtitles from the bottom: they rise above the player controls while these are shown */
-    @Volatile
-    var extraMarginY = 0f
-
     private fun argb(color: Int) = String.format("#%02X%02X%02X%02X", (color ushr 24) and 0xFF, (color shr 16) and 0xFF, (color shr 8) and 0xFF, color and 0xFF)
 
     private fun num(v: Double) = String.format(java.util.Locale.ROOT, "%.2f", v)
@@ -61,6 +57,12 @@ object SubtitleStyler {
             style.font != null -> families[style.font]
             else -> null
         }
+        // one renderer for every kind of subtitle: SRT / WebVTT already follow the style, but ASS / SSA (files and embedded tracks) bring their own
+        // font, size, outline and position, which is why some lines were bigger, outlined or elsewhere; "force" makes them follow the style's font, size,
+        // colours and edge, the style overrides below add what "force" leaves alone (weight, slant and where the line sits)
+        out += "sub-ass-override" to "force"
+        val alignment = style.alignment ?: CustomDecoder.SSA_ALIGNMENT_BOTTOM_CENTER
+        out += "sub-ass-style-overrides" to "Bold=${if (style.bold) -1 else 0},Italic=${if (style.italic) -1 else 0},Alignment=$alignment"
         out += "sub-font" to (family ?: "sans-serif")
         out += "sub-font-size" to num((style.fixedTextSize ?: com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE) * SIZE_FACTOR)
         out += "sub-color" to argb(style.foregroundColor)
@@ -80,13 +82,14 @@ object SubtitleStyler {
         // ---- background box behind each line (a transparent colour means none)
         val boxed = (style.backgroundColor ushr 24) != 0
         out += "sub-border-style" to if (boxed) "background-box" else "outline-and-shadow"
-        out += "sub-back-color" to argb(style.backgroundColor)
+        // libass has one "back" colour: it is the box and also the shadow, and mpv's sub-shadow-color is the same setting. Setting the transparent
+        // background here used to wipe out the shadow colour set above, so the drop shadow (the default) was drawn invisible
+        out += "sub-back-color" to if (boxed) argb(style.backgroundColor) else edge
 
         // ---- position: SSA alignment numbers (1-3 bottom, 4-6 middle, 7-9 top) and the distance from the edge
-        val alignment = style.alignment ?: CustomDecoder.SSA_ALIGNMENT_BOTTOM_CENTER
         out += "sub-align-x" to when (alignment) { 1, 4, 7 -> "left"; 3, 6, 9 -> "right"; else -> "center" }
         out += "sub-align-y" to when (alignment) { in 7..9 -> "top"; in 4..6 -> "center"; else -> "bottom" }
-        out += "sub-margin-y" to (style.elevation + 2 + extraMarginY.toInt()).toString()
+        out += "sub-margin-y" to (style.elevation + 2).toString()
         // inside the picture, not in the black bars around it where the controls cover it
         out += "sub-use-margins" to "no"
         // [Knocking on door], (laughs) and the like

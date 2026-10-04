@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.4 (pre-release)
+
+Subtitles that actually load, a calmer and smoother player, and OpenSubtitles working again.
+
+**Subtitles**
+- A small indicator at the top right says what is going on: loading, on, or could not be loaded. It also shows while an online subtitle is being downloaded.
+- Subtitles from StreamPlay and other extensions now start quickly. The app used to download every subtitle a source listed (often 180) before the one you picked; now it fetches only the one you pick, and skips dead ones by itself.
+- Every kind of subtitle (including ASS/SSA files and tracks inside the video) now follows your subtitle style: same font, size, colours and position.
+- The default drop shadow was never actually drawn. It is now, and a saved "Outline" is switched to the shadow once (change it back in Settings → Subtitles if you prefer).
+- Subtitles no longer move up when the player controls show.
+
+**OpenSubtitles**
+- Clicking a result in "Search subtitles online" did nothing: the download was cancelled as the window closed. Fixed.
+- In some countries (India) OpenSubtitles' main server is blocked for searching as well; the app now uses OpenSubtitles' older server for search and download when that happens.
+- Results show up as each site answers, so one slow site no longer holds the list back. Searching again while a search is running now starts the new search.
+
+**Player**
+- Smoother 24 fps films: frames are lined up with your screen's refresh, so motion no longer turns uneven for a few seconds at a time (it looked like slow motion).
+- Less stutter while the controls show and hide (the subtitles no longer slide up and down).
+- If a source you picked does not work, the sources after it are tried first, and the one that was playing before comes back last.
+
 ## 0.1.3 (pre-release)
 
 A big update: new look, a better player and search, account syncing, and fixes for live TV.

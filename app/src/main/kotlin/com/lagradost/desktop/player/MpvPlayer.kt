@@ -17,6 +17,15 @@ import com.lagradost.cloudstream3.utils.videoskip.VideoSkipStamp
 import com.sun.jna.Pointer
 import java.io.File
 
+/** What the subtitle loader is doing with [subtitle]: fetching it, showing it, or giving up on it */
+enum class SubtitleLoadState { Loading, Loaded, Failed }
+
+data class SubtitleLoadEvent(
+    val state: SubtitleLoadState,
+    val subtitle: SubtitleData,
+    override val source: PlayerEventSource = PlayerEventSource.Player,
+) : PlayerEvent()
+
 open class MpvPlayer : IPlayer {
     companion object {
         private const val TAG = "MpvPlayer"
@@ -52,21 +61,45 @@ open class MpvPlayer : IPlayer {
     private val swFormat = com.sun.jna.Memory(8).apply { setString(0, "bgr0") }
     private val swSize = com.sun.jna.Memory(8)
     private val swStride = com.sun.jna.Memory(8)
+    // mpv_render_frame_info {uint64 flags; int64 target_time}: when mpv wants the frame it renders on screen (mpv's clock, in NANOseconds although mpv_get_time_us reads microseconds)
+    private val frameInfo = com.sun.jna.Memory(16)
+    private val noBlock = com.sun.jna.Memory(8).apply { setInt(0, 0) }
+    @Volatile private var frameInfoWorks = true
     private val frameRenderer = com.lagradost.desktop.runtime.ui.VideoFrameRenderer { w, h, stride, address ->
-        synchronized(renderLock) {
+        var targetNs = 0L
+        val rendered = synchronized(renderLock) {
             val rc = renderContext ?: return@synchronized false
             mpv.mpv_render_context_update(rc)
             swSize.setInt(0, w)
             swSize.setInt(4, h)
             swStride.setLong(0, stride.toLong())
+            // for the frame the render call below draws: when mpv wants it on screen (mpv's clock -> System.nanoTime(): the same instant read on both)
+            if (FramePacer.enabled && frameInfoWorks) {
+                frameInfo.clear()
+                val got = runCatching { mpv.mpv_render_context_get_info(rc, Mpv.RenderParam().also { it.type = Mpv.MPV_RENDER_PARAM_NEXT_FRAME_INFO; it.data = frameInfo }) }
+                val core = handle
+                val targetMpvNs = frameInfo.getLong(8)
+                if (got.isFailure) { frameInfoWorks = false; Log.w(TAG, "no frame timing from mpv: ${got.exceptionOrNull()?.message}") }
+                else if (targetMpvNs > 0 && core != null) {
+                    val now = System.nanoTime()
+                    val t = now + (targetMpvNs - mpv.mpv_get_time_us(core) * 1000L)
+                    // a frame time is within a second or two of now; anything else is a wrong clock or unit: mpv's own blocking is used
+                    if (Math.abs(t - now) < 2_000_000_000L) targetNs = t
+                }
+            }
             val params = renderParams(
                 Mpv.MPV_RENDER_PARAM_SW_SIZE to swSize,
                 Mpv.MPV_RENDER_PARAM_SW_FORMAT to swFormat,
                 Mpv.MPV_RENDER_PARAM_SW_STRIDE to swStride,
                 Mpv.MPV_RENDER_PARAM_SW_POINTER to Pointer(address),
+                // paced: mpv hands the frame over about a frame interval before its target time and FramePacer holds it for its refresh (mpv would block instead)
+                *(if (targetNs != 0L) arrayOf(Mpv.MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME to noBlock) else emptyArray()),
             )
             mpv.mpv_render_context_render(rc, params) >= 0
         }
+        // shown at the refresh this frame's target time belongs to (an even 2-3 rhythm for 24 fps on 60 Hz), not at whichever one the render jitter lands before
+        if (rendered && targetNs != 0L) FramePacer.hold(targetNs)
+        rendered
     }
 
     /** mpv_render_param[]: {int type; void* data} entries, zero terminated */
@@ -85,6 +118,7 @@ open class MpvPlayer : IPlayer {
         if (old === newSurface) return
         old?.renderer = null
         surface = newSurface
+        newSurface?.present?.grid = VBlankGrid
         newSurface?.renderer = frameRenderer
     }
 
@@ -137,6 +171,7 @@ open class MpvPlayer : IPlayer {
     private var rangeTried = false
     @Volatile
     private var lastHttpStatus = 0
+    @Volatile
     private var preferredSubtitle: SubtitleData? = null
     // External subtitles are added to the file that plays once it is open: SubtitleData id -> mpv track id
     private val externalTracks = java.util.concurrent.ConcurrentHashMap<String, Int>()
@@ -905,12 +940,9 @@ open class MpvPlayer : IPlayer {
     private fun syncSubtitles() {
         if (handle == null || !fileLoaded) return
         publishEmbeddedSubtitles()
-        // the wanted one first: it must show up fast, a dead subtitle server must not hold it back
+        // only the wanted one is fetched: a source can list hundreds of subtitles, and fetching them all kept the workers busy for minutes
+        // so that the one the viewer picked waited in the queue (the other files are fetched when they are picked)
         applySubtitleSelection()
-        // every other file is fetched on its own worker, so slow or dead ones do not block each other
-        for (sub in activeSubtitles.toList()) {
-            if (sub.origin != SubtitleOrigin.EMBEDDED_IN_VIDEO && externalTracks[sub.getId()] == null) subtitleTask { ensureExternal(sub) }
-        }
     }
 
     private val pendingAdds = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.FutureTask<Int?>>()
@@ -1021,10 +1053,20 @@ open class MpvPlayer : IPlayer {
             if (subtitlesDisabled) setMpvProperty("sid", "no")
             return
         }
-        val id = if (sub.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO) sub.url.toIntOrNull() else ensureExternal(sub)
+        val generation = fileGeneration
+        val embedded = sub.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO
+        if (!embedded) postEvent(SubtitleLoadEvent(SubtitleLoadState.Loading, sub))
+        val id = if (embedded) sub.url.toIntOrNull() else ensureExternal(sub)
+        // another file plays or another subtitle was chosen while this one was fetched: that choice has its own task
+        if (handle == null || generation != fileGeneration || preferredSubtitle != sub) return
         Log.i(TAG, "subtitle selection: ${sub.name} -> track $id")
-        if (id != null) setMpvProperty("sid", id.toString())
-        else Log.w(TAG, "could not load the subtitles \"${sub.name.trim()}\"")
+        if (id != null) {
+            setMpvProperty("sid", id.toString())
+            if (!embedded) postEvent(SubtitleLoadEvent(SubtitleLoadState.Loaded, sub))
+        } else {
+            Log.w(TAG, "could not load the subtitles \"${sub.name.trim()}\"")
+            postEvent(SubtitleLoadEvent(SubtitleLoadState.Failed, sub))
+        }
     }
 
     override fun setActiveSubtitles(subtitles: Set<SubtitleData>) {
