@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/images/banner.svg" alt="CloudStream for Windows" width="100%">
-</p>
+<h1 align="center">CloudStream for Windows</h1>
 
 <h3 align="center">Movies, series, anime and live TV on your PC, in a real Windows 11 app.</h3>
 
@@ -20,7 +18,6 @@
 <p align="center">
   <a href="#-join-the-telegram-channel">Telegram</a> ·
   <a href="#-download">Download</a> ·
-  <a href="#-screenshots">Screenshots</a> ·
   <a href="#-what-you-get">Features</a> ·
   <a href="#-first-steps">First steps</a> ·
   <a href="#-help-and-fixes">Help</a> ·
@@ -63,22 +60,6 @@ Windows 10 or 11, 64-bit. Windows SmartScreen may ask for confirmation because t
 **Updating:** download the newest MSI from [Releases](../../releases) and run it over the old one. Your settings, accounts and extensions are kept. (Settings → About → *Get the newest version* opens the same page.) Follow the [Telegram channel](https://t.me/cs3d_official) to know when there is one.
 
 > **Pre-release.** The app is new and still gets updates often. If something is wrong, tell us on [Telegram](https://t.me/cs3d_official).
-
----
-
-## 🖼️ Screenshots
-
-<p align="center">
-  <img src="docs/images/player.jpg" alt="The player" width="100%">
-  <br><sub>The player (video: <i>Big Buck Bunny</i> © Blender Foundation, CC BY 3.0).</sub>
-</p>
-<p align="center">
-  <img src="docs/images/appearance.png" alt="Appearance settings: menu position, corners, poster size" width="49%">
-  <img src="docs/images/smooth-motion.png" alt="Appearance settings: smooth motion and player controls" width="49%">
-</p>
-<p align="center">
-  <img src="docs/images/about.png" alt="About page with the Telegram channel and donate links" width="100%">
-</p>
 
 ---
 
