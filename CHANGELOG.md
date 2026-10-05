@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.7 (pre-release)
 
-Smoother video, no more updater inside the app, and a new README.
+Restoring a backup finally works (and brings your extensions back), smoother video with an optional GPU player, and updates that point you to GitHub instead of installing behind your back.
+
+**If you are on 0.1.6 or older** the app offers this update itself: choose *Install update* (a portable copy: download it from the release page instead). From 0.1.7 on the app only tells you about a new version and opens its download page.
 
 **Player**
 - **Smooth motion** (Settings → Appearance, on by default): 24 and 25 fps films no longer judder on a 60 Hz screen. The frames around each screen refresh are blended, like mpv's interpolation, so pans and scrolling credits glide.
