@@ -809,6 +809,8 @@ compose.desktop {
             "--add-exports=java.desktop/sun.awt=ALL-UNNAMED",
             "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED",
             "-Xss4m",
+            // a library that asks for a full collection (System.gc()) gets a concurrent one instead of a pause with every thread stopped
+            "-XX:+ExplicitGCInvokesConcurrent",
             // start-up: the app's classes (about 12k) are loaded from a class-data-sharing archive that portableDist creates
             // (and that the JVM re-creates by itself at exit when the jars changed); the native splash shows at once
             "-XX:+AutoCreateSharedArchive",
@@ -1022,4 +1024,15 @@ tasks.register<JavaExec>("runLinkLab") {
     jvmArgs((project.findProperty("jvm") as String?)?.split(" ")?.filter { it.isNotBlank() } ?: emptyList<String>())
     args = (project.findProperty("args") as String?)?.split(" ")?.filter { it.isNotBlank() } ?: emptyList()
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+}
+
+// Prototype: mpv with its own GPU renderer inside a Compose SwingPanel, Compose controls above it (see tools/EmbedProto.kt)
+// ./gradlew :app:runEmbedProto -Pargs="<video file or url> [screenshotDir]"
+tasks.register<JavaExec>("runEmbedProto") {
+    group = "verification"
+    mainClass.set("com.lagradost.desktop.tools.EmbedProtoKt")
+    classpath = sourceSets.main.get().runtimeClasspath
+    jvmArgs("-Xmx2g", "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-opens=java.desktop/sun.awt=ALL-UNNAMED", "--add-opens=java.desktop/java.awt=ALL-UNNAMED", "--add-exports=java.desktop/sun.awt=ALL-UNNAMED", "-Dfile.encoding=UTF-8")
+    jvmArgs((project.findProperty("jvm") as String?)?.split(" ")?.filter { it.isNotBlank() } ?: emptyList<String>())
+    args = (project.findProperty("args") as String?)?.split(" ")?.filter { it.isNotBlank() } ?: emptyList()
 }

@@ -27,10 +27,28 @@ internal object VBlankClock {
     private interface User : Library {
         fun GetDC(hwnd: Pointer?): Pointer?
         fun ReleaseDC(hwnd: Pointer?, hdc: Pointer?): Int
+        fun MonitorFromWindow(hwnd: Pointer?, flags: Int): Pointer?
+        fun GetMonitorInfoW(monitor: Pointer?, info: Pointer): Int
+    }
+
+    private interface GdiDc : Library {
+        fun CreateDCW(driver: com.sun.jna.WString, device: com.sun.jna.WString, port: com.sun.jna.WString?, mode: Pointer?): Pointer?
+        fun DeleteDC(hdc: Pointer?): Int
     }
 
     private val gdi: Gdi? by lazy { runCatching { Native.load("gdi32", Gdi::class.java) }.onFailure { Log.w(TAG, "no gdi32: ${it.message}") }.getOrNull() }
     private val user: User? by lazy { runCatching { Native.load("user32", User::class.java) }.getOrNull() }
+    private val gdiDc: GdiDc? by lazy { runCatching { Native.load("gdi32", GdiDc::class.java) }.getOrNull() }
+
+    /** The display ("\\.\DISPLAY2") the player window is on now; null when it cannot be told (the primary display is used then) */
+    private fun windowDisplay(): String? = runCatching {
+        val u = user ?: return null
+        val window = com.lagradost.desktop.ui.DesktopUiHost.window ?: return null
+        val hwnd = Native.getComponentPointer(window) ?: return null
+        val monitor = u.MonitorFromWindow(hwnd, 2) ?: return null // MONITOR_DEFAULTTONEAREST
+        val info = Memory(104).also { it.clear(); it.setInt(0, 104) } // MONITORINFOEXW: 40 bytes of MONITORINFO, then the 32 characters of szDevice
+        if (u.GetMonitorInfoW(monitor, info) == 0) null else info.getWideString(40).takeIf { it.isNotBlank() }
+    }.getOrNull()
 
     /** The latest vblank and the refresh period (nanoTime units); 0 while unknown */
     @Volatile private var lastVBlankNs = 0L
@@ -60,11 +78,27 @@ internal object VBlankClock {
         val g = gdi
         val u = user
         if (g == null || u == null) { failed = true; return }
-        val hdc = u.GetDC(null)
-        val open = Memory(24).also { it.clear(); it.setPointer(0, hdc) } // D3DKMT_OPENADAPTERFROMHDC {HDC; handle; LUID; sourceId}
-        val status = g.D3DKMTOpenAdapterFromHdc(open)
-        u.ReleaseDC(null, hdc)
+        // the display the window is on (refresh rate and phase differ between monitors), the primary one when that cannot be told
+        val display = windowDisplay()
+        val open = Memory(24).also { it.clear() } // D3DKMT_OPENADAPTERFROMHDC {HDC; handle; LUID; sourceId}
+        var status = -1
+        if (display != null) {
+            val dc = gdiDc?.CreateDCW(com.sun.jna.WString("DISPLAY"), com.sun.jna.WString(display), null, null)
+            if (dc != null) {
+                open.setPointer(0, dc)
+                status = g.D3DKMTOpenAdapterFromHdc(open)
+                gdiDc?.DeleteDC(dc)
+            }
+        }
+        if (status != 0) {
+            val hdc = u.GetDC(null)
+            open.clear(); open.setPointer(0, hdc)
+            status = g.D3DKMTOpenAdapterFromHdc(open)
+            u.ReleaseDC(null, hdc)
+        }
         if (status != 0) { Log.w(TAG, "D3DKMTOpenAdapterFromHdc: 0x${Integer.toHexString(status)}"); failed = true; return }
+        Log.i(TAG, "watching the refresh of ${display ?: "the primary display"}")
+        var checkedAt = System.nanoTime()
         val wait = Memory(12).also { it.clear(); it.setInt(0, open.getInt(8)); it.setInt(8, open.getInt(20)) } // D3DKMT_WAITFORVERTICALBLANKEVENT {adapter; device; sourceId}
         val stamps = LongArray(48)
         var count = 0
@@ -75,6 +109,12 @@ internal object VBlankClock {
                 if (r != 0) { Log.w(TAG, "D3DKMTWaitForVerticalBlankEvent: 0x${Integer.toHexString(r)}"); failed = periodNs == 0L; return }
                 stamps[count % stamps.size] = now
                 count++
+                // the window was moved to another monitor: its refresh is what counts, so start over on that one (the thread ends, the next question starts a new one)
+                if (now - checkedAt > 500_000_000L) {
+                    checkedAt = now
+                    val current = windowDisplay()
+                    if (current != display) { Log.i(TAG, "window moved to display $current (was $display)"); return }
+                }
                 if (count >= 8) {
                     val n = minOf(count, stamps.size)
                     val first = stamps[(count - n) % stamps.size]
@@ -141,20 +181,29 @@ internal object FramePacer {
     private var held = 0
     private var relocks = 0
     private var reportedAt = 0L
+    private var parks = 0
+    private var oversleepNs = 0L
+    private var maxOversleepNs = 0L
 
     private fun report() {
         val now = System.nanoTime()
         if (reportedAt == 0L) reportedAt = now
         if (now - reportedAt < 5_000_000_000L) return
-        if (System.getProperty("cloudstream.videostats") != null) Log.i("FramePacer", "pacing: held=$held relocks=$relocks")
-        held = 0; relocks = 0; reportedAt = now
+        if (System.getProperty("cloudstream.videostats") != null) Log.i("FramePacer", "pacing: held=$held relocks=$relocks, sleep overshoot %.2f ms avg / %.2f ms max over $parks sleeps".format(oversleepNs / 1e6 / parks.coerceAtLeast(1), maxOversleepNs / 1e6))
+        held = 0; relocks = 0; parks = 0; oversleepNs = 0; maxOversleepNs = 0; reportedAt = now
     }
 
     private fun waitUntil(deadline: Long) {
         val wait = deadline - System.nanoTime()
         if (wait <= 0L || wait > MAX_HOLD_NS) return
         // park for the bulk, spin for the last millisecond (parking wakes up late by up to a millisecond or two)
-        if (wait > 2_500_000L) java.util.concurrent.locks.LockSupport.parkNanos(wait - 1_500_000L)
+        if (wait > 2_500_000L) {
+            val asked = wait - 1_500_000L
+            val t0 = System.nanoTime()
+            java.util.concurrent.locks.LockSupport.parkNanos(asked)
+            val over = System.nanoTime() - t0 - asked
+            parks++; oversleepNs += over.coerceAtLeast(0); if (over > maxOversleepNs) maxOversleepNs = over
+        }
         while (System.nanoTime() < deadline) Thread.onSpinWait()
     }
 

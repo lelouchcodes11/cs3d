@@ -58,6 +58,18 @@ object Appearance {
     /** Shelves zoom the poster under the pointer */
     var hoverZoom by mutableStateOf(true)
 
+    /** Video: mpv draws with its own GPU renderer in a window of its own and the controls float above it (beta); applies to the next video */
+    var nativePlayer by mutableStateOf(false)
+
+    /** Native player only: the Anime4K neural filters sharpen and enlarge low resolution anime (needs a fairly strong graphics card) */
+    var anime4k by mutableStateOf(false)
+
+    /** Video: blends the frames around each screen refresh so 24 or 25 fps film does not judder on a 60 Hz screen */
+    var smoothMotion by mutableStateOf(true)
+
+    /** Bottom dock only: it slides away while a page is scrolled down and comes back on scrolling up or at the bottom edge (off by default) */
+    var dockAutoHide by mutableStateOf(false)
+
     private const val PREFIX = "desktop_look_"
 
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
@@ -79,6 +91,10 @@ object Appearance {
             playerStyle = enumOf(p.getString(PREFIX + "player", null), PlayerStyle.Modern)
             startupAnimation = p.getBoolean(PREFIX + "startup", true)
             hoverZoom = p.getBoolean(PREFIX + "hover_zoom", true)
+            smoothMotion = p.getBoolean(PREFIX + "smooth_motion", true)
+            nativePlayer = p.getBoolean(PREFIX + "native_player", false)
+            anime4k = p.getBoolean(PREFIX + "anime4k", false)
+            dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
         }
     }
 
@@ -98,6 +114,10 @@ object Appearance {
                 .putString(PREFIX + "player", playerStyle.name)
                 .putBoolean(PREFIX + "startup", startupAnimation)
                 .putBoolean(PREFIX + "hover_zoom", hoverZoom)
+                .putBoolean(PREFIX + "smooth_motion", smoothMotion)
+                .putBoolean(PREFIX + "native_player", nativePlayer)
+                .putBoolean(PREFIX + "anime4k", anime4k)
+                .putBoolean(PREFIX + "dock_auto_hide", dockAutoHide)
                 .apply()
         }
     }
@@ -105,7 +125,7 @@ object Appearance {
     fun reset() {
         navPosition = NavPosition.Top; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Medium; backdrop = Backdrop.Ambient; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; anime4k = false; dockAutoHide = false
         save()
     }
 

@@ -3,7 +3,9 @@ package com.lagradost.desktop.runtime.ui
 import android.content.Context
 import android.util.AttributeSet
 import android.view.View
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.Image
@@ -40,11 +42,56 @@ open class MpvSurfaceView @JvmOverloads constructor(
 
     val stats = VideoFrameStats()
 
+    /** A finished frame and the time mpv wants it on screen (System.nanoTime units, 0 = unknown) */
+    class Stamped(val image: Image, val targetNs: Long)
+
+    /** What a refresh shows: [first], and over it [second] with the weight [alpha] when the video changes frame inside that refresh */
+    class Blend {
+        var first: Image? = null
+        var second: Image? = null
+        var alpha = 0f
+    }
+
+    /** Smooth motion: the newest frames are kept and a refresh that falls between two of them shows a mix (see [pick]) */
+    @Volatile
+    var smoothMotion = false
+
+    /** True while the video's frame rate does not divide the screen's (24 or 25 fps on 60 Hz): then a mix of frames is worth drawing on every refresh */
+    var blendUseful by androidx.compose.runtime.mutableStateOf(false)
+        private set
+
+    /** Counts the refreshes drawn with smooth motion: reading it in a draw makes the draw run again on the next refresh */
+    val drawTick = mutableIntStateOf(0)
+
+    /** The time mpv wants the frame it has just rendered on screen; set by the renderer on the render thread before it returns */
+    @Volatile
+    var lastTargetNs = 0L
+
+    private val recent = ArrayDeque<Stamped>() // UI thread only, oldest first
+    private var picks = 0
+    private var mixes = 0
+    private var pickSince = System.nanoTime()
+
+    /** What smooth motion did in the last 5 seconds: refreshes drawn, how many of them mixed two frames */
+    @Volatile
+    var smoothLast = "off"
+        private set
+    private val blend = Blend()
+
     /** What the window did with the frames: how long a finished frame waited for the UI, frames the UI never drew, gaps between drawn frames */
     val present = PresentStats()
     val frameVersion = mutableIntStateOf(0)
     var frame: Image? = null
         private set
+
+    /**
+     * Set by a host that draws the frame scaled to the view (the native player screen): a very large view is then rendered smaller and
+     * the graphics card enlarges it. Software rendering costs per pixel (about 2 ns each, plus two copies of the frame), so a 4K window at 60 fps
+     * is more than a CPU core can do; [maxRenderPixels] bounds the work. Subtitles and the picture are drawn into the frame, so they are slightly
+     * softer only when the view is larger than that.
+     */
+    @Volatile
+    var scaledDrawing = false
 
     @Volatile
     private var targetWidth = 0
@@ -77,23 +124,36 @@ open class MpvSurfaceView @JvmOverloads constructor(
         if (w <= 0 || h <= 0) return
         val started = System.nanoTime()
         val cpu = threadBean.currentThreadCpuTime
-        val bmp = bitmap?.takeIf { it.width == w && it.height == h } ?: Bitmap().also {
-            it.allocPixels(ImageInfo.makeN32(w, h, ColorAlphaType.OPAQUE))
+        val (rw, rh) = renderSize(w, h)
+        val bmp = bitmap?.takeIf { it.width == rw && it.height == rh } ?: Bitmap().also {
+            it.allocPixels(ImageInfo.makeN32(rw, rh, ColorAlphaType.OPAQUE))
             bitmap?.close()
             bitmap = it
         }
         val pixels = bmp.peekPixels() ?: return
-        if (!r.renderFrame(w, h, bmp.rowBytes, pixels.addr)) return
+        if (!r.renderFrame(rw, rh, bmp.rowBytes, pixels.addr)) return
         bmp.notifyPixelsChanged()
         val image = Image.makeFromBitmap(bmp)
-        stats.frame(System.nanoTime() - started, threadBean.currentThreadCpuTime - cpu, w, h)
+        stats.frame(System.nanoTime() - started, threadBean.currentThreadCpuTime - cpu, rw, rh)
+        val target = lastTargetNs
         EventQueue.invokeLater {
-            val old = frame
             frame = image
-            old?.close()
+            recent.addLast(Stamped(image, target))
+            // normally only the newest frame is kept; smooth motion mixes two neighbours and keeps one more in reserve
+            val keep = if (smoothMotion) 3 else 1
+            while (recent.size > keep) recent.removeFirst().image.close()
+            if (smoothMotion) updateBlendUseful() else if (blendUseful) blendUseful = false
             frameVersion.intValue++
             present.published(frameVersion.intValue)
         }
+    }
+
+    /** The size frames are rendered at for a view of [w] x [h] pixels: the view's own size, or less when it is very large and the host scales */
+    private fun renderSize(w: Int, h: Int): Pair<Int, Int> {
+        val cap = maxRenderPixels
+        if (!scaledDrawing || cap <= 0 || w.toLong() * h <= cap) return w to h
+        val k = Math.sqrt(cap.toDouble() / (w.toDouble() * h))
+        return (Math.round(w * k).toInt().coerceAtLeast(2) and 1.inv()) to (Math.round(h * k).toInt().coerceAtLeast(2) and 1.inv())
     }
 
     /** Native UI: the size (pixels) frames are rendered at, as the Android layout would set it */
@@ -104,12 +164,63 @@ open class MpvSurfaceView @JvmOverloads constructor(
         requestRender()
     }
 
+    private fun updateBlendUseful() {
+        val n = recent.size
+        val period = present.grid?.periodNs ?: 0L
+        var useful = false
+        if (n >= 2 && period > 0) {
+            val gap = recent[n - 1].targetNs - recent[n - 2].targetNs
+            val ratio = gap.toDouble() / period
+            // a gap of 1.5-6 refreshes that is not (nearly) a whole number of them; a seek or a stall gives a huge gap that is no cadence
+            useful = gap > 0 && ratio in 1.05..6.0 && Math.abs(ratio - Math.round(ratio)) >= 0.06
+        }
+        if (useful != blendUseful) blendUseful = useful
+    }
+
+    /**
+     * The frame(s) to draw for a refresh that is on screen from [showNs] to [showNs] + [periodNs] (UI thread). Like mpv's "oversample" interpolation:
+     * a frame is shown as it is, except in the refresh during which the next frame is due, which shows the two weighted by how long each is on screen
+     * in it. That spreads the uneven 2-3-2-3 repeats of 24 or 25 fps on 60 Hz over the refreshes instead of jumping.
+     */
+    fun pick(showNs: Long, periodNs: Long): Blend {
+        val b = blend
+        b.first = null; b.second = null; b.alpha = 0f
+        val n = recent.size
+        if (n == 0) return b
+        picks++
+        val now = System.nanoTime()
+        if (now - pickSince >= 5_000_000_000L) {
+            smoothLast = "%.1f refreshes/s, %.1f mixed/s".format(picks * 1e9 / (now - pickSince), mixes * 1e9 / (now - pickSince))
+            picks = 0; mixes = 0; pickSince = now
+        }
+        val newest = recent[n - 1]
+        if (n < 2 || periodNs <= 0 || newest.targetNs == 0L || !blendUseful) { b.first = newest.image; return b }
+        var k = -1
+        for (i in 0 until n) if (recent[i].targetNs != 0L && recent[i].targetNs <= showNs) k = i
+        if (k < 0) { b.first = recent[0].image; return b }
+        b.first = recent[k].image
+        if (k + 1 < n) {
+            val next = recent[k + 1]
+            val end = showNs + periodNs
+            if (next.targetNs in (showNs + 1) until end) {
+                val alpha = ((end - next.targetNs).toDouble() / periodNs).toFloat()
+                if (alpha >= 0.95f) b.first = next.image else if (alpha > 0.05f) { b.second = next.image; b.alpha = alpha; mixes++ }
+            }
+        }
+        return b
+    }
+
     fun clearFrame() {
         EventQueue.invokeLater {
-            frame?.close()
+            while (recent.isNotEmpty()) recent.removeFirst().image.close()
             frame = null
             frameVersion.intValue++
         }
+    }
+
+    companion object {
+        /** 2560 x 1440 by default; -Dcloudstream.rendercap=<pixels> changes it, 0 switches the limit off */
+        val maxRenderPixels: Long = System.getProperty("cloudstream.rendercap")?.toLongOrNull() ?: 3_700_000L
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {

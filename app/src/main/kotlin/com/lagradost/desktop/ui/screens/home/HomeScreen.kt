@@ -134,7 +134,7 @@ fun HomeScreen() {
         val space = com.lagradost.desktop.ui.fluent.Appearance.space(30.dp)
 
         FluentScrollbar(listState, com.lagradost.desktop.ui.shell.TopBarHeight)
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "hero") {
                 val res = preview
                 val items = (res as? Resource.Success)?.value?.second.orEmpty()

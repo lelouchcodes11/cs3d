@@ -1006,6 +1006,12 @@ class PlayerSession(
         vm.modifyState { copy(loading = Resource.Success(Unit)) }
     }
 
+    /** The same sources again with a fresh player core (the engine of the player changed under a playing video) */
+    fun restartPlayback() {
+        releaseForReload()
+        vm.loadLinks()
+    }
+
     fun reloadSources() {
         vm.forceClearCache = true
         releaseForReload()

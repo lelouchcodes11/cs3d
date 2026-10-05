@@ -108,7 +108,10 @@ object DesktopBootstrap {
         // libmpv is loaded early (the first Play must not wait for it).
         Thread({
             Thread.sleep(5_000)
-            runCatching { com.lagradost.desktop.player.Mpv.INSTANCE }
+            // libmpv (115 MB of code, then its own memory) is loaded ahead of the first Play, unless the PC is short of memory: with little free
+            // memory Windows compresses and pages, which is what freezes every window; then it loads when a video is first opened
+            val freeMb = runCatching { (java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean).freeMemorySize / 1_048_576 }.getOrDefault(Long.MAX_VALUE)
+            if (freeMb >= 1500) runCatching { com.lagradost.desktop.player.Mpv.INSTANCE } else android.util.Log.i("Startup", "libmpv is not preloaded: only $freeMb MB of memory free")
             // the answer needs a PowerShell run (0.5 to 3 s): asked first by the Accounts settings page on the UI thread, it froze the window
             runCatching { com.lagradost.desktop.WindowsHello.isAvailable() }
         }, "warm-up-delayed").apply { isDaemon = true }.start()
@@ -117,6 +120,8 @@ object DesktopBootstrap {
         }
         ContextImpl.appResourceTable = resourceIndex()
         AndroidRuntime.startApplication(CloudStreamApp())
+        // work the window's thread would otherwise do the first time a page needs it, and Chromium when the last run needed it
+        Warmups.start()
     }
 
     /** Headless tools (ExtensionHarness): the runtime, the application and a MainActivity instance */

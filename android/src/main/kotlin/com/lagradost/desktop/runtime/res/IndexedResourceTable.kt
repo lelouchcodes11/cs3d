@@ -152,6 +152,11 @@ class IndexedResourceTable(
         }
     }
 
+    /** Parses the values files that [config] needs now (a page's first string used to wait for them on the UI thread) */
+    fun warm(config: Configuration) {
+        for (f in foldersFor(config)) folder(f)
+    }
+
     private fun folder(name: String): Map<String, Element> = folders.getOrPut(name) {
         val map = HashMap<String, Element>()
         val dbf = DocumentBuilderFactory.newInstance()

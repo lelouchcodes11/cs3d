@@ -17,6 +17,9 @@ import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.plugins.PLUGINS_KEY
 import com.lagradost.cloudstream3.plugins.PLUGINS_KEY_LOCAL
+import com.lagradost.cloudstream3.plugins.PluginManager
+import com.lagradost.cloudstream3.plugins.RepositoryManager
+import com.lagradost.cloudstream3.amap
 import com.lagradost.cloudstream3.syncproviders.AccountManager
 import com.lagradost.cloudstream3.syncproviders.providers.AniListApi.Companion.ANILIST_CACHED_LIST
 import com.lagradost.cloudstream3.syncproviders.providers.MALApi.Companion.MAL_CACHED_LIST
@@ -35,13 +38,20 @@ import com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.QUEUE_KE
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.KEY_DOWNLOAD_INFO
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.KEY_RESUME_IN_QUEUE
 import com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.KEY_RESUME_PACKAGES
+import com.lagradost.desktop.platform.AppRestart
+import com.lagradost.desktop.platform.PrefsBackup
+import com.lagradost.desktop.runtime.SharedPreferencesImpl
 import com.lagradost.safefile.MediaFileContentType
 import com.lagradost.safefile.SafeFile
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import okhttp3.internal.closeQuietly
+import android.util.Log
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.IOException
 import java.io.OutputStream
+import java.util.Collections
 import java.io.PrintWriter
 import java.lang.System.currentTimeMillis
 import java.text.SimpleDateFormat
@@ -49,6 +59,20 @@ import java.util.Date
 import java.util.Locale
 
 object BackupUtils {
+
+    /**
+     * desktop: key inside the datastore part of a backup file that holds the installed extensions (a JSON list of [BackupPlugin]).
+     * The extensions themselves and their local paths are not in a backup, only what is needed to download them again.
+     * The Android app ignores the key (it only writes it to its preferences), so backups stay readable there.
+     */
+    private const val BACKUP_PLUGINS_KEY = "DESKTOP_BACKUP_PLUGINS"
+
+    /** An installed online extension: [internalName] and the [url] its .cs3 file was downloaded from */
+    @Serializable
+    data class BackupPlugin(
+        @JsonProperty("internalName") @SerialName("internalName") val internalName: String,
+        @JsonProperty("url") @SerialName("url") val url: String,
+    )
 
     /**
      * No sensitive or breaking data in the backup
@@ -110,7 +134,10 @@ object BackupUtils {
         QUEUE_KEY,
 
         // Prevent automatic plugin download after restoring backup
-        "auto_download_plugins_key2"
+        "auto_download_plugins_key2",
+
+        // desktop: not a preference, the list of installed extensions travels in the backup under this key and is read on restore
+        BACKUP_PLUGINS_KEY,
     )
 
     /** false if key should not be contained in backup */
@@ -142,10 +169,17 @@ object BackupUtils {
         val allData = context.getSharedPrefs().all.filter { it.key.isTransferable() }
         val allSettings = context.getDefaultSharedPrefs().all.filter { it.key.isTransferable() }
 
+        // desktop: which extensions are installed (restoring downloads them again, see reinstallPlugins)
+        val installedPlugins = PluginManager.getPluginsOnline()
+            .filter { it.isOnline && !it.url.isNullOrBlank() }
+            .map { BackupPlugin(it.internalName, it.url!!) }
+            .distinctBy { it.url }
+        val pluginEntry = if (installedPlugins.isEmpty()) emptyMap() else mapOf(BACKUP_PLUGINS_KEY to installedPlugins.toJson())
+
         val allDataSorted = BackupVars(
             allData.filter { it.value is Boolean } as? Map<String, Boolean>,
             allData.filter { it.value is Int } as? Map<String, Int>,
-            allData.filter { it.value is String } as? Map<String, String>,
+            (allData.filter { it.value is String } as? Map<String, String>)?.plus(pluginEntry),
             allData.filter { it.value is Float } as? Map<String, Float>,
             allData.filter { it.value is Long } as? Map<String, Long>,
             allData.filter { it.value as? Set<String> != null } as? Map<String, Set<String>>,
@@ -205,7 +239,7 @@ object BackupUtils {
 
         try {
             if (!context.checkWrite()) {
-                showToast(R.string.backup_failed, Toast.LENGTH_LONG)
+                toast(context.getString(R.string.backup_failed))
                 context.getActivity()?.requestRW()
                 return@ioSafe
             }
@@ -218,14 +252,15 @@ object BackupUtils {
             fileStream = stream.openNew()
             printStream = PrintWriter(fileStream)
             printStream.print(backupFile.toJson())
-            showToast(R.string.backup_success, Toast.LENGTH_LONG)
+            printStream.flush()
+            toast(
+                "Backup saved as $displayName.txt" +
+                    (getCurrentBackupDir(context).first?.filePath()?.let { " in $it" } ?: "")
+            )
         } catch (e: Exception) {
             logError(e)
             try {
-                showToast(
-                    txt(R.string.backup_failed_error_format, e.toString()),
-                    Toast.LENGTH_LONG,
-                )
+                toast(txt(R.string.backup_failed_error_format, e.toString()).asString(context))
             } catch (e: Exception) {
                 logError(e)
             }
@@ -247,36 +282,98 @@ object BackupUtils {
         )
     }
 
+    /** Reads the backup file at [uri] and restores it, shared by the file picker and the dev server */
+    fun restoreFromUri(activity: FragmentActivity, uri: Uri) = ioSafe {
+        try {
+            val input = activity.contentResolver.openInputStream(uri)
+                ?: return@ioSafe
+
+            val text = input.bufferedReader().readText()
+            val restoredValue = parseJson<BackupFile>(text)
+
+            // desktop: a copy of the current data to go back to, taken before it is replaced
+            PrefsBackup.snapshotNow("before restoring a backup file")
+            restore(
+                activity,
+                restoredValue,
+                restoreSettings = true,
+                restoreDataStore = true,
+            )
+            // desktop: recreate() does nothing here and the open screens (theme, look, lists) keep what they read at start-up,
+            // so the restored values only show after a start; saving anything from those screens would also write the old values back.
+            // The writes are asked for later by apply(): put them on disk before the app goes down and comes back.
+            SharedPreferencesImpl.flushAll()
+
+            // desktop: the extensions of the backup are downloaded again from the (just restored) repositories before the restart,
+            // which then loads them like any other start does
+            val wanted = restoredValue.installedPlugins()
+            var summary = "Backup restored."
+            if (wanted.isNotEmpty()) {
+                toast("Backup restored. Downloading ${wanted.size} extensions...")
+                val failed = reinstallPlugins(activity, wanted)
+                summary += if (failed == 0) " ${wanted.size} extensions installed."
+                else " ${wanted.size - failed} of ${wanted.size} extensions installed, the others can be installed from Extensions."
+            }
+            toast("$summary CloudStream is restarting to apply it.")
+            // long enough to read the message before the window goes away
+            kotlinx.coroutines.delay(if (wanted.isEmpty()) 1500 else 3000)
+            AppRestart.request()
+        } catch (e: Exception) {
+            logError(e)
+            toast(activity.getString(R.string.restore_failed_format).format(e.toString()))
+        }
+    }
+
+    private fun BackupFile.installedPlugins(): List<BackupPlugin> =
+        datastore.string?.get(BACKUP_PLUGINS_KEY)
+            ?.let { runCatching { parseJson<Array<BackupPlugin>>(it).toList() }.getOrNull() }
+            ?: emptyList()
+
+    /**
+     * Downloads the [wanted] extensions from the repositories (the restored ones and the built-in ones) that are not installed yet.
+     * They are only saved, not loaded: the app restarts right after and loads everything saved.
+     * @return how many could not be installed (not offered by any repository any more, or the download failed)
+     */
+    private suspend fun reinstallPlugins(activity: Activity, wanted: List<BackupPlugin>): Int {
+        val repositories = (RepositoryManager.getRepositories() + RepositoryManager.PREBUILT_REPOSITORIES).distinctBy { it.url }
+        val offered = repositories.amap { RepositoryManager.getRepoPlugins(it) ?: emptyList() }.flatten()
+        val gate = Semaphore(4)
+        val failed = Collections.synchronizedList(ArrayList<String>())
+
+        wanted.distinctBy { it.url }.amap { plugin ->
+            gate.withPermit {
+                // the same download address first, then the same name (a repository can move its files)
+                val found = offered.firstOrNull { it.plugin.url == plugin.url }
+                    ?: offered.firstOrNull { it.plugin.internalName == plugin.internalName }
+                if (found == null) {
+                    failed.add(plugin.internalName)
+                    return@withPermit
+                }
+                val site = found.plugin
+                if (PluginManager.getPluginPath(activity, site.internalName, found.repositoryData.url).exists()) return@withPermit
+                // one more try, the connection can drop while fifty files are fetched
+                val ok = (1..2).any {
+                    PluginManager.downloadPlugin(activity, site.url, site.fileHash, site.internalName, found.repositoryData.url, false)
+                }
+                if (!ok) failed.add(plugin.internalName)
+            }
+        }
+        if (failed.isNotEmpty()) Log.w("BackupUtils", "extensions that could not be installed again: ${failed.joinToString()}")
+        return failed.size
+    }
+
+    /**
+     * desktop: CommonActivity.showToast gives the toast an Android layout as its view, which the desktop toast never shows (nothing appears),
+     * so the messages of backing up and restoring go to the desktop toast host directly.
+     */
+    private fun toast(text: String) = com.lagradost.desktop.ui.Toasts.show(text, true)
+
     fun FragmentActivity.setUpBackup() {
         try {
             restoreFileSelector =
                 registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
                     if (uri == null) return@registerForActivityResult
-                    val activity = this
-                    ioSafe {
-                        try {
-                            val input = activity.contentResolver.openInputStream(uri)
-                                ?: return@ioSafe
-
-                            val text = input.bufferedReader().readText()
-                            val restoredValue = parseJson<BackupFile>(text)
-
-                            restore(
-                                activity,
-                                restoredValue,
-                                restoreSettings = true,
-                                restoreDataStore = true,
-                            )
-                            activity.runOnUiThread { activity.recreate() }
-                        } catch (e: Exception) {
-                            logError(e)
-                            main { // smth can fail in .format
-                                showToast(
-                                    getString(R.string.restore_failed_format).format(e.toString())
-                                )
-                            }
-                        }
-                    }
+                    restoreFromUri(this, uri)
                 }
         } catch (e: Exception) {
             logError(e)

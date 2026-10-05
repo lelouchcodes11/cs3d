@@ -43,6 +43,13 @@ open class MpvPlayer : IPlayer {
         @Volatile
         var headless = false
 
+        /**
+         * Set while a native video window exists (see ui/screens/player/NativeVideo.kt): the window handle mpv draws into, 0 when it is not ready.
+         * A core created while this is set draws with mpv's own GPU renderer into that window instead of the software render API.
+         */
+        @Volatile
+        var nativeWindow: (() -> Long)? = null
+
         /** The player that was started last (dev tools) */
         @Volatile
         var active: MpvPlayer? = null
@@ -51,6 +58,11 @@ open class MpvPlayer : IPlayer {
     private val mpv: Mpv = Mpv.INSTANCE
     private var handle: Pointer? = null
 
+    /** This core draws into a native window (see [nativeWindow]) */
+    @Volatile
+    var native = false
+        private set
+
     // Video goes through libmpv's software render API into the view's bitmap (vo=libmpv), so the
     // player controls are drawn over it like on Android
     private val renderLock = Any()
@@ -58,7 +70,7 @@ open class MpvPlayer : IPlayer {
     @Volatile
     private var surface: com.lagradost.desktop.runtime.ui.MpvSurfaceView? = null
     private val renderUpdateCallback = Mpv.RenderUpdateCallback { surface?.requestRender() }
-    private val swFormat = com.sun.jna.Memory(8).apply { setString(0, "bgr0") }
+    private val swFormat = com.sun.jna.Memory(8).apply { setString(0, "bgra") }
     private val swSize = com.sun.jna.Memory(8)
     private val swStride = com.sun.jna.Memory(8)
     // mpv_render_frame_info {uint64 flags; int64 target_time}: when mpv wants the frame it renders on screen (mpv's clock, in NANOseconds although mpv_get_time_us reads microseconds)
@@ -98,7 +110,10 @@ open class MpvPlayer : IPlayer {
             mpv.mpv_render_context_render(rc, params) >= 0
         }
         // shown at the refresh this frame's target time belongs to (an even 2-3 rhythm for 24 fps on 60 Hz), not at whichever one the render jitter lands before
-        if (rendered && targetNs != 0L) FramePacer.hold(targetNs)
+        // smooth motion draws every refresh from the frames and their target times itself; otherwise a frame waits here for its slot
+        val smooth = surface?.smoothMotion == true
+        surface?.lastTargetNs = if (smooth) targetNs else 0L
+        if (rendered && targetNs != 0L && !smooth) FramePacer.hold(targetNs)
         rendered
     }
 
@@ -265,10 +280,27 @@ open class MpvPlayer : IPlayer {
         val ctx = mpv.mpv_create() ?: throw RuntimeException("Failed to create mpv context")
         handle = ctx
 
-        mpv.mpv_set_option_string(ctx, "vo", if (headless) "null" else "libmpv")
+        val wid = if (headless) 0L else runCatching { nativeWindow?.invoke() ?: 0L }.getOrDefault(0L)
+        native = wid != 0L
+        if (!headless && !native && nativeWindow != null) {
+            // the page asked for the native player but its window is not there: the standard player takes over (the page switches to it)
+            Log.w(TAG, "native video window not ready: using the standard player")
+            com.lagradost.desktop.ui.screens.player.NativeVideo.broken = true
+        }
+        if (native) {
+            // mpv's own renderer in a window of the app: Direct3D 11, decoding stays on the GPU, and the picture is timed to the screen's refresh
+            // (the audio clock is adjusted a little to match; frames are blended where the frame rate does not divide the refresh rate)
+            Log.i(TAG, "native video window 0x${java.lang.Long.toHexString(wid)}")
+            for ((k, v) in listOf("wid" to wid.toString(), "vo" to "gpu", "gpu-api" to "d3d11", "hwdec" to "auto-safe", "video-sync" to "display-resample", "interpolation" to "yes", "tscale" to "oversample",
+                "osc" to "no", "osd-level" to "0", "input-default-bindings" to "no", "input-vo-keyboard" to "no", "input-cursor" to "no", "cursor-autohide" to "no", "keepaspect" to "yes", "background-color" to "#000000"))
+                mpv.mpv_set_option_string(ctx, k, v)
+            if (com.lagradost.desktop.ui.fluent.Appearance.anime4k) Anime4K.option()?.let { mpv.mpv_set_option_string(ctx, "glsl-shaders", it) }
+        } else {
+            mpv.mpv_set_option_string(ctx, "vo", if (headless) "null" else "libmpv")
+            // decoded frames are read back for the software renderer
+            mpv.mpv_set_option_string(ctx, "hwdec", "auto-copy-safe")
+        }
         if (headless) mpv.mpv_set_option_string(ctx, "ao", "null")
-        // decoded frames are read back for the software renderer
-        mpv.mpv_set_option_string(ctx, "hwdec", "auto-copy-safe")
         mpv.mpv_set_option_string(ctx, "keep-open", "yes")
         mpv.mpv_set_option_string(ctx, "idle", "yes")
         mpv.mpv_set_option_string(ctx, "force-window", "no")
@@ -301,7 +333,7 @@ open class MpvPlayer : IPlayer {
         if (res < 0) {
             Log.e(TAG, "Failed to initialize mpv: ${mpv.mpv_error_string(res)}")
         }
-        if (!headless) createRenderContext(ctx)
+        if (!headless && !native) createRenderContext(ctx)
         com.lagradost.desktop.runtime.DesktopAudio.addListener(volumeListener)
         mpv.mpv_request_log_messages(ctx, System.getProperty("cloudstream.mpvlog") ?: "warn")
 
@@ -389,6 +421,7 @@ open class MpvPlayer : IPlayer {
                         mainHandler.postDelayed({ ensurePlaying() }, 600)
                         mainHandler.postDelayed({ ensurePlaying() }, 2000)
                         if (liveStream) Log.i(TAG, "live stream: seeks stay inside the buffered part")
+                        if (native) mainHandler.postDelayed({ checkNativeOutput() }, 6_000)
                         isBuffering = false
                         isEnded = false
                         Log.i(TAG, "timing: file opened ${System.currentTimeMillis() - loadStartedAt} ms after loadfile")
@@ -774,6 +807,13 @@ open class MpvPlayer : IPlayer {
         // does not have, so they fail like an unsupported scheme and the UI moves to the next link
         val drm = link as? com.lagradost.cloudstream3.utils.DrmExtractorLink
         Log.i(TAG, "load ${link?.type} ${link?.name}: drm=${drm?.uuid} key=${drm?.key != null} license=${drm?.licenseUrl != null} url=${link?.url?.take(1500)} referer=${link?.referer} headers=${link?.headers}")
+        // a source that answers with a web page instead of a video address (JIO TV's playlist service sends a decoy video page when it refuses
+        // a request): mpv would take the page for a file name and sit there for 30 s, so the player says what happened at once
+        if (link != null && link.url.trimStart().let { it.startsWith("<") || it.contains('\n') }) {
+            Log.w(TAG, "the source gave a web page instead of a video address (${link.name}): ${link.url.take(80).replace('\n', ' ')}")
+            postEvent(ErrorEvent(androidx.media3.common.PlaybackException("The source returned a web page instead of a video address", null, androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED)))
+            return
+        }
         if (drm != null && drm.uuid != com.lagradost.cloudstream3.utils.CLEARKEY_DRM_UUID) {
             postEvent(ErrorEvent(androidx.media3.common.PlaybackException("Unsupported DRM scheme ${drm.uuid}", null, androidx.media3.common.PlaybackException.ERROR_CODE_DRM_SCHEME_UNSUPPORTED)))
             return
@@ -861,6 +901,18 @@ open class MpvPlayer : IPlayer {
             isPlaying = autoPlay == true
 
             // subtitles are added and selected once the file is open (FILE_LOADED), see syncSubtitles
+        }
+    }
+
+    /** A native core whose video output did not start (no Direct3D 11, a driver problem): the standard player is used from now on, and this video restarts in it */
+    private fun checkNativeOutput() {
+        if (!native || handle == null || isReleased) return
+        val hasVideo = getMpvPropertyString("vid")?.let { it != "no" && it != "false" } == true
+        if (hasVideo && getMpvPropertyString("current-vo").isNullOrBlank()) {
+            Log.w(TAG, "native video output did not start: switching to the standard player")
+            com.lagradost.desktop.ui.screens.player.NativeVideo.broken = true
+            com.lagradost.desktop.ui.Toasts.show("The native video player could not start, using the standard one", true)
+            com.lagradost.desktop.ui.screens.player.PlayerSession.active?.restartPlayback()
         }
     }
 

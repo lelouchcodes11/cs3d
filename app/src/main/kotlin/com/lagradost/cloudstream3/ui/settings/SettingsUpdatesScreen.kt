@@ -17,14 +17,12 @@ import com.lagradost.cloudstream3.AutoDownloadMode
 import com.lagradost.cloudstream3.BuildConfig
 import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.CommonActivity.activity
-import com.lagradost.cloudstream3.MainActivityScreen
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.plugins.PluginManager
 import com.lagradost.cloudstream3.utils.BackupUtils
 import com.lagradost.cloudstream3.utils.BackupUtils.restorePrompt
 import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
-import com.lagradost.cloudstream3.utils.InAppUpdater.installPreReleaseIfNeeded
 import com.lagradost.cloudstream3.utils.UIHelper.navigate
 import com.lagradost.cloudstream4.AppSettings
 import com.lagradost.cloudstream4.rememberAppSettings
@@ -79,56 +77,19 @@ object SettingsUpdatesScreen : SearchableSettings {
             }
         }
 
-        val githubViewModel = MainActivityScreen.githubViewModel()
-
         return persistentListOf(
             Preference.PreferenceGroup(
                 title = stringResource(R.string.pref_category_app_updates),
                 preferenceItems = persistentListOf(
                     Preference.PreferenceItem.TextPreference(
                         title = stringResource(R.string.check_for_update),
-                        subtitle = BuildConfig.DESKTOP_VERSION,
+                        subtitle = "Version ${BuildConfig.DESKTOP_VERSION}. New versions are on GitHub: this opens the releases page.",
                         icon = painterResource(R.drawable.mobile_arrow_down_24px),
                         onClick = {
-                            // desktop: this app's releases (see desktop/update/AppUpdater.kt), not the Android app's
-                            com.lagradost.desktop.update.AppUpdater.checkNow()
-                            /*ioSafe {
-                                if (activity?.runAutoUpdate(false) == false) {
-                                    activity?.runOnUiThread {
-                                        showToast(
-                                            R.string.no_update_found,
-                                            Toast.LENGTH_SHORT
-                                        )
-                                    }
-                                }
-                            }*/
+                            // desktop: no updater inside the app, the releases page of this app's repository is the way to update
+                            com.lagradost.desktop.DesktopPlatform.openExternalBrowser(com.lagradost.desktop.AppInfo.LATEST_RELEASE_URL)
                         }
                     ),
-                    Preference.PreferenceItem.TextPreference(
-                        title = stringResource(R.string.install_prerelease),
-                        icon = painterResource(R.drawable.mobile_code_24px),
-                        enabled = BuildConfig.FLAVOR == "stable",
-                        onClick = {
-                            activity?.installPreReleaseIfNeeded()
-                        }
-                    ),
-
-                    Preference.PreferenceItem.ListPreference(
-                        title = stringResource(R.string.apk_installer_settings),
-                        subtitle = stringResource(R.string.apk_installer_settings_des),
-                        icon = painterResource(R.drawable.mobile_wrench_24px),
-                        entries = integerArrayResource(R.array.apk_installer_values).zip(
-                            stringArrayResource(R.array.apk_installer_pref)
-                        ).toMap(),
-                        preference = settings.updates.apkInstaller
-                    ),
-
-                    Preference.PreferenceItem.SwitchPreference(
-                        title = stringResource(R.string.updates_settings),
-                        subtitle = stringResource(R.string.updates_settings_des),
-                        icon = painterResource(R.drawable.notifications_active_24px),
-                        preference = settings.updates.showAppUpdates
-                    )
                 )
             ),
             Preference.PreferenceGroup(

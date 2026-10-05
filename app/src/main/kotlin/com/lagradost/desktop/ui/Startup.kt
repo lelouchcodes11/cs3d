@@ -40,18 +40,15 @@ import kotlinx.coroutines.delay
 /**
  * The app's one loading screen. The native splash (only the logo, see src/main/splash) shows while Java starts; the window then
  * opens with the same logo in the same place and a thin line under it, and stays like that until the app has settled: the
- * extensions are loaded, their updates are checked, Home has its content and the app update check is done (never longer than
+ * extensions are loaded, their updates are checked and Home has its content (never longer than
  * [MAX_MS]). The app is composed underneath the whole time, so it is ready when it is revealed.
  */
 object Startup {
-    /** The app is on screen (dialogs that wait for the start, such as the profile picker or an update offer, come after this) */
+    /** The app is on screen (dialogs that wait for the start, such as the profile picker, come after this) */
     val revealed = CompletableDeferred<Unit>()
 
     /** What the start is waiting for, shown under the line */
     var stage by mutableStateOf("")
-
-    /** The app update check of this start is done (or skipped) */
-    val updateChecked = CompletableDeferred<Unit>()
 
     const val MAX_MS = 3_000L
 
@@ -104,7 +101,6 @@ fun StartupReveal(content: @Composable () -> Unit) {
                 setup -> null
                 !pm.loadedLocalPlugins -> "Loading extensions"
                 !pm.loadedOnlinePlugins && now - started < Startup.ONLINE_WAIT_MS -> "Updating extensions"
-                !Startup.updateChecked.isCompleted -> "Checking for updates"
                 // smooth for 0.6 s (and a few frames drawn): nothing heavy is running on the UI thread any more
                 now - lastJank < 600 || frames < 8 -> "Getting ready"
                 else -> null
@@ -114,7 +110,7 @@ fun StartupReveal(content: @Composable () -> Unit) {
             Startup.stage = stage
             delay(100)
         }
-        android.util.Log.i("Startup", "settled after ${System.currentTimeMillis() - started} ms (local=${com.lagradost.cloudstream3.plugins.PluginManager.loadedLocalPlugins} online=${com.lagradost.cloudstream3.plugins.PluginManager.loadedOnlinePlugins} home=${homeSettled()} update=${Startup.updateChecked.isCompleted})")
+        android.util.Log.i("Startup", "settled after ${System.currentTimeMillis() - started} ms (local=${com.lagradost.cloudstream3.plugins.PluginManager.loadedLocalPlugins} online=${com.lagradost.cloudstream3.plugins.PluginManager.loadedOnlinePlugins} home=${homeSettled()})")
         Startup.stage = ""
         // a moment for Home to lay out its content under the loader
         delay(300)
