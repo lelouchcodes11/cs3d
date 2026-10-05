@@ -183,6 +183,10 @@ object JcefRuntime {
     // ------------------------------------------------------------------ cookies
 
     private val cookieSnapshot = AtomicReference<List<CefCookie>>(emptyList())
+
+    /** Until when the UI thread does not wait for the browser's cookie answer (it was slow, see [allCookies]) */
+    @Volatile
+    private var slowUntil = 0L
     private val cookieRefreshPosted = AtomicBoolean(false)
     private val cookieReads = Executors.newSingleThreadExecutor { r ->
         Thread(r, "jcef-cookies").apply { isDaemon = true }
@@ -203,8 +207,13 @@ object JcefRuntime {
         // A running browser answers in milliseconds (the sentinel cookie makes the visitor run even for an empty jar), so the UI
         // thread reads the real jar, briefly. Logins read the cookie their page has just set in onPageFinished (FebBox `ui`
         // in StreamPlay / CineStream): the last snapshot did not have it yet and the token was never saved.
-        if (EventQueue.isDispatchThread() && isReady) {
-            val fresh = runCatching { readCookies(700) }.getOrNull()
+        // A browser that is busy (rendering a Cloudflare challenge page) does not answer in time, and a Cloudflare dialog asks every
+        // moment: each of those reads held the window for the whole wait and the app seemed frozen. After a slow answer the UI thread
+        // does not wait for a few seconds, it gets the snapshot (a refresh runs beside it).
+        if (EventQueue.isDispatchThread() && isReady && System.currentTimeMillis() >= slowUntil) {
+            val started = System.currentTimeMillis()
+            val fresh = runCatching { readCookies(250) }.getOrNull()
+            if (System.currentTimeMillis() - started > 120) slowUntil = System.currentTimeMillis() + 5000
             if (fresh != null && fresh.isNotEmpty()) {
                 cookieSnapshot.set(fresh)
                 return fresh

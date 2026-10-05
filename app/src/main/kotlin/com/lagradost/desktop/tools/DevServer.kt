@@ -686,6 +686,49 @@ object DevServer {
                 com.lagradost.desktop.update.UpdateCheck.checkNow()
                 ok(ex)
             }
+            "/trychannel" -> {
+                // dev: play a channel of a provider the way the UI does (search, load, links, player), muted, and answer with the verdict:
+                // /trychannel?provider=1&q=ETV+Plus[&i=0][&wait=30]   (one at a time, call /back between channels)
+                val name = q["provider"]!!
+                val api = com.lagradost.cloudstream3.APIHolder.allProviders.firstOrNull { it.name == name } ?: return ok(ex, "NO PROVIDER $name")
+                val hits = kotlinx.coroutines.runBlocking { api.search(q["q"]!!) } ?: emptyList()
+                val hit = hits.getOrNull(q["i"]?.toIntOrNull() ?: 0) ?: return ok(ex, "NO RESULT for ${q["q"]} (${hits.size} results)")
+                val loaded = kotlinx.coroutines.runBlocking { api.load(hit.url) } ?: return ok(ex, "LOAD FAILED ${hit.name}")
+                val data = (loaded as? com.lagradost.cloudstream3.LiveStreamLoadResponse)?.dataUrl ?: return ok(ex, "NOT A LIVE ITEM ${loaded.javaClass.simpleName}")
+                val links = ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>()
+                kotlinx.coroutines.runBlocking { api.loadLinks(data, false, {}, { links.add(it) }) }
+                if (links.isEmpty()) return ok(ex, "NO LINKS ${hit.name}")
+                val before = com.lagradost.desktop.ui.screens.player.PlayerSession.active
+                onEdt { com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(links, emptyList()), 0, null)) }
+                val deadline = System.currentTimeMillis() + (q["wait"]?.toLongOrNull() ?: 30) * 1000
+                var verdict = "TIMEOUT"
+                var line = ""
+                while (System.currentTimeMillis() < deadline) {
+                    Thread.sleep(500)
+                    com.lagradost.desktop.player.MpvPlayer.active?.runCatching { setMpvProperty("mute", "yes") }
+                    val session = com.lagradost.desktop.ui.screens.player.PlayerSession.active?.takeIf { it !== before } ?: continue
+                    line = session.debugLine()
+                    // the mpv part of the line can still be the previous channel's: a loaded file whose position moves is a playing one
+                    val pos = Regex("""pos=(\d+)""").find(line)?.groupValues?.get(1)?.toLongOrNull() ?: 0
+                    if (line.contains("fileLoaded=true") && line.contains("firstFrame=true") && pos > 1500) { verdict = "PLAYING"; break }
+                    if (!line.contains("failure=null")) { verdict = "FAILED"; break }
+                }
+                val l = links.first()
+                ok(ex, "$verdict | ${hit.name} | ${l.type} drm=${l.javaClass.simpleName} ${l.url.substringBefore('?').take(90)} | " + line.replace('\n', ' ').take(160))
+            }
+            "/cfkiller" -> {
+                // dev: one request through the app's built-in Cloudflare handler (the one many extensions use as `interceptor = CloudflareKiller()`: a
+                // hidden browser, no dialog, no click): /cfkiller?url=https://animepahe.pw/api?m=search&q=naruto ; prints the status, the time and the start of the body
+                val url = q["url"]!!
+                val started = System.currentTimeMillis()
+                val out = kotlinx.coroutines.runBlocking {
+                    runCatching {
+                        val r = com.lagradost.cloudstream3.app.get(url, interceptor = com.lagradost.cloudstream3.network.CloudflareKiller(), timeout = 120)
+                        "HTTP ${r.code} ${r.okhttpResponse.header("content-type")}\n${r.text.take(200)}"
+                    }.getOrElse { "FAILED ${it.javaClass.simpleName}: ${it.message}" }
+                }
+                ok(ex, "${(System.currentTimeMillis() - started) / 1000.0} s\n$out")
+            }
             "/toast" -> {
                 // dev: show an in-app toast: /toast?text=hello
                 com.lagradost.desktop.ui.Toasts.show(q["text"] ?: "toast", q["long"] == "1")
@@ -854,7 +897,11 @@ object DevServer {
                 // dev: ONE request through the app's own HTTP client, nothing secret in it: /httpprobe?url=https://api.subdl.com/login&post=1 (empty JSON body)
                 // [&os=1 adds the headers OpenSubtitles wants]; prints the status, protocol, content type and the start of the body, or the exception
                 val url = q["url"]!!
-                val extra = if (q["os"] != null) com.lagradost.cloudstream3.syncproviders.providers.OpenSubtitlesApi.headers else emptyMap()
+                var extra = if (q["os"] != null) com.lagradost.cloudstream3.syncproviders.providers.OpenSubtitlesApi.headers else emptyMap()
+                // [&cookiekey=ANIMEPAHE_CF_COOKIES&uakey=ANIMEPAHE_CF_USER_AGENT]: the cookie and the user agent a plugin saved (read here, never printed)
+                q["cookiekey"]?.let { k -> com.lagradost.cloudstream3.CloudStreamApp.getKey<String>(k)?.let { extra = extra + ("Cookie" to it) } }
+                q["uakey"]?.let { k -> com.lagradost.cloudstream3.CloudStreamApp.getKey<String>(k)?.let { extra = extra + ("User-Agent" to it) } }
+                q["referer"]?.let { extra = extra + ("Referer" to it) }
                 val out = kotlinx.coroutines.runBlocking {
                     runCatching {
                         val r = if (q["post"] != null) com.lagradost.cloudstream3.app.post(url, json = emptyMap<String, String>(), headers = extra, timeout = 20)

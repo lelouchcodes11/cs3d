@@ -44,9 +44,85 @@ object DashProxy {
     /** A segment of a live stream is told by the long number (time or sequence number) before its extension; the init segment has none */
     private val TIMED = Regex("""\d{6,}(\.[A-Za-z0-9]+)$""")
 
+    private fun dirOf(address: String) = address.substringBefore('?').substringBeforeLast('/') + "/"
+
+    /** `$Number%08x$`: segment numbers written in hex, which ffmpeg's DASH demuxer cannot read (it only knows `%0Nd`) */
+    private val HEX_NUMBER = Regex("""\${'$'}Number%0(\d+)([xX])\${'$'}""")
+
+    /**
+     * What the player gets as the manifest: hex segment numbers are told as decimal ones, and [Entry.hexWidth] remembers to turn the
+     * numbers it asks for back into hex when the segment is fetched from the server.
+     */
+    private fun normalize(entry: Entry, bytes: ByteArray): ByteArray {
+        val text = String(bytes, Charsets.UTF_8)
+        val m = HEX_NUMBER.find(text) ?: return bytes
+        entry.hexWidth = m.groupValues[1].toInt()
+        entry.hexUpper = m.groupValues[2] == "X"
+        val decimal = HEX_NUMBER.replace(text) { "\$Number%0${it.groupValues[1]}d\$" }
+        // The segments of such a manifest are on the CDNs its absolute BaseURLs name, and ffmpeg would fetch them from there itself, with
+        // decimal numbers. They are routed through here instead (as "b<n>/" next to the manifest), so that the numbers can be turned into hex.
+        return BASE_URL.replace(decimal) { b ->
+            val address = b.groupValues[2].trim()
+            if (!address.startsWith("http", ignoreCase = true)) return@replace b.value
+            val i = entry.bases.indexOf(address).takeIf { it >= 0 } ?: run { entry.bases.add(address); entry.bases.size - 1 }
+            "${b.groupValues[1]}b$i/</BaseURL>"
+        }.toByteArray(Charsets.UTF_8)
+    }
+
+    private val BASE_URL = Regex("""(<BaseURL[^>]*>)([^<]*)</BaseURL>""")
+
+    /** "b3/video/00001.m4s" is the file video/00001.m4s under the fourth absolute BaseURL (see [normalize]) */
+    private val ROUTED = Regex("""^b(\d+)/""")
+
     private class Entry(val url: String, val headers: Map<String, String>, val name: String) {
-        /** The address the relative segment addresses of the manifest are resolved against */
-        val baseDir = url.substringBefore('?').substringBeforeLast('/') + "/"
+        /**
+         * The address the relative segment addresses of the manifest are resolved against: where the manifest came from, after its
+         * redirects (a channel address that sends the player on to a CDN with a token: the segments are on that CDN, not on the first host)
+         */
+        @Volatile
+        var baseDir = dirOf(url)
+
+        /** The query of the manifest's final address when the manifest was reached through a redirect: a CDN token the segments need as well */
+        @Volatile
+        var tokenQuery: String? = null
+
+        /** The absolute BaseURLs of a hex-numbered manifest, in the order [normalize] met them */
+        val bases = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+        /** More than 0 when the manifest numbers its segments in hex with this many digits (see [normalize]) */
+        @Volatile
+        var hexWidth = 0
+
+        @Volatile
+        var hexUpper = false
+
+        /** The address of a segment as the server knows it: the decimal number the player asks for becomes hex again */
+        fun serverPath(rest: String): String {
+            if (hexWidth == 0) return rest
+            val m = Regex("""^(.*/)?(\d{$hexWidth})(\.[A-Za-z0-9]+)$""").find(rest) ?: return rest
+            val number = m.groupValues[2].toLongOrNull() ?: return rest
+            val hex = java.lang.Long.toHexString(number).let { if (hexUpper) it.uppercase() else it }.padStart(hexWidth, '0')
+            return m.groupValues[1] + hex + m.groupValues[3]
+        }
+
+        /** Cookies the CDN handed out with the manifest or a segment (host to name to value), sent back with the next requests like a browser does */
+        val cookies = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
+
+        fun remember(host: String, setCookie: String) {
+            val parts = setCookie.split(';').map { it.trim() }
+            val (name, value) = parts.firstOrNull()?.split('=', limit = 2)?.takeIf { it.size == 2 && it[0].isNotEmpty() } ?: return
+            val domain = parts.drop(1).firstOrNull { it.startsWith("domain=", true) }?.substringAfter('=')?.trim()?.trimStart('.')?.lowercase()?.takeIf { it.isNotEmpty() } ?: host.lowercase()
+            val gone = parts.drop(1).any { it.equals("max-age=0", true) || it.startsWith("max-age=-", true) }
+            val forDomain = cookies.getOrPut(domain) { ConcurrentHashMap() }
+            if (gone) forDomain.remove(name) else forDomain[name] = value
+        }
+
+        /** The Cookie header for a request to [host]: the cookies of the CDN, after any the link itself carries */
+        fun cookieFor(host: String, own: String?): String? {
+            val h = host.lowercase()
+            val mine = cookies.entries.filter { (d, _) -> h == d || h.endsWith(".$d") }.flatMap { it.value.entries }.joinToString("; ") { "${it.key}=${it.value}" }
+            return listOfNotNull(own?.takeIf { it.isNotBlank() }, mine.takeIf { it.isNotEmpty() }).joinToString("; ").takeIf { it.isNotEmpty() }
+        }
 
         /** The last segment sent completely, by stream (its address without the number) */
         val last = ConcurrentHashMap<String, String>()
@@ -87,16 +163,29 @@ object DashProxy {
         }
     }
 
+    /** Where the manifest really came from (after redirects) is where its segments are, and its token and cookies go with them */
+    private fun followManifest(entry: Entry, r: okhttp3.Response) {
+        val finalUrl = r.request.url
+        for (c in r.headers("Set-Cookie")) entry.remember(finalUrl.host, c)
+        if (finalUrl.toString().substringBefore('?') != entry.url.substringBefore('?')) {
+            val base = dirOf(finalUrl.toString())
+            if (entry.baseDir != base) Log.i(TAG, "manifest redirected: segments come from ${base.take(100)}")
+            entry.baseDir = base
+            entry.tokenQuery = finalUrl.encodedQuery
+        }
+    }
+
     /** Reads the manifest again (at most once a second, shared by all waiting requests) */
     private fun refreshManifest(entry: Entry) {
         synchronized(entry.manifestLock) {
             if (System.currentTimeMillis() - entry.manifestAt < 1000) return
             runCatching {
                 val builder = Request.Builder().url(entry.url.toHttpUrlOrNull() ?: return)
-                for ((k, v) in entry.headers) if (!k.equals("Host", true) && !k.equals("Range", true) && !k.equals("Content-Length", true)) runCatching { builder.header(k, v) }
+                for ((k, v) in entry.headers) if (!k.equals("Host", true) && !k.equals("Range", true) && !k.equals("Content-Length", true) && !k.equals("Cookie", true)) runCatching { builder.header(k, v) }
+                entry.cookieFor(builder.build().url.host, entry.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value)?.let { builder.header("Cookie", it) }
                 if (entry.headers.keys.none { it.equals("User-Agent", true) }) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
                 builder.cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
-                client.newCall(builder.build()).execute().use { r -> if (r.isSuccessful) learn(entry, r.body.bytes(), r.header("Date")) else entry.manifestAt = System.currentTimeMillis() }
+                client.newCall(builder.build()).execute().use { r -> if (r.isSuccessful) { followManifest(entry, r); learn(entry, normalize(entry, r.body.bytes()), r.header("Date")) } else entry.manifestAt = System.currentTimeMillis() }
             }.onFailure { entry.manifestAt = System.currentTimeMillis() }
         }
     }
@@ -154,10 +243,11 @@ object DashProxy {
         val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: throw IOException("bad address $url"))
         var userAgent = false
         for ((k, v) in entry.headers) {
-            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Range", true)) continue
+            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Range", true) || k.equals("Cookie", true)) continue
             if (k.equals("User-Agent", true)) userAgent = true
             runCatching { builder.header(k, v) }
         }
+        entry.cookieFor(builder.build().url.host, entry.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value)?.let { builder.header("Cookie", it) }
         if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
         ex.requestHeaders.getFirst("Range")?.let { builder.header("Range", it) }
         if (fresh) builder.header("Connection", "close")
@@ -168,9 +258,13 @@ object DashProxy {
     private fun handle(ex: HttpExchange) {
         val path = ex.requestURI.rawPath.removePrefix("/d/")
         val entry = entries[path.substringBefore('/')] ?: run { ex.sendResponseHeaders(404, -1); return }
-        val rest = path.substringAfter('/', "")
-        val isManifest = rest == entry.name
-        val url = if (isManifest) entry.url else entry.baseDir + rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: "")
+        val asked = path.substringAfter('/', "")
+        val isManifest = asked == entry.name
+        // a segment under one of the absolute BaseURLs the manifest named ("b0/..."), see normalize
+        val routed = if (isManifest) null else ROUTED.find(asked)?.let { m -> entry.bases.getOrNull(m.groupValues[1].toInt())?.let { it to asked.substring(m.range.last + 1) } }
+        val rest = routed?.second ?: asked
+        // a manifest that was reached through a redirect with a token in its address: the segments get the token too (as a cookie it is sent by itself)
+        val url = if (isManifest) entry.url else (routed?.first ?: entry.baseDir) + entry.serverPath(rest) + ((ex.requestURI.rawQuery ?: entry.tokenQuery)?.let { "?$it" } ?: "")
         // the segment's place in the live manifest: which stream, which number (or time)
         val matched = if (!isManifest && entry.live) entry.timeline?.match(rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: "")) else null
         if (matched != null) waitForListing(entry, matched.first.id, matched.second, rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: ""))
@@ -204,9 +298,11 @@ object DashProxy {
                         ex.sendResponseHeaders(r.code, -1)
                         return
                     }
+                    for (c in r.headers("Set-Cookie")) entry.remember(r.request.url.host, c)
                     val body = r.body
                     if (isManifest) {
-                        val bytes = body.bytes()
+                        followManifest(entry, r)
+                        val bytes = normalize(entry, body.bytes())
                         if (!entry.live && Regex("""<MPD\b[^>]*\btype\s*=\s*["']dynamic["']""").containsMatchIn(String(bytes, 0, minOf(bytes.size, 4096), Charsets.UTF_8))) {
                             entry.live = true
                             Log.i(TAG, "live manifest: repeated segments are refused")

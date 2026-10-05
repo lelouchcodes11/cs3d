@@ -72,7 +72,10 @@ object HlsProxy {
      * GET with the app's own HTTP client (the one the extensions and, on Android, ExoPlayer use: DNS setting incl. DNS over HTTPS,
      * TLS provider, redirects), the headers of the link and Android's default user agent. Status and body.
      */
-    private fun get(url: String, headers: Map<String, String>): Pair<Int, ByteArray> {
+    private fun get(url: String, headers: Map<String, String>): Pair<Int, ByteArray> = getFull(url, headers).let { it.first to it.second }
+
+    /** [get] and the address the answer came from after the redirects: relative addresses in a playlist are meant against that one */
+    private fun getFull(url: String, headers: Map<String, String>): Triple<Int, ByteArray, String> {
         val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: toUri(url).toString().toHttpUrl())
         var userAgent = false
         for ((k, v) in headers) {
@@ -83,7 +86,7 @@ object HlsProxy {
         }
         if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
         val client = com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(20, java.util.concurrent.TimeUnit.SECONDS).build()
-        client.newCall(builder.build()).execute().use { r -> return r.code to (r.body.bytes()) }
+        client.newCall(builder.build()).execute().use { r -> return Triple(r.code, r.body.bytes(), r.request.url.toString()) }
     }
 
     private class Fetched(val status: Int, val body: ByteArray, val final: Boolean)
@@ -123,14 +126,15 @@ object HlsProxy {
         cache[key] = entry
         pool.execute {
             try {
-                val (code, bytes) = get(url, headers)
+                val (code, bytes, finalUrl) = getFull(url, headers)
                 if (code !in 200..299) {
                     Log.w(TAG, "playlist $code: ${url.take(120)}")
                     future.complete(Fetched(code, ByteArray(0), false))
                     cache.remove(key, entry)
                 } else {
                     val text = String(bytes, Charsets.UTF_8)
-                    val body = rewrite(text, url, id, headers).toByteArray(Charsets.UTF_8)
+                    if (finalUrl.substringBefore('?') != url.substringBefore('?')) Log.i(TAG, "playlist redirected: segments come from ${finalUrl.substringBefore('?').take(100)}")
+                    val body = rewrite(text, finalUrl, id, headers).toByteArray(Charsets.UTF_8)
                     if (text.contains("#EXTINF") && !text.contains("#EXT-X-ENDLIST")) liveIds.add(id)
                     future.complete(Fetched(200, body, text.contains("#EXT-X-ENDLIST")))
                 }

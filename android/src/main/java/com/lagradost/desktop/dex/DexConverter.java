@@ -7,6 +7,8 @@ import com.googlecode.d2j.dex.Dex2Asm.ClzCtx;
 import com.googlecode.d2j.dex.DexExceptionHandler;
 import com.googlecode.d2j.dex.ExDex2Asm;
 import com.googlecode.d2j.dex.LambadaNameSafeClassAdapter;
+import com.googlecode.d2j.node.DexAnnotationNode;
+import com.googlecode.d2j.node.DexClassNode;
 import com.googlecode.d2j.node.DexFileNode;
 import com.googlecode.d2j.node.DexMethodNode;
 import com.googlecode.d2j.reader.BaseDexFileReader;
@@ -42,6 +44,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,7 +61,7 @@ import java.util.zip.ZipOutputStream;
 public final class DexConverter {
 
     /** Bump when the conversion output changes, to invalidate cached jars */
-    public static final int VERSION = 5;
+    public static final int VERSION = 6;
 
     /** Test switch: aggressive register allocation for every method, not only oversized ones */
     public static final boolean FORCE_AGGRESSIVE = Boolean.getBoolean("cloudstream.dex.aggressive");
@@ -80,6 +83,67 @@ public final class DexConverter {
 
         public boolean isClean() {
             return failedMethods.isEmpty() && errors.isEmpty();
+        }
+    }
+
+    /**
+     * The named local classes of the dex (classes declared inside a function, which Kotlin uses for the data classes of a
+     * response, for example): internal name to {owner, method name, method descriptor} of the function around them.
+     * <p>
+     * dex2jar writes no EnclosingMethod attribute for them and lists them as members of the class around the function. The
+     * class then looks like a nested class of a name that does not exist, and Kotlin reflection (used by the JSON mapping of
+     * extensions) fails with "Unresolved class". {@link LocalClassFix} puts the attribute back.
+     */
+    private static Map<String, String[]> findLocalClasses(DexFileNode fileNode) {
+        Map<String, String[]> found = new HashMap<>();
+        if (fileNode.clzs == null) return found;
+        for (DexClassNode c : fileNode.clzs) {
+            if (c.anns == null) continue;
+            Method enclosing = null;
+            boolean named = false;
+            for (DexAnnotationNode a : c.anns) {
+                if (a.items == null) continue;
+                if ("Ldalvik/annotation/EnclosingMethod;".equals(a.type)) {
+                    for (DexAnnotationNode.Item i : a.items) {
+                        if ("value".equals(i.name) && i.value instanceof Method) enclosing = (Method) i.value;
+                    }
+                } else if ("Ldalvik/annotation/InnerClass;".equals(a.type)) {
+                    for (DexAnnotationNode.Item i : a.items) {
+                        if ("name".equals(i.name) && i.value != null) named = true;
+                    }
+                }
+            }
+            if (enclosing != null && named) {
+                found.put(internalName(c.className), new String[]{internalName(enclosing.getOwner()), enclosing.getName(), enclosing.getDesc()});
+            }
+        }
+        return found;
+    }
+
+    private static String internalName(String descriptor) {
+        return descriptor.startsWith("L") && descriptor.endsWith(";") ? descriptor.substring(1, descriptor.length() - 1) : descriptor;
+    }
+
+    /** Gives the named local classes found by {@link #findLocalClasses} their EnclosingMethod attribute and takes them out of the member lists */
+    private static final class LocalClassFix extends ClassVisitor {
+        private final Map<String, String[]> locals;
+
+        LocalClassFix(ClassVisitor next, Map<String, String[]> locals) {
+            super(Opcodes.ASM9, next);
+            this.locals = locals;
+        }
+
+        @Override
+        public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+            super.visit(version, access, name, signature, superName, interfaces);
+            String[] around = locals.get(name);
+            if (around != null) super.visitOuterClass(around[0], around[1], around[2]);
+        }
+
+        @Override
+        public void visitInnerClass(String name, String outerName, String innerName, int access) {
+            // a local class has no outer class entry, only its name (JVMS 4.7.6), in its own InnerClasses attribute and in the one of the class around it
+            super.visitInnerClass(name, locals.containsKey(name) ? null : outerName, innerName, access);
         }
     }
 
@@ -112,10 +176,12 @@ public final class DexConverter {
             result.errors.add("read: " + ex);
         }
 
+        final Map<String, String[]> localClasses = findLocalClasses(fileNode);
+
         ClassVisitorFactory cvf = name -> {
             final ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
             final LambadaNameSafeClassAdapter rca = new LambadaNameSafeClassAdapter(cw, true);
-            return new ClassVisitor(Opcodes.ASM9, rca) {
+            return new ClassVisitor(Opcodes.ASM9, new LocalClassFix(rca, localClasses)) {
                 @Override
                 public void visitEnd() {
                     super.visitEnd();

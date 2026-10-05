@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.8 (pre-release)
+
+Live TV playlists that did not play now do, AnimePahe's home page and Cloudflare window work, and no more frozen window while Cloudflare is being solved.
+
+**Updating from 0.1.7:** the app tells you about this version a few seconds after it starts. Choose *Open download page*, download the installer and run it over the old one: your settings, accounts and extensions are kept (this upgrade was checked on a real install).
+
+**Extensions**
+- **Extensions that declare classes inside a function work again.** The converter that turns an extension (dex) into something this app can load dropped the "declared inside this function" mark of such classes, so Kotlin reflection (used by the JSON reading of many extensions) failed with "Unresolved class". The home page of **AnimePahe** (Phisher repository) was blank because of it; other extensions may have been affected in the same way. Every installed extension is converted once more on the first start after the update.
+
+**Cloudflare**
+- **The window no longer freezes while Cloudflare is being solved.** The dialog that extensions such as AnimePahe open for the "Just a moment" check asks the browser for its cookies every second on the screen's own thread, and while the browser was busy with the challenge page each ask held the whole window (up to 0.7 s each, so it seemed stuck). After a slow answer the app now does not wait for a few seconds.
+
+**Player**
+- Live DASH channels whose address sends the player on to another server now play. Many playlist channels (for example the DRMlive playlist in the M3U Playlist Player of CNCVerse) answer with a redirect to a CDN that adds a token; the app asked that CDN's host for the segments with the *first* host's path, got 404 for every one and gave up with "unrecognized file format". It now takes the segments from where the manifest really came from, passes the token of the redirect on with them, and keeps the cookies the CDN hands out (as a browser does). The "Activate Playlist" entry of such playlists is a real 10 to 13 second clip behind the same kind of redirect, so it could never play and the playlist stayed inactive; it plays now.
+- HLS channels whose playlist address redirects to another server (for example the Sony channels of the tsiptv playlist) play now: the addresses inside the playlist were resolved against the first server and answered 403.
+- Live channels whose segments are numbered in hex (`$Number%08x$`, used by Sling-based channels such as Willow) play now: ffmpeg only knows decimal numbers, so the numbers are translated by the app, and the CDNs named by the manifest's absolute BaseURLs are reached through it.
+
+**Known**
+- A Cloudflare check that needs you to click "Verify you are human" still needs that click. AnimePahe's own window shows the check inside the app so you can click it (it clears by itself in about 10 seconds most of the time). Extensions that use the app's built-in Cloudflare handler (no window) can still fail on such sites after waiting about a minute; a window for those is planned.
+- Some playlist channels still do not play: entries the source itself has taken down or blocks (403/404, expired links), Widevine-protected channels (no decryption module on a PC), and playlist entries whose keys the CNC "M3U Playlist Player" extension does not pass on (for example the `jtv.tsiptv.xyz` entries and the Jio TV+ entries of premiumplugx).
+
 ## 0.1.7 (pre-release)
 
 Restoring a backup now works (and brings your extensions back), smoother video with an optional GPU player, and updates that point you to GitHub instead of installing behind your back.
