@@ -36,7 +36,7 @@ Smoother video, no more updater inside the app, and a new README.
 - Settings → About → **Copy diagnostics** puts versions, your PC, screens, VPN adapters, the player's output and the latest errors on the clipboard for a bug report (passwords and tokens are masked), and **Log file** opens `logs/app.log` (the last two runs).
 
 **Updates**
-- The in-app updater is gone: no checks in the background, no "update available" window, nothing waiting at start-up. Settings → About → *Get the newest version* (and the same row in Updates & backup) opens the GitHub releases page; download the newest installer there. New versions are announced on Telegram.
+- **The in-app updater is gone, the check at start stays.** The app no longer downloads or installs anything. A few seconds after the window is up (never holding the start back, at most every 6 hours) it asks GitHub for the list of releases; when there is a newer one, a dialog says so with the release notes and **Open download page** (also *Later* and *Skip this version*). Download the installer on that page and run it. Settings → About → *Check for updates at start* turns this off, *Check now* (there and in Updates & backup) asks on demand, *Get the newest version* opens the releases page. New versions are also announced on Telegram.
 
 **About**
 - New cards for the Telegram channel (t.me/cs3d_official) and for supporting the project (razorpay.me/@lelouch11).

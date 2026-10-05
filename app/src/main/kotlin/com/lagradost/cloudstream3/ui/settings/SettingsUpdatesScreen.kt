@@ -83,11 +83,11 @@ object SettingsUpdatesScreen : SearchableSettings {
                 preferenceItems = persistentListOf(
                     Preference.PreferenceItem.TextPreference(
                         title = stringResource(R.string.check_for_update),
-                        subtitle = "Version ${BuildConfig.DESKTOP_VERSION}. New versions are on GitHub: this opens the releases page.",
+                        subtitle = "Version ${BuildConfig.DESKTOP_VERSION}. Looks for a newer version on GitHub; the new installer is downloaded from its page.",
                         icon = painterResource(R.drawable.mobile_arrow_down_24px),
                         onClick = {
-                            // desktop: no updater inside the app, the releases page of this app's repository is the way to update
-                            com.lagradost.desktop.DesktopPlatform.openExternalBrowser(com.lagradost.desktop.AppInfo.LATEST_RELEASE_URL)
+                            // desktop: this app's releases (see desktop/update/UpdateCheck.kt), the app only looks and points to GitHub
+                            com.lagradost.desktop.update.UpdateCheck.checkNow()
                         }
                     ),
                 )

@@ -37,7 +37,7 @@
 
 **[t.me/cs3d_official](https://t.me/cs3d_official) is the home of this app.** Everything happens there first:
 
-- 🆕 **New versions are announced there.** The app does not update itself behind your back, so the channel is how you hear about a new build and what it fixes.
+- 🆕 **New versions are announced there.** The app only tells you at start when a new version is out (and sends you to GitHub, it never installs anything by itself), so the channel is where you read what a new build fixes.
 - 🛠️ **Fixes and workarounds** when a source or a live channel stops working.
 - 💬 **Questions, bug reports and ideas.** Say what you did and what happened; it is read.
 
@@ -136,7 +136,7 @@ The installer is not code-signed yet. Choose *More info → Run anyway*. The sou
 <details>
 <summary><b>How do I update?</b></summary>
 
-Download the newest installer from [Releases](../../releases) and run it. The channel at [t.me/cs3d_official](https://t.me/cs3d_official) announces every new version.
+A few seconds after start the app tells you when a newer version is on GitHub (Settings → About → *Check for updates at start*, on by default; *Check now* asks on demand). It does not install anything itself: download the newest installer from [Releases](../../releases) and run it. The channel at [t.me/cs3d_official](https://t.me/cs3d_official) announces every new version.
 
 </details>
 

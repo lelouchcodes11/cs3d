@@ -679,6 +679,13 @@ object DevServer {
                 val now = androidx.preference.PreferenceManager.getDefaultSharedPreferences(act).getString(q["key"]!!, null)
                 ok(ex, "value=$now action=${com.lagradost.cloudstream3.ui.result.EpisodeAdapter.getPlayerAction(act)} ids=${com.lagradost.cloudstream3.actions.VideoClickActionHolder.allVideoClickActions.map { it.uniqueId() }}")
             }
+            "/updatecheck" -> {
+                // dev: Settings > About > Check now: /updatecheck ; /updatecheck?reset=1 forgets the last check and the skipped version first
+                if (q["reset"] != null) androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.DesktopBootstrap.activity).edit()
+                    .remove("desktop_update_checked_at").remove("desktop_update_skipped").apply()
+                com.lagradost.desktop.update.UpdateCheck.checkNow()
+                ok(ex)
+            }
             "/toast" -> {
                 // dev: show an in-app toast: /toast?text=hello
                 com.lagradost.desktop.ui.Toasts.show(q["text"] ?: "toast", q["long"] == "1")

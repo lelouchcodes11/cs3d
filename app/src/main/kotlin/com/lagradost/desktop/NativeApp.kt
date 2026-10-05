@@ -85,6 +85,8 @@ fun ApplicationScope.NativeWindow() {
             })
         }
         DesktopUiHost.windowState = state
+        // a few seconds after the app is on screen: tells about a newer version on GitHub (nothing is installed by the app)
+        remember { com.lagradost.desktop.update.UpdateCheck.startAutoCheck() }
         remember { window.minimumSize = Dimension(760, 520) }
         remember { com.lagradost.desktop.platform.AppIcon.install(window) }
         remember { FluentSettings.load(); com.lagradost.desktop.ui.fluent.Appearance.load() }
