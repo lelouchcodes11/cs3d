@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import kotlin.math.roundToInt
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -195,13 +196,17 @@ private fun PlayerContent(s: PlayerSession) {
     val paused = s.status != CSPlayerLoading.IsPlaying
     val fullscreen = AndroidRuntime.host.isFullscreen()
     val pip = com.lagradost.desktop.platform.WinChrome.pip
+    // the native video player (beta) is decided when the page opens (the setting applies to the next video: a core that is already playing
+    // has no native window); it is given up for the standard player when it can not start
+    val nativeRequested = remember { NativeVideo.available() }
+    val native = nativeRequested && !NativeVideo.broken
 
     /** The mouse moved or was pressed: the controls show and the 2 s countdown starts again. Keys never call this. */
     fun poke(local: Offset?) {
         lastActivity = System.currentTimeMillis()
         visible = true
         if (local != null) {
-            val p = local + origin
+            val p = if (native) local else local + origin
             val slack = 8f
             fun Rect?.has() = this != null && p.x >= left - slack && p.x <= right + slack && p.y >= top - slack && p.y <= bottom + slack
             hoveringControls = topBounds.has() || bottomBounds.has()
@@ -261,6 +266,7 @@ private fun PlayerContent(s: PlayerSession) {
             Key.A -> s.cycleAudio()
             Key.Z -> s.cycleResize()
             Key.E -> showEpisodes = !showEpisodes
+            Key.F1 -> Shortcuts.show()
             Key.Comma -> s.changeSpeed((s.speed - 0.25f).coerceAtLeast(0.25f))
             Key.Period -> s.changeSpeed((s.speed + 0.25f).coerceAtMost(3f))
             Key.MoveHome -> s.seekTo(0)
@@ -283,16 +289,11 @@ private fun PlayerContent(s: PlayerSession) {
         onDispose { PlayerKeys.handler = null }
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .onGloballyPositioned { origin = it.positionInRoot() }
-            .focusRequester(focus)
-            .onFocusChanged { rootFocused = it.hasFocus }
-            .focusable()
-            .onPreviewKeyEvent(::onKey)
-            .let { if (!visible && !paused) it.pointerHoverIcon(blankCursor) else it }
+    // the native video player (beta): mpv's GPU window below, the controls in a transparent window above it
+    val tapGestures = Modifier.pointerInput(Unit) {
+        detectTapGestures(onTap = { s.togglePlay() }, onDoubleTap = { if (pip) s.setPip(false) else toggleFullscreen() })
+    }
+    val pointerWatch = Modifier
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -310,12 +311,9 @@ private fun PlayerContent(s: PlayerSession) {
                         }
                     }
                 }
-            },
-    ) {
-        VideoSurface(s, Modifier.fillMaxSize().pointerInput(Unit) {
-            detectTapGestures(onTap = { s.togglePlay() }, onDoubleTap = { if (pip) s.setPip(false) else toggleFullscreen() })
-        })
-
+            }
+    // everything over the picture
+    val overlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         if (s.loadingText != null && s.failure == null) LoadingOverlay(s) else if (s.failure != null) FailureOverlay(s)
         // playing, but no picture moves: waiting for data (shown after 0.3 s so that short stalls do not flicker)
         BufferingRing(s.loadingText == null && s.failure == null && s.status == CSPlayerLoading.IsBuffering, Modifier.align(Alignment.Center))
@@ -349,6 +347,45 @@ private fun PlayerContent(s: PlayerSession) {
 
         AnimatedVisibility(showEpisodes && !pip, Modifier.align(Alignment.CenterEnd), enter = fadeIn(tween(167)), exit = fadeOut(tween(120))) {
             EpisodesPanel(s, onClose = { showEpisodes = false })
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .onGloballyPositioned { origin = it.positionInRoot() }
+            .focusRequester(focus)
+            .onFocusChanged { rootFocused = it.hasFocus }
+            .focusable()
+            .onPreviewKeyEvent(::onKey)
+            .let { if (!visible && !paused) it.pointerHoverIcon(blankCursor) else it }
+            .then(pointerWatch),
+    ) {
+        if (native) NativeVideoHost(Modifier.fillMaxSize()) else VideoSurface(s, Modifier.fillMaxSize().then(tapGestures))
+        if (native) {
+            val dialogsOpen = com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty()
+            NativeOverlayWindow(focusable = dialogsOpen) {
+                Box(Modifier.fillMaxSize().then(pointerWatch)) {
+                    // the picture's layer under the controls (taps play and pause, a double tap is full screen); nearly invisible, not transparent:
+                    // a fully transparent pixel of a window lets the pointer through to the video below
+                    Box(
+                        Modifier.fillMaxSize().background(Color(0x01000000))
+                            .let { if (!visible && !paused) it.pointerHoverIcon(blankCursor) else it }
+                            .then(tapGestures),
+                    )
+                    overlay()
+                    // dialogs and messages are drawn here too: the main window's layer is behind the video
+                    com.lagradost.desktop.ui.FluentRequestDialogs()
+                    com.lagradost.desktop.ui.LegacyOverlays()
+                    com.lagradost.desktop.ui.fluent.DialogLayer()
+                }
+            }
+            // the keys come back to the player when the dialog closes
+            // (the dialog's window had the keyboard: the main window gets it back, then the player's own focus)
+            LaunchedEffect(dialogsOpen) { if (!dialogsOpen) { delay(120); runCatching { com.lagradost.desktop.ui.DesktopUiHost.window?.requestFocus() }; runCatching { focus.requestFocus() } } }
+        } else {
+            overlay()
         }
     }
 }
@@ -386,6 +423,20 @@ private fun PipControls(s: PlayerSession, visible: Boolean) {
 @Composable
 private fun VideoSurface(s: PlayerSession, modifier: Modifier) {
     val surface = s.surface
+    // a very large window is rendered smaller than it is and enlarged here (see MpvSurfaceView.scaledDrawing)
+    surface.scaledDrawing = true
+    val smooth = com.lagradost.desktop.ui.fluent.Appearance.smoothMotion
+    surface.smoothMotion = smooth
+    // smooth motion: while a video whose frame rate does not divide the screen's plays, the picture is drawn on every refresh (a mix of the two frames
+    // around it, see MpvSurfaceView.pick); otherwise it is drawn when a frame arrives
+    val everyRefresh = smooth && surface.blendUseful && s.status == CSPlayerLoading.IsPlaying
+    LaunchedEffect(surface, everyRefresh) {
+        if (!everyRefresh) return@LaunchedEffect
+        while (true) {
+            androidx.compose.runtime.withFrameNanos { }
+            surface.drawTick.intValue++
+        }
+    }
     Box(
         modifier
             .onSizeChanged { surface.setRenderSize(it.width, it.height) }
@@ -393,9 +444,49 @@ private fun VideoSurface(s: PlayerSession, modifier: Modifier) {
                 val version = surface.frameVersion.intValue
                 val image = surface.frame ?: return@drawBehind
                 surface.present.drawn(version)
-                drawIntoCanvas { c -> c.nativeCanvas.drawImageRect(image, org.jetbrains.skia.Rect.makeWH(size.width, size.height)) }
+                var mixed: org.jetbrains.skia.Image? = null
+                var first = image
+                var alpha = 0f
+                if (everyRefresh) {
+                    surface.drawTick.intValue
+                    val grid = surface.present.grid
+                    // the refresh this draw ends up in: the next one after it (the draw is handed to the window a few milliseconds from now)
+                    val show = grid?.refreshAtOrAfter(System.nanoTime() + 3_000_000L) ?: 0L
+                    if (grid != null && show != 0L) {
+                        val pick = surface.pick(show, grid.periodNs)
+                        pick.first?.let { first = it }
+                        mixed = pick.second
+                        alpha = pick.alpha
+                    }
+                }
+                drawVideoImage(first, 1f)
+                when (blendDebug) { "off" -> {} ; "alpha1" -> mixed?.let { drawVideoImage(it, 1f) } ; else -> mixed?.let { drawVideoImage(it, alpha) } }
             },
     )
+}
+
+/** Dev: "off" draws no second frame, "alpha1" draws it fully, anything else is the normal mix (set with /look?blend=) */
+@Volatile var blendDebug = ""
+
+/** One video frame over the whole of the draw area; [alpha] below 1 lays it over what is already drawn (the mix of two frames) */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVideoImage(image: org.jetbrains.skia.Image, alpha: Float) {
+    if (alpha >= 1f && image.width == size.width.roundToInt() && image.height == size.height.roundToInt()) {
+        drawIntoCanvas { c -> c.nativeCanvas.drawImageRect(image, org.jetbrains.skia.Rect.makeWH(size.width, size.height)) }
+        return
+    }
+    // a mix, or rendered smaller than the view (enlarged by the graphics card with a smooth filter): a shader, because the image overloads
+    // with a sampling mode or a paint draw nothing in a layer
+    drawIntoCanvas { c ->
+        org.jetbrains.skia.Paint().use { paint ->
+            paint.shader = image.makeShader(
+                org.jetbrains.skia.FilterTileMode.CLAMP, org.jetbrains.skia.FilterTileMode.CLAMP,
+                if (image.width == size.width.roundToInt() && image.height == size.height.roundToInt()) org.jetbrains.skia.SamplingMode.DEFAULT else org.jetbrains.skia.SamplingMode.CATMULL_ROM,
+                org.jetbrains.skia.Matrix33.makeScale(size.width / image.width, size.height / image.height),
+            )
+            paint.setAlphaf(alpha)
+            c.nativeCanvas.drawRect(org.jetbrains.skia.Rect.makeWH(size.width, size.height), paint)
+        }
+    }
 }
 
 @Composable

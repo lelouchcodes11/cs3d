@@ -54,12 +54,19 @@ object JcefRuntime {
 
     private var started = false
 
+    /** Called once when Chromium is started (the app remembers it was needed, to start it early next time) */
+    @Volatile
+    var onStarted: (() -> Unit)? = null
+
     /** Start initialisation in the background (idempotent) */
     fun startAsync() {
         synchronized(this) {
             if (started) return
             started = true
         }
+        runCatching { onStarted?.invoke() }
+        // who needed Chromium (it takes the window's thread for its pump and its start), for the log of a bug report
+        Log.i(TAG, "started by: " + Throwable().stackTrace.drop(1).filter { !it.className.startsWith("kotlin") }.take(10).joinToString(" < ") { "${it.className.substringAfterLast('.')}.${it.methodName}" })
         Thread({
             try {
                 initFuture.complete(init())

@@ -97,6 +97,8 @@ fun main(args: Array<String>) {
         }
     }
     com.lagradost.desktop.platform.HangWatchdog.start()
+    // what the app logs is also kept in logs/app.log (the last two runs' worth, 3 MB each at most)
+    runCatching { com.lagradost.desktop.runtime.LogBuffer.startFile(java.io.File(AndroidRuntime.dataDir, "logs")) }
     // the text stack (native Skia, the font manager and a first shaped paragraph) loads here, next to the engine start-up on the UI thread,
     // and not in front of the first frame
     Thread({
@@ -112,6 +114,8 @@ fun main(args: Array<String>) {
         }
     }, "ui-warmup").apply { isDaemon = true }.start()
     System.setProperty("skiko.renderApi", System.getProperty("skiko.renderApi") ?: "DIRECT3D")
+    // a native video window (see NativeVideo) is a window of its own: Compose must not copy the Swing paint of it
+    System.setProperty("compose.interop.blending", System.getProperty("compose.interop.blending") ?: "false")
     // Android dimensions (dp) must match the Compose density of the screen before anything resolves them
     runCatching {
         val gc = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration

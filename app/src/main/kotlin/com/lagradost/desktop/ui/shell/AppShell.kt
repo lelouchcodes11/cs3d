@@ -41,6 +41,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
@@ -101,6 +106,9 @@ object ShellState {
 
     val searchFocus = FocusRequester()
 
+    /** The bottom dock slides away while a page is scrolled down and comes back when it is scrolled up (or the pointer goes to the bottom edge) */
+    var dockHidden by mutableStateOf(false)
+
     /** The window title (the player shows what is playing) */
     var windowTitle by mutableStateOf("CloudStream")
     var searchText by mutableStateOf("")
@@ -156,10 +164,20 @@ private fun Tab.id(): String = when (this) {
     Tab.Settings -> "settings"
 }
 
+/** Room the floating bottom dock takes at the bottom of a page (0 with any other navigation): scrolling pages add it to their end padding so the last row can be lifted clear of the dock */
+val LocalDockInset = androidx.compose.runtime.staticCompositionLocalOf { 0.dp }
+
+private val DockInset = 78.dp
+
 @Composable
 fun AppShell() {
     val c = Fluent.colors
+    // 1 = the bottom dock is shown, 0 = it has slid away; a new page always shows it
+    // (only when "Hide the dock while scrolling" is on in Settings)
+    val dockShown by animateFloatAsState(if (Appearance.dockAutoHide && ShellState.dockHidden) 0f else 1f, FluentMotion.tweenIn(220), label = "dockShown")
+    LaunchedEffect(Navigator.current.id) { ShellState.dockHidden = false }
     Box(Modifier.fillMaxSize().background(c.bg)) {
+        ScreenWarmup()
         if (Navigator.current.route is Route.Player || Navigator.current.route is Route.Setup) {
             // the player and the setup wizard own the whole window
             PageHost()
@@ -187,7 +205,18 @@ fun AppShell() {
                 NavPosition.Top -> ContentArea(RoundedCornerShape(0.dp), topNav = true)
                 NavPosition.Bottom -> {
                     ContentArea(RoundedCornerShape(0.dp))
-                    BottomDock(Modifier.align(Alignment.BottomCenter))
+                    // with auto hide the dock comes back when the pointer goes to the bottom edge (and stays while it is on the dock)
+                    if (Appearance.dockAutoHide) Box(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(40.dp).pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Move || e.type == androidx.compose.ui.input.pointer.PointerEventType.Enter) ShellState.dockHidden = false
+                                }
+                            }
+                        },
+                    )
+                    BottomDock(Modifier.align(Alignment.BottomCenter), dockShown)
                 }
             }
         }
@@ -218,8 +247,15 @@ private fun ContentArea(shape: Shape, topNav: Boolean = false) {
             .background(layer, shape)
             .border(Dp.Hairline, c.stroke, shape),
     ) {
-        // with the dock the page ends above it (the dock still floats over the window's edge)
-        Box(Modifier.fillMaxSize().padding(bottom = if (Appearance.navPosition == NavPosition.Bottom) 78.dp else 0.dp)) { PageHost() }
+        // with the dock the page runs the whole height and scrolls under the floating dock (a page that ended above it left a flat band across the bottom);
+        // scrolling pages add LocalDockInset to their end padding
+        val dock = Appearance.navPosition == NavPosition.Bottom
+        Box(
+            Modifier.fillMaxSize()
+                .let { if (dock && Appearance.dockAutoHide) it.nestedScroll(dockScroll) else it },
+        ) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalDockInset provides (if (dock) DockInset else 0.dp)) { PageHost() }
+        }
         TopBar(topNav)
     }
 }
@@ -300,6 +336,71 @@ private fun PageHost() {
 }
 
 private var lastSeen: List<Long> = emptyList()
+
+/** Scrolling a page down (some distance, so a nudge does not count) hides the bottom dock, scrolling up brings it back; nothing is consumed */
+private val dockScroll = object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+    private var travelled = 0f
+    override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+        val dy = available.y
+        if (dy < 0f) {
+            travelled = minOf(travelled, 0f) + dy
+            if (travelled < -48f) ShellState.dockHidden = true
+        } else if (dy > 0f) {
+            travelled = maxOf(travelled, 0f) + dy
+            if (travelled > 24f) ShellState.dockHidden = false
+        }
+        return androidx.compose.ui.geometry.Offset.Zero
+    }
+}
+
+/**
+ * The first visit of a page cost 100 to 350 ms in which the window did not move (class loading, text layout and the JIT of that page's code;
+ * measured with /framestats). A few seconds after the start, once, each of those pages is composed and laid out off screen (never drawn, not
+ * reachable by the pointer), one every 1.4 s, so the first real visit finds it warm. Stops when a video starts. -Dcloudstream.warmup=false turns it off.
+ */
+/** Returns once 60 frames in a row came within 22 ms of each other (gives up after 20 s) */
+private suspend fun awaitCalmFrames() {
+    val give = System.currentTimeMillis() + 20_000
+    var calm = 0
+    var last = androidx.compose.runtime.withFrameNanos { it }
+    while (calm < 60 && System.currentTimeMillis() < give) {
+        val now = androidx.compose.runtime.withFrameNanos { it }
+        calm = if ((now - last) / 1_000_000 <= 22) calm + 1 else 0
+        last = now
+    }
+}
+
+@Composable
+private fun ScreenWarmup() {
+    if (System.getProperty("cloudstream.warmup") == "false") return
+    var step by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    LaunchedEffect(Unit) {
+        com.lagradost.desktop.ui.Startup.revealed.await()
+        // not while the extensions are still loading and updating (several seconds of heavy work in parallel, the pages would only add to it)
+        val pm = com.lagradost.cloudstream3.plugins.PluginManager
+        val giveUp = System.currentTimeMillis() + 60_000
+        while (!(pm.loadedLocalPlugins && pm.loadedOnlinePlugins) && System.currentTimeMillis() < giveUp) delay(500)
+        delay(3000)
+        for (i in 0 until 5) {
+            if (Navigator.current.route is Route.Player) break
+            // only while the window is calm: a page composed while the extensions are loading (or Chromium is starting) would add its own freeze
+            awaitCalmFrames()
+            step = i
+            delay(1400)
+        }
+        step = -1
+    }
+    if (step < 0) return
+    Box(Modifier.requiredSize(1100.dp, 700.dp).graphicsLayer { translationX = -30000f }.drawWithContent { }) {
+        when (step) {
+            0 -> LibraryScreen()
+            1 -> ExtensionsScreen()
+            2 -> SettingsScreen(Route.Settings())
+            3 -> DownloadsScreen()
+            4 -> SearchScreen(Route.Search())
+        }
+    }
+}
 
 @Composable
 private fun Page(entry: Entry) {
@@ -428,14 +529,27 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
 
 /** The floating dock at the bottom: a glass pill with every page, the selected one lifted on an accent pill */
 @Composable
-private fun BottomDock(modifier: Modifier) {
+private fun BottomDock(modifier: Modifier, shown: Float = 1f) {
     val c = Fluent.colors
-    val shape = RoundedCornerShape((FluentShapes.overlay * 1.4f).coerceAtLeast(16.dp))
-    val glass = Appearance.glass
+    val corner = (FluentShapes.overlay * 1.4f).coerceAtLeast(16.dp)
+    val shape = RoundedCornerShape(corner)
     Row(
         modifier
             .padding(bottom = 14.dp)
-            .shadow(28.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            // slides down and fades while it is hidden (read inside the layer: no recomposition per frame)
+            .graphicsLayer { translationY = (1f - shown) * (size.height + 40.dp.toPx()); alpha = shown }
+            // a soft shadow drawn by hand: Modifier.shadow with a large elevation drew a hard dark shape around the dock on some windows
+            .drawBehind {
+                val r = corner.toPx()
+                for (i in 1..5) {
+                    val grow = i * 3.5f
+                    drawRoundRect(
+                        Color.Black.copy(alpha = 0.07f), topLeft = androidx.compose.ui.geometry.Offset(-grow, -grow * 0.4f + 5f),
+                        size = androidx.compose.ui.geometry.Size(size.width + grow * 2, size.height + grow * 2 * 0.8f),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(r + grow),
+                    )
+                }
+            }
             .clip(shape)
             .background(c.flyout, shape)
             .border(Dp.Hairline, c.strokeStrong.copy(alpha = 0.35f), shape)

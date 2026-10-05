@@ -110,7 +110,7 @@ fun DownloadsScreen() {
                 val items = res.value
                 if (items.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     com.lagradost.desktop.ui.fluent.EmptyState(Icons.Download, "No downloads yet", "Use the download action of an episode or movie to keep it offline.")
-                } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 36.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 36.dp, end = 36.dp, top = 8.dp, bottom = 8.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(items, key = { it.data.id }) { item -> DownloadRow(item, onOpenFolder = { if (it is VisualDownloadCached.Header) folder = it }) }
                 }
             }

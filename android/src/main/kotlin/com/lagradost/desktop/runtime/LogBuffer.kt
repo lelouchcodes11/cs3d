@@ -48,7 +48,45 @@ object LogBuffer {
                 size.decrementAndGet()
             }
             echo?.println(line)
+            if (fileWriter != null) fileQueue.offer(line)
         }
+    }
+
+    private val fileQueue = java.util.concurrent.LinkedBlockingQueue<String>(20_000)
+    @Volatile private var fileWriter: Thread? = null
+
+    /**
+     * Also writes the lines to `app.log` in [dir] (a bug report needs what happened before the app was closed). Two files of at most 3 MB
+     * (`app.log`, `app.log.1`), so it never grows; lines wait in a bounded queue and are written by one thread, a full queue drops lines.
+     */
+    @Synchronized
+    fun startFile(dir: File) {
+        if (fileWriter != null) return
+        runCatching { dir.mkdirs() }
+        val file = File(dir, "app.log")
+        fileWriter = Thread({
+            var out: java.io.Writer? = null
+            var w: java.io.Writer
+            try {
+                if (file.exists() && file.length() > 0) runCatching { file.renameTo(File(dir, "app.log.1").also { it.delete() }) }
+                w = file.bufferedWriter(Charsets.UTF_8); out = w
+                var written = 0L
+                var lastFlush = System.currentTimeMillis()
+                while (true) {
+                    val line = fileQueue.poll(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    if (line != null) { w.write(line); w.write("\n"); written += line.length + 1 }
+                    val now = System.currentTimeMillis()
+                    if (line == null || now - lastFlush > 1000) { w.flush(); lastFlush = now }
+                    if (written > 3_000_000L) {
+                        w.close()
+                        File(dir, "app.log.1").delete(); file.renameTo(File(dir, "app.log.1"))
+                        w = file.bufferedWriter(Charsets.UTF_8); out = w; written = 0
+                    }
+                }
+            } catch (_: Throwable) {
+                runCatching { out?.close() }
+            }
+        }, "LogFile").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
     }
 
     fun snapshot(): List<String> = lines.toList()

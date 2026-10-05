@@ -303,7 +303,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
         val columns = ((maxWidth - gutter * 2 + 18.dp) / (250.dp + 18.dp)).toInt().coerceIn(1, 6)
         val pageWidth = maxWidth
 
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 48.dp)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "header") {
                 Header(vm, d, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty(), trailers?.firstOrNull()?.mirros?.firstOrNull()?.second)
             }

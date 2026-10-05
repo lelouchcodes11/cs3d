@@ -68,6 +68,11 @@ fun LayoutAndStyleCards() {
                 for (p in NavPosition.entries) NavPreview(p, Appearance.navPosition == p) { Appearance.navPosition = p; changed() }
             }
         }
+        if (Appearance.navPosition == NavPosition.Bottom) {
+            SettingsCard("Hide the dock while scrolling", "The dock slides away when you scroll a page down and comes back when you scroll up or move the pointer to the bottom edge.") {
+                ToggleSwitch(Appearance.dockAutoHide, { Appearance.dockAutoHide = it; if (!it) com.lagradost.desktop.ui.shell.ShellState.dockHidden = false; changed() })
+            }
+        }
         if (Appearance.navPosition == NavPosition.Left || Appearance.navPosition == NavPosition.Right) {
             SettingsCard("Side rail", "Show the page names when the pointer is on the rail, never, or all the time.") {
                 ComboBox(NavStyle.entries.toList(), Appearance.navStyle, { it.label }, { Appearance.navStyle = it; changed() }, minWidth = 190.dp)
@@ -117,6 +122,15 @@ fun LayoutAndStyleCards() {
         }
         SettingsCard("Zoom on hover", "Posters and dock items grow a little under the pointer.") {
             ToggleSwitch(Appearance.hoverZoom, { Appearance.hoverZoom = it; changed() })
+        }
+        SettingsCard("Native GPU player (beta)", "mpv draws the video with its own GPU renderer in a window of its own, in step with your screen's refresh, and the controls float above it. Smoothest motion and the least CPU, but still being tested: if the picture or the controls misbehave, switch it off. Applies to the next video.") {
+            ToggleSwitch(Appearance.nativePlayer, { Appearance.nativePlayer = it; changed() })
+        }
+        SettingsCard("Anime upscaling (Anime4K)", "Neural filters that clean up and enlarge low resolution anime. Works with the native GPU player only, and asks a lot of the graphics card. Applies to the next video. Anime4K by bloc97 (MIT).") {
+            ToggleSwitch(Appearance.anime4k, { Appearance.anime4k = it; changed() })
+        }
+        SettingsCard("Smooth motion", "Blends the frames of 24 and 25 frames per second video so pans and scrolling credits do not judder on a 60 Hz screen. Turn it off if you prefer the pure frames.") {
+            ToggleSwitch(Appearance.smoothMotion, { Appearance.smoothMotion = it; changed() })
         }
         SettingsCard("Player controls", "Modern: a floating bar over the picture. Classic: a full-width bar at the bottom.") {
             ComboBox(PlayerStyle.entries.toList(), Appearance.playerStyle, { it.label }, { Appearance.playerStyle = it; changed() }, minWidth = 210.dp)

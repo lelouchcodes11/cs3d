@@ -77,8 +77,7 @@ fun ApplicationScope.NativeWindow() {
         remember { com.lagradost.desktop.platform.StartupProfile.mark("window content composing") }
         // the rest of the extensions load once the first frame is up (see PluginLoadGate)
         LaunchedEffect(Unit) { delay(700); com.lagradost.cloudstream3.plugins.PluginLoadGate.firstFrame.complete(Unit) }
-        // a newer release of this app: asked for a few seconds after the start (off with "Check for updates automatically")
-        remember { com.lagradost.desktop.update.AppUpdater.startAutoCheck() }
+        if (com.lagradost.desktop.tools.FrameStats.enabled) LaunchedEffect(Unit) { com.lagradost.desktop.tools.FrameStats.run() }
         remember {
             window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
                 override fun windowGainedFocus(e: java.awt.event.WindowEvent) = com.lagradost.desktop.DesktopLifecycle.windowFocus(true)
@@ -86,6 +85,8 @@ fun ApplicationScope.NativeWindow() {
             })
         }
         DesktopUiHost.windowState = state
+        // a few seconds after the app is on screen: tells about a newer version on GitHub (nothing is installed by the app)
+        remember { com.lagradost.desktop.update.UpdateCheck.startAutoCheck() }
         remember { window.minimumSize = Dimension(760, 520) }
         remember { com.lagradost.desktop.platform.AppIcon.install(window) }
         remember { FluentSettings.load(); com.lagradost.desktop.ui.fluent.Appearance.load() }
@@ -156,10 +157,13 @@ fun ApplicationScope.NativeWindow() {
                             com.lagradost.desktop.ui.StartupReveal {
                                 AppShell()
                             }
-                            com.lagradost.desktop.ui.FluentRequestDialogs()
-                            LegacyOverlays()
-                            // above the engine's Android dialogs: a prompt raised by an extension's settings sheet must be seen
-                            com.lagradost.desktop.ui.fluent.DialogLayer()
+                            // the native video player draws these in its controls window (this layer is behind the video then)
+                            if (!com.lagradost.desktop.ui.screens.player.NativeVideo.overlayActive) {
+                                com.lagradost.desktop.ui.FluentRequestDialogs()
+                                LegacyOverlays()
+                                // above the engine's Android dialogs: a prompt raised by an extension's settings sheet must be seen
+                                com.lagradost.desktop.ui.fluent.DialogLayer()
+                            }
                         }
                     }
                 }

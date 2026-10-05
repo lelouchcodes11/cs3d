@@ -60,7 +60,7 @@ import com.lagradost.desktop.ui.fluent.ThemeMode
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 import com.lagradost.desktop.ui.shell.TopBarHeight
-import com.lagradost.desktop.update.AppUpdater
+import com.lagradost.desktop.AppInfo
 import com.mihon.presentation.settings.Preference
 
 private enum class Page(val id: String, val title: String, val glyph: String, val tint: Long, val about: String, val hidden: Boolean = false) {
@@ -147,7 +147,7 @@ fun SettingsScreen(route: Route.Settings) {
             val scroll = rememberScrollState()
             Box(Modifier.weight(1f).fillMaxHeight()) {
             FluentScrollbar(scroll)
-            Column(Modifier.fillMaxSize().verticalScroll(scroll), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current), horizontalAlignment = Alignment.CenterHorizontally) {
                 Column(Modifier.widthIn(max = 940.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
                     LegacyContent {
                         Column(Modifier.fillMaxWidth()) {
@@ -288,15 +288,25 @@ private fun AboutPage() {
     val c = Fluent.colors
     val dir = AndroidRuntime.dataDir
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        val pre = if (com.lagradost.desktop.update.AppUpdater.parseVersion(AppUpdater.currentVersion)?.numbers?.firstOrNull() == 0) " (pre-release)" else ""
-        SettingsCard("CloudStream for Windows", "Version ${AppUpdater.currentVersion}$pre  ·  a native Windows app on the CloudStream ${BuildConfig.VERSION_NAME} engine")
+        val pre = if (AppInfo.isPreRelease) " (pre-release)" else ""
+        SettingsCard("CloudStream for Windows", "Version ${AppInfo.version}$pre  ·  a native Windows app on the CloudStream ${BuildConfig.VERSION_NAME} engine")
+        SettingsCard("Join us on Telegram", "News, new versions, help and feedback: t.me/cs3d_official", onClick = { DesktopPlatform.openExternalBrowser(AppInfo.TELEGRAM_URL) })
         UpdateCards()
+        SettingsCard("Support the project", "CloudStream for Windows is free. If it saves you time, a donation keeps it going: razorpay.me/@lelouch11", onClick = { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) })
         SettingsCard("App data folder", dir.absolutePath, onClick = { DesktopPlatform.openFile(dir) })
+        SettingsCard("Keyboard shortcuts", "The keys of the player: play, seek, volume, full screen, subtitles and more (F1 in the player shows the same list)", onClick = { com.lagradost.desktop.ui.screens.player.Shortcuts.show() })
+        SettingsCard("Copy diagnostics", "Puts what a bug report needs on the clipboard: versions, your PC and screens, VPN adapters, the player's output and the latest errors. Passwords and tokens are left out.", onClick = {
+            com.lagradost.desktop.Diagnostics.copyToClipboard { n -> com.lagradost.desktop.ui.Toasts.show("Diagnostics copied ($n lines): paste them into your message", false) }
+        })
+        SettingsCard("Log file", "The last two runs of the app, for a bug report", onClick = {
+            val f = java.io.File(dir, "logs/app.log")
+            if (f.isFile) DesktopPlatform.openFile(f) else com.lagradost.desktop.ui.Toasts.show("No log file yet", false)
+        })
         SettingsCard("Crash log", "Opens the last crash report, if there is one", onClick = {
             val f = java.io.File(dir, "crash.log")
             if (f.isFile) DesktopPlatform.openFile(f) else com.lagradost.desktop.ui.Toasts.show("No crash log yet", false)
         })
-        SettingsCard("Source code and releases", "${AppUpdater.repo} on GitHub (GPL-3.0). Report problems and get new versions there.", onClick = { DesktopPlatform.openExternalBrowser(AppUpdater.repoUrl) })
+        SettingsCard("Source code and releases", "${AppInfo.REPO} on GitHub (GPL-3.0). Report problems and get new versions there.", onClick = { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) })
         SettingsCard("The CloudStream project", "This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.", onClick = { DesktopPlatform.openExternalBrowser("https://github.com/recloudstream/cloudstream") })
     }
 }

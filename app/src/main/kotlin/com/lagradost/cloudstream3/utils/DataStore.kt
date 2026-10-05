@@ -82,7 +82,8 @@ data class Editor(
 
     fun apply() {
         editor.apply()
-        System.gc()
+        // desktop: the upstream System.gc() here was a full collection (24-65 ms with the window frozen) every time something was saved, for
+        // example the playback position every 30 s: a hitch in the video every half minute (measured with -Xlog:gc)
     }
 }
 

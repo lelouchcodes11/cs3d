@@ -160,9 +160,9 @@ object Fluent {
 
 enum class ThemeMode { System, Light, Dark }
 
-/** In-app theme choice (persisted by the settings page) */
+/** In-app theme choice (persisted by the settings page); dark until the user chooses another (Settings > Appearance > App theme) */
 object FluentSettings {
-    var themeMode by mutableStateOf(ThemeMode.System)
+    var themeMode by mutableStateOf(ThemeMode.Dark)
 
     /** null = Windows accent */
     var accentOverride by mutableStateOf<Color?>(null)
@@ -176,7 +176,7 @@ object FluentSettings {
     fun load() {
         runCatching {
             val p = prefs()
-            themeMode = ThemeMode.entries.getOrNull(p.getInt(MODE_KEY, 0)) ?: ThemeMode.System
+            themeMode = ThemeMode.entries.getOrNull(p.getInt(MODE_KEY, ThemeMode.Dark.ordinal)) ?: ThemeMode.Dark
             accentOverride = if (p.contains(ACCENT_KEY)) Color(p.getInt(ACCENT_KEY, 0)) else null
         }
     }

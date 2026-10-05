@@ -129,7 +129,7 @@ fun ExtensionsScreen() {
                 Column(Modifier.width(if (compact) 250.dp else 320.dp).fillMaxHeight().padding(start = 36.dp, end = 8.dp)) {
                     FText("REPOSITORIES", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, letterSpacing = 1.2.sp), color = c.textTertiary)
                     Box(Modifier.height(10.dp))
-                    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+                    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
                         item(key = INSTALLED) {
                             RepoRow("Installed", "Everything downloaded or loaded locally", null, selected == INSTALLED, Icons.Download, { selected = INSTALLED }, null)
                         }
@@ -168,7 +168,7 @@ fun ExtensionsScreen() {
                         val rows = items.chunked(columns)
                         Box(Modifier.fillMaxSize()) {
                             FluentScrollbar(listState)
-                            LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 32.dp, end = 12.dp)) {
+                            LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current, end = 12.dp)) {
                                 items(rows.size, key = { i -> rows[i].joinToString("|") { it.pluginWrapper.plugin.url + "|" + it.pluginWrapper.plugin.internalName } }) { i ->
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                         rows[i].forEach { item -> Box(Modifier.weight(1f)) { PluginCard(item, plugins, repo?.let { listOf(it) } ?: emptyList(), sel == INSTALLED) } }

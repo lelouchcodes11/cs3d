@@ -510,12 +510,25 @@ object DevServer {
                 q["set"]?.let { p.setMpvProperty(name, it) }
                 ok(ex, "$name=${p.getMpvPropertyString(name)}")
             }
+            "/mem" -> {
+                // dev: where the memory of this process is: heap, other JVM memory, threads, classes, direct buffers, native libraries, and what Windows reports as the working set
+                val mx = java.lang.management.ManagementFactory.getMemoryMXBean()
+                val rt = Runtime.getRuntime()
+                val cl = java.lang.management.ManagementFactory.getClassLoadingMXBean()
+                val th = java.lang.management.ManagementFactory.getThreadMXBean()
+                val direct = java.lang.management.ManagementFactory.getPlatformMXBeans(java.lang.management.BufferPoolMXBean::class.java).joinToString(", ") { it.name + " " + it.memoryUsed / 1_048_576 + " MB" }
+                val mb = { v: Long -> (v / 1_048_576).toString() + " MB" }
+                ok(ex, "heap used " + mb(mx.heapMemoryUsage.used) + " / committed " + mb(mx.heapMemoryUsage.committed) + " / max " + mb(mx.heapMemoryUsage.max) + "\n" +
+                    "non-heap used " + mb(mx.nonHeapMemoryUsage.used) + " / committed " + mb(mx.nonHeapMemoryUsage.committed) + "\n" +
+                    "classes " + cl.loadedClassCount + ", threads " + th.threadCount + "\n" + "buffers: " + direct)
+            }
+            "/framestats" -> ok(ex, com.lagradost.desktop.tools.FrameStats.report(q["s"]?.toInt() ?: 10) + (q["worst"]?.toIntOrNull()?.let { "\n" + com.lagradost.desktop.tools.FrameStats.worst(q["s"]?.toInt() ?: 10, it) } ?: ""))
             "/videostats" -> {
                 // dev: how the video frames keep up (render thread) and what mpv says about timing
                 val p = com.lagradost.desktop.player.MpvPlayer.active ?: return ok(ex, "no player")
                 val surface = com.lagradost.desktop.ui.screens.player.PlayerSession.active?.surface
                 val props = listOf("time-pos", "speed", "avsync", "total-avsync-change", "frame-drop-count", "decoder-frame-drop-count", "vo-delayed-frame-count", "mistimed-frame-count", "container-fps", "estimated-vf-fps", "video-params/w", "video-params/h", "hwdec-current", "paused-for-cache", "demuxer-cache-duration")
-                ok(ex, "surface: ${surface?.stats?.last}\npresent: ${surface?.present?.last}\n" + props.joinToString("\n") { "$it=${p.getMpvPropertyString(it)}" })
+                ok(ex, "surface: ${surface?.stats?.last}\npresent: ${surface?.present?.last}\nsmooth: ${surface?.smoothLast} useful=${surface?.blendUseful}\n" + props.joinToString("\n") { "$it=${p.getMpvPropertyString(it)}" })
             }
             "/mpvsample" -> {
                 // dev: hitches in the picture and in the audio timeline: /mpvsample?s=30 samples the frame counter, time-pos and audio-pts every 5 ms and
@@ -666,6 +679,28 @@ object DevServer {
                 val now = androidx.preference.PreferenceManager.getDefaultSharedPreferences(act).getString(q["key"]!!, null)
                 ok(ex, "value=$now action=${com.lagradost.cloudstream3.ui.result.EpisodeAdapter.getPlayerAction(act)} ids=${com.lagradost.cloudstream3.actions.VideoClickActionHolder.allVideoClickActions.map { it.uniqueId() }}")
             }
+            "/updatecheck" -> {
+                // dev: Settings > About > Check now: /updatecheck ; /updatecheck?reset=1 forgets the last check and the skipped version first
+                if (q["reset"] != null) androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.DesktopBootstrap.activity).edit()
+                    .remove("desktop_update_checked_at").remove("desktop_update_skipped").apply()
+                com.lagradost.desktop.update.UpdateCheck.checkNow()
+                ok(ex)
+            }
+            "/toast" -> {
+                // dev: show an in-app toast: /toast?text=hello
+                com.lagradost.desktop.ui.Toasts.show(q["text"] ?: "toast", q["long"] == "1")
+                ok(ex)
+            }
+            "/backup" -> {
+                // dev: Settings > Back up data without the dialog: /backup writes where the button does
+                com.lagradost.cloudstream3.utils.BackupUtils.backup(com.lagradost.desktop.DesktopBootstrap.activity)
+                ok(ex)
+            }
+            "/restore" -> {
+                // dev: Settings > Restore data without the file dialog: /restore?file=C:/path/CS3_Backup_x.txt
+                com.lagradost.cloudstream3.utils.BackupUtils.restoreFromUri(com.lagradost.desktop.DesktopBootstrap.activity, android.net.Uri.fromFile(java.io.File(q["file"]!!)))
+                ok(ex)
+            }
             "/maximize" -> {
                 // dev: /maximize?on=0 restores the window, on=1 maximizes it
                 com.lagradost.desktop.platform.WinChrome.toggleMaximized(q["on"] != "0")
@@ -707,11 +742,16 @@ object DevServer {
                 onEdt {
                     q["nav"]?.let { v -> a.navPosition = com.lagradost.desktop.ui.fluent.NavPosition.valueOf(v) }
                     q["style"]?.let { v -> a.navStyle = com.lagradost.desktop.ui.fluent.NavStyle.valueOf(v) }
+                    q["dockhide"]?.let { v -> a.dockAutoHide = v == "true" }
                     q["radius"]?.let { v -> a.cornerRadius = v.toInt() }
                     q["backdrop"]?.let { v -> a.backdrop = com.lagradost.desktop.ui.fluent.Backdrop.valueOf(v) }
                     q["player"]?.let { v -> a.playerStyle = com.lagradost.desktop.ui.fluent.PlayerStyle.valueOf(v) }
                     q["scale"]?.let { v -> a.uiScale = v.toFloat() }
                     q["poster"]?.let { v -> a.posterSize = com.lagradost.desktop.ui.fluent.PosterSize.valueOf(v) }
+                    q["smooth"]?.let { v -> a.smoothMotion = v == "true" }
+                    q["native"]?.let { v -> a.nativePlayer = v == "true" }
+                    q["anime4k"]?.let { v -> a.anime4k = v == "true" }
+                    q["blend"]?.let { v -> com.lagradost.desktop.ui.screens.player.blendDebug = v }
                 }
                 ok(ex, "nav=${a.navPosition} style=${a.navStyle} radius=${a.cornerRadius} backdrop=${a.backdrop} player=${a.playerStyle} scale=${a.uiScale}")
             }

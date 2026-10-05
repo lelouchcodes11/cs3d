@@ -198,7 +198,7 @@ fun SearchScreen(route: Route.Search) {
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
             })
         } else {
-            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp)) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
                 item(key = "header") { header() }
                 results.entries.forEach { (name, list) ->
                     item(key = "p-$name") {
@@ -378,7 +378,7 @@ private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel, v
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = gutter, end = gutter, top = TopBarHeight + 64.dp, bottom = 48.dp),
+        contentPadding = PaddingValues(start = gutter, end = gutter, top = TopBarHeight + 64.dp, bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         item(key = "field") {
