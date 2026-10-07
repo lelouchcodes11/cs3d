@@ -811,6 +811,11 @@ compose.desktop {
             "-Xss4m",
             // a library that asks for a full collection (System.gc()) gets a concurrent one instead of a pause with every thread stopped
             "-XX:+ExplicitGCInvokesConcurrent",
+            // memory goes back to Windows: the heap shrinks after a collection when more than 30 % of it is free, and an idle app collects every
+            // 30 s (measured: 370 MB of heap kept after browsing became 200 MB; only about 130 MB of it is in use)
+            "-XX:MaxHeapFreeRatio=30",
+            "-XX:MinHeapFreeRatio=10",
+            "-XX:G1PeriodicGCInterval=30000",
             // start-up: the app's classes (about 12k) are loaded from a class-data-sharing archive that portableDist creates
             // (and that the JVM re-creates by itself at exit when the jars changed); the native splash shows at once
             "-XX:+AutoCreateSharedArchive",
@@ -819,6 +824,8 @@ compose.desktop {
             "-splash:\$APPDIR/splash.png",
         )
         nativeDistributions {
+            // native files the app loads straight from the install folder (app/resources): libmpv and the WebView2 loader
+            appResourcesRootDir.set(project.layout.projectDirectory.dir("native"))
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb, TargetFormat.Dmg)
             packageName = "CloudStream"
             packageVersion = desktopVersion
@@ -842,6 +849,30 @@ compose.desktop {
 
 tasks.withType<JavaExec>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+/**
+ * The Java runtime of the app image in [root] linked again with its modules compressed (jlink zip-6): the `modules` file goes from about
+ * 87 MB to about 40 MB on disk. Classes the app uses at start come from the class-data-sharing archive, so start-up does not notice.
+ * Failures keep the uncompressed runtime.
+ */
+fun compressRuntime(root: File) {
+    runCatching {
+        val runtime = File(root, "runtime")
+        val modules = File(runtime, "release").readLines().first { it.startsWith("MODULES=") }
+            .substringAfter('=').trim('"').split(' ').filter { it.isNotBlank() }
+        val jlink = File(System.getProperty("java.home"), "bin/jlink.exe")
+        val out = File(root, "runtime-compressed").also { it.deleteRecursively() }
+        val proc = ProcessBuilder(
+            jlink.absolutePath, "--add-modules", modules.joinToString(","), "--strip-debug", "--no-header-files", "--no-man-pages",
+            "--strip-native-commands", "--compress=zip-6", "--output", out.absolutePath,
+        ).redirectErrorStream(true).start()
+        val log = proc.inputStream.bufferedReader().readText()
+        if (proc.waitFor() != 0 || !File(out, "bin/server/jvm.dll").isFile) error("jlink failed: $log")
+        runtime.deleteRecursively()
+        if (!out.renameTo(runtime)) error("could not replace the runtime")
+        println("runtime: modules compressed (${File(runtime, "lib/modules").length() / 1_048_576} MB)")
+    }.onFailure { println("runtime: left uncompressed: $it") }
 }
 
 /**
@@ -911,6 +942,7 @@ tasks.register<Copy>("portableDist") {
                 "While this file (or a data folder) is next to CloudStream.exe, settings, extensions and caches are kept in the data folder here.\r\n" +
                 "Move or copy this whole folder to take everything with you; delete it to remove everything.\r\n",
         )
+        compressRuntime(target.asFile)
         trainStartupArchive(target.asFile)
     }
 }
@@ -935,6 +967,7 @@ tasks.register("installerMsi") {
         val root = File(stage, "CloudStream")
         image.get().asFile.copyRecursively(root, overwrite = true)
         splash.asFile.copyRecursively(File(root, "app"), overwrite = true)
+        compressRuntime(root)
         trainStartupArchive(root)
         val jpackage = File(System.getProperty("java.home"), "bin/jpackage.exe")
         val command = listOf(
@@ -978,20 +1011,8 @@ tasks.register<JavaExec>("runHarness") {
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
 }
 
-// Chromium for the WebView implementation, bundled so it is not downloaded on first use
-val jcefNativesPlatform: String = run {
-    val os = System.getProperty("os.name").lowercase()
-    val arch = System.getProperty("os.arch").lowercase()
-    val cpu = if (arch.contains("aarch64") || arch.contains("arm64")) "arm64" else "amd64"
-    when {
-        os.contains("win") -> "windows-$cpu"
-        os.contains("mac") -> "macosx-$cpu"
-        else -> "linux-$cpu"
-    }
-}
-dependencies {
-    runtimeOnly("me.friwi:jcef-natives-$jcefNativesPlatform:${libs.versions.jcefNatives.get()}")
-}
+// WebViews use Edge WebView2 (part of Windows). Bundled Chromium (JCEF) is only the fallback for a PC without it: jcefmaven downloads its
+// files on first use there (about 150 MB), so they are no longer part of the installer.
 
 // Development run with a separate data folder and the local dev control server:
 // ./gradlew :app:runDev -PdataDir=<dir> [-PdevPort=8765]

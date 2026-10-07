@@ -113,7 +113,7 @@ private fun rawPrefsOf(page: Page): List<Preference> = when (page) {
             else p.copy(preferenceItems = p.preferenceItems.map { item ->
                 if (item is Preference.PreferenceItem.TextPreference && item.title == subtitlesTitle) item.copy(onClick = { SettingsNav.page = "subtitles" }) else item
             })
-        }
+        } + Preference.PreferenceGroup("Audio", preferenceItems = listOf(audioDecoderPreference()))
     }
     Page.Appearance -> SettingsUIScreen.getPreferences()
     Page.Updates -> SettingsUpdatesScreen.getPreferences()
@@ -309,4 +309,21 @@ private fun AboutPage() {
         SettingsCard("Source code and releases", "${AppInfo.REPO} on GitHub (GPL-3.0). Report problems and get new versions there.", onClick = { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) })
         SettingsCard("The CloudStream project", "This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.", onClick = { DesktopPlatform.openExternalBrowser("https://github.com/recloudstream/cloudstream") })
     }
+}
+
+/** The audio decoder (SW / HW / HW+) of Settings > Player: the same saved choice as the Decoder button of the player's Tracks dialog */
+private fun audioDecoderPreference(): Preference.PreferenceItem.ListPreference<com.lagradost.desktop.ui.fluent.AudioDecoder> {
+    val look = com.lagradost.desktop.ui.fluent.Appearance
+    return Preference.PreferenceItem.ListPreference(
+        preference = com.mihon.common.preference.StatePreferenceStore(look.audioDecoderState).field(get = { this }, set = { it }),
+        entries = com.lagradost.desktop.ui.fluent.AudioDecoder.entries.associateWith { it.label },
+        title = "Audio decoder",
+        subtitleProvider = { v, e -> "${e[v]}: ${v.detail}" },
+        onValueChanged = { v ->
+            look.audioDecoder = v
+            look.save()
+            com.lagradost.desktop.core.ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyAudioDecoder() }
+            true
+        },
+    )
 }

@@ -129,8 +129,8 @@ object DesktopBootstrap {
         runCatching { Security.insertProviderAt(org.conscrypt.Conscrypt.newProvider(), 1) } // before OkHttp is first used, see main()
         if (dataDir != null) AndroidRuntime.init(dataDir) else AndroidRuntime.init()
         TrustStore.install(AndroidRuntime.dataDir)
-        // Chromium (WebView) takes a few seconds to start, do it in the background right away
-        com.lagradost.desktop.runtime.web.JcefRuntime.startAsync()
+        // bundled Chromium (only where WebView2 is missing) takes a few seconds to start, do it in the background right away
+        if (!com.lagradost.desktop.runtime.web.WebRuntime.usesWebView2) com.lagradost.desktop.runtime.web.JcefRuntime.startAsync()
 
         // Android ships a Bouncy Castle based "BC" provider (e.g. AES/CBC/PKCS7Padding)
         if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {

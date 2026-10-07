@@ -31,6 +31,17 @@ enum class Motion(val label: String, val factor: Float) { Full("Full", 1f), Redu
 enum class PlayerStyle(val label: String) { Modern("Modern (floating bar)"), Classic("Classic (full width)") }
 
 /**
+ * Who decodes the sound. SW: the app, for speakers and headphones. HW: Dolby Digital and DTS go undecoded to an AV receiver or TV,
+ * which decodes them (HDMI or optical). HW+: also Dolby Digital Plus, TrueHD and DTS-HD (HDMI receivers). [spdif] is mpv's audio-spdif
+ * list; mpv decodes a track itself when the device refuses it.
+ */
+enum class AudioDecoder(val label: String, val detail: String, val spdif: String) {
+    Software("Software (SW)", "Decoded by the app. For speakers and headphones.", ""),
+    Hardware("Hardware (HW)", "Dolby Digital and DTS are decoded by your AV receiver or TV (HDMI or optical).", "ac3,dts"),
+    HardwarePlus("Hardware+ (HW+)", "Also Dolby Digital Plus, Dolby TrueHD and DTS-HD (HDMI receivers).", "ac3,eac3,dts,dts-hd,truehd"),
+}
+
+/**
  * User customisation of the look (Settings > Appearance > Layout and style). Every value is Compose state, so the whole UI
  * follows a change at once, and is saved in the app preferences.
  */
@@ -64,6 +75,10 @@ object Appearance {
     /** Native player only: the Anime4K neural filters sharpen and enlarge low resolution anime (needs a fairly strong graphics card) */
     var anime4k by mutableStateOf(false)
 
+    /** Who decodes the sound (SW / HW / HW+, see [AudioDecoder]); changed in the player it applies at once. A state of its own for the settings list */
+    val audioDecoderState = mutableStateOf(AudioDecoder.Software)
+    var audioDecoder by audioDecoderState
+
     /** Video: blends the frames around each screen refresh so 24 or 25 fps film does not judder on a 60 Hz screen */
     var smoothMotion by mutableStateOf(true)
 
@@ -94,6 +109,7 @@ object Appearance {
             smoothMotion = p.getBoolean(PREFIX + "smooth_motion", true)
             nativePlayer = p.getBoolean(PREFIX + "native_player", false)
             anime4k = p.getBoolean(PREFIX + "anime4k", false)
+            audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
         }
     }
@@ -117,6 +133,7 @@ object Appearance {
                 .putBoolean(PREFIX + "smooth_motion", smoothMotion)
                 .putBoolean(PREFIX + "native_player", nativePlayer)
                 .putBoolean(PREFIX + "anime4k", anime4k)
+                .putString(PREFIX + "audio_decoder", audioDecoder.name)
                 .putBoolean(PREFIX + "dock_auto_hide", dockAutoHide)
                 .apply()
         }

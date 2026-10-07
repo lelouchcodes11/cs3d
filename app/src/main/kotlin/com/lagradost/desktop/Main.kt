@@ -114,6 +114,9 @@ fun main(args: Array<String>) {
         }
     }, "ui-warmup").apply { isDaemon = true }.start()
     System.setProperty("skiko.renderApi", System.getProperty("skiko.renderApi") ?: "DIRECT3D")
+    // Skia keeps up to 256 MB of textures by default; on a PC with integrated graphics that is the app's own RAM. 64 MB holds every poster
+    // of a screen (measured: about 100 MB less memory after browsing a few pages)
+    System.setProperty("skiko.gpu.resourceCacheLimit", System.getProperty("skiko.gpu.resourceCacheLimit") ?: "67108864")
     // a native video window (see NativeVideo) is a window of its own: Compose must not copy the Swing paint of it
     System.setProperty("compose.interop.blending", System.getProperty("compose.interop.blending") ?: "false")
     // Android dimensions (dp) must match the Compose density of the screen before anything resolves them

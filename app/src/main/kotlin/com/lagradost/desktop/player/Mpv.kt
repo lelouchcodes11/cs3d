@@ -56,26 +56,18 @@ interface Mpv : Library {
         const val MPV_RENDER_PARAM_SW_POINTER = 20
         const val MPV_RENDER_UPDATE_FRAME = 1L
 
-        /** `<data>/cache/natives` with mpv-2.dll unpacked from the resources (again when its size differs); null when not packaged that way */
-        private fun unpackedNativesDir(): File? {
-            val resource = Mpv::class.java.classLoader.getResource("win32-x86-64/mpv-2.dll") ?: return null
-            val size = resource.openConnection().contentLengthLong
-            val dir = File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "cache/natives")
-            val target = File(dir, "mpv-2.dll")
-            if (!target.exists() || target.length() != size) {
-                dir.mkdirs()
-                val partial = File(dir, "mpv-2.dll.part")
-                resource.openStream().use { input -> partial.outputStream().use { input.copyTo(it, 1 shl 20) } }
-                target.delete()
-                if (!partial.renameTo(target)) return null
-            }
+        /**
+         * The folder of mpv-2.dll: next to the app (installer, portable folder, development run). Older versions unpacked the 115 MB DLL from
+         * their jar into `<data>/cache/natives`; that copy is deleted.
+         */
+        private fun nativesDir(): File? {
+            val dir = com.lagradost.desktop.runtime.web.NativeFiles.dirOf("mpv-2.dll") ?: return null
+            runCatching { File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "cache/natives").deleteRecursively() }
             return dir
         }
 
         val INSTANCE: Mpv by lazy {
-            // the DLL is a resource of the app (inside its jar when packaged) and JNA would unpack all 115 MB into the temp folder at
-            // every start (a 1.2 s freeze at the first Play); it is unpacked once into the data folder instead (also in a dev run)
-            runCatching { unpackedNativesDir() }.getOrNull()?.let { dir ->
+            runCatching { nativesDir() }.getOrNull()?.let { dir ->
                 val current = System.getProperty("jna.library.path") ?: ""
                 System.setProperty("jna.library.path", if (current.isEmpty()) dir.absolutePath else "${dir.absolutePath};$current")
             }

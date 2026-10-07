@@ -82,7 +82,7 @@ object HlsProxy {
             // the client sets these itself
             if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true)) continue
             if (k.equals("User-Agent", true)) userAgent = true
-            runCatching { builder.header(k, v) }
+            com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
         }
         if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
         val client = com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(20, java.util.concurrent.TimeUnit.SECONDS).build()

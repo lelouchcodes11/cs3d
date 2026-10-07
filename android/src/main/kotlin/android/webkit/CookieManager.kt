@@ -2,13 +2,13 @@ package android.webkit
 
 import android.os.Handler
 import android.os.Looper
-import com.lagradost.desktop.runtime.web.JcefRuntime
+import com.lagradost.desktop.runtime.web.WebCookies
 import java.util.concurrent.Executors
 
-/** Cookie store shared by every WebView, backed by the Chromium cookie manager */
+/** Cookie store shared by every WebView */
 abstract class CookieManager {
     companion object {
-        private val sInstance: CookieManager by lazy { JcefCookieManager() }
+        private val sInstance: CookieManager by lazy { AppCookieManager() }
 
         @JvmStatic
         fun getInstance(): CookieManager = sInstance
@@ -44,7 +44,8 @@ abstract class CookieManager {
     abstract fun flush()
 }
 
-internal class JcefCookieManager : CookieManager() {
+/** The app's cookie jar (WebCookies): reading it never starts a browser; the running engine mirrors it */
+internal class AppCookieManager : CookieManager() {
     @Volatile
     private var accept = true
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "cookie-manager").also { it.isDaemon = true } }
@@ -64,7 +65,7 @@ internal class JcefCookieManager : CookieManager() {
 
     override fun setCookie(url: String?, value: String?) {
         if (url == null || value == null) return
-        JcefRuntime.setCookie(url, value)
+        WebCookies.set(url, value)
     }
 
     override fun setCookie(url: String?, value: String?, callback: ValueCallback<Boolean>?) {
@@ -72,13 +73,13 @@ internal class JcefCookieManager : CookieManager() {
             callback(callback, false)
             return
         }
-        worker.execute { callback(callback, JcefRuntime.setCookie(url, value)) }
+        worker.execute { callback(callback, WebCookies.set(url, value)) }
     }
 
     override fun getCookie(url: String?): String? {
         if (url == null) return null
         return try {
-            JcefRuntime.cookieHeader(url)
+            WebCookies.header(url)
         } catch (t: Throwable) {
             null
         }
@@ -86,44 +87,27 @@ internal class JcefCookieManager : CookieManager() {
 
     @Deprecated("")
     override fun removeSessionCookie() {
-        removeSessionCookies(null)
+        WebCookies.removeSessionCookies()
     }
 
     override fun removeSessionCookies(callback: ValueCallback<Boolean>?) {
-        worker.execute {
-            val session = JcefRuntime.allCookies().filter { !it.hasExpires }
-            for (c in session) {
-                val host = c.domain.removePrefix(".")
-                JcefRuntime.deleteCookies("https://$host${c.path ?: "/"}", c.name)
-                JcefRuntime.deleteCookies("http://$host${c.path ?: "/"}", c.name)
-            }
-            callback(callback, session.isNotEmpty())
-        }
+        worker.execute { callback(callback, WebCookies.removeSessionCookies()) }
     }
 
     @Deprecated("")
     override fun removeAllCookie() {
-        JcefRuntime.deleteCookies(null, null)
+        WebCookies.removeAll()
     }
 
     override fun removeAllCookies(callback: ValueCallback<Boolean>?) {
-        worker.execute {
-            val had = hasCookies()
-            JcefRuntime.deleteCookies(null, null)
-            callback(callback, had)
-        }
+        worker.execute { callback(callback, WebCookies.removeAll()) }
     }
 
-    override fun hasCookies(): Boolean = JcefRuntime.allCookies().isNotEmpty()
+    override fun hasCookies(): Boolean = !WebCookies.isEmpty()
 
     @Deprecated("")
     override fun removeExpiredCookie() {}
-    override fun flush() {
-        try {
-            JcefRuntime.flushCookies()
-        } catch (_: Throwable) {
-        }
-    }
+    override fun flush() {}
 }
 
 open class WebStorage private constructor() {

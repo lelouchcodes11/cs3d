@@ -494,6 +494,22 @@ object DevServer {
                 }
                 ok(ex, sb.toString())
             }
+            "/substyle" -> {
+                // dev: change the subtitle font as the style editor does (saved for every video, sent to the player): /substyle?font=Netflix | font=none | file=C:/Windows/Fonts/arial.ttf
+                with(com.lagradost.cloudstream3.ui.subtitles.SubtitlesFragment.Companion) {
+                    val old = subtitleStyleState.value
+                    val style = when {
+                        q["file"] != null -> old.copy(font = com.lagradost.cloudstream3.ui.subtitles.SubtitleFont.Custom, typefaceFilePath = q["file"])
+                        q["font"] == "none" -> old.copy(font = null, typefaceFilePath = null)
+                        q["font"] != null -> old.copy(font = com.lagradost.cloudstream3.ui.subtitles.SubtitleFont.valueOf(q["font"]!!), typefaceFilePath = null)
+                        else -> old
+                    }
+                    subtitleStyleState.value = style
+                    com.lagradost.desktop.runtime.AndroidRuntime.context.saveStyle(style)
+                    applyStyleEvent.invoke(style)
+                    ok(ex, "font=${style.font} file=${style.typefaceFilePath} saved=${getCurrentSavedStyle().font}")
+                }
+            }
             "/addsub" -> {
                 // dev: add an external subtitle file to the playing video and select it
                 val p = com.lagradost.desktop.player.MpvPlayer.active ?: return ok(ex, "no player")
@@ -760,6 +776,21 @@ object DevServer {
                 onEdt { com.lagradost.desktop.NativeLinks.open(u) }
                 ok(ex)
             }
+            "/webstate" -> ok(ex, com.lagradost.desktop.runtime.web.wv2.WebView2Runtime.describe())
+            "/resolvetest" -> {
+                // dev: WebViewResolver (the hidden browser of extractors): loads url, returns the first request matching `match` and how long it took
+                val url = q["url"] ?: "https://httpbin.org/html"
+                val match = Regex(q["match"] ?: """httpbin\.org/(html|get)""")
+                val started = System.currentTimeMillis()
+                val text = runCatching {
+                    kotlinx.coroutines.runBlocking {
+                        val resolver = com.lagradost.cloudstream3.network.WebViewResolver(match, timeout = 30_000L)
+                        val (found, extra) = resolver.resolveUsingWebView(okhttp3.Request.Builder().url(url).build()) { true }
+                        "found=${found?.url} extra=${extra.size} ms=${System.currentTimeMillis() - started}"
+                    }
+                }.getOrElse { "error: $it" }
+                ok(ex, text)
+            }
             "/cookietest" -> {
                 // dev: what a plugin login sees: a WebView page sets a cookie, onPageFinished reads it with CookieManager.getCookie (UI thread)
                 val url = q["url"] ?: "https://httpbin.org/cookies/set?ui=test${System.currentTimeMillis() % 100000}"
@@ -770,8 +801,8 @@ object DevServer {
                     wv.setWebViewClient(object : android.webkit.WebViewClient() {
                         override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                             val c = android.webkit.CookieManager.getInstance().getCookie(url)
-                            val jar = com.lagradost.desktop.runtime.web.JcefRuntime.allCookies().joinToString { it.domain + "|" + it.name + "|" + it.path }
-                            result.complete("page=$url cookie=$c jar=[$jar] ready=${com.lagradost.desktop.runtime.web.JcefRuntime.isReady}")
+                            val jar = com.lagradost.desktop.runtime.web.WebCookies.all().joinToString { it.domain + "|" + it.name + "|" + it.path }
+                            result.complete("page=$url cookie=$c jar=[$jar] webview2=${com.lagradost.desktop.runtime.web.WebRuntime.usesWebView2}")
                             view?.destroy()
                         }
                     })
@@ -823,6 +854,26 @@ object DevServer {
                     com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(found.second), emptyList()), 0, null))
                 }
                 ok(ex, "playing ${found.first} / ${found.second.name}")
+            }
+            "/playsearch" -> {
+                // dev: search a provider, open the first movie found and play its first link (whose name has `link`): /playsearch?provider=istreamflare&q=Inception&link=IStreamCDN
+                val providerName = q["provider"]!!.lowercase()
+                val wanted = q["link"] ?: ""
+                val api = com.lagradost.cloudstream3.APIHolder.apis.firstOrNull { it.name.lowercase().contains(providerName) } ?: return ok(ex, "no provider")
+                val found = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    val results = runCatching { api.search(q["q"]!!, 1)?.items ?: emptyList() }.getOrDefault(emptyList())
+                    for (item in results.take(3)) {
+                        val data = (runCatching { api.load(item.url) }.getOrNull() as? com.lagradost.cloudstream3.MovieLoadResponse)?.dataUrl ?: continue
+                        val links = java.util.Collections.synchronizedList(ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>())
+                        kotlinx.coroutines.withTimeoutOrNull(40_000) { runCatching { api.loadLinks(data, false, {}, { links.add(it) }) } }
+                        links.firstOrNull { it.name.contains(wanted, true) }?.let { return@runBlocking item.name to it }
+                    }
+                    null
+                } ?: return ok(ex, "no such link")
+                onEdt {
+                    com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(found.second), emptyList()), 0, null))
+                }
+                ok(ex, "playing ${found.first} / ${found.second.name} ${found.second.type}")
             }
             "/provider" -> {
                 // dev: select the Home provider by name, optionally search in it only: /provider?name=Kisskh&q=squid

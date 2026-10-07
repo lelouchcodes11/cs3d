@@ -11,7 +11,7 @@ import com.lagradost.cloudstream3.mvvm.safe
 import com.lagradost.cloudstream3.utils.Coroutines.atomicListOf
 import com.lagradost.cloudstream3.utils.Coroutines.main
 import com.lagradost.desktop.runtime.web.HeadlessBrowser
-import com.lagradost.desktop.runtime.web.JcefRuntime
+import com.lagradost.desktop.runtime.web.WebRuntime
 import com.lagradost.nicehttp.requestCreator
 import io.ktor.http.Url
 import io.ktor.http.decodeURLPart
@@ -22,13 +22,13 @@ import okhttp3.Request
 import okhttp3.Response
 
 /**
- * Desktop implementation of WebViewResolver on top of Chromium (JCEF).
+ * Desktop implementation of WebViewResolver on a hidden browser (Edge WebView2, or bundled Chromium where it is missing).
  *
  * Same contract as the Android implementation: the page is loaded in a hidden browser, every
  * request is matched against [interceptUrl] / [additionalUrls], [script] is evaluated on each
  * request and the browser is destroyed on match or after [timeout]. Requests are observed natively
  * instead of being proxied through OkHttp, so [useOkhttp] only affects nothing but is kept for API
- * compatibility; Chromium always performs the requests (with its own cookie store).
+ * compatibility; the browser always performs the requests.
  *
  * @param interceptUrl will stop the WebView when reaching this url.
  * @param additionalUrls this will make resolveUsingWebView also return all other requests matching the list of Regex.
@@ -55,7 +55,7 @@ actual class WebViewResolver actual constructor(
 
         @JvmName("getWebViewUserAgent1")
         fun getWebViewUserAgent(): String? {
-            return webViewUserAgent ?: JcefRuntime.defaultUserAgent.also { webViewUserAgent = it }
+            return webViewUserAgent ?: WebRuntime.defaultUserAgent.also { webViewUserAgent = it }
         }
 
         // Suppress media and asset requests as we don't display them anywhere

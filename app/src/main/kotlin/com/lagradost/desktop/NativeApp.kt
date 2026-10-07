@@ -11,6 +11,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -152,7 +153,8 @@ fun ApplicationScope.NativeWindow() {
                 androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
                     // a window that is not maximized has its title bar above the app, not over it
                     ExternalTitleBar()
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                    // clipped: the ambient artwork behind the pages is drawn larger than the window and spilled over the title bar (a colour fade in it)
+                    Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                         com.lagradost.desktop.ui.fluent.ScaledContent {
                             com.lagradost.desktop.ui.StartupReveal {
                                 AppShell()

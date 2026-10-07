@@ -35,7 +35,9 @@ import com.lagradost.cloudstream3.ui.player.SubtitleData
 import com.lagradost.cloudstream3.ui.player.SubtitleOrigin
 import com.lagradost.cloudstream3.utils.SubtitleHelper
 import com.lagradost.desktop.core.ioTask
+import com.lagradost.desktop.ui.fluent.Appearance
 import com.lagradost.desktop.ui.fluent.Button
+import com.lagradost.desktop.ui.fluent.AudioDecoder
 import com.lagradost.desktop.ui.fluent.ButtonKind
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
@@ -129,39 +131,52 @@ fun openTracksDialog(s: PlayerSession) {
     val audioStart = audio.indexOfFirst { it.id == s.currentAudio()?.id }.coerceAtLeast(0)
     var videoPick by mutableStateOf(videoStart)
     var audioPick by mutableStateOf(audioStart)
+    // the audio decoder (SW / HW / HW+): saved for every video and swapped in the playing one; chosen on a second page of this dialog
+    val decoderStart = Appearance.audioDecoder
+    var decoderPick by mutableStateOf(decoderStart)
+    var decoderPage by mutableStateOf(false)
+    val decodingNow = com.lagradost.desktop.player.MpvPlayer.active?.audioDecodingNow()
     fun resume() { if (wasPlaying) s.play() }
 
     Overlays.show(
         Overlays.Dialog(
-            title = null, primary = "Apply", close = "Cancel", width = 860.dp,
+            title = null, primary = "Apply", close = "Cancel", width = if (video.isNotEmpty()) 860.dp else 520.dp,
             onPrimary = {
                 if (audioPick != audioStart) audio.getOrNull(audioPick)?.let { s.selectAudio(it) }
                 if (videoPick != videoStart) video.getOrNull(videoPick)?.let { s.selectVideo(it) }
+                if (decoderPick != decoderStart) {
+                    Appearance.audioDecoder = decoderPick
+                    Appearance.save()
+                    ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyAudioDecoder() }
+                }
                 resume()
             },
             onClose = { resume() },
         ) {
-            val showVideo = video.size > 1
-            val showAudio = audio.size > 1
-            if (!showVideo && !showAudio) {
-                Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                    FText("There are no other audio or video tracks in this video.", color = Fluent.colors.textSecondary)
+            if (decoderPage) Column(Modifier.fillMaxWidth().height(380.dp)) {
+                ColumnHeader("Audio decoder") { Button("Tracks", { decoderPage = false }, kind = ButtonKind.Subtle, icon = Icons.Back) }
+                AudioDecoder.entries.forEach { d ->
+                    ChoiceRow(d.label, d == decoderPick) { decoderPick = d }
+                    FText(d.detail, Modifier.padding(start = 38.dp, end = 10.dp, bottom = 6.dp), style = Fluent.type.caption, color = Fluent.colors.textSecondary)
                 }
-            } else {
-                Row(Modifier.fillMaxWidth().height(380.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    if (showVideo) Column(Modifier.weight(1f).fillMaxSize()) {
-                        ColumnHeader("Video tracks")
-                        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                            itemsIndexed(video) { i, t ->
-                                ChoiceRow(t.label ?: (if (t.width == null || t.height == null) "${i + 1}" else "${t.width}x${t.height}"), i == videoPick) { videoPick = i }
-                            }
+                decodingNow?.let {
+                    FText("Now: $it", Modifier.padding(horizontal = 10.dp, vertical = 10.dp), style = Fluent.type.caption, color = Fluent.colors.textTertiary)
+                }
+            } else Row(Modifier.fillMaxWidth().height(380.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                // every track is listed, also when there is only one
+                if (video.isNotEmpty()) Column(Modifier.weight(1f).fillMaxSize()) {
+                    ColumnHeader("Video tracks")
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                        itemsIndexed(video) { i, t ->
+                            ChoiceRow(t.label ?: (if (t.width == null || t.height == null) "${i + 1}" else "${t.width}x${t.height}"), i == videoPick) { videoPick = i }
                         }
                     }
-                    if (showAudio) Column(Modifier.weight(1f).fillMaxSize()) {
-                        ColumnHeader("Audio tracks")
-                        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                            itemsIndexed(audio) { i, t -> ChoiceRow(audioLabel(t, i), i == audioPick) { audioPick = i } }
-                        }
+                }
+                Column(Modifier.weight(1f).fillMaxSize()) {
+                    ColumnHeader("Audio tracks") { Button("Decoder", { decoderPage = true }, kind = ButtonKind.Subtle, icon = Icons.Audio) }
+                    if (audio.isEmpty()) FText("No audio track", Modifier.padding(horizontal = 10.dp, vertical = 9.dp), color = Fluent.colors.textSecondary)
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                        itemsIndexed(audio) { i, t -> ChoiceRow(audioLabel(t, i), i == audioPick) { audioPick = i } }
                     }
                 }
             }

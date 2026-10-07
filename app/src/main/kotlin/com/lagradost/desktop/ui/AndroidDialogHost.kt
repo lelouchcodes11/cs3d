@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -107,8 +109,15 @@ fun AndroidDialogHost(dialog: Dialog) {
             // clicks inside the dialog must not reach the dim area
             .pointerInput(Unit) { detectTapGestures { } }
         // a fixed width window (bottom sheet, alert, MATCH_PARENT) measures its decor EXACTLY like Android
+        // a dialog laid out for a phone screen (no scrolling view of its own, such as the donation dialogs of the Phisher and CNCVerse
+        // extensions) can be taller than the window: it scrolls inside it, so its lower buttons stay reachable
+        val scrolls = !isSheet && wantH != ViewGroup.LayoutParams.MATCH_PARENT && !hasScrollingView(decor)
         Box(box, propagateMinConstraints = width != null) {
-            AndroidViewHost(decor)
+            if (scrolls) {
+                Box(Modifier.verticalScroll(rememberScrollState()), propagateMinConstraints = width != null) { AndroidViewHost(decor) }
+            } else {
+                AndroidViewHost(decor)
+            }
         }
     }
 }
@@ -125,4 +134,13 @@ private fun alignmentFor(gravity: Int): Alignment {
         else -> 0f
     }
     return androidx.compose.ui.BiasAlignment(h, v)
+}
+
+/** Whether [view] has a view that scrolls by itself (lists, scroll views, web pages): such a dialog keeps the window's height limit */
+private fun hasScrollingView(view: android.view.View): Boolean {
+    if (view is android.widget.ScrollView || view is android.widget.AbsListView || view is android.webkit.WebView) return true
+    val name = view.javaClass.name
+    if (name.endsWith("NestedScrollView") || name.endsWith("RecyclerView") || name.endsWith("ViewPager2")) return true
+    if (view is ViewGroup) for (i in 0 until view.getChildCount()) if (view.getChildAt(i)?.let(::hasScrollingView) == true) return true
+    return false
 }

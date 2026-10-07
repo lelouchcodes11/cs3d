@@ -1,7 +1,7 @@
 package android.webkit
 
 import android.content.Context
-import com.lagradost.desktop.runtime.web.JcefRuntime
+import com.lagradost.desktop.runtime.web.WebRuntime
 
 /**
  * WebSettings of a JCEF backed WebView. Settings that Chromium can apply per browser are pushed to
@@ -29,7 +29,7 @@ abstract class WebSettings {
         const val MENU_ITEM_NONE = 0
 
         @JvmStatic
-        fun getDefaultUserAgent(context: Context?): String = JcefRuntime.defaultUserAgent
+        fun getDefaultUserAgent(context: Context?): String = WebRuntime.defaultUserAgent
     }
 
     abstract fun setJavaScriptEnabled(flag: Boolean)
@@ -138,7 +138,7 @@ internal class JcefWebSettings(private val view: WebView) : WebSettings() {
         view.engine.applyUserAgent(getUserAgentString())
     }
 
-    override fun getUserAgentString(): String = userAgent ?: JcefRuntime.defaultUserAgent
+    override fun getUserAgentString(): String = userAgent ?: WebRuntime.defaultUserAgent
     override fun setBlockNetworkImage(flag: Boolean) {
         blockImages = flag
     }

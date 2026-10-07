@@ -104,7 +104,7 @@ internal object BrowserGate {
  * WebViewClient/WebChromeClient callbacks with Android threading semantics: page callbacks on the
  * main (UI) thread, shouldInterceptRequest on a background thread.
  */
-internal class JcefWebViewEngine(private val view: WebView) {
+internal class JcefWebViewEngine(private val view: WebView) : WebViewBackend {
     companion object {
         private const val TAG = "WebView"
         private const val DEFAULT_WIDTH = 1280
@@ -123,10 +123,10 @@ internal class JcefWebViewEngine(private val view: WebView) {
     private val pending = CopyOnWriteArrayList<(CefBrowser) -> Unit>()
     private var creating = AtomicBoolean(false)
 
-    @Volatile var title: String? = null
-    @Volatile var progress: Int = 0
-    @Volatile var originalUrl: String? = null
-    @Volatile var contentHeight: Int = 0
+    @Volatile override var title: String? = null
+    @Volatile override var progress: Int = 0
+    @Volatile override var originalUrl: String? = null
+    @Volatile override var contentHeight: Int = 0
     @Volatile private var lastUrl: String? = null
     @Volatile private var attached = false
 
@@ -147,7 +147,7 @@ internal class JcefWebViewEngine(private val view: WebView) {
         clientChanged()
     }
 
-    fun clientChanged() {
+    override fun clientChanged() {
         val c = view.client
         fun overridden(name: String, vararg types: Class<*>): Boolean = try {
             c.javaClass.getMethod(name, *types).declaringClass != WebViewClient::class.java
@@ -269,7 +269,7 @@ internal class JcefWebViewEngine(private val view: WebView) {
         if (!attached && view.getWidth() == 0) main.post { view.layout(0, 0, pxW, pxH) }
     }
 
-    fun applyUserAgent(ua: String) {
+    override fun applyUserAgent(ua: String) {
         withBrowser { b -> setupExecutor.execute { applyUserAgentInternal(b, ua) } }
     }
 
@@ -277,20 +277,20 @@ internal class JcefWebViewEngine(private val view: WebView) {
         devTools(b, "Emulation.setUserAgentOverride", JSONObject().put("userAgent", ua))
     }
 
-    fun layoutChanged() {
+    override fun layoutChanged() {
         val b = browser ?: return
         if (created) setupExecutor.execute { applyViewport(b) }
     }
 
-    fun visibilityChanged() {}
+    override fun visibilityChanged() {}
 
-    fun attachedChanged(isAttached: Boolean) {
+    override fun attachedChanged(isAttached: Boolean) {
         attached = isAttached
     }
 
-    fun uiComponent(): java.awt.Component? = browser?.uiComponent
+    override fun uiComponent(): java.awt.Component? = browser?.uiComponent
 
-    fun destroy() {
+    override fun destroy() {
         if (destroyed) return
         destroyed = true
         pending.clear()
@@ -314,9 +314,9 @@ internal class JcefWebViewEngine(private val view: WebView) {
 
     // ------------------------------------------------------------------ navigation
 
-    fun currentUrl(): String? = lastUrl ?: browser?.url?.takeIf { it != "about:blank" }
+    override fun currentUrl(): String? = lastUrl ?: browser?.url?.takeIf { it != "about:blank" }
 
-    fun load(url: String, headers: Map<String, String>, postData: ByteArray?) {
+    override fun load(url: String, headers: Map<String, String>, postData: ByteArray?) {
         if (originalUrl == null) originalUrl = url
         programmatic.add(url)
         if (headers.isNotEmpty()) pendingHeaders[url] = headers
@@ -324,35 +324,35 @@ internal class JcefWebViewEngine(private val view: WebView) {
         withBrowser { it.loadURL(url) }
     }
 
-    fun loadDataAt(baseUrl: String, data: String, mime: String, encoding: String) {
+    override fun loadDataAt(baseUrl: String, data: String, mime: String, encoding: String) {
         pendingData[baseUrl] = Triple(data, mime, encoding)
         load(baseUrl, emptyMap(), null)
     }
 
-    fun reload() = withBrowser { it.reload() }
-    fun stopLoading() {
+    override fun reload() = withBrowser { it.reload() }
+    override fun stopLoading() {
         browser?.takeIf { created }?.stopLoad()
     }
 
-    fun canGoBack(): Boolean = browser?.canGoBack() ?: false
-    fun canGoForward(): Boolean = browser?.canGoForward() ?: false
-    fun goBack() = withBrowser { it.goBack() }
-    fun goForward() = withBrowser { it.goForward() }
+    override fun canGoBack(): Boolean = browser?.canGoBack() ?: false
+    override fun canGoForward(): Boolean = browser?.canGoForward() ?: false
+    override fun goBack() = withBrowser { it.goBack() }
+    override fun goForward() = withBrowser { it.goForward() }
 
-    fun clearCache() = withBrowser { b -> setupExecutor.execute { devTools(b, "Network.clearBrowserCache") } }
+    override fun clearCache() = withBrowser { b -> setupExecutor.execute { devTools(b, "Network.clearBrowserCache") } }
 
-    fun clearStorage(origin: String?) = withBrowser { b ->
+    override fun clearStorage(origin: String?) = withBrowser { b ->
         setupExecutor.execute {
             val o = origin ?: currentUrl()?.let { u -> try { val uri = java.net.URI(u); "${uri.scheme}://${uri.authority}" } catch (_: Exception) { null } }
             if (o != null) devTools(b, "Storage.clearDataForOrigin", JSONObject().put("origin", o).put("storageTypes", "all"))
         }
     }
 
-    fun find(text: String) = withBrowser { b -> b.find(text, true, false, false) }
+    override fun find(text: String) = withBrowser { b -> b.find(text, true, false, false) }
 
     // ------------------------------------------------------------------ javascript
 
-    fun evaluate(script: String, callback: ValueCallback<String>?) {
+    override fun evaluate(script: String, callback: ValueCallback<String>?) {
         withBrowser { b ->
             setupExecutor.execute {
                 val response = devTools(
@@ -377,12 +377,12 @@ internal class JcefWebViewEngine(private val view: WebView) {
         }
     }
 
-    fun addJavascriptInterface(obj: Any, name: String) {
+    override fun addJavascriptInterface(obj: Any, name: String) {
         jsInterfaces[name] = obj
         withBrowser { b -> setupExecutor.execute { installBridgeScript(b) } }
     }
 
-    fun removeJavascriptInterface(name: String) {
+    override fun removeJavascriptInterface(name: String) {
         jsInterfaces.remove(name)
         withBrowser { b -> setupExecutor.execute { installBridgeScript(b) } }
     }
@@ -462,7 +462,7 @@ internal class JcefWebViewEngine(private val view: WebView) {
 
     // ------------------------------------------------------------------ input
 
-    fun dispatchMouse(event: MotionEvent) {
+    override fun dispatchMouse(event: MotionEvent) {
         val type = when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> "mousePressed"
             MotionEvent.ACTION_UP -> "mouseReleased"

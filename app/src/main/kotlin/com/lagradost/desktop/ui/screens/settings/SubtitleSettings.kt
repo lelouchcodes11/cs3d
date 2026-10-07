@@ -77,9 +77,14 @@ fun SubtitleStyleEditor(modifier: Modifier = Modifier, initial: SaveCaptionStyle
             stringResource(R.string.uppercase_all_subtitles), stringResource(R.string.background_radius),
             stringResource(R.string.subs_window_color), stringResource(R.string.subtitles_remove_bloat),
         )
+        val fontTitle = stringResource(R.string.subs_font)
+        val fontRow = fontChoice(fontTitle, stringResource(R.string.normal), style)
         val prefs = SubtitlesScreen.getPreferences().mapNotNull { p ->
             when (p) {
-                is Preference.PreferenceGroup -> p.copy(preferenceItems = p.preferenceItems.filter { it.title !in hidden }).takeIf { it.preferenceItems.isNotEmpty() }
+                is Preference.PreferenceGroup -> p.copy(
+                    preferenceItems = p.preferenceItems.filter { it.title !in hidden }
+                        .map { item -> if (item is Preference.PreferenceItem.ListPreference<*> && item.title == fontTitle) fontRow.copy(icon = item.icon) else item }
+                ).takeIf { it.preferenceItems.isNotEmpty() }
                 is Preference.PreferenceItem.CustomPreference -> null // the Android preview, replaced by SubtitlePreview
                 else -> p
             }
@@ -137,12 +142,86 @@ fun SubtitlePreview(style: SaveCaptionStyle, modifier: Modifier = Modifier) {
     }
 }
 
+
+/**
+ * The font row of the subtitle look: the default, the packaged fonts, fonts of Windows (no file to look for) and a font file of one's own,
+ * all in one list. Like every other row it changes the saved style, so a font chosen while a video plays stays for every video.
+ * Keys: "" default, "b:<SubtitleFont>" packaged, "w:<path>" a Windows font, "f:<path>" the user's file, "pick" asks for a file.
+ */
+private fun fontChoice(title: String, normal: String, style: SaveCaptionStyle): Preference.PreferenceItem.ListPreference<String> {
+    val packaged = SubtitleFont.entries.filter { it != SubtitleFont.Custom }.associate { "b:${it.name}" to it.label }
+    val windows = SubtitleStyler.windowsFonts.associate { (label, file) -> "w:${file.absolutePath}" to "$label (Windows)" }
+    fun keyOf(s: SaveCaptionStyle): String = when {
+        s.font == null -> ""
+        s.font == SubtitleFont.Custom -> s.typefaceFilePath?.let { if ("w:$it" in windows) "w:$it" else "f:$it" } ?: ""
+        else -> "b:${s.font.name}"
+    }
+    // every font file added once stays in the list (kept in the data folder), and so does the one in use if it lives elsewhere
+    val files = savedFonts() + listOfNotNull(keyOf(style).takeIf { it.startsWith("f:") }?.let { java.io.File(it.removePrefix("f:")) })
+    val own = files.distinctBy { it.absolutePath }.associate { "f:${it.absolutePath}" to "${fontLabel(it)} (your font)" }
+    val entries = linkedMapOf("" to normal) + packaged + windows + own + ("pick" to "Font file…")
+    val store = com.mihon.common.preference.StatePreferenceStore(subtitleStyleState)
+    return Preference.PreferenceItem.ListPreference(
+        preference = store.field(
+            get = { keyOf(this) },
+            set = { key ->
+                when {
+                    key.isEmpty() -> copy(font = null, typefaceFilePath = null)
+                    key.startsWith("b:") -> copy(font = SubtitleFont.valueOf(key.removePrefix("b:")), typefaceFilePath = null)
+                    key.startsWith("w:") || key.startsWith("f:") -> copy(font = SubtitleFont.Custom, typefaceFilePath = key.substring(2))
+                    else -> this
+                }
+            },
+        ),
+        entries = entries,
+        title = title,
+        onValueChanged = { key ->
+            if (key == "pick") {
+                pickFontFile()?.let { path -> subtitleStyleState.value = subtitleStyleState.value.copy(font = SubtitleFont.Custom, typefaceFilePath = path) }
+                false
+            } else true
+        },
+    )
+}
+
+/** The folder of the user's font files: every file added stays there and in the font list */
+private val fontsFolder get() = java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.context.filesDir, "subtitle-fonts")
+
+private fun isFontFile(name: String) = name.lowercase().let { it.endsWith(".ttf") || it.endsWith(".otf") || it.endsWith(".ttc") }
+
+/** The font files added so far, by name */
+private fun savedFonts(): List<java.io.File> =
+    fontsFolder.listFiles { f -> f.isFile && isFontFile(f.name) }?.sortedBy { it.name.lowercase() } ?: emptyList()
+
+/** A font file's family name (read once per file), else its file name */
+private val fontLabels = java.util.concurrent.ConcurrentHashMap<String, String>()
+private fun fontLabel(file: java.io.File): String = fontLabels.getOrPut("${file.absolutePath}|${file.lastModified()}") {
+    SubtitleStyler.familyOf(file)?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension
+}
+
+/**
+ * A font file chosen in the Windows file dialog, copied into [fontsFolder] (the original may move) and added to the list for good;
+ * null when cancelled. The same file again is not copied twice; another file of the same name gets a name of its own.
+ */
+private fun pickFontFile(): String? {
+    val dialog = java.awt.FileDialog(com.lagradost.desktop.ui.DesktopUiHost.window, "Choose a font file", java.awt.FileDialog.LOAD)
+    dialog.setFilenameFilter { _, n -> isFontFile(n) }
+    dialog.isVisible = true
+    val file = dialog.file?.let { java.io.File(dialog.directory, it) }?.takeIf { it.isFile } ?: return null
+    return runCatching {
+        val dir = fontsFolder.also { it.mkdirs() }
+        if (file.absoluteFile.parentFile == dir.absoluteFile) return@runCatching file.absolutePath
+        val bytes = file.readBytes()
+        val base = file.nameWithoutExtension
+        val ext = file.extension.lowercase().ifBlank { "ttf" }
+        // the same font already there, or the first free name (a file the player holds open is never overwritten)
+        val copy = generateSequence(1) { it + 1 }.map { n -> java.io.File(dir, if (n == 1) "$base.$ext" else "$base-$n.$ext") }
+            .first { !it.exists() || (it.length() == bytes.size.toLong() && it.readBytes().contentEquals(bytes)) }
+        if (!copy.exists()) copy.writeBytes(bytes)
+        copy.absolutePath
+    }.getOrElse { file.absolutePath }
+}
 private fun previewFont(style: SaveCaptionStyle): FontFamily? = runCatching {
-    SubtitleStyler.prepareFonts()
-    val file = when {
-        style.font == SubtitleFont.Custom -> style.typefaceFilePath?.let { java.io.File(it) }
-        style.font != null -> SubtitleStyler.fontsDir.listFiles()?.firstOrNull { f -> f.nameWithoutExtension == com.lagradost.desktop.runtime.AndroidRuntime.context.resources.getResourceEntryName(style.font.resource) }
-        else -> null
-    } ?: return@runCatching null
+    val file = SubtitleStyler.fontFileOf(style) ?: return@runCatching null
     FontFamily(androidx.compose.ui.text.platform.Font(file))
 }.getOrNull()

@@ -26,7 +26,7 @@ object Warmups {
             val usedLastRun = prefs.getBoolean(KEY_JCEF_USED, false)
             // JcefRuntime sets it again when it starts in this run
             prefs.edit().putBoolean(KEY_JCEF_USED, false).apply()
-            if (usedLastRun && System.getProperty("cloudstream.jcefearly") == "true") {
+            if (usedLastRun && System.getProperty("cloudstream.jcefearly") == "true" && !com.lagradost.desktop.runtime.web.WebRuntime.usesWebView2) {
                 Log.i(TAG, "Chromium was needed in the last run: starting it now")
                 JcefRuntime.startAsync()
             }
@@ -46,6 +46,17 @@ object Warmups {
     }
 
     private fun work() {
+        // the bundled Chromium of older versions left about 560 MB in the data folder (its files and its profile); with WebView2 they are unused
+        if (com.lagradost.desktop.runtime.web.WebRuntime.usesWebView2) Thread({
+            Thread.sleep(20_000)
+            for (name in listOf("jcef", "webview")) {
+                val dir = java.io.File(AndroidRuntime.dataDir, name)
+                if (dir.isDirectory) {
+                    val ok = dir.deleteRecursively()
+                    Log.i(TAG, "old Chromium folder $name removed: $ok")
+                }
+            }
+        }, "old-chromium-cleanup").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
         // the XML files of the app's strings (a page's first string waited for them)
         timed("resources") { DesktopBootstrap.resourceIndex().warm(AndroidRuntime.context.resources.configuration) }
         // the saved lists the first pages read: parsing their JSON the first time includes setting up Jackson for the classes

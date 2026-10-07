@@ -154,6 +154,9 @@ object JcefRuntime {
             "--disable-blink-features=AutomationControlled",
             "--no-first-run",
             "--no-default-browser-check",
+            // no Chrome components (Widevine, speech, AI models: 110 MB in the profile), fewer renderer processes
+            "--disable-component-update",
+            "--renderer-process-limit=4",
         )
         builder.setAppHandler(object : MavenCefAppHandlerAdapter() {
             override fun stateHasChanged(state: CefApp.CefAppState) {
@@ -167,7 +170,35 @@ object JcefRuntime {
         CefCookieManager.getGlobalManager()?.setCookie(
             SENTINEL_URL, CefCookie("cs_sentinel", "1", "cloudstream-cookie-sentinel.invalid", "/", false, false, Date(), Date(), false, Date())
         )
+        // the app's jar (WebCookies) is the one that counts: Chromium gets it now, mirrors every change, and hands its jar back after page
+        // loads and every two seconds (a Cloudflare check sets its cookie without a new page)
+        runCatching {
+            deleteCookies(null, null)
+            WebCookies.all().forEach(::pushCookie)
+            WebCookies.backend = object : WebCookies.BrowserBackend {
+                override fun push(cookie: WebCookie) = cookieReads.execute { pushCookie(cookie) }
+                override fun delete(cookie: WebCookie) = cookieReads.execute {
+                    deleteCookies("https://${cookie.domain.removePrefix(".")}${cookie.path}", cookie.name)
+                    deleteCookies("http://${cookie.domain.removePrefix(".")}${cookie.path}", cookie.name)
+                }
+                override fun deleteAll() = cookieReads.execute { deleteCookies(null, null) }
+            }
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "jcef-cookie-pull").also { it.isDaemon = true } }
+                .scheduleWithFixedDelay({ refreshCookiesThen {} }, 2, 2, TimeUnit.SECONDS)
+        }.onFailure { Log.w(TAG, "cookies not shared with Chromium: ${it.message}") }
         return cefApp
+    }
+
+    private fun toWebCookie(c: CefCookie): WebCookie =
+        WebCookie(c.name, c.value ?: "", c.domain ?: "", c.path ?: "/", if (c.hasExpires) c.expires?.time else null, c.secure, c.httponly)
+
+    private fun pushCookie(c: WebCookie) {
+        val cm = CefCookieManager.getGlobalManager() ?: return
+        val hostOnly = !c.domain.startsWith(".")
+        val cookie = CefCookie(
+            c.name, c.value, if (hostOnly) "" else c.domain, c.path, c.secure, c.httpOnly, Date(), Date(), c.expires != null, Date(c.expires ?: 0L),
+        )
+        cm.setCookie("https://${c.domain.removePrefix(".")}${c.path}", cookie)
     }
 
     fun createClient(): CefClient = await().createClient()
@@ -240,7 +271,7 @@ object JcefRuntime {
     fun refreshCookiesThen(timeoutMs: Long = 3000, then: () -> Unit) {
         cookieReads.execute {
             try {
-                runCatching { cookieSnapshot.set(readCookies(timeoutMs)) }
+                runCatching { readCookies(timeoutMs).also { cookieSnapshot.set(it); WebCookies.replaceAll(it.map(::toWebCookie)) } }
             } finally {
                 then()
             }

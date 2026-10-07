@@ -588,7 +588,6 @@ private fun PlayerChrome(
     val modern = com.lagradost.desktop.ui.fluent.Appearance.playerStyle == com.lagradost.desktop.ui.fluent.PlayerStyle.Modern
     Box(Modifier.fillMaxSize()) {
         // as on Android the tracks button only exists when there is something to choose: more than one video or audio track
-        val hasTrackChoice = remember(s.listsVersion, s.status) { s.videoTracks().size > 1 || s.audioTracks().size > 1 }
         // top: back, title, what plays
         Box(
             Modifier.align(Alignment.TopStart).fillMaxWidth()
@@ -610,10 +609,11 @@ private fun PlayerChrome(
                         }
                     }
                 }
-                // the two dialogs, named, at the top right: where the picture comes from, and which audio / video tracks play
+                // the two dialogs, named, at the top right: where the picture comes from, and which audio / video tracks play and how they are decoded
                 Row(Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextPill("Sources", "Sources and subtitles") { openSourcesDialog(s) }
-                    if (hasTrackChoice) TextPill("Tracks", "Audio and video tracks") { openTracksDialog(s) }
+                    // always there, also with one track: the audio decoder (SW / HW / HW+) is chosen in it too
+                    TextPill("Tracks", "Audio and video tracks, audio decoder") { openTracksDialog(s) }
                 }
             }
         }

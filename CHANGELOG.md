@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+A much lighter app: the installer is about 40 % smaller, it takes less room on disk, and it uses less memory.
+
+**Smaller and lighter**
+- **Web pages now use Microsoft Edge WebView2, which comes with Windows 10 and 11, instead of a copy of Chromium inside the app.** The installer goes from 377 MB to about 213 MB, the installed app from about 595 MB to about 386 MB, and the data folder no longer grows by about 680 MB the first time an extension needs a web page. The old Chromium files (about 560 MB) are removed from the data folder by themselves after the update.
+- **Web pages start at once** (in a few hundredths of a second; the old Chromium needed up to two minutes the first time) and **their processes end when no page is in use**: before, about 700 MB of browser processes stayed until the app was closed. Pages an extension opens and forgets are closed after a few minutes and reopen by themselves if the extension uses them again.
+- **Less memory for the app itself**: memory it no longer needs goes back to Windows, and the picture cache of the graphics card is smaller (on PCs with integrated graphics it is ordinary RAM). The poster cache on disk is limited to 150 MB.
+- The video player library is loaded straight from the install folder instead of a second 116 MB copy in the data folder (the old copy is deleted).
+
+**Player**
+- **IStreamFlare videos can be seeked now** (Phisher repository). Their OK.ru links are DASH manifests of the "on demand" kind (one file per quality with an index for seeking); the desktop player read them as one endless piece and could not jump. Such videos now play the best quality for your screen with its sound as separate files, and seeking works like on Android.
+- Sources that need an unusual browser name (IStreamFlare's has a Cyrillic letter in it) got "HTTP 400" through the app's playlist server, which silently left the name out; it is now sent as it is.
+- **Audio decoder (SW / HW / HW+)**: in the player under *Tracks > Decoder* (applies at once, the video keeps playing) or in Settings > Player > Audio. SW: the app decodes the sound (speakers, headphones). HW: Dolby Digital and DTS are decoded by your AV receiver or TV (HDMI or optical). HW+: also Dolby Digital Plus, TrueHD and DTS-HD (HDMI receivers). When the device refuses a format the app decodes it itself.
+- The *Tracks* button is always there and lists every track, also when a video has only one.
+- **The title bar is always plain dark**: with the *Ambient* backdrop the artwork colours of the page spilled into the title bar of a window that is not maximized (a colour fade behind minimize / close).
+
+**Subtitles**
+- **More fonts**: besides the fonts that come with the app, the Font list now offers fonts of Windows (Arial, Calibri, Georgia, Segoe UI, Tahoma and more, the ones your PC has) and *Font file…* for a font of your own (TTF, OTF, TTC).
+- A font chosen in Settings or in the player's subtitle settings is used for every video, also the next ones.
+- **Google Sans** never showed (the app drew the default font instead); it does now, also bold and italic.
+- A font file of your own only worked the first time: choosing another one later fell back to the default font. Every font file works now, also when it is changed while a video plays.
+- **Fonts you add stay in the Font list for good** (shown as "your font", in Settings and in the player): each one is kept in the data folder, so you can switch between them any time without picking the file again.
+
+**Cloudflare**
+- **AnimePahe's Cloudflare check now passes by itself in about 10 seconds** with WebView2 (it failed with the old built-in Chromium). Cookies from web pages are kept by the app itself, so reading them no longer starts a browser; they are carried over between runs.
+
+**Known**
+- Cookies of the old built-in browser are not carried over: sites behind Cloudflare may run their check once more.
+- On a PC without WebView2 (rare: it ships with Windows 11 and comes with Edge updates on Windows 10) the app falls back to Chromium and downloads it (about 150 MB) the first time a page is needed.
+
 ## 0.1.8 (pre-release)
 
 Live TV playlists that did not play now do, AnimePahe's home page and Cloudflare window work, and no more frozen window while Cloudflare is being solved.

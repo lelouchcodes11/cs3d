@@ -51,8 +51,8 @@ object ImageLoader {
             .diskCache {
                 DiskCache.Builder()
                     .directory(context.cacheDir.resolve("cs3_image_cache").toOkioPath())
-                    .maxSizeBytes(512L * 1024 * 1024) // 512 MB
-                    .maxSizePercent(0.04) // max 4% of storage for disk caching
+                    // desktop: a fixed 150 MB (the percentage of the disk, capped at 250 MB, made it the largest folder of the data)
+                    .maxSizeBytes(150L * 1024 * 1024)
                     .build()
             }
             /** Pass interceptors with care, unnecessary passing tokens to servers

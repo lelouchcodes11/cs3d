@@ -116,7 +116,7 @@ open class WebView : AbsoluteLayout {
         abstract fun onComplete(requestId: Long)
     }
 
-    internal val engine: JcefWebViewEngine
+    internal val engine: WebViewBackend
     private val mSettings: JcefWebSettings
     @Volatile
     internal var client: WebViewClient = WebViewClient()
@@ -131,7 +131,7 @@ open class WebView : AbsoluteLayout {
     constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int) : this(context, attrs, defStyleAttr, 0)
     constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int, defStyleRes: Int) : super(context, attrs, defStyleAttr) {
         mSettings = JcefWebSettings(this)
-        engine = JcefWebViewEngine(this)
+        engine = WebViewBackend.create(this)
         live.add(WeakReference(this))
         setFocusable(true)
         setFocusableInTouchMode(true)

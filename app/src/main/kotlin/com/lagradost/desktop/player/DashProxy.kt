@@ -181,7 +181,7 @@ object DashProxy {
             if (System.currentTimeMillis() - entry.manifestAt < 1000) return
             runCatching {
                 val builder = Request.Builder().url(entry.url.toHttpUrlOrNull() ?: return)
-                for ((k, v) in entry.headers) if (!k.equals("Host", true) && !k.equals("Range", true) && !k.equals("Content-Length", true) && !k.equals("Cookie", true)) runCatching { builder.header(k, v) }
+                for ((k, v) in entry.headers) if (!k.equals("Host", true) && !k.equals("Range", true) && !k.equals("Content-Length", true) && !k.equals("Cookie", true)) com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
                 entry.cookieFor(builder.build().url.host, entry.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value)?.let { builder.header("Cookie", it) }
                 if (entry.headers.keys.none { it.equals("User-Agent", true) }) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
                 builder.cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
@@ -245,7 +245,7 @@ object DashProxy {
         for ((k, v) in entry.headers) {
             if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Range", true) || k.equals("Cookie", true)) continue
             if (k.equals("User-Agent", true)) userAgent = true
-            runCatching { builder.header(k, v) }
+            com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
         }
         entry.cookieFor(builder.build().url.host, entry.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value)?.let { builder.header("Cookie", it) }
         if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)

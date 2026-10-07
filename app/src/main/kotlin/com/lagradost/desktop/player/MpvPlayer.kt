@@ -183,6 +183,13 @@ open class MpvPlayer : IPlayer {
     private var proxyTried = false
     // a plain video file that was refused (403 ...) is tried once more through RangeProxy (bounded ranges, the app's HTTP client)
     private var useRangeProxy = false
+
+    /** DASH manifests read ahead: the files of an on-demand one, or [NO_FILES] for any other kind (see OnDemandDash) */
+    private val onDemand = java.util.concurrent.ConcurrentHashMap<String, OnDemandDash.Files>()
+    private val NO_FILES = OnDemandDash.Files("", null, 0)
+
+    /** Counts loads: a manifest read ahead for an older load does not start it any more */
+    private var loadGeneration = 0
     private var rangeTried = false
     @Volatile
     private var lastHttpStatus = 0
@@ -300,6 +307,7 @@ open class MpvPlayer : IPlayer {
             // decoded frames are read back for the software renderer
             mpv.mpv_set_option_string(ctx, "hwdec", "auto-copy-safe")
         }
+        mpv.mpv_set_option_string(ctx, "audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
         if (headless) mpv.mpv_set_option_string(ctx, "ao", "null")
         mpv.mpv_set_option_string(ctx, "keep-open", "yes")
         mpv.mpv_set_option_string(ctx, "idle", "yes")
@@ -447,7 +455,14 @@ open class MpvPlayer : IPlayer {
                             val message = mpv.mpv_error_string(end.error) ?: "error ${end.error}"
                             val failed = currentLink
                             val wrapper = failed?.url?.contains("enc-dec.app/api/parse-", ignoreCase = true) == true
-                            if (failed != null && !proxyTried && (isHls(failed) || isDash(failed)) && !(wrapper && useProxy)) {
+                            if (failed != null && onDemand[failed.url]?.let { it !== NO_FILES } == true) {
+                                // the files of an on-demand manifest did not open: the manifest itself (playable, not seekable)
+                                onDemand[failed.url] = NO_FILES
+                                Log.i(TAG, "the files of the on-demand DASH manifest did not play ($message), trying the manifest")
+                                mainHandler.post {
+                                    currentContext?.let { ctx -> loadPlayer(ctx, true, currentLink, currentUri, startPositionMs, activeSubtitles, preferredSubtitle, true, false) }
+                                }
+                            } else if (failed != null && !proxyTried && (isHls(failed) || isDash(failed)) && !(wrapper && useProxy)) {
                                 // once more the other way: plain when the playlist server failed, through it when the plain address did
                                 proxyTried = true
                                 useProxy = !useProxy
@@ -619,6 +634,16 @@ open class MpvPlayer : IPlayer {
         mpv.mpv_set_property_string(ctx, name, value)
     }
 
+    /** A new audio decoder choice (SW / HW / HW+) while a video plays: mpv reopens the sound in place, the position stays */
+    fun applyAudioDecoder() = setMpvProperty("audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
+
+    /** How the sound of the playing track is decoded: its codec, and whether it goes undecoded to the receiver ("spdif-ac3") */
+    fun audioDecodingNow(): String? {
+        val codec = getMpvPropertyString("audio-codec-name")?.takeIf { it.isNotBlank() } ?: return null
+        val format = getMpvPropertyString("audio-params/format").orEmpty()
+        return if (format.startsWith("spdif")) "$codec sent to the receiver / TV" else "$codec decoded by the app"
+    }
+
     fun mpvCommandResult(vararg args: String): Int {
         val ctx = handle ?: return -1
         val arr = arrayOfNulls<String>(args.size + 1)
@@ -786,6 +811,28 @@ open class MpvPlayer : IPlayer {
     ) {
         initMpvIfNeeded()
         currentContext = context
+        // a DASH manifest is looked at first, off this thread: an on-demand one (one file per quality) is played as its files, which
+        // can be seeked; ffmpeg's DASH reader cannot seek in them (OnDemandDash)
+        val generation = ++loadGeneration
+        if (link != null && isDash(link) && link !is com.lagradost.cloudstream3.utils.DrmExtractorLink && link.url.startsWith("http", ignoreCase = true) &&
+            !link.url.contains("127.0.0.1") && !onDemand.containsKey(link.url)
+        ) {
+            val headers = buildMap {
+                if (link.headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) put("User-Agent", defaultUserAgent)
+                putAll(link.headers)
+                if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
+            }
+            Thread({
+                val files = runCatching { OnDemandDash.resolve(com.lagradost.desktop.net.UrlFix.encode(link.url), headers) }
+                    .onFailure { Log.w(TAG, "DASH manifest not read ahead: ${it.message}") }.getOrNull()
+                onDemand[link.url] = files ?: NO_FILES
+                mainHandler.post {
+                    if (generation == loadGeneration && !isReleased) loadPlayer(context, sameEpisode, link, data, startPosition, subtitles, subtitle, autoPlay, preview)
+                }
+            }, "dash-probe").apply { isDaemon = true }.start()
+            return
+        }
+        val onDemandFiles = link?.let { onDemand[it.url] }?.takeIf { it !== NO_FILES }
         if (link != null && link.url != lastLinkUrl) {
             lastLinkUrl = link.url
             // HLS goes through the local playlist server: it loads the many playlists of a master at the same time (ffmpeg asks
@@ -857,7 +904,9 @@ open class MpvPlayer : IPlayer {
                     setMpvProperty("referrer", link.referer)
                 }
                 val address = com.lagradost.desktop.net.UrlFix.encode(link.url)
-                if (useRangeProxy) RangeProxy.wrap(address, buildMap {
+                // mpv fetches the files itself, with the headers set above
+                if (onDemandFiles != null) onDemandFiles.video
+                else if (useRangeProxy) RangeProxy.wrap(address, buildMap {
                     if (link.headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) put("User-Agent", defaultUserAgent)
                     putAll(link.headers)
                     if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
@@ -894,8 +943,10 @@ open class MpvPlayer : IPlayer {
             isEnded = false
             userPaused = autoPlay != true
             // the audio track of a DASH stream is chosen here, see setPreferredAudioTrack
-            val audioId = dashAudio?.takeIf { link != null && it.first == link.url }?.second
-            if (audioId != null) mpvCommand("loadfile", url, "replace", "-1", "aid=$audioId") else mpvCommand("loadfile", url, "replace")
+            val audioId = dashAudio?.takeIf { link != null && it.first == link.url && onDemandFiles == null }?.second
+            // the sound of an on-demand manifest is a file of its own, opened beside the video (%n% quotes the address for mpv's option list)
+            val options = listOfNotNull(audioId?.let { "aid=$it" }, onDemandFiles?.audio?.let { "audio-files-append=%${it.toByteArray().size}%$it" })
+            if (options.isNotEmpty()) mpvCommand("loadfile", url, "replace", "-1", options.joinToString(",")) else mpvCommand("loadfile", url, "replace")
             setMpvProperty("pause", if (autoPlay == true) "no" else "yes")
             isPaused = autoPlay != true
             isPlaying = autoPlay == true
