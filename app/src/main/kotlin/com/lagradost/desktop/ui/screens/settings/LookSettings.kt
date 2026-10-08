@@ -90,8 +90,8 @@ fun LayoutAndStyleCards() {
             Box(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val r = FluentShapes.card
-                Box(Modifier.size(width = 64.dp, height = 96.dp).clip(RoundedCornerShape(r)).background(Brush.linearGradient(listOf(c.accent, c.accent.copy(alpha = 0.35f)))))
-                Box(Modifier.size(width = 150.dp, height = 84.dp).clip(RoundedCornerShape(r)).background(Brush.linearGradient(listOf(Color(0xFF7B5CFA), Color(0xFF2EC5CE)))))
+                Box(Modifier.size(width = 64.dp, height = 96.dp).clip(RoundedCornerShape(r)).background(c.control).border(Dp.Hairline, c.stroke, RoundedCornerShape(r)))
+                Box(Modifier.size(width = 150.dp, height = 84.dp).clip(RoundedCornerShape(r)).background(c.control).border(Dp.Hairline, c.stroke, RoundedCornerShape(r)))
                 Column(Modifier.size(width = 190.dp, height = 96.dp).clip(RoundedCornerShape(FluentShapes.overlay)).background(c.flyout).border(Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.overlay)).padding(12.dp)) {
                     FText("Dialog", style = Fluent.type.bodyStrong)
                     Spacer(Modifier.weight(1f))

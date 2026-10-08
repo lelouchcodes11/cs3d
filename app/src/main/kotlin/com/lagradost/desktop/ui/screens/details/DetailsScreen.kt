@@ -394,11 +394,11 @@ private fun CastCard(name: String, image: String?, role: String?) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val scale by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1.06f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200))
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1.03f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200))
     Column(Modifier.width(132.dp).hoverable(source), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier.size(112.dp).graphicsLayer { scaleX = scale; scaleY = scale }.shadow(if (hovered) 18.dp else 4.dp, CircleShape).clip(CircleShape).background(c.layer)
-                .border(if (hovered) 2.dp else androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.accent else c.stroke, CircleShape),
+            Modifier.size(112.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(c.layer)
+                .border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             FText(name.split(' ').mapNotNull { it.firstOrNull()?.uppercase() }.take(2).joinToString(""), style = Fluent.type.subtitle, color = c.textTertiary)
@@ -433,9 +433,8 @@ private fun Header(
     val poster = d.posterImage
     com.lagradost.desktop.ui.shell.AmbientArtwork(backdrop ?: poster, d.posterHeaders)
     Box(Modifier.fillMaxWidth().height(height)) {
-        // the artwork (slow zoom) fades out into the page at the bottom, whatever the backdrop style
-        val zoom = if (com.lagradost.desktop.ui.fluent.Appearance.motion == com.lagradost.desktop.ui.fluent.Motion.Off) null else
-            androidx.compose.animation.core.rememberInfiniteTransition(label = "kb").animateFloat(1f, 1.06f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(18000, easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "zoom")
+        // the artwork fades out into the page at the bottom, whatever the backdrop style (still: no slow zoom)
+        val zoom: androidx.compose.runtime.State<Float>? = null
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
@@ -455,7 +454,7 @@ private fun Header(
         Row(Modifier.align(Alignment.BottomStart).padding(start = gutter, end = gutter, bottom = 28.dp), horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.Bottom) {
             if (wide && poster != null) {
                 val shape = RoundedCornerShape(FluentShapes.card)
-                Box(Modifier.width(230.dp).aspectRatio(2f / 3f).shadow(44.dp, shape).clip(shape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x33FFFFFF), shape).background(c.card)) {
+                Box(Modifier.width(230.dp).aspectRatio(2f / 3f).clip(shape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x33FFFFFF), shape).background(c.card)) {
                     RemoteImage(poster, d.posterHeaders, d.title, Modifier.fillMaxSize(), ContentScale.Crop)
                 }
             }
@@ -507,6 +506,13 @@ private fun ActionRow(
             }
             Column {
                 com.lagradost.desktop.ui.fluent.PillButton(label, Icons.Play, primary = true, onClick = { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode)) }, height = 48.dp)
+            }
+            // a film that was started: from the beginning instead (an episode has this in its ⋯ menu)
+            if (playEpisode.tvType.isMovieType() && playEpisode.getRealPosition() > 0) {
+                com.lagradost.desktop.ui.fluent.PillButton("Start over", Icons.Previous, primary = false, onClick = {
+                    com.lagradost.desktop.ui.screens.player.StartOver.request(playEpisode.id)
+                    vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode))
+                }, height = 48.dp)
             }
             resumeText?.takeIf { it.isNotBlank() }?.let { FText(it, color = Color(0xCCFFFFFF), style = Fluent.type.caption, maxLines = 2, modifier = Modifier.widthIn(max = 90.dp)) }
         }
@@ -566,6 +572,10 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
     val menu: () -> List<MenuEntry> = {
         listOf(
             MenuItem("Play", Icons.Play) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) },
+            MenuItem("Start from beginning", Icons.Previous) {
+                com.lagradost.desktop.ui.screens.player.StartOver.request(ep.id)
+                vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep))
+            },
             MenuItem("Choose how to play…", Icons.Settings) { vm.handleAction(EpisodeClickEvent(ACTION_SHOW_OPTIONS, ep)) },
             MenuSeparator,
             MenuItem(if (watched) "Mark as unwatched" else "Mark as watched", Icons.Check) { vm.handleAction(EpisodeClickEvent(ACTION_MARK_AS_WATCHED, ep)) },
@@ -579,7 +589,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
         Column(Modifier.fillMaxWidth().hoverable(source).fluentClickable(source, true, shape, Role.Button) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) }) {
             Box(
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-                    .graphicsLayer { scaleX = lift; scaleY = lift; shadowElevation = 22f * glow * density; this.shape = shape; clip = false }
+                    .graphicsLayer { scaleX = lift; scaleY = lift }
                     .clip(shape).background(c.card).border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, shape),
             ) {
                 if (ep.poster.isNullOrBlank()) {
@@ -588,13 +598,12 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                     Box(Modifier.matchParentSize().background(Color(0x59000000)))
                     FText(ep.episode.toString(), Modifier.align(Alignment.Center), style = Fluent.type.display.copy(fontSize = 56.sp, lineHeight = 60.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black), color = Color(0xCCFFFFFF), maxLines = 1)
                 } else RemoteImage(ep.poster, null, ep.name, Modifier.fillMaxSize(), ContentScale.Crop)
-                Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0x99000000))))
                 Box(Modifier.align(Alignment.TopStart).padding(10.dp).background(Color(0xB3000000), RoundedCornerShape(50)).padding(horizontal = 9.dp, vertical = 2.dp)) {
                     FText(if (ep.season != null) "S${ep.season} · E${ep.episode}" else "E${ep.episode}", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color.White, maxLines = 1, softWrap = false)
                 }
                 if (watched) Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(24.dp).background(c.success, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Check, size = 12.dp, tint = Color.Black) }
                 if (glow > 0.01f) Box(Modifier.matchParentSize().graphicsLayer { alpha = glow }.background(Color(0x4D000000)), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(52.dp).background(c.accent, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Play, size = 20.dp, tint = c.onAccent) }
+                    Box(Modifier.size(48.dp).background(Color(0x33FFFFFF), CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x66FFFFFF), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Play, size = 18.dp, tint = Color.White) }
                 }
                 ep.runTime?.takeIf { it > 0 }?.let { rt ->
                     Box(Modifier.align(Alignment.BottomEnd).padding(10.dp).background(Color(0xB3000000), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp)) {
@@ -606,10 +615,16 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                 }
             }
             Box(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FText(ep.name ?: "Episode ${ep.episode}", Modifier.weight(1f, fill = false), style = Fluent.type.bodyStrong.copy(fontSize = 15.sp), maxLines = 1)
                 if (ep.isFiller == true) Badge("Filler")
                 ep.score?.let { FText("★ " + it.toString(10, 1), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1) }
+                Box(Modifier.weight(1f))
+                Box {
+                    var open by remember { mutableStateOf(false) }
+                    com.lagradost.desktop.ui.fluent.IconButton(Icons.More, { open = true }, tooltip = "More", size = 28.dp, iconSize = 14.dp)
+                    if (open) MenuFlyout(menu(), onDismiss = { open = false })
+                }
             }
             ep.description?.takeIf { it.isNotBlank() }?.let { FText(stripHtml(it), style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 3.dp)) }
         }

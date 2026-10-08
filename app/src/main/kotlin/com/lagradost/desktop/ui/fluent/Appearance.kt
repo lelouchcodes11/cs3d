@@ -53,7 +53,7 @@ object Appearance {
     var cornerRadius by mutableIntStateOf(12)
     var density by mutableStateOf(Density.Standard)
     var posterSize by mutableStateOf(PosterSize.Medium)
-    var backdrop by mutableStateOf(Backdrop.Ambient)
+    var backdrop by mutableStateOf(Backdrop.Solid)
 
     /** See-through bars and panels over artwork */
     var glass by mutableStateOf(true)
@@ -85,6 +85,9 @@ object Appearance {
     /** Bottom dock only: it slides away while a page is scrolled down and comes back on scrolling up or at the bottom edge (off by default) */
     var dockAutoHide by mutableStateOf(false)
 
+    /** Subtitles: false = a styled subtitle (ASS, coloured SRT) keeps its own look, true = the user style for every subtitle ("universal") */
+    var subtitleUniversal by mutableStateOf(false)
+
     private const val PREFIX = "desktop_look_"
 
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
@@ -99,7 +102,8 @@ object Appearance {
             cornerRadius = p.getInt(PREFIX + "radius", 12).coerceIn(0, 28)
             density = enumOf(p.getString(PREFIX + "density", null), Density.Standard)
             posterSize = enumOf(p.getString(PREFIX + "poster", null), PosterSize.Medium)
-            backdrop = enumOf(p.getString(PREFIX + "backdrop", null), Backdrop.Ambient)
+            // the minimal look (2026-10-07): a flat page by default; once, an older saved "Ambient" becomes "Solid" too (it can be picked again)
+            backdrop = if (!p.getBoolean(PREFIX + "minimal_v1", false)) Backdrop.Solid else enumOf(p.getString(PREFIX + "backdrop", null), Backdrop.Solid)
             glass = p.getBoolean(PREFIX + "glass", true)
             motion = enumOf(p.getString(PREFIX + "motion", null), Motion.Full)
             uiScale = p.getFloat(PREFIX + "scale", 1f).coerceIn(0.8f, 1.4f)
@@ -111,6 +115,7 @@ object Appearance {
             anime4k = p.getBoolean(PREFIX + "anime4k", false)
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
+            subtitleUniversal = p.getBoolean(PREFIX + "sub_universal", false)
         }
     }
 
@@ -124,6 +129,7 @@ object Appearance {
                 .putString(PREFIX + "density", density.name)
                 .putString(PREFIX + "poster", posterSize.name)
                 .putString(PREFIX + "backdrop", backdrop.name)
+                .putBoolean(PREFIX + "minimal_v1", true)
                 .putBoolean(PREFIX + "glass", glass)
                 .putString(PREFIX + "motion", motion.name)
                 .putFloat(PREFIX + "scale", uiScale)
@@ -135,13 +141,14 @@ object Appearance {
                 .putBoolean(PREFIX + "anime4k", anime4k)
                 .putString(PREFIX + "audio_decoder", audioDecoder.name)
                 .putBoolean(PREFIX + "dock_auto_hide", dockAutoHide)
+                .putBoolean(PREFIX + "sub_universal", subtitleUniversal)
                 .apply()
         }
     }
 
     fun reset() {
         navPosition = NavPosition.Top; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
-        posterSize = PosterSize.Medium; backdrop = Backdrop.Ambient; glass = true; motion = Motion.Full; uiScale = 1f
+        posterSize = PosterSize.Medium; backdrop = Backdrop.Solid; glass = true; motion = Motion.Full; uiScale = 1f
         playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; anime4k = false; dockAutoHide = false
         save()
     }

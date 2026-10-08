@@ -1,0 +1,9 @@
+# static SPIRV-Cross of MSYS2 under the name mpv looks for
+root=C:/msys64/ucrt64
+libdir=${root}/lib
+includedir=${root}/include/spirv_cross
+Name: spirv-cross-c-shared
+Description: SPIRV-Cross C API (static)
+Version: 0.68.0
+Libs: -L${libdir} -lspirv-cross-c -lspirv-cross-msl -lspirv-cross-hlsl -lspirv-cross-cpp -lspirv-cross-reflect -lspirv-cross-glsl -lspirv-cross-util -lspirv-cross-core -lstdc++
+Cflags: -I${includedir}

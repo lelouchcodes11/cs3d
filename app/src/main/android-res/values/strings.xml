@@ -797,4 +797,6 @@
         <item quantity="other">%d downloads queued</item>
     </plurals>
     <string name="player_is_live">Live</string>
+    <!-- desktop: the source priority profile used for playing (no Wi-Fi / mobile data distinction on a PC) -->
+    <string name="profile_stream">Stream</string>
 </resources>

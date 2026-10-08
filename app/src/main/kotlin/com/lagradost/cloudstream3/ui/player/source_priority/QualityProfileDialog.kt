@@ -50,10 +50,12 @@ class QualityProfileDialog private constructor(
 
     companion object {
         // Run on IO as this may be a heavy operation
+        // desktop: Settings has no links to take the names from (Android only lists sources that already have a priority, which are
+        // set from the player menu): every extractor and provider name is offered, with the ones that have a priority
         suspend fun getAllDefaultSources(): List<LinkSource> = ioWork {
-            getProfiles().flatMap {
-                getAllSourcePriorityNames(it.id)
-            }.distinct().map { LinkSource(it) }
+            val saved = getProfiles().flatMap { getAllSourcePriorityNames(it.id) }
+            val known = com.lagradost.cloudstream3.utils.extractorApis.map { it.name } + com.lagradost.cloudstream3.APIHolder.apis.map { it.name }
+            (saved + known.sortedBy { it.lowercase() }).filter { it.isNotBlank() }.distinct().map { LinkSource(it) }
         }
     }
 
@@ -98,7 +100,7 @@ class QualityProfileDialog private constructor(
             setDefaultBtt.setOnClickListener {
                 val currentProfile = getCurrentProfile() ?: return@setOnClickListener
                 val choices =
-                    QualityDataHelper.QualityProfileType.entries.filter { it != QualityDataHelper.QualityProfileType.None }
+                    QualityDataHelper.QualityProfileType.entries.filter { it != QualityDataHelper.QualityProfileType.None && it != QualityDataHelper.QualityProfileType.Data }
                 val choiceNames = choices.map { txt(it.stringRes).asString(context) }
                 val selectedIndices = choices.mapIndexed { index, type -> index to type }
                     .filter { currentProfile.types.contains(it.second) }.map { it.first }

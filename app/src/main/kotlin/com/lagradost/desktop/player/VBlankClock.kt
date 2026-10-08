@@ -175,9 +175,17 @@ internal object FramePacer {
     /** -Dcloudstream.nopacing=true goes back to mpv's own blocking (frames shown at the first refresh after they are rendered) */
     val enabled = System.getProperty("cloudstream.nopacing") != "true"
 
+    /** mpv's target further than this from the predicted one is a real change of timing, not jitter */
+    private const val SMOOTH_MAX_NS = 8_000_000L
+
     // render thread only
     private var slot = 0L
     private var lastTarget = 0L
+    private var smoothTarget = 0L
+    private var avgStep = 0L
+    private var lastReal = 0L
+    private val decided = IntArray(5)
+    private var maxJitterNs = 0L
     private var held = 0
     private var relocks = 0
     private var reportedAt = 0L
@@ -185,11 +193,17 @@ internal object FramePacer {
     private var oversleepNs = 0L
     private var maxOversleepNs = 0L
 
+    /** The last 5 s of pacing, for the dev server's /videostats */
+    @Volatile var last = ""
+        private set
+
     private fun report() {
         val now = System.nanoTime()
         if (reportedAt == 0L) reportedAt = now
         if (now - reportedAt < 5_000_000_000L) return
-        if (System.getProperty("cloudstream.videostats") != null) Log.i("FramePacer", "pacing: held=$held relocks=$relocks, sleep overshoot %.2f ms avg / %.2f ms max over $parks sleeps".format(oversleepNs / 1e6 / parks.coerceAtLeast(1), maxOversleepNs / 1e6))
+        last = "held=$held relocks=$relocks, sleep overshoot %.2f ms avg / %.2f ms max over $parks sleeps, decided 0/1/2/3/4+ = ${decided.joinToString("/")}, target jitter max %.2f ms".format(oversleepNs / 1e6 / parks.coerceAtLeast(1), maxOversleepNs / 1e6, maxJitterNs / 1e6)
+        if (System.getProperty("cloudstream.videostats") != null) Log.i("FramePacer", "pacing: $last")
+        decided.fill(0); maxJitterNs = 0L
         held = 0; relocks = 0; parks = 0; oversleepNs = 0; maxOversleepNs = 0; reportedAt = now
     }
 
@@ -218,8 +232,20 @@ internal object FramePacer {
             return
         }
         val period = VBlankClock.periodNs
-        val wanted = targetNs + SLOT_PHASE_NS - EARLY_NS
-        var s = if (slot == 0L || Math.abs(targetNs - lastTarget) > RELOCK_NS) {
+        val relock = slot == 0L || Math.abs(targetNs - lastTarget) > RELOCK_NS
+        // mpv's target times jitter by about a millisecond (audio clock corrections, reading two clocks). A film whose rate nearly divides the
+        // refresh rate (29.97 fps on 60 Hz) drifts across a refresh boundary every ~17 s, and while it is near it the jitter made frames flip
+        // between one and three refreshes for a second or two (measured: 58 such pairs a minute, a steady rhythm has one 3 per crossing).
+        // So the frame clock is predicted from the average frame length and pulled only 1/16 of the way to mpv's time: jitter / 16, drift kept.
+        val step = targetNs - lastTarget
+        if (relock) { smoothTarget = targetNs; avgStep = 0L } else {
+            if (step > 0) avgStep = if (avgStep == 0L) step else avgStep + (step - avgStep) / 32
+            val predicted = smoothTarget + avgStep
+            // a jump (a dropped or repeated frame, a speed change): follow mpv at once
+            smoothTarget = if (avgStep == 0L || Math.abs(targetNs - predicted) > SMOOTH_MAX_NS) targetNs else predicted + (targetNs - predicted) / 16
+        }
+        val wanted = smoothTarget + SLOT_PHASE_NS - EARLY_NS
+        var s = if (relock) {
             relocks++
             VBlankClock.atOrAfter(wanted)
         } else {
@@ -232,6 +258,9 @@ internal object FramePacer {
         s += (real - s) / 8
         slot = s
         lastTarget = targetNs
+        if (!relock && lastReal != 0L) decided[Math.round((real - lastReal).toDouble() / period).toInt().coerceIn(0, 4)]++
+        lastReal = real
+        maxJitterNs = maxOf(maxJitterNs, Math.abs(targetNs - smoothTarget))
         report()
         held++
         waitUntil(real - period + AFTER_VBLANK_NS)

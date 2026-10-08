@@ -185,7 +185,8 @@ private fun PlayerContent(s: PlayerSession) {
     val focus = remember { FocusRequester() }
     var rootFocused by remember { mutableStateOf(false) }
     var lastActivity by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var menusOpen by remember { mutableStateOf(0) }
+    // the player menu (PlayerMenu.kt): the page it shows, null when it is closed
+    var menuPage by remember { mutableStateOf<MenuPage?>(null) }
     var showEpisodes by remember { mutableStateOf(false) }
     var hoveringControls by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(true) }
@@ -215,8 +216,8 @@ private fun PlayerContent(s: PlayerSession) {
 
     // Controls go away 2 s after the last mouse movement, unless the pointer is on them (or a menu / the episode list is open).
     // Keyboard shortcuts show their own small bubble instead (volume, seek, speed ...), never the controls.
-    LaunchedEffect(lastActivity, hoveringControls, menusOpen, showEpisodes) {
-        if (hoveringControls || menusOpen > 0 || showEpisodes) {
+    LaunchedEffect(lastActivity, hoveringControls, menuPage, showEpisodes) {
+        if (hoveringControls || menuPage != null || showEpisodes) {
             visible = true
             return@LaunchedEffect
         }
@@ -229,12 +230,12 @@ private fun PlayerContent(s: PlayerSession) {
     // the keyboard comes back to the player when a dialog (tracks, sources, search) closes
     val dialogCount = com.lagradost.desktop.ui.fluent.Overlays.dialogs.size
     LaunchedEffect(dialogCount) { if (dialogCount == 0) { delay(100); runCatching { focus.requestFocus() } } }
-    LaunchedEffect(menusOpen, showEpisodes) { if (menusOpen == 0) runCatching { focus.requestFocus() } }
+    LaunchedEffect(menuPage == null, showEpisodes) { runCatching { focus.requestFocus() } }
     // whatever took the focus away (a button that left with the controls, a closed popup), it comes back
     LaunchedEffect(Unit) {
         while (true) {
             delay(500)
-            if (!rootFocused && menusOpen == 0 && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()) runCatching { focus.requestFocus() }
+            if (!rootFocused && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()) runCatching { focus.requestFocus() }
         }
     }
 
@@ -242,8 +243,10 @@ private fun PlayerContent(s: PlayerSession) {
 
     fun onKey(e: KeyEvent): Boolean {
         if (e.type != KeyEventType.KeyDown) return false
-        // a dialog (tracks, sources, search) or an open menu has the keys while it is open
-        if (com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty() || menusOpen > 0) return false
+        // a dialog (subtitle style, search) has the keys while it is open
+        if (com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty()) return false
+        // the menu: Esc closes it (the other shortcuts keep working while it is open)
+        if (menuPage != null && e.key == Key.Escape) { menuPage = null; return true }
         val big = e.isShiftPressed
         when (e.key) {
             Key.Spacebar, Key.K -> {
@@ -290,8 +293,37 @@ private fun PlayerContent(s: PlayerSession) {
     }
 
     // the native video player (beta): mpv's GPU window below, the controls in a transparent window above it
+    // a click pauses / plays at once (detectTapGestures held every single click ~300 ms to rule out a double click, which felt like a lag);
+    // the second click of a double click puts the play state back and switches fullscreen, as in a browser's video player
     val tapGestures = Modifier.pointerInput(Unit) {
-        detectTapGestures(onTap = { s.togglePlay() }, onDoubleTap = { if (pip) s.setPip(false) else toggleFullscreen() })
+        awaitPointerEventScope {
+            var lastClick = 0L
+            var playingBefore = false
+            var downAt: androidx.compose.ui.geometry.Offset? = null
+            while (true) {
+                val e = awaitPointerEvent()
+                val change = e.changes.firstOrNull() ?: continue
+                when {
+                    e.type == PointerEventType.Press -> downAt = if (e.buttons.isPrimaryPressed) change.position else null
+                    e.type == PointerEventType.Release -> {
+                        val start = downAt ?: continue
+                        downAt = null
+                        if (change.isConsumed || (change.position - start).getDistance() > viewConfiguration.touchSlop) continue
+                        val now = System.currentTimeMillis()
+                        if (now - lastClick < 350) {
+                            lastClick = 0L
+                            // back to how it was before the first click (the state the first click set may not be reported yet)
+                            if (playingBefore) s.play() else s.pause()
+                            if (pip) s.setPip(false) else toggleFullscreen()
+                        } else {
+                            lastClick = now
+                            playingBefore = s.status == CSPlayerLoading.IsPlaying
+                            s.togglePlay()
+                        }
+                    }
+                }
+            }
+        }
     }
     val pointerWatch = Modifier
             .pointerInput(Unit) {
@@ -306,7 +338,8 @@ private fun PlayerContent(s: PlayerSession) {
                             PointerEventType.Exit -> hoveringControls = false
                             PointerEventType.Scroll -> {
                                 val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-                                if (dy != 0f && !showEpisodes) s.stepVolume(if (dy < 0) 1 else -1)
+                                // the wheel scrolls an open menu, the episode list or a dialog, never the volume under it
+                                if (dy != 0f && !showEpisodes && menuPage == null && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()) s.stepVolume(if (dy < 0) 1 else -1)
                             }
                         }
                     }
@@ -335,11 +368,22 @@ private fun PlayerContent(s: PlayerSession) {
         if (pip) {
             PipControls(s, visible)
         } else AnimatedVisibility(visible, enter = fadeIn(tween(200)), exit = fadeOut(tween(350))) {
-            PlayerChrome(s, fullscreen, { menusOpen += it }, { showEpisodes = !showEpisodes }, ::toggleFullscreen, { topBounds = it }, { bottomBounds = it })
+            PlayerChrome(s, fullscreen, { menuPage = if (menuPage == it) null else it }, { showEpisodes = !showEpisodes }, ::toggleFullscreen, { topBounds = it }, { bottomBounds = it })
         }
 
+        // the menu, above the buttons at the bottom right; a click anywhere else closes it (and does not pause the video)
+        val page = menuPage
+        if (page != null && !pip) androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { menuPage = null } })
+            PlayerMenu(
+                s, page, { menuPage = it }, maxHeight = (maxHeight - 160.dp).coerceAtLeast(200.dp),
+                Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 80.dp),
+            )
+        }
+        LaunchedEffect(pip) { if (pip) menuPage = null }
+
         HudOverlay(s, Modifier.align(Alignment.TopCenter).padding(top = if (pip) 36.dp else 56.dp))
-        // subtitles: fetching, on, or given up; at the top right, under the Sources pill while the controls are shown
+        // subtitles: fetching, on, or given up; at the top right, lower while the controls are shown
         if (!pip) {
             val pillTop by androidx.compose.animation.core.animateDpAsState(if (visible) 64.dp else 16.dp, tween(200))
             SubtitlePill(s, Modifier.align(Alignment.TopEnd).padding(top = pillTop, end = 20.dp + com.lagradost.desktop.ui.shell.captionInset))
@@ -476,15 +520,18 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVideoImage(imag
     }
     // a mix, or rendered smaller than the view (enlarged by the graphics card with a smooth filter): a shader, because the image overloads
     // with a sampling mode or a paint draw nothing in a layer
+    // the shader is closed here: it holds the frame (8 MB at 1080p) and, left to the garbage collector, 60 of them a second piled up to ~800 MB
     drawIntoCanvas { c ->
         org.jetbrains.skia.Paint().use { paint ->
-            paint.shader = image.makeShader(
+            image.makeShader(
                 org.jetbrains.skia.FilterTileMode.CLAMP, org.jetbrains.skia.FilterTileMode.CLAMP,
                 if (image.width == size.width.roundToInt() && image.height == size.height.roundToInt()) org.jetbrains.skia.SamplingMode.DEFAULT else org.jetbrains.skia.SamplingMode.CATMULL_ROM,
                 org.jetbrains.skia.Matrix33.makeScale(size.width / image.width, size.height / image.height),
-            )
-            paint.setAlphaf(alpha)
-            c.nativeCanvas.drawRect(org.jetbrains.skia.Rect.makeWH(size.width, size.height), paint)
+            ).use { shader ->
+                paint.shader = shader
+                paint.setAlphaf(alpha)
+                c.nativeCanvas.drawRect(org.jetbrains.skia.Rect.makeWH(size.width, size.height), paint)
+            }
         }
     }
 }
@@ -492,9 +539,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVideoImage(imag
 @Composable
 private fun LoadingOverlay(s: PlayerSession) {
     Box(Modifier.fillMaxSize().background(Color(0xFF0B0B0B)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
-        // the title's artwork, softly, behind the progress
-        com.lagradost.desktop.ui.components.SoftImage(com.lagradost.desktop.ui.shell.ShellState.ambientUrl, com.lagradost.desktop.ui.shell.ShellState.ambientHeaders, Modifier.fillMaxSize(), alpha = 0.4f)
-        Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0x99000000), Color(0xE6000000)))))
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             ProgressRing(size = 56.dp, color = Color.White)
             FText(s.title, style = Fluent.type.subtitle, color = Color.White, maxLines = 2)
@@ -579,7 +623,7 @@ private fun FailureOverlay(s: PlayerSession) {
 private fun PlayerChrome(
     s: PlayerSession,
     fullscreen: Boolean,
-    menuDelta: (Int) -> Unit,
+    openMenu: (MenuPage) -> Unit,
     toggleEpisodes: () -> Unit,
     toggleFullscreen: () -> Unit,
     onTop: (Rect) -> Unit,
@@ -609,12 +653,6 @@ private fun PlayerChrome(
                         }
                     }
                 }
-                // the two dialogs, named, at the top right: where the picture comes from, and which audio / video tracks play and how they are decoded
-                Row(Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextPill("Sources", "Sources and subtitles") { openSourcesDialog(s) }
-                    // always there, also with one track: the audio decoder (SW / HW / HW+) is chosen in it too
-                    TextPill("Tracks", "Audio and video tracks, audio decoder") { openTracksDialog(s) }
-                }
             }
         }
         // bottom: seek bar and buttons
@@ -629,7 +667,7 @@ private fun PlayerChrome(
                     .onGloballyPositioned { onBottom(it.boundsInRoot()) },
             ) {
                 SeekRow(s)
-                ControlRow(s, fullscreen, menuDelta, toggleEpisodes, toggleFullscreen)
+                ControlRow(s, fullscreen, openMenu, toggleEpisodes, toggleFullscreen)
             }
         }
     }
@@ -741,7 +779,7 @@ private fun SeekBar(s: PlayerSession) {
             val label = if (s.live) "-" + fmt((s.durationMs - at).coerceAtLeast(0)) else fmt(at)
             Box(Modifier.align(Alignment.TopStart).offset2((x - 44f).coerceIn(0f, (width - 88f).coerceAtLeast(0f))).offsetY(-40f)) {
                 Column(
-                    Modifier.background(Color(0xE61C1C1C), RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x33FFFFFF), RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    Modifier.background(PlayerSurface, RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).border(androidx.compose.ui.unit.Dp.Hairline, PlayerSurfaceBorder, RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).padding(horizontal = 10.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (stamp != null) FText(stamp, style = Fluent.type.caption, color = Color(0xFFFFD54F), maxLines = 1, softWrap = false)
@@ -764,7 +802,7 @@ private fun PlayerSession.stampFractions(duration: Long): List<Pair<Float, Float
 // ------------------------------------------------------------------------------------------------
 
 @Composable
-private fun ControlRow(s: PlayerSession, fullscreen: Boolean, menuDelta: (Int) -> Unit, toggleEpisodes: () -> Unit, toggleFullscreen: () -> Unit) {
+private fun ControlRow(s: PlayerSession, fullscreen: Boolean, openMenu: (MenuPage) -> Unit, toggleEpisodes: () -> Unit, toggleFullscreen: () -> Unit) {
     val white = Color.White
     Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         PlayPauseButton(s)
@@ -779,31 +817,13 @@ private fun ControlRow(s: PlayerSession, fullscreen: Boolean, menuDelta: (Int) -
         Box(Modifier.weight(1f))
         if (s.speed != 1f) Box(Modifier.padding(end = 8.dp)) { InfoChip("${s.speed}×") }
 
-        FlyoutButton(Icons.Speed, "Playback speed", menuDelta) { speedEntries(s) }
-        FlyoutButton(Icons.Aspect, "Picture size (Z)", menuDelta) { resizeEntries(s) }
-        FlyoutButton(Icons.OpenInNewWindow, "Open in another player", menuDelta) { externalEntries(s) }
+        // one menu for every choice (PlayerMenu.kt): these open it at their page, the gear at the list of all settings
+        IconButton(Icons.Subtitles, { openMenu(MenuPage.Subtitles) }, tooltip = "Subtitles (S: next)", size = 40.dp, iconSize = 18.dp, tint = white)
+        IconButton(Icons.Link, { openMenu(MenuPage.Sources) }, tooltip = "Sources", size = 40.dp, iconSize = 18.dp, tint = white)
+        IconButton(Icons.Settings, { openMenu(MenuPage.Root) }, tooltip = "Quality, audio, speed and more", size = 40.dp, iconSize = 18.dp, tint = white)
         IconButton(Icons.List, toggleEpisodes, tooltip = "Episodes (E)", size = 40.dp, iconSize = 18.dp, tint = white)
         IconButton(Icons.Pip, { s.togglePip() }, tooltip = "Picture in picture (I)", size = 40.dp, iconSize = 18.dp, tint = white)
         IconButton(if (fullscreen) Icons.ExitFullscreen else Icons.Fullscreen, toggleFullscreen, tooltip = if (fullscreen) "Exit full screen (F)" else "Full screen (F)", size = 40.dp, iconSize = 18.dp, tint = white)
-    }
-}
-
-/** A see-through pill with a name only (no icon) */
-@Composable
-private fun TextPill(label: String, tooltip: String, onClick: () -> Unit) {
-    val source = rememberInteraction()
-    val hovered by source.collectIsHoveredAsState()
-    val bg by androidx.compose.animation.animateColorAsState(if (hovered) Color(0x47FFFFFF) else Color(0x24FFFFFF), com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(140))
-    val shape = RoundedCornerShape(50)
-    Tooltip(tooltip) {
-        Box(
-            Modifier.height(36.dp).noWindowDrag("playerPill-$label").clip(shape).background(bg, shape)
-                .fluentClickable(source, true, shape, Role.Button, onClick)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            FText(label, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1, softWrap = false)
-        }
     }
 }
 
@@ -818,14 +838,14 @@ private fun PlayPauseButton(s: PlayerSession) {
     val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.92f else if (hovered) 1.06f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(140))
     com.lagradost.desktop.ui.fluent.Tooltip("Play / Pause (Space)") {
         Box(
-            Modifier.size(42.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(c.accent, CircleShape)
+            Modifier.size(42.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(Color.White, CircleShape)
                 .fluentClickable(source, true, CircleShape, Role.Button) { s.togglePlay() },
             contentAlignment = Alignment.Center,
         ) {
             androidx.compose.animation.AnimatedContent(playing, transitionSpec = {
                 (fadeIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(160)) + androidx.compose.animation.scaleIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200), initialScale = 0.6f)) togetherWith
                     (fadeOut(com.lagradost.desktop.ui.fluent.FluentMotion.tweenOut(100)) + androidx.compose.animation.scaleOut(com.lagradost.desktop.ui.fluent.FluentMotion.tweenOut(100), targetScale = 0.6f))
-            }) { p -> Icon(if (p) Icons.Pause else Icons.Play, size = 18.dp, tint = c.onAccent) }
+            }) { p -> Icon(if (p) Icons.Pause else Icons.Play, size = 18.dp, tint = Color(0xFF111114)) }
         }
     }
 }
@@ -839,7 +859,7 @@ private fun VolumeControl(s: PlayerSession) {
     val open = hovered || dragging
     val w by androidx.compose.animation.core.animateDpAsState(if (open) 104.dp else 0.dp, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(220))
     Row(Modifier.hoverable(source), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(if (s.muted || s.volume == 0) Icons.Mute else Icons.Volume, { s.toggleMute() }, tooltip = "Mute (M) · wheel: volume", size = 36.dp, tint = Color.White)
+        IconButton(if (s.muted || s.volume == 0) Icons.Mute else Icons.Volume, { s.toggleMute() }, tooltip = "Mute (M) · wheel: volume", size = 40.dp, iconSize = 18.dp, tint = Color.White)
         Box(Modifier.width(w).clipToBounds()) {
             Row(Modifier.width(104.dp), verticalAlignment = Alignment.CenterVertically) {
                 Slider(
@@ -877,35 +897,6 @@ private fun LivePill(s: PlayerSession) {
     }
 }
 
-@Composable
-private fun FlyoutButton(glyph: String, tooltip: String, menuDelta: (Int) -> Unit, entries: () -> List<MenuEntry>) {
-    var open by remember { mutableStateOf(false) }
-    // counted for as long as the menu is open, whatever closes it (an item, a click elsewhere, the controls leaving)
-    DisposableEffect(open) {
-        val counted = open
-        if (counted) menuDelta(1)
-        onDispose { if (counted) menuDelta(-1) }
-    }
-    Box {
-        IconButton(glyph, { open = !open }, tooltip = tooltip, size = 36.dp, tint = Color.White)
-        if (open) {
-            val list = entries()
-            MenuFlyout(list, onDismiss = { open = false })
-        }
-    }
-}
-
-private fun speedEntries(s: PlayerSession): List<MenuEntry> =
-    listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f).map { v -> MenuItem(if (v == 1f) "Normal" else "${v}×", checked = s.speed == v) { s.changeSpeed(v) } }
-
-private fun externalEntries(s: PlayerSession): List<MenuEntry> = listOf(
-    MenuItem("Open in VLC", Icons.Play) { s.openExternal(vlc = true) },
-    MenuItem("Open in browser", Icons.OpenInNewWindow) { s.openExternal(vlc = false) },
-)
-
-private fun resizeEntries(s: PlayerSession): List<MenuEntry> =
-    Resize.entries.map { r -> MenuItem(r.label, checked = s.resize == r) { s.changeResize(r) } }
-
 // ------------------------------------------------------------------------------------------------
 
 @Composable
@@ -915,7 +906,7 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
     val listState = rememberLazyListState()
     LaunchedEffect(Unit) { items.indexOfFirst { it.current }.takeIf { it >= 0 }?.let { listState.scrollToItem((it - 1).coerceAtLeast(0)) } }
     Column(
-        Modifier.fillMaxHeight().width(380.dp).background(Color(0xF2181818)).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke)
+        Modifier.fillMaxHeight().width(380.dp).background(PlayerSurface).border(androidx.compose.ui.unit.Dp.Hairline, PlayerSurfaceBorder)
             .padding(top = if (com.lagradost.desktop.platform.WinChrome.enabled && !com.lagradost.desktop.platform.WinChrome.fullscreen) 34.dp else 0.dp)
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
@@ -1043,7 +1034,7 @@ private fun SubtitlePill(s: PlayerSession, modifier: Modifier) {
         val st = status
         val shape = RoundedCornerShape(50)
         Row(
-            modifier.widthIn(max = 380.dp).background(Color(0xE6202020), shape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x26FFFFFF), shape).padding(start = 12.dp, end = 14.dp).height(32.dp),
+            modifier.widthIn(max = 380.dp).background(PlayerSurface, shape).border(androidx.compose.ui.unit.Dp.Hairline, PlayerSurfaceBorder, shape).padding(start = 12.dp, end = 14.dp).height(32.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (st.state) {
@@ -1077,7 +1068,7 @@ private fun HudOverlay(s: PlayerSession, modifier: Modifier) {
         val h = last ?: return@AnimatedVisibility
         val shape = RoundedCornerShape(50)
         Row(
-            Modifier.background(Color(0xE6202020), shape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x26FFFFFF), shape).padding(start = 14.dp, end = 16.dp).height(38.dp),
+            Modifier.background(PlayerSurface, shape).border(androidx.compose.ui.unit.Dp.Hairline, PlayerSurfaceBorder, shape).padding(start = 14.dp, end = 16.dp).height(38.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(h.glyph, size = 16.dp, tint = Color.White)
@@ -1085,7 +1076,7 @@ private fun HudOverlay(s: PlayerSession, modifier: Modifier) {
             h.fraction?.let { target ->
                 val shown by androidx.compose.animation.core.animateFloatAsState(target.coerceIn(0f, 1f), tween(120))
                 Box(Modifier.width(64.dp).height(4.dp).background(Color(0x40FFFFFF), RoundedCornerShape(2.dp))) {
-                    Box(Modifier.fillMaxWidth(shown).fillMaxHeight().background(if (target > 0.5f) Color(0xFFFFB74D) else Color.White, RoundedCornerShape(2.dp)))
+                    Box(Modifier.fillMaxWidth(shown).fillMaxHeight().background(Fluent.colors.accent, RoundedCornerShape(2.dp)))
                 }
             }
         }

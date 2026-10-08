@@ -134,7 +134,7 @@ fun PosterCard(
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val zoomOn = Appearance.hoverZoom
-    val lift by animateFloatAsState(if (hovered && zoomOn) 1.055f else 1f, FluentMotion.tweenIn(260))
+    val lift by animateFloatAsState(if (hovered && zoomOn) 1.03f else 1f, FluentMotion.tweenIn(220))
     val glow by animateFloatAsState(if (hovered) 1f else 0f, FluentMotion.tweenIn(220))
     val shape = RoundedCornerShape(FluentShapes.card)
     val body = @Composable {
@@ -149,20 +149,20 @@ fun PosterCard(
                 Modifier
                     .fillMaxWidth()
                     .aspectRatio(if (landscape) 16f / 9f else 2f / 3f)
-                    .graphicsLayer { scaleX = lift; scaleY = lift; shadowElevation = 22f * glow * density; this.shape = shape; clip = false }
+                    .graphicsLayer { scaleX = lift; scaleY = lift }
                     .clip(shape)
                     .border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, shape),
             ) {
-                PosterImage(item, Modifier.fillMaxSize().graphicsLayer { val s = 1f + 0.04f * glow; scaleX = s; scaleY = s })
-                // hover: a soft scrim from the bottom and a play button that rises in
+                PosterImage(item, Modifier.fillMaxSize())
+                // hover: a flat dim and a quiet play button (no gradient, shadow or accent)
                 if (glow > 0.01f) {
-                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = glow }.background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color(0xB3000000))), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = glow }.background(Color(0x59000000)), contentAlignment = Alignment.Center) {
                         Box(
-                            Modifier.graphicsLayer { translationY = (1f - glow) * 14f * density; val s = 0.85f + 0.15f * glow; scaleX = s; scaleY = s }
-                                .size(46.dp).background(c.accent, CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x55FFFFFF), CircleShape),
+                            Modifier
+                                .size(44.dp).background(Color(0x33FFFFFF), CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x66FFFFFF), CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Play, size = 18.dp, tint = c.onAccent)
+                            Icon(Icons.Play, size = 16.dp, tint = Color.White)
                         }
                     }
                 }

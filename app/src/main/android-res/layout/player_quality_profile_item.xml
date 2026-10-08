@@ -57,7 +57,7 @@
                 android:autoSizeMaxTextSize="20sp"
                 android:autoSizeTextType="uniform"
                 android:minHeight="30dp"
-                android:text="@string/wifi"
+                android:text="@string/profile_stream"
                 android:textColor="@color/textColor"
                 android:textStyle="normal"
                 app:layout_constraintEnd_toEndOf="parent"

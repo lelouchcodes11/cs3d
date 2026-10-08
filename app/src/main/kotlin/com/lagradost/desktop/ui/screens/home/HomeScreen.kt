@@ -395,13 +395,10 @@ private const val HERO_MS = 9000
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
     this.clickable(remember { MutableInteractionSource() }, null, onClick = onClick)
 
-/** Backdrop of the hero: a slow zoom (Ken Burns), text scrims, and a fade into the page at the bottom (any backdrop style) */
+/** Backdrop of the hero: still artwork, text scrims, and a fade into the page at the bottom (any backdrop style) */
 @Composable
 private fun HeroBackdrop(item: LoadResponse) {
-    val zoom = if (com.lagradost.desktop.ui.fluent.Appearance.motion == com.lagradost.desktop.ui.fluent.Motion.Off) null else {
-        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "kenburns")
-        t.animateFloat(1f, 1.07f, androidx.compose.animation.core.infiniteRepeatable(tween(16000, easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "zoom")
-    }
+    val zoom: androidx.compose.runtime.State<Float>? = null
     Box(
         Modifier.fillMaxSize()
             .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
@@ -422,13 +419,12 @@ private fun HeroBackdrop(item: LoadResponse) {
             // sharp poster on the right when the provider has no backdrop
             Box(Modifier.fillMaxSize().padding(end = 96.dp, top = 84.dp, bottom = 150.dp), contentAlignment = Alignment.CenterEnd) {
                 val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.card)
-                RemoteImage(item.posterUrl, item.posterHeaders, null, Modifier.fillMaxHeight().aspectRatio(2f / 3f).shadow(40.dp, shape).clip(shape), ContentScale.Crop)
+                RemoteImage(item.posterUrl, item.posterHeaders, null, Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(shape), ContentScale.Crop)
             }
         }
-        // scrims: left for the text, top for the title bar, bottom for the thumbnails
+        // scrims: left for the text, top for the title bar
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xF20B0B0E), 0.38f to Color(0xB30B0B0E), 0.7f to Color(0x330B0B0E), 1f to Color.Transparent)))
         Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(220.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x80000000)))))
     }
 }
 

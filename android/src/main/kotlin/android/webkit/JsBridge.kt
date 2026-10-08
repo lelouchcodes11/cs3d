@@ -46,6 +46,8 @@ internal object JsBridge {
                 it.name == method && it.isAnnotationPresent(JavascriptInterface::class.java) && it.parameterCount == args.length()
             }
             val m = candidates.firstOrNull() ?: return JSONObject().put("e", "Method not found").toString()
+            // extensions often declare the bridge as a private (package-private) class: Android's WebView calls it anyway
+            m.trySetAccessible()
             val params = m.parameterTypes.mapIndexed { i, t -> convertArg(args.opt(i), t) }.toTypedArray()
             val result = m.invoke(obj, *params)
             JSONObject().put("v", if (result == null || m.returnType == Void.TYPE) JSONObject.NULL else result).toString()

@@ -257,6 +257,26 @@ object DevServer {
                 ok(ex)
             }
             "/drag" -> {
+                // &hold=<ms>: press, wait (a long press that starts an Android drag and drop), then move in steps and release
+                q["hold"]?.toLongOrNull()?.let { hold ->
+                    var comp: java.awt.Component? = null
+                    var p1: Point? = null
+                    var p2: Point? = null
+                    onEdt {
+                        val t = target(q["x1"]!!.toInt(), q["y1"]!!.toInt())
+                        comp = t.first; p1 = t.second
+                        p2 = SwingUtilities.convertPoint(content(), (q["x2"]!!.toInt() / scale()).toInt(), (q["y2"]!!.toInt() / scale()).toInt(), t.first)
+                        mouse(t.first, MouseEvent.MOUSE_PRESSED, t.second, InputEvent.BUTTON1_DOWN_MASK, 1, MouseEvent.BUTTON1)
+                    }
+                    Thread.sleep(hold)
+                    val a = p1!!; val b = p2!!
+                    for (i in 1..20) {
+                        onEdt { mouse(comp!!, MouseEvent.MOUSE_DRAGGED, Point(a.x + (b.x - a.x) * i / 20, a.y + (b.y - a.y) * i / 20), InputEvent.BUTTON1_DOWN_MASK, 0, MouseEvent.NOBUTTON) }
+                        Thread.sleep(25)
+                    }
+                    onEdt { mouse(comp!!, MouseEvent.MOUSE_RELEASED, b, 0, 1, MouseEvent.BUTTON1) }
+                    return ok(ex)
+                }
                 onEdt {
                     val (comp, p1) = target(q["x1"]!!.toInt(), q["y1"]!!.toInt())
                     val (_, p2raw) = target(q["x2"]!!.toInt(), q["y2"]!!.toInt())
@@ -544,7 +564,7 @@ object DevServer {
                 val p = com.lagradost.desktop.player.MpvPlayer.active ?: return ok(ex, "no player")
                 val surface = com.lagradost.desktop.ui.screens.player.PlayerSession.active?.surface
                 val props = listOf("time-pos", "speed", "avsync", "total-avsync-change", "frame-drop-count", "decoder-frame-drop-count", "vo-delayed-frame-count", "mistimed-frame-count", "container-fps", "estimated-vf-fps", "video-params/w", "video-params/h", "hwdec-current", "paused-for-cache", "demuxer-cache-duration")
-                ok(ex, "surface: ${surface?.stats?.last}\npresent: ${surface?.present?.last}\nsmooth: ${surface?.smoothLast} useful=${surface?.blendUseful}\n" + props.joinToString("\n") { "$it=${p.getMpvPropertyString(it)}" })
+                ok(ex, "surface: ${surface?.stats?.last}\npresent: ${surface?.present?.last}\npacer: ${com.lagradost.desktop.player.FramePacer.last}\nsmooth: ${surface?.smoothLast} useful=${surface?.blendUseful}\n" + props.joinToString("\n") { "$it=${p.getMpvPropertyString(it)}" })
             }
             "/mpvsample" -> {
                 // dev: hitches in the picture and in the audio timeline: /mpvsample?s=30 samples the frame counter, time-pos and audio-pts every 5 ms and
@@ -616,6 +636,12 @@ object DevServer {
                 val b = runCatching { okhttp3.Dns.SYSTEM.lookup(host).joinToString { it.hostAddress } }.getOrElse { "FAILED $it" }
                 val c = runCatching { java.net.ProxySelector.getDefault()?.javaClass?.name + " -> " + java.net.ProxySelector.getDefault()?.select(java.net.URI("https://$host/")).toString() }.getOrElse { "FAILED $it" }
                 ok(ex, "InetAddress: $a\nDns.SYSTEM: $b\nProxySelector: $c\n")
+            }
+            "/sublist" -> {
+                // dev: the subtitles the player page offers (name, language, origin, link) and the one that shows
+                val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
+                val cur = s.currentSubtitle()
+                ok(ex, s.subtitles().joinToString("\n") { "${if (it == cur) "*" else " "} ${it.name.trim()} | lang=${it.languageCode} | ${it.origin} | ${it.url.take(110)}" })
             }
             "/suburl" -> {
                 // dev: an online subtitle by link, the way an extension or a subtitle site delivers it: /suburl?url=http://...&name=Test
@@ -860,20 +886,29 @@ object DevServer {
                 val providerName = q["provider"]!!.lowercase()
                 val wanted = q["link"] ?: ""
                 val api = com.lagradost.cloudstream3.APIHolder.apis.firstOrNull { it.name.lowercase().contains(providerName) } ?: return ok(ex, "no provider")
+                val subs = java.util.Collections.synchronizedList(ArrayList<com.lagradost.cloudstream3.SubtitleFile>())
+                val allLinks = ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>()
                 val found = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
                     val results = runCatching { api.search(q["q"]!!, 1)?.items ?: emptyList() }.getOrDefault(emptyList())
                     for (item in results.take(3)) {
-                        val data = (runCatching { api.load(item.url) }.getOrNull() as? com.lagradost.cloudstream3.MovieLoadResponse)?.dataUrl ?: continue
+                        // a movie, or the first episode of a series
+                        val data = when (val r = runCatching { api.load(item.url) }.getOrNull()) {
+                            is com.lagradost.cloudstream3.MovieLoadResponse -> r.dataUrl
+                            is com.lagradost.cloudstream3.TvSeriesLoadResponse -> r.episodes.firstOrNull()?.data
+                            else -> null
+                        } ?: continue
                         val links = java.util.Collections.synchronizedList(ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>())
-                        kotlinx.coroutines.withTimeoutOrNull(40_000) { runCatching { api.loadLinks(data, false, {}, { links.add(it) }) } }
+                        kotlinx.coroutines.withTimeoutOrNull(40_000) { runCatching { api.loadLinks(data, false, { subs.add(it) }, { links.add(it) }) } }
+                        // all=1: every link (best first, like the player sorts them) with the subtitles, instead of the first matching one
+                        if (q["all"] == "1" && links.isNotEmpty()) { allLinks.addAll(links.sortedByDescending { it.quality }); return@runBlocking item.name to allLinks.first() }
                         links.firstOrNull { it.name.contains(wanted, true) }?.let { return@runBlocking item.name to it }
                     }
                     null
                 } ?: return ok(ex, "no such link")
                 onEdt {
-                    com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(found.second), emptyList()), 0, null))
+                    com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(allLinks.ifEmpty { listOf(found.second) }, subs.map { com.lagradost.cloudstream3.ui.player.PlayerSubtitleHelper.getSubtitleData(it) }), 0, null))
                 }
-                ok(ex, "playing ${found.first} / ${found.second.name} ${found.second.type}")
+                ok(ex, "playing ${found.first} / ${found.second.name} ${found.second.type}; links ${allLinks.size}: ${allLinks.joinToString { it.name + " " + it.quality }}; subtitles ${subs.size}: ${subs.joinToString { it.lang }}")
             }
             "/provider" -> {
                 // dev: select the Home provider by name, optionally search in it only: /provider?name=Kisskh&q=squid

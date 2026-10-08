@@ -60,13 +60,11 @@ fun PageHeader(title: String, modifier: Modifier = Modifier, subtitle: String? =
     }
 }
 
-/** Shelf title: bold, an accent tick before it, and "See all" that slides its arrow on hover */
+/** Shelf title: bold, plain, and "See all" that slides its arrow on hover */
 @Composable
 fun RichSectionHeader(title: String, modifier: Modifier = Modifier, subtitle: String? = null, onSeeAll: (() -> Unit)? = null, trailing: @Composable () -> Unit = {}) {
     val c = Fluent.colors
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(4.dp, 20.dp).background(Brush.verticalGradient(listOf(c.accent, c.accent.copy(alpha = 0.4f))), RoundedCornerShape(2.dp)))
-        Box(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             FText(title, style = Fluent.type.subtitle.copy(fontSize = 21.sp, fontWeight = FontWeight.Bold), maxLines = 1)
             if (subtitle != null) FText(subtitle, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
@@ -109,8 +107,9 @@ fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
             val source = rememberInteraction()
             val hovered by source.collectIsHoveredAsState()
             val on = i == selected
-            val bg by animateColorAsState(if (on) c.accent else if (hovered) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
-            val fg = if (on) c.onAccent else if (hovered) c.text else c.textSecondary
+            // selected = a quiet neutral pill (no accent fill)
+            val bg by animateColorAsState(if (on) (if (c.dark) Color(0x2EFFFFFF) else Color(0x17000000)) else if (hovered) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
+            val fg = if (on || hovered) c.text else c.textSecondary
             val shape = RoundedCornerShape(50)
             Row(
                 Modifier.height(34.dp).clip(shape).background(bg, shape).fluentClickable(source, true, shape, Role.Tab) { onSelect(i) }.padding(horizontal = 16.dp),
@@ -119,7 +118,7 @@ fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
                 FText(text, style = Fluent.type.bodyStrong, color = fg, maxLines = 1, softWrap = false)
                 counts?.getOrNull(i)?.let { n ->
                     Box(Modifier.width(8.dp))
-                    Box(Modifier.background(if (on) c.onAccent.copy(alpha = 0.18f) else c.control, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
+                    Box(Modifier.background(c.control, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
                         FText(n.toString(), style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1, softWrap = false)
                     }
                 }
@@ -146,11 +145,11 @@ fun EmptyState(glyph: String, title: String, text: String? = null, modifier: Mod
     val c = Fluent.colors
     Column(modifier.fillMaxWidth().padding(vertical = 56.dp, horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier.size(84.dp).background(Brush.radialGradient(listOf(c.accent.copy(alpha = 0.22f), Color.Transparent)), CircleShape),
+            Modifier.size(84.dp),
             contentAlignment = Alignment.Center,
         ) {
             Box(Modifier.size(56.dp).background(c.card, CircleShape).border(Dp.Hairline, c.stroke, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(glyph, size = 24.dp, tint = c.accentText)
+                Icon(glyph, size = 24.dp, tint = c.textSecondary)
             }
         }
         Box(Modifier.height(16.dp))
@@ -197,7 +196,6 @@ fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int)
             val (url, headers) = image(i)
             Box(
                 Modifier.size(132.dp, 74.dp).graphicsLayer { scaleX = scale; scaleY = scale }
-                    .shadow(if (on) 18.dp else 0.dp, shape, clip = false)
                     .clip(shape).background(Color(0xFF15161A))
                     .border(if (on) 2.dp else Dp.Hairline, if (on) Color.White else Color(0x33FFFFFF), shape)
                     .fluentClickable(source, true, shape, Role.Button) { onSelect(i) },
@@ -206,7 +204,7 @@ fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int)
                 Box(Modifier.fillMaxSize().graphicsLayer { alpha = dim }.background(Color.Black))
                 if (on) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).drawBehind {
                     drawRect(Color(0x55FFFFFF))
-                    drawRect(Color.White, size = androidx.compose.ui.geometry.Size(size.width * progress().coerceIn(0f, 1f), size.height))
+                    drawRect(c.accent, size = androidx.compose.ui.geometry.Size(size.width * progress().coerceIn(0f, 1f), size.height))
                 })
             }
         }
@@ -235,13 +233,13 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val scale by animateFloatAsState(if (hovered) 1.03f else 1f, FluentMotion.tweenIn(140))
+    val scale = 1f
     val shape = RoundedCornerShape(50)
-    val bg = if (primary) (if (hovered) c.accentHover else c.accent) else Color.White.copy(alpha = if (hovered) 0.24f else 0.14f)
-    val fg = if (primary) c.onAccent else Color.White
+    // on artwork the main action is plain white with dark text, the others frosted: no accent glow
+    val bg = if (primary) Color.White.copy(alpha = if (hovered) 0.86f else 1f) else Color.White.copy(alpha = if (hovered) 0.22f else 0.14f)
+    val fg = if (primary) Color(0xFF111114) else Color.White
     Row(
         modifier.height(height).graphicsLayer { scaleX = scale; scaleY = scale }
-            .shadow(if (primary && hovered) 16.dp else 0.dp, shape, ambientColor = c.accent, spotColor = c.accent)
             .clip(shape).background(bg, shape)
             .border(Dp.Hairline, if (primary) Color.Transparent else Color(0x40FFFFFF), shape)
             .focusRing(source, shape)
@@ -262,10 +260,10 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
 fun ArtChip(text: String, accent: Boolean = false) {
     val c = Fluent.colors
     Box(
-        Modifier.background(if (accent) c.accent else Color(0x33FFFFFF), RoundedCornerShape(50))
-            .border(Dp.Hairline, if (accent) Color.Transparent else Color(0x33FFFFFF), RoundedCornerShape(50))
+        Modifier.background(if (accent) Color(0x40FFFFFF) else Color(0x26FFFFFF), RoundedCornerShape(50))
+            .border(Dp.Hairline, Color(0x2EFFFFFF), RoundedCornerShape(50))
             .padding(horizontal = 10.dp, vertical = 3.dp),
-    ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = if (accent) c.onAccent else Color.White, maxLines = 1, softWrap = false) }
+    ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = Color.White, maxLines = 1, softWrap = false) }
 }
 
 /** Overlay content on a 16:9 still with a gradient for legibility */

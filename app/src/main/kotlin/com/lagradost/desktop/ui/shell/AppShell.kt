@@ -505,7 +505,7 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
     val shape = RoundedCornerShape(50)
     val bg by androidx.compose.animation.animateColorAsState(
         when {
-            selected -> c.accent.copy(alpha = if (c.dark) 0.18f else 0.14f)
+            selected -> if (c.dark) Color(0x1FFFFFFF) else Color(0x14000000)
             hovered -> c.subtleHover
             else -> Color.Transparent
         }, FluentMotion.tweenStd(160), label = "tab",
@@ -517,7 +517,7 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
                 .padding(horizontal = if (iconOnly) 9.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(item.glyph, size = 16.dp, tint = if (selected) c.accentText else c.textSecondary)
+            Icon(item.glyph, size = 16.dp, tint = if (selected) c.text else c.textSecondary)
             if (!iconOnly) {
                 Box(Modifier.width(8.dp))
                 FText(item.label, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (selected) c.text else c.textSecondary, maxLines = 1, softWrap = false)
@@ -527,7 +527,7 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
     if (iconOnly) Tooltip(item.label) { body() } else body()
 }
 
-/** The floating dock at the bottom: a glass pill with every page, the selected one lifted on an accent pill */
+/** The floating dock at the bottom: a glass pill with every page, the selected one on a quiet neutral pill */
 @Composable
 private fun BottomDock(modifier: Modifier, shown: Float = 1f) {
     val c = Fluent.colors
@@ -579,8 +579,8 @@ private fun DockItem(item: NavItem) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(Modifier.height(30.dp).graphicsLayer { scaleX = lift; scaleY = lift }, contentAlignment = Alignment.Center) {
-                Box(Modifier.width(pill + 18.dp).height(30.dp).background(if (selected) c.accent.copy(alpha = if (c.dark) 0.22f else 0.16f) else Color.Transparent, RoundedCornerShape(50)))
-                Icon(item.glyph, size = 18.dp, tint = if (selected) c.accentText else c.textSecondary)
+                Box(Modifier.width(pill + 18.dp).height(30.dp).background(if (selected) (if (c.dark) Color(0x24FFFFFF) else Color(0x14000000)) else Color.Transparent, RoundedCornerShape(50)))
+                Icon(item.glyph, size = 18.dp, tint = if (selected) c.text else c.textSecondary)
             }
             FText(item.label, style = Fluent.type.caption, color = if (selected) c.text else c.textTertiary, maxLines = 1, softWrap = false)
         }

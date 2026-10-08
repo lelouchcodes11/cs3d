@@ -346,6 +346,8 @@ object Overlays {
         val onSecondary: () -> Unit = {},
         val onClose: () -> Unit = {},
         val width: Dp = 440.dp,
+        /** A click on the dimmed area around the card closes it (menus that apply each choice at once) */
+        val dismissOnOutside: Boolean = false,
         val body: @Composable (dismiss: () -> Unit) -> Unit,
     )
 
@@ -386,12 +388,22 @@ fun DialogLayer() {
         val shown = remember(top) { top }
         // the card rises and grows into place
         val appear = remember(shown) { androidx.compose.animation.core.Animatable(0f) }
-        androidx.compose.runtime.LaunchedEffect(shown) { appear.animateTo(1f, FluentMotion.tweenIn(320)) }
+        androidx.compose.runtime.LaunchedEffect(shown) { appear.animateTo(1f, FluentMotion.tweenIn(180)) }
         Box(
-            Modifier.fillMaxSize().background(c.scrim.copy(alpha = (c.scrim.alpha * 1.4f).coerceAtMost(0.75f))).pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } },
+            Modifier.fillMaxSize().background(c.scrim.copy(alpha = (c.scrim.alpha * 1.4f).coerceAtMost(0.75f))).pointerInput(shown) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        // the card consumes its own clicks: a press that reaches the scrim is outside it
+                        val outside = e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.changes.none { it.isConsumed }
+                        e.changes.forEach { it.consume() }
+                        if (outside && shown?.dismissOnOutside == true) { Overlays.dismiss(shown); shown.onClose() }
+                    }
+                }
+            },
             contentAlignment = Alignment.Center,
         ) {
-            if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.94f + 0.06f * a; scaleX = s; scaleY = s; translationY = (1f - a) * 18f * density }) { ContentDialogCard(shown) }
+            if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.97f + 0.03f * a; scaleX = s; scaleY = s }.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) { ContentDialogCard(shown) }
         }
     }
 }

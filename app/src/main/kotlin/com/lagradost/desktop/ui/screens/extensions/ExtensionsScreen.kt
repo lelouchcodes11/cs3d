@@ -261,7 +261,7 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(52.dp).shadow(8.dp, RoundedCornerShape(FluentShapes.small)).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(52.dp).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
                 Icon(Icons.Extensions, size = 22.dp, tint = c.textTertiary)
                 p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")?.let { RemoteImage(it, null, null, Modifier.size(52.dp), ContentScale.Crop) }
             }

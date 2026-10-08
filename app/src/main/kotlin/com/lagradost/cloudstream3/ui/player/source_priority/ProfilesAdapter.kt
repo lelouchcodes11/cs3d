@@ -74,7 +74,8 @@ class ProfilesAdapter(
         val itemView = holder.itemView
 
         priorityText.setText(item.name)
-        dataText.isVisible = item.types.contains(QualityDataHelper.QualityProfileType.Data)
+        // desktop: no mobile data profile
+        dataText.isVisible = false
         wifiText.isVisible = item.types.contains(QualityDataHelper.QualityProfileType.WiFi)
         downloadText.isVisible = item.types.contains(QualityDataHelper.QualityProfileType.Download)
 

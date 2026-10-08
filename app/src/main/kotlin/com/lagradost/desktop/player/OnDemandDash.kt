@@ -8,15 +8,17 @@ import java.util.concurrent.TimeUnit
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
- * DASH "on demand" manifests (profile isoff-on-demand: every quality is one fragmented MP4 file, `SegmentBase` with an `indexRange` that points
- * at the file's seek index). ffmpeg's DASH reader takes each file for one endless segment: the video plays but cannot be seeked (IStreamFlare's
- * OK.ru links). ExoPlayer on Android reads the index. Here the files are played directly instead: the best video quality for the screen, with the
- * best audio file as an external track; mpv seeks inside both with HTTP ranges.
+ * Static DASH manifests that ffmpeg's DASH reader plays but cannot seek in (IStreamFlare's OK.ru links), played another way:
+ *  - "on demand" (profile isoff-on-demand: every quality is one fragmented MP4 file, `SegmentBase` with an `indexRange` that points at the
+ *    file's seek index): ffmpeg takes each file for one endless segment. The files are played directly; mpv seeks inside them with HTTP ranges.
+ *  - numbered segments (`SegmentTemplate` with a `SegmentTimeline` or a fixed duration): ffmpeg opens every quality and stalls after a seek.
+ *    The chosen qualities become HLS playlists (the init segment as EXT-X-MAP), which ffmpeg's HLS reader seeks reliably.
+ * Either way: the best video quality for the screen, with the best audio as an external track. ExoPlayer on Android plays both kinds natively.
  */
 object OnDemandDash {
     private const val TAG = "OnDemandDash"
 
-    /** [video] and [audio] (null when the video file has its own sound) to play instead of the manifest */
+    /** [video] and [audio] (null when the video has its own sound) to play instead of the manifest: files or loopback HLS playlists */
     data class Files(val video: String, val audio: String?, val height: Int)
 
     private val client by lazy {
@@ -28,46 +30,53 @@ object OnDemandDash {
         java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.maxOf { it.displayMode.height }
     }.getOrDefault(1080).coerceAtLeast(1080)
 
-    /** The files of an on-demand manifest at [url], or null when it is another kind of DASH (live, segment templates or lists) */
+    private class Rep(val url: String, val bandwidth: Long, val height: Int, val hasAudio: Boolean)
+
+    /** What to play instead of the manifest at [url], or null when it is another kind of DASH (live, segment lists, DRM...) */
     fun resolve(url: String, headers: Map<String, String>): Files? {
         val builder = Request.Builder().url(url)
         for ((k, v) in headers) if (!k.equals("Range", true)) com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
         val (xml, finalUrl) = client.newCall(builder.build()).execute().use { r ->
-            if (!r.isSuccessful || r.body.contentLength() > (4L shl 20)) return null
+            if (!r.isSuccessful || r.body.contentLength() > (8L shl 20)) return null
             r.body.string() to r.request.url.toString()
         }
-        if (!xml.contains("<MPD") || !xml.contains("SegmentBase")) return null
+        if (!xml.contains("<MPD") || (!xml.contains("SegmentBase") && !xml.contains("SegmentTemplate"))) return null
+        // encrypted streams keep going through the DASH reader (keys, license)
+        if (xml.contains("ContentProtection")) return null
         val doc = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
             runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
         }.newDocumentBuilder().parse(xml.byteInputStream())
         val mpd = doc.documentElement
         if (mpd.getAttribute("type") == "dynamic") return null
-        val period = mpd.children("Period").firstOrNull() ?: return null
-        // a manifest with templates or segment lists anywhere is left to the DASH reader
-        if (doc.getElementsByTagName("SegmentTemplate").length > 0 || doc.getElementsByTagName("SegmentList").length > 0) return null
+        val periods = mpd.children("Period")
+        // several periods (ads, chapters) are left to the DASH reader
+        if (periods.size != 1) return null
+        val period = periods.first()
+        if (doc.getElementsByTagName("SegmentList").length > 0) return null
+        val templated = doc.getElementsByTagName("SegmentTemplate").length > 0
+        val totalSeconds = parseDuration(period.getAttribute("duration")) ?: parseDuration(mpd.getAttribute("mediaPresentationDuration"))
 
         val base = listOf(mpd, period).fold(finalUrl) { acc, e -> e.baseUrl()?.let { resolveUrl(acc, it) } ?: acc }
-
-        data class Rep(val url: String, val bandwidth: Long, val height: Int, val hasAudio: Boolean)
-
         val videos = ArrayList<Rep>()
         val audios = ArrayList<Rep>()
         for (set in period.children("AdaptationSet")) {
             val setBase = set.baseUrl()?.let { resolveUrl(base, it) } ?: base
             val setType = set.getAttribute("contentType").ifEmpty { set.getAttribute("mimeType").substringBefore('/') }
             for (rep in set.children("Representation")) {
-                val repUrl = rep.baseUrl()?.let { resolveUrl(setBase, it) } ?: return null
                 val type = setType.ifEmpty { rep.getAttribute("mimeType").substringBefore('/') }
+                if (type != "video" && type != "audio") continue
+                val repBase = rep.baseUrl()?.let { resolveUrl(setBase, it) } ?: setBase
+                val target = if (templated) {
+                    val playlist = hlsOf(rep, set, repBase, totalSeconds) ?: return null
+                    playlist
+                } else rep.baseUrl()?.let { resolveUrl(setBase, it) } ?: return null
                 val codecs = rep.getAttribute("codecs").ifEmpty { set.getAttribute("codecs") }
                 val r = Rep(
-                    repUrl, rep.getAttribute("bandwidth").toLongOrNull() ?: 0L, rep.getAttribute("height").toIntOrNull() ?: 0,
+                    target, rep.getAttribute("bandwidth").toLongOrNull() ?: 0L, rep.getAttribute("height").toIntOrNull() ?: 0,
                     codecs.contains("mp4a") || codecs.contains("opus") || codecs.contains("ac-3") || codecs.contains("ec-3"),
                 )
-                when (type) {
-                    "video" -> videos.add(r)
-                    "audio" -> audios.add(r)
-                }
+                if (type == "video") videos.add(r) else audios.add(r)
             }
         }
         if (videos.isEmpty()) return null
@@ -75,8 +84,85 @@ object OnDemandDash {
         val video = videos.filter { it.height in 1..cap }.maxWithOrNull(compareBy({ it.height }, { it.bandwidth }))
             ?: videos.minByOrNull { it.height } ?: return null
         val audio = if (video.hasAudio) null else audios.maxByOrNull { it.bandwidth }?.url
-        Log.i(TAG, "on-demand DASH: ${video.height}p of ${videos.map { it.height }.sorted()} (cap $cap), audio ${if (audio != null) "separate" else "in the video"}")
-        return Files(video.url, audio, video.height)
+        val kind = if (templated) "segment template as HLS" else "on-demand files"
+        Log.i(TAG, "static DASH ($kind): ${video.height}p of ${videos.map { it.height }.sorted()} (cap $cap), audio ${if (audio != null) "separate" else "in the video"}")
+        return if (templated) Files(HlsProxy.serve(video.url), audio?.let { HlsProxy.serve(it) }, video.height)
+        else Files(video.url, audio, video.height)
+    }
+
+    /**
+     * The HLS media playlist of a templated representation (text, addresses absolute), or null for a template this does not understand.
+     * `$RepresentationID$`, `$Bandwidth$`, `$Number$` and `$Time$` (also with a width like `%05d`); a `SegmentTimeline`, or `duration`
+     * with the period length.
+     */
+    private fun hlsOf(rep: Element, set: Element, base: String, totalSeconds: Double?): String? {
+        val repTemplate = rep.children("SegmentTemplate").firstOrNull()
+        val setTemplate = set.children("SegmentTemplate").firstOrNull()
+        if (repTemplate == null && setTemplate == null) return null
+        fun attr(name: String): String = repTemplate?.getAttribute(name)?.takeIf { it.isNotEmpty() } ?: setTemplate?.getAttribute(name).orEmpty()
+        val timescale = attr("timescale").toLongOrNull()?.takeIf { it > 0 } ?: 1L
+        val startNumber = attr("startNumber").toLongOrNull() ?: 1L
+        val pto = attr("presentationTimeOffset").toLongOrNull() ?: 0L
+        val media = attr("media").ifEmpty { return null }
+        val init = attr("initialization")
+        val id = rep.getAttribute("id")
+        val bandwidth = rep.getAttribute("bandwidth")
+
+        fun fill(t: String, number: Long, time: Long): String = Regex("\\$(RepresentationID|Bandwidth|Number|Time)(%0(\\d+)d)?\\$|\\$\\$").replace(t) { m ->
+            if (m.value == "$$") return@replace "$"
+            val v = when (m.groupValues[1]) {
+                "RepresentationID" -> return@replace id
+                "Bandwidth" -> bandwidth
+                "Number" -> number.toString()
+                else -> time.toString()
+            }
+            val width = m.groupValues[3].toIntOrNull() ?: 0
+            v.padStart(width, '0')
+        }
+
+        // (start time, duration) of every segment in timescale units
+        val segments = ArrayList<Pair<Long, Long>>()
+        val timeline = (repTemplate?.children("SegmentTimeline")?.firstOrNull() ?: setTemplate?.children("SegmentTimeline")?.firstOrNull())
+        if (timeline != null) {
+            var t = pto
+            val entries = timeline.children("S")
+            for ((i, s) in entries.withIndex()) {
+                s.getAttribute("t").toLongOrNull()?.let { t = it }
+                val d = s.getAttribute("d").toLongOrNull()?.takeIf { it > 0 } ?: return null
+                var r = s.getAttribute("r").toLongOrNull() ?: 0L
+                if (r < 0) {
+                    // repeat until the next entry's start or the end of the period
+                    val end = entries.getOrNull(i + 1)?.getAttribute("t")?.toLongOrNull()
+                        ?: totalSeconds?.let { pto + (it * timescale).toLong() } ?: return null
+                    r = ((end - t + d - 1) / d) - 1
+                }
+                repeat((r + 1).toInt()) { segments.add(t to d); t += d }
+            }
+        } else {
+            val d = attr("duration").toLongOrNull()?.takeIf { it > 0 } ?: return null
+            val total = totalSeconds ?: return null
+            val count = kotlin.math.ceil(total * timescale / d).toLong()
+            for (i in 0 until count) segments.add(pto + i * d to d)
+        }
+        if (segments.isEmpty() || segments.size > 50_000) return null
+
+        val sb = StringBuilder("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n")
+        sb.append("#EXT-X-TARGETDURATION:").append(kotlin.math.ceil(segments.maxOf { it.second }.toDouble() / timescale).toLong()).append('\n')
+        if (init.isNotEmpty()) sb.append("#EXT-X-MAP:URI=\"").append(resolveUrl(base, fill(init, startNumber, segments.first().first))).append("\"\n")
+        for ((i, seg) in segments.withIndex()) {
+            sb.append("#EXTINF:").append(String.format(java.util.Locale.ROOT, "%.3f", seg.second.toDouble() / timescale)).append(",\n")
+            sb.append(resolveUrl(base, fill(media, startNumber + i, seg.first))).append('\n')
+        }
+        sb.append("#EXT-X-ENDLIST\n")
+        return sb.toString()
+    }
+
+    /** ISO 8601 durations of manifests (PT2H49M4.144S) in seconds */
+    private fun parseDuration(v: String): Double? {
+        val m = Regex("P(?:(\\d+)D)?T?(?:(\\d+)H)?(?:(\\d+)M)?(?:([\\d.]+)S)?").matchEntire(v.trim()) ?: return null
+        val (d, h, min, s) = m.destructured
+        val total = (d.toDoubleOrNull() ?: 0.0) * 86400 + (h.toDoubleOrNull() ?: 0.0) * 3600 + (min.toDoubleOrNull() ?: 0.0) * 60 + (s.toDoubleOrNull() ?: 0.0)
+        return total.takeIf { it > 0 }
     }
 
     private fun resolveUrl(base: String, ref: String): String = base.toHttpUrlOrNull()?.resolve(ref.trim())?.toString() ?: ref.trim()

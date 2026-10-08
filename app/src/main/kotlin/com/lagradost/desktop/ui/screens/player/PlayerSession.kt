@@ -311,6 +311,8 @@ class PlayerSession(
     private var stallBuffered = -1L
     private var stallSince = 0L
     private var stallRetries = 0
+    // a source the viewer chose in the list gets longer to start: a huge file (a 48 GB MP4 reads its index for ~20 s) is still loading
+    private var pickedByHand = false
 
     private fun watchStalls() {
         scope.launch {
@@ -325,7 +327,7 @@ class PlayerSession(
                     continue
                 }
                 // a source that has not shown a picture after 20 s is not worth waiting for (it used to be 35 s); one that stops half way gets 25 s
-                val limit = if (startingSource) 20_000 else 25_000
+                val limit = if (startingSource) (if (pickedByHand) 45_000 else 20_000) else 25_000
                 if (now - stallSince > limit) {
                     stallSince = now
                     onStalled()
@@ -376,6 +378,8 @@ class PlayerSession(
     // ------------------------------------------------------------------ playback
 
     private fun getPos(): Long {
+        // "Start from beginning" on the details page: this video starts at 0:00 once (its saved progress stays until it is played)
+        if (StartOver.take(vm.state.generatorState?.id)) return 0L
         val durPos = getViewPos(vm.state.generatorState?.id) ?: return 0L
         if (durPos.duration == 0L) return 0L
         if (durPos.position * 100L / durPos.duration > 95L) return 0L
@@ -408,6 +412,7 @@ class PlayerSession(
      */
     private fun loadLink(link: VideoLink, sameEpisode: Boolean, reason: String? = null, resumeAt: Long? = null) {
         stallRetries = 0
+        pickedByHand = false
         if (link != selectedLink) prematureRetries = 0
         // another source of the same episode carries on where the video was (not at 0:00)
         if (resumeAt != null) resumeMs = resumeAt
@@ -416,6 +421,7 @@ class PlayerSession(
         waitingForMore = false
         selectedLink = link
         audioApplied = false
+        repickSubtitleForSource()
         failure = null
         loadingText = reason ?: "Starting playback…"
         playingSince = 0L
@@ -439,6 +445,16 @@ class PlayerSession(
                 }
             }
         }
+        // subtitles inside the video belong to the file they came from: mpv knows them by track number, and "track 3" of the next source is
+        // another language, a signs-only track or nothing (wrong subtitles after a source switch). This file lists its own once it is open,
+        // and a track chosen in the old file is replaced by the same language in the new one
+        if (vm.state.subtitles.any { it.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO }) vm.modifyState { set(subtitles.filter { it.origin != SubtitleOrigin.EMBEDDED_IN_VIDEO }) }
+        failedSubtitles.removeAll { it.toIntOrNull() != null }
+        if (selectedSubtitle?.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO) {
+            selectedSubtitle = null
+            subtitleChosenByUser = false
+        }
+        if (!sameEpisode) announcedSubtitle = null
         val subtitles = vm.state.subtitles
         val (url, uri) = link
         // remembered as the wanted subtitle, so that the player's progress reports (and a dead file's replacement) are about it
@@ -468,6 +484,7 @@ class PlayerSession(
         subtitleChosenByUser = false
         failedSubtitles.clear()
         subtitleStatus = null
+        announcedSubtitle = null
         fallbackLink = null
         selectedLink = null
         playerActive = false
@@ -675,8 +692,49 @@ class PlayerSession(
             usable.firstOrNull { it.origin == SubtitleOrigin.DOWNLOADED_FILE && it.matchesLanguageCode(lang) }?.let { return it }
         }
         if (!settings) return null
-        return usable.firstOrNull { it.matchesLanguageCode(lang) }
+        // the video's own subtitles first: they are made for this very file, so always in time; online files are often for another
+        // release (another cut or frame rate) and run early or late
+        return usable.firstOrNull { isFullEmbedded(it) && it.matchesLanguageCode(lang) } ?: bestForSource(usable.filter { it.matchesLanguageCode(lang) })
     }
+
+    /**
+     * Of several subtitles of the language, the one that belongs to the playing source: StreamPlay-like extensions deliver hundreds from many
+     * sites (OpenSubtitles, each host's own, each dubbed version's own) and the first by name was usually for another release (out of sync,
+     * "random"). Same site as the video link (or its referer) first, then the same "(… Audio)" version tag as the source name, then list order.
+     */
+    private fun bestForSource(candidates: List<SubtitleData>): SubtitleData? = candidates.maxByOrNull { sourceAffinity(it) }
+
+    private fun baseDomain(url: String?): String? = runCatching { java.net.URI(url!!.trim()).host?.lowercase()?.split('.')?.takeLast(2)?.joinToString(".") }.getOrNull()
+
+    private fun sourceAffinity(sub: SubtitleData): Int {
+        val link = selectedLink?.first ?: return 0
+        var score = 0
+        val subDomain = baseDomain(sub.url)
+        if (subDomain != null && (subDomain == baseDomain(link.url) || subDomain == baseDomain(link.referer))) score += 2
+        val tags = Regex("\\(([^)]+)\\)").findAll(sub.name).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toList()
+        if (tags.any { link.name.contains(it, ignoreCase = true) }) score += 1
+        return score
+    }
+
+    /** Another source plays: an automatic online subtitle is replaced by one that belongs to it (its own site or version), if there is one */
+    private fun repickSubtitleForSource() {
+        if (subtitleChosenByUser) return
+        val sel = selectedSubtitle ?: return
+        if (sel.origin != SubtitleOrigin.URL) return
+        val lang = preferredSubLang?.takeIf { it.isNotEmpty() } ?: return
+        val best = bestForSource(sortSubs(vm.state.subtitles).filter { it.getId() !in failedSubtitles && it.origin == SubtitleOrigin.URL && it.matchesLanguageCode(lang) }) ?: return
+        if (best != sel && sourceAffinity(best) > sourceAffinity(sel)) {
+            android.util.Log.i("PlayerSession", "subtitle for source ${sourceName}: ${best.name.trim()} instead of ${sel.name.trim()}")
+            applySubtitle(best, false)
+        }
+    }
+
+    /** A subtitle track of the playing file that is not a "forced" / signs-only track (those show a line now and then) */
+    private fun isFullEmbedded(sub: SubtitleData): Boolean =
+        sub.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO && listOf("forced", "sign", "song").none { sub.nameSuffix.contains(it, true) || sub.originalName.contains(it, true) }
+
+    /** The subtitle whose "loading / on" pill was shown: the same one coming back (more sources arriving, a reload) does not pop it up again */
+    private var announcedSubtitle: String? = null
 
     private fun onSubtitleLoad(event: SubtitleLoadEvent) {
         val sub = event.subtitle
@@ -684,9 +742,14 @@ class PlayerSession(
         // a late report about a subtitle that is not the wanted one any more
         if (sub != selectedSubtitle) return
         val name = sub.name.trim().lineSequence().first().ifBlank { "Subtitle" }
+        val again = sub.getId() == announcedSubtitle
         when (event.state) {
-            SubtitleLoadState.Loading -> subtitleStatus = SubtitleStatus(SubtitleLoadState.Loading, "Loading subtitles · $name")
-            SubtitleLoadState.Loaded -> subtitleStatus = SubtitleStatus(SubtitleLoadState.Loaded, "Subtitles on · $name")
+            SubtitleLoadState.Loading -> if (!again) subtitleStatus = SubtitleStatus(SubtitleLoadState.Loading, "Loading subtitles · $name")
+            SubtitleLoadState.Loaded -> {
+                if (!again) subtitleStatus = SubtitleStatus(SubtitleLoadState.Loaded, "Subtitles on · $name")
+                else if (subtitleStatus?.state == SubtitleLoadState.Loading) subtitleStatus = null
+                announcedSubtitle = sub.getId()
+            }
             SubtitleLoadState.Failed -> {
                 failedSubtitles += sub.getId()
                 // an automatic choice that is dead is replaced by the next one of the language; what the viewer picked is left alone and reported
@@ -717,8 +780,19 @@ class PlayerSession(
         if (subtitleChosenByUser) return
         runCatching {
             val lang = preferredSubLang
-            // the automatic pick stays while it loads or works: more subtitles arriving must not restart it
-            selectedSubtitle?.let { if (it.getId() !in failedSubtitles && (lang == null || it.matchesLanguageCode(lang))) return }
+            // the automatic pick stays while it loads or works: more subtitles arriving must not restart it; except that the video's own track of
+            // the language, listed once the file is open, replaces an online file (it is always in time with the picture)
+            selectedSubtitle?.let { sel ->
+                val ok = sel.getId() !in failedSubtitles && (lang == null || sel.matchesLanguageCode(lang))
+                val better = if (ok && !lang.isNullOrEmpty() && sel.origin == SubtitleOrigin.URL) vm.state.subtitles.firstOrNull { isFullEmbedded(it) && it.getId() !in failedSubtitles && it.matchesLanguageCode(lang) } else null
+                if (better != null) {
+                    android.util.Log.i("PlayerSession", "subtitle: the video's own ${better.name.trim()} instead of ${sel.name.trim()}")
+                    applySubtitle(better, false)
+                    return
+                }
+                // the source's own subtitle can arrive after the source started playing
+                if (ok) { repickSubtitleForSource(); return }
+            }
             val current = player.getCurrentPreferredSubtitle()
             val pick = if (current != null && (lang == null || current.matchesLanguageCode(lang))) current
             else if (!lang.isNullOrEmpty()) autoSubtitle(vm.state.subtitles, settings = true, downloads = false) else null
@@ -731,7 +805,7 @@ class PlayerSession(
     }
 
     /** All subtitle choices, sorted by name */
-    fun subtitles(): List<SubtitleData> = sortSubs(vm.state.subtitles)
+    fun subtitles(): List<SubtitleData> = sortSubs(vm.state.subtitles).distinctBy { if (it.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO) it.getId() else it.url.trim() }
     /** What mpv really shows (the list and the picture agree) */
     fun currentSubtitle(): SubtitleData? = player.getCurrentPreferredSubtitle()
 
@@ -984,6 +1058,7 @@ class PlayerSession(
         // a pick made while an earlier pick is still being tried keeps the source that really played
         if (loadingText == null) fallbackLink = selectedLink
         loadLink(link, true)
+        pickedByHand = true
     }
 
     /** A source that was picked failed: true when it was handled (the next source after it, else the one that was playing) */
@@ -1076,6 +1151,24 @@ class PlayerSession(
         }
     }
 
+    /**
+     * Source priority with the sources of this video (Android's player menu does the same): which sources and qualities come first.
+     * The profile picked there is used for this video, and the source list is sorted again when the dialog closes.
+     */
+    fun openSourcePriority() {
+        val activity = com.lagradost.cloudstream3.CommonActivity.activity ?: return
+        val sources = vm.state.links.mapNotNull { it.first?.let { l -> com.lagradost.cloudstream3.ui.player.source_priority.LinkSource(l) } }.distinct()
+        val dialog = com.lagradost.cloudstream3.ui.player.source_priority.QualityProfileDialog(
+            activity, com.lagradost.cloudstream3.R.style.DialogFullscreenPlayer, sources, qualityProfile,
+        ) { profile -> qualityProfile = profile.id }
+        dialog.setOnDismissListener {
+            vm.state.clearSortedLinksCache()
+            linksFound = vm.state.sortLinks(qualityProfile).count { it.shouldUseLink }
+            sourcesVersion++
+        }
+        dialog.show()
+    }
+
     fun togglePlay() = player.handleEvent(CSPlayerEvent.PlayPauseToggle)
     fun play() = player.handleEvent(CSPlayerEvent.Play)
     fun pause() {
@@ -1083,7 +1176,15 @@ class PlayerSession(
         player.handleEvent(CSPlayerEvent.Pause)
     }
 
+    /** A file whose server ignores byte ranges (HubCloud "10Gbps" links answer every request with the whole file): mpv can not jump in it */
+    private fun refuseSeek(): Boolean {
+        if (player.liveStream || player.getMpvPropertyString("seekable") != "no") return false
+        Toasts.show("This source can't skip: its server only sends the video from the start. Pick another mirror of it (Pixeldrain, FSL, Instant) to skip.", false)
+        return true
+    }
+
     fun seekBy(ms: Long) {
+        if (refuseSeek()) return
         val d = durationMs
         val target = (positionMs + ms).coerceIn(0L, if (d > 0) d else Long.MAX_VALUE)
         player.seekTo(target)
@@ -1093,6 +1194,7 @@ class PlayerSession(
     }
 
     fun seekTo(ms: Long) {
+        if (refuseSeek()) return
         player.seekTo(ms)
         positionMs = ms
     }

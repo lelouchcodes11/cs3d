@@ -571,7 +571,8 @@ fun Slider(
     var dragging by remember { mutableStateOf(false) }
     val span = valueRange.endInclusive - valueRange.start
     val fraction = ((value - valueRange.start) / span).coerceIn(0f, 1f)
-    val thumb by animateDpAsState(if (dragging) 10.dp else if (hovered) 12.dp else 10.dp, tween(83))
+    // a white knob that grows a little under the pointer: the same as the player's seek bar (one look for every bar)
+    val thumb by animateDpAsState(if (dragging || hovered) 16.dp else 14.dp, tween(83))
     fun setFromX(x: Float) {
         var v = valueRange.start + (x / width).coerceIn(0f, 1f) * span
         if (steps != null && steps > 0f) v = (v / steps).roundToInt() * steps
@@ -614,11 +615,9 @@ fun Slider(
             Box(
                 Modifier
                     .offset { androidx.compose.ui.unit.IntOffset((fraction * (width - 20.dp.toPx())).roundToInt(), 0) }
-                    .size(20.dp)
-                    .background(if (c.dark) Color(0xFF454545) else Color.White, CircleShape)
-                    .border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, CircleShape),
+                    .size(20.dp),
                 contentAlignment = Alignment.Center,
-            ) { Box(Modifier.size(thumb).background(if (enabled) c.accent else c.textDisabled, CircleShape)) }
+            ) { Box(Modifier.size(thumb).background(if (enabled) Color.White else c.textDisabled, CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, if (c.dark) Color(0x33000000) else c.strokeStrong, CircleShape)) }
         }
     }
 }
@@ -656,17 +655,17 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
         modifier
             .height(32.dp)
             .clip(shape)
-            .background(if (selected) c.accent else if (hovered) c.controlHover else c.control, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) Color.Transparent else c.stroke, shape)
+            .background(if (selected) (if (c.dark) Color(0x29FFFFFF) else Color(0x1A000000)) else if (hovered) c.subtleHover else Color.Transparent, shape)
+            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) c.strokeStrong.copy(alpha = 0.5f) else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(icon, size = 14.dp, tint = if (selected) c.onAccent else c.text)
+            Icon(icon, size = 14.dp, tint = if (selected) c.text else c.textSecondary)
             Box(Modifier.width(6.dp))
         }
-        FText(text, color = if (selected) c.onAccent else c.text, maxLines = 1, softWrap = false)
+        FText(text, color = if (selected) c.text else c.textSecondary, maxLines = 1, softWrap = false)
     }
 }
 

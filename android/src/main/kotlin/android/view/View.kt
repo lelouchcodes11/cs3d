@@ -48,6 +48,22 @@ open class View : Drawable.Callback {
         fun onTouch(v: View, event: MotionEvent): Boolean
     }
 
+    fun interface OnDragListener {
+        fun onDrag(v: View, event: DragEvent): Boolean
+    }
+
+    /** What is drawn under the pointer while dragging (the desktop drag shows no shadow; the list updates on drop) */
+    open class DragShadowBuilder(private val view: View?) {
+        constructor() : this(null)
+
+        fun getView(): View? = view
+        open fun onProvideShadowMetrics(outShadowSize: android.graphics.Point, outShadowTouchPoint: android.graphics.Point) {
+            outShadowSize.set(view?.getWidth() ?: 1, view?.getHeight() ?: 1)
+            outShadowTouchPoint.set(outShadowSize.x / 2, outShadowSize.y / 2)
+        }
+        open fun onDrawShadow(canvas: android.graphics.Canvas) {}
+    }
+
     fun interface OnApplyWindowInsetsListener {
         fun onApplyWindowInsets(v: View, insets: WindowInsets): WindowInsets
     }
@@ -359,6 +375,7 @@ open class View : Drawable.Callback {
     internal var mOnFocusChangeListener: OnFocusChangeListener? = null
     internal var mOnKeyListener: OnKeyListener? = null
     internal var mOnTouchListener: OnTouchListener? = null
+    internal var mOnDragListener: OnDragListener? = null
     internal var mOnApplyWindowInsetsListener: OnApplyWindowInsetsListener? = null
     internal var mOnGenericMotionListener: OnGenericMotionListener? = null
     private var mOnScrollChangeListener: OnScrollChangeListener? = null
@@ -1194,13 +1211,34 @@ open class View : Drawable.Callback {
     open fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean = false
     open fun onKeyMultiple(keyCode: Int, repeatCount: Int, event: KeyEvent): Boolean = false
 
+    open fun setOnDragListener(l: OnDragListener?) {
+        mOnDragListener = l
+    }
+
+    open fun onDragEvent(event: DragEvent): Boolean = false
+
+    open fun dispatchDragEvent(event: DragEvent): Boolean = mOnDragListener?.onDrag(this, event) == true || onDragEvent(event)
+
+    /** Drag and drop within this view's window (extensions reorder lists this way), see DragAndDrop */
+    fun startDragAndDrop(data: android.content.ClipData?, shadowBuilder: DragShadowBuilder?, myLocalState: Any?, flags: Int): Boolean =
+        DragAndDrop.start(this, data, myLocalState)
+
+    @Deprecated("startDragAndDrop")
+    fun startDrag(data: android.content.ClipData?, shadowBuilder: DragShadowBuilder?, myLocalState: Any?, flags: Int): Boolean =
+        startDragAndDrop(data, shadowBuilder, myLocalState, flags)
+
+    fun cancelDragAndDrop() = DragAndDrop.cancel()
+
+    fun updateDragShadow(shadowBuilder: DragShadowBuilder?) {}
+
     open fun dispatchTouchEvent(event: MotionEvent): Boolean {
         if (mOnTouchListener?.onTouch(this, event) == true) return true
         return onTouchEvent(event)
     }
 
     open fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!mEnabled) return isClickable()
+        // like Android: a view that only reacts to a long press (a drag handle) takes the press too, or the long press never comes
+        if (!mEnabled) return isClickable() || isLongClickable()
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> setPressed(true)
             MotionEvent.ACTION_UP -> {
@@ -1209,7 +1247,7 @@ open class View : Drawable.Callback {
             }
             MotionEvent.ACTION_CANCEL -> setPressed(false)
         }
-        return isClickable()
+        return isClickable() || isLongClickable()
     }
 
     open fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =

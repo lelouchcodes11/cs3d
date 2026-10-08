@@ -92,6 +92,23 @@ fun SubtitleStyleEditor(modifier: Modifier = Modifier, initial: SaveCaptionStyle
 
         Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SubtitlePreview(style)
+            // which look wins: the subtitle file's own styling (default) or the style below for every subtitle
+            SettingsCard(
+                "Subtitle renderer",
+                if (com.lagradost.desktop.ui.fluent.Appearance.subtitleUniversal) "Universal: every subtitle uses the style below; fonts, colours and positions written in a subtitle are ignored"
+                else "Subtitle's own: styled subtitles (ASS, coloured SRT) keep their fonts, colours and positions; plain ones use the style below",
+            ) {
+                com.lagradost.desktop.ui.fluent.ComboBox(
+                    listOf(false, true), com.lagradost.desktop.ui.fluent.Appearance.subtitleUniversal, { if (it) "Universal" else "Subtitle's own" },
+                    { universal ->
+                        com.lagradost.desktop.ui.fluent.Appearance.subtitleUniversal = universal
+                        com.lagradost.desktop.ui.fluent.Appearance.save()
+                        val now = style
+                        com.lagradost.desktop.core.ioTask { applyStyleEvent.invoke(now) }
+                    },
+                    minWidth = 180.dp,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button("Undo changes", { style = initial }, kind = ButtonKind.Subtle, icon = Icons.Back, enabled = style != initial)
                 Button("Reset to default", { style = defaultSubtitleStyle }, kind = ButtonKind.Subtle, icon = Icons.Refresh, enabled = style != defaultSubtitleStyle)

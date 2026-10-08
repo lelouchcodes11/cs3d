@@ -107,6 +107,20 @@ object LinkLab {
             com.lagradost.desktop.runtime.LogBuffer.snapshot().filter { it.contains(" mpv:") || it.contains("NetProxy") || it.contains("HlsProxy") }.takeLast(40).forEach { println("   $it") }
             kotlin.system.exitProcess(0)
         }
+        // the links of an earlier run again, through mpv only (to compare two player builds on the same links):
+        // -Dlinklab.replay=<...-links.tsv> plays the rows whose exo probe was OK
+        System.getProperty("linklab.replay")?.let { tsv ->
+            val rows = File(tsv).readLines().map { it.split("\t") }.filter { it.size >= 9 && it[7].startsWith("OK") }
+            println("replaying ${rows.size} links")
+            for (r in rows) {
+                val link = com.lagradost.cloudstream3.utils.newExtractorLink(r[0], r[2], r[5], runCatching { com.lagradost.cloudstream3.utils.ExtractorLinkType.valueOf(r[3]) }.getOrNull()) {
+                    referer = r[4]
+                    headers = r[6].split(";;").filter { it.contains('=') }.associate { it.substringBefore('=') to it.substringAfter('=') }
+                }
+                println("[replay] ${r[0]} | ${r[1]} | ${r[2].take(28)} | was ${r[8]} | now ${mpvProbe(link)}")
+            }
+            kotlin.system.exitProcess(0)
+        }
         val status = ExtensionHarness.installPlugins(activity, repos, filters)
         status.toSortedMap().forEach { (k, v) -> println("plugin $k: $v") }
 
@@ -351,7 +365,7 @@ object LinkLab {
             player.loadPlayer(DesktopBootstrap.activity, false, link, null, null, emptySet(), null, true, false)
             val first = withTimeoutOrNull(30_000) { outcome.await() } ?: "TIMEOUT opening"
             if (first != "opened") first else {
-                kotlinx.coroutines.delay(2500)
+                kotlinx.coroutines.delay(System.getProperty("linklab.wait")?.toLongOrNull() ?: 2500)
                 val pos = player.getMpvPropertyString("time-pos")?.toDoubleOrNull() ?: 0.0
                 val codec = player.getMpvPropertyString("video-format") ?: "-"
                 val size = (player.getMpvPropertyString("video-params/w") ?: "?") + "x" + (player.getMpvPropertyString("video-params/h") ?: "?")

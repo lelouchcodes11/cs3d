@@ -165,9 +165,13 @@ object SubtitleStyler {
         // one renderer for every kind of subtitle: SRT / WebVTT already follow the style, but ASS / SSA (files and embedded tracks) bring their own
         // font, size, outline and position, which is why some lines were bigger, outlined or elsewhere; "force" makes them follow the style's font, size,
         // colours and edge, the style overrides below add what "force" leaves alone (weight, slant and where the line sits)
-        out += "sub-ass-override" to "force"
+        // the renderer setting (Settings > Subtitles): by default a styled subtitle (ASS, an SRT with <font> colours or {\an8}) keeps its own fonts,
+        // colours and positions and plain ones follow this style (mpv's "scale"); "universal" drops every tag and the file's styles ("strip"),
+        // so every text subtitle is drawn with this one style
+        val universal = com.lagradost.desktop.ui.fluent.Appearance.subtitleUniversal
+        out += "sub-ass-override" to if (universal) "strip" else "scale"
         val alignment = style.alignment ?: CustomDecoder.SSA_ALIGNMENT_BOTTOM_CENTER
-        out += "sub-ass-style-overrides" to "Bold=${if (style.bold) -1 else 0},Italic=${if (style.italic) -1 else 0},Alignment=$alignment"
+        out += "sub-ass-style-overrides" to if (universal) "Bold=${if (style.bold) -1 else 0},Italic=${if (style.italic) -1 else 0},Alignment=$alignment" else ""
         out += "sub-font" to (family ?: "sans-serif")
         out += "sub-font-size" to num((style.fixedTextSize ?: com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE) * SIZE_FACTOR)
         out += "sub-color" to argb(style.foregroundColor)

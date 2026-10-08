@@ -29,7 +29,7 @@ object RangeProxy {
     private const val CHUNK = 4L * 1024 * 1024
     private const val RETRIES = 6
 
-    private class Entry(val url: String, val headers: Map<String, String>) {
+    private class Entry(val url: String, val headers: Map<String, String>, val interceptor: okhttp3.Interceptor? = null) {
         @Volatile
         var total = -1L
 
@@ -58,10 +58,10 @@ object RangeProxy {
     }
 
     /** Address to give the player instead of [url]; the file name (and with it the extension) is kept, players guess the format from it */
-    fun wrap(url: String, headers: Map<String, String>): String {
+    fun wrap(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null): String {
         if (entries.size > 50) entries.clear()
         val id = Integer.toHexString(url.hashCode()) + "-" + System.nanoTime().toString(16)
-        entries[id] = Entry(url, headers)
+        entries[id] = Entry(url, headers, interceptor)
         val name = url.substringBefore('?').substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80).ifEmpty { "video" }
         return "http://127.0.0.1:${server.address.port}/m/$id/$name"
     }
@@ -78,7 +78,8 @@ object RangeProxy {
         if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
         if (range != null) builder.header("Range", range)
         if (fresh) builder.header("Connection", "close")
-        val client = if (fresh) freshClient else sharedClient
+        // the extension's video interceptor (getVideoInterceptor) sees every request, as with ExoPlayer on Android
+        val client = (if (fresh) freshClient else sharedClient).let { c -> entry.interceptor?.let { c.newBuilder().addInterceptor(it).build() } ?: c }
         return client.newCall(builder.build()).execute()
     }
 

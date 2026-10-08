@@ -130,7 +130,8 @@ private fun PreferenceCard(item: Preference.PreferenceItem<*, *>) {
             SettingsCard(item.title, if (value in item.entries) item.internalSubtitleProvider(value, item.entries)?.takeIf { it != item.entries[value] } else null, item.icon) {
                 // by position: a null key ("Normal", "Automatic") is a real choice, which a nullable "selected" could not tell from "nothing"
                 ComboBox(
-                    items = keys.indices.toList(), selected = keys.indexOf(value).takeIf { it >= 0 },
+                    // an unset app language ("" or null, not one of the codes) is English: the box showed nothing
+                    items = keys.indices.toList(), selected = keys.indexOf(value).takeIf { it >= 0 } ?: (if (value == null || value == "") keys.indexOf("en").takeIf { it >= 0 } else null),
                     label = { i -> keys.getOrNull(i).let { k -> item.entries[k] ?: k.toString() } },
                     onSelect = { i -> val new = keys[i]; scope.launch { if (item.internalOnValueChanged(new)) item.internalSet(new) } },
                     minWidth = 180.dp,

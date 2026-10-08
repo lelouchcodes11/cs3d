@@ -61,6 +61,7 @@ object ImageLoader {
                 add(OkHttpNetworkFetcherFactory(callFactory = { buildDefaultClient(context) }))
                 // desktop: no BitmapFactoryDecoder/bitmapConfig (Android-only); resource ids need a fetcher on the JVM
                 add(coil3.ResourceIntFetcher.Factory(context))
+                add(WrappedImageFallback)
             }
             .apply {
                 setupCoilLogger()
@@ -180,4 +181,22 @@ object ImageLoader {
         imageData: ByteBuffer?,
         builder: ImageRequest.Builder.() -> Unit = {}
     ) = loadImageInternal(imageData = imageData, builder = builder)
+}
+
+/**
+ * desktop: an image that cannot be decoded (Skia has no AVIF; Android does) whose address wraps the original one
+ * (`https://serveproxy.com/?url=https://.../poster.jpg`, Kisskh: the proxy always answers AVIF) is loaded from the original address.
+ */
+private object WrappedImageFallback : coil3.intercept.Interceptor {
+    override suspend fun intercept(chain: coil3.intercept.Interceptor.Chain): coil3.request.ImageResult {
+        val result = chain.proceed()
+        if (result !is coil3.request.ErrorResult) return result
+        val address = chain.request.data as? String ?: return result
+        val inner = runCatching {
+            java.net.URI(address).rawQuery?.split('&')?.firstNotNullOfOrNull { part ->
+                java.net.URLDecoder.decode(part.substringAfter('=', ""), "UTF-8").takeIf { part.substringBefore('=') == "url" && it.startsWith("http") }
+            }
+        }.getOrNull() ?: return result
+        return chain.withRequest(chain.request.newBuilder().data(inner).build()).proceed()
+    }
 }

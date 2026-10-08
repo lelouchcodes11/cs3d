@@ -1545,10 +1545,20 @@ class ResultViewModel2 : ViewModel() {
 
             ACTION_PLAY_EPISODE_IN_PLAYER -> {
                 val list = HashMap<String, String>(currentResponse?.syncData ?: emptyMap())
-                val generator = generator ?: return
+                var generator = generator ?: return
 
                 // I know kinda shit to iterate all, but it is 100% sure to work
-                val index = generator.videos.indexOfFirst { value -> value.id == click.data.id }
+                var index = generator.videos.indexOfFirst { value -> value.id == click.data.id }
+                // desktop: "Resume" plays the last watched episode, which may be in the other list (Dub while Sub is shown): the player
+                // got index -1 and found no sources. Play it from its own list, as the episode card of that list would.
+                if (index < 0) {
+                    val own = currentEpisodes.entries.firstOrNull { e -> e.value.any { it.id == click.data.id } }?.key?.dubStatus
+                    if (own != null) {
+                        val episodes = currentEpisodes.filter { it.key.dubStatus == own }.toList().sortedBy { it.first.season }.flatMap { it.second }
+                        generator = RepoLinkGenerator(episodes, page = currentResponse)
+                        index = generator.videos.indexOfFirst { value -> value.id == click.data.id }
+                    }
+                }
 
                 if (currentResponse?.type == TvType.CustomMedia) {
                     generator.generateLinks(

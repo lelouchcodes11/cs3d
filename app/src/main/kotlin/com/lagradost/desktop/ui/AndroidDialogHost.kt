@@ -111,7 +111,8 @@ fun AndroidDialogHost(dialog: Dialog) {
         // a fixed width window (bottom sheet, alert, MATCH_PARENT) measures its decor EXACTLY like Android
         // a dialog laid out for a phone screen (no scrolling view of its own, such as the donation dialogs of the Phisher and CNCVerse
         // extensions) can be taller than the window: it scrolls inside it, so its lower buttons stay reachable
-        val scrolls = !isSheet && wantH != ViewGroup.LayoutParams.MATCH_PARENT && !hasScrollingView(decor)
+        // (bottom sheets too: StreamHubOne's "Scraping & Video" sheet is a phone-tall column, its lower half was cut off by the window)
+        val scrolls = wantH != ViewGroup.LayoutParams.MATCH_PARENT && !hasScrollingView(decor)
         Box(box, propagateMinConstraints = width != null) {
             if (scrolls) {
                 Box(Modifier.verticalScroll(rememberScrollState()), propagateMinConstraints = width != null) { AndroidViewHost(decor) }

@@ -534,6 +534,19 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectAn
             if (target != null) {
                 down.consume()
                 target.performLongClick()
+                // the long press started a drag (an extension's reorderable list): it follows this press until the button is let go
+                if (android.view.DragAndDrop.active) {
+                    try {
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                            change.consume()
+                            if (!change.pressed) { android.view.DragAndDrop.release(view, change.position.x, change.position.y); break }
+                            android.view.DragAndDrop.move(view, change.position.x, change.position.y)
+                        }
+                    } finally {
+                        android.view.DragAndDrop.cancel()
+                    }
+                }
             }
             return@awaitEachGesture
         }
@@ -547,6 +560,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectAn
         val longPressTimeout = viewConfiguration.longPressTimeoutMillis
         var last = down.position
         var finished = false
+        try {
         while (!finished) {
             val elapsed = System.currentTimeMillis() - downTime
             val remaining = longPressTimeout - elapsed
@@ -561,6 +575,17 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectAn
             }
             val change = pointerEvent.changes.firstOrNull { it.id == down.id } ?: pointerEvent.changes.first()
             last = change.position
+            // a drag started by this press (startDragAndDrop in a long-click or touch listener) goes where the pointer goes
+            if (android.view.DragAndDrop.active) {
+                change.consume()
+                if (!change.pressed) {
+                    android.view.DragAndDrop.release(view, change.position.x, change.position.y)
+                    finished = true
+                } else if (pointerEvent.type == PointerEventType.Move) {
+                    android.view.DragAndDrop.move(view, change.position.x, change.position.y)
+                }
+                continue
+            }
             when {
                 !change.pressed -> {
                     change.consume()
@@ -581,6 +606,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectAn
                     finished = true
                 }
             }
+        }
+        } finally {
+            // the press ended without a drop (cancelled, the view went away): the drag ends too
+            android.view.DragAndDrop.cancel()
         }
     }
 }

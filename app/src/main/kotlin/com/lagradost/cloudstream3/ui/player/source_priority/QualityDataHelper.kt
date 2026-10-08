@@ -46,7 +46,8 @@ object QualityDataHelper {
      **/
     enum class QualityProfileType(@StringRes val stringRes: Int, val unique: Boolean) {
         None(R.string.none, false),
-        WiFi(R.string.wifi, true),
+        // desktop: the profile for playing is called "Stream" (the stored name stays WiFi)
+        WiFi(R.string.profile_stream, true),
         Data(R.string.mobile_data, true),
         Download(R.string.download, true)
     }

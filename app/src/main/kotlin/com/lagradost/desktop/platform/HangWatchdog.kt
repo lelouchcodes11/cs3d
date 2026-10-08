@@ -72,9 +72,10 @@ object HangWatchdog {
             if (!AndroidRuntime.isInitialized) return
             val dir = File(AndroidRuntime.dataDir, "logs").also { it.mkdirs() }
             val file = File(dir, "jank.txt")
-            if (file.length() > MAX_JANK_FILE) return
+            // a full log starts again (the previous one kept as jank.txt.1): it used to stop, and the newest freezes are the ones that matter
+            if (file.length() > MAX_JANK_FILE) File(dir, "jank.txt.1").let { old -> old.delete(); file.renameTo(old) }
             file.appendText(buildString {
-                appendLine("${SimpleDateFormat("HH:mm:ss").format(Date())}  UI thread frozen for $durationMs ms")
+                appendLine("${SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date())}  UI thread frozen for $durationMs ms")
                 appendLine("  first seen at:\n    at $first")
                 if (last != first) appendLine("  last seen at:\n    at $last")
                 appendLine()

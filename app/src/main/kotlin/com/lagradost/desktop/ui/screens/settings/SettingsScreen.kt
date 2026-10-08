@@ -165,13 +165,8 @@ fun SettingsScreen(route: Route.Settings) {
 @Composable
 private fun PageContent(page: Page) {
     if (page == Page.Subtitles) Button("Player", { SettingsNav.page = "player" }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, icon = Icons.ChevronLeft, modifier = Modifier.padding(bottom = 4.dp))
-    Row(Modifier.padding(bottom = 22.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(52.dp).shadow(14.dp, RoundedCornerShape(FluentShapes.card), ambientColor = Color(page.tint), spotColor = Color(page.tint)).background(Brush.linearGradient(listOf(Color(page.tint), Color(page.tint).copy(alpha = 0.6f))), RoundedCornerShape(FluentShapes.card)), contentAlignment = Alignment.Center) {
-            Icon(page.glyph, size = 22.dp, tint = Color.White)
-        }
-        Box(Modifier.width(16.dp))
-        com.lagradost.desktop.ui.fluent.PageHeader(page.title, subtitle = page.about)
-    }
+    // a plain title: no coloured tile or glow
+    Box(Modifier.padding(bottom = 22.dp, top = 4.dp)) { com.lagradost.desktop.ui.fluent.PageHeader(page.title, subtitle = page.about) }
     when (page) {
         Page.About -> AboutPage()
         Page.Subtitles -> SubtitleStyleEditor()
@@ -225,17 +220,19 @@ private fun CategoryRow(title: String, glyph: String, tint: Color, selected: Boo
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(FluentShapes.card)
-    val bg by androidx.compose.animation.animateColorAsState(if (selected) c.accent.copy(alpha = if (c.dark) 0.16f else 0.12f) else if (hovered) c.subtleHover else Color.Transparent, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(160))
+    // neutral rows: a monochrome icon, a quiet fill and a short accent bar on the selected one (the Windows Settings look)
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) c.subtleHover else if (hovered) c.subtleHover.copy(alpha = c.subtleHover.alpha * 0.6f) else Color.Transparent, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(160))
     Row(
-        Modifier.padding(vertical = 2.dp).fillMaxWidth().height(48.dp).clip(shape)
+        Modifier.padding(vertical = 1.dp).fillMaxWidth().height(40.dp).clip(shape)
             .background(bg, shape)
-            .fluentClickable(source, true, shape, Role.Tab, onClick).padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .fluentClickable(source, true, shape, Role.Tab, onClick).padding(end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(32.dp).background(Brush.linearGradient(listOf(tint, tint.copy(alpha = 0.65f))), RoundedCornerShape(FluentShapes.small)), contentAlignment = Alignment.Center) {
-            Icon(glyph, size = 15.dp, tint = Color.White)
-        }
-        FText(title, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, maxLines = 1)
+        Box(Modifier.size(3.dp, 16.dp).background(if (selected) c.accent else Color.Transparent, RoundedCornerShape(2.dp)))
+        Box(Modifier.width(13.dp))
+        Icon(glyph, size = 16.dp, tint = if (selected) c.text else c.textSecondary)
+        Box(Modifier.width(14.dp))
+        FText(title, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (selected) c.text else c.textSecondary, maxLines = 1)
     }
 }
 
@@ -311,7 +308,7 @@ private fun AboutPage() {
     }
 }
 
-/** The audio decoder (SW / HW / HW+) of Settings > Player: the same saved choice as the Decoder button of the player's Tracks dialog */
+/** The audio decoder (SW / HW / HW+) of Settings > Player: the same saved choice as Audio output in the player's menu */
 private fun audioDecoderPreference(): Preference.PreferenceItem.ListPreference<com.lagradost.desktop.ui.fluent.AudioDecoder> {
     val look = com.lagradost.desktop.ui.fluent.Appearance
     return Preference.PreferenceItem.ListPreference(
