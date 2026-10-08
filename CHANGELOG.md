@@ -1,8 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.0.0
 
-A much lighter app: the installer is about 40 % smaller, it takes less room on disk, and it uses less memory.
+The first official release. A lighter, better-looking app with a lot more to find: the installer is about 40 % smaller and it uses much less memory, there are colour themes and your own wallpaper, Explore and richer title pages (TMDB), trailers with sound inside the app, editable profiles, and many player, subtitle and extension fixes. Everything below is new since 0.1.8.
+
+**Highlights**
+- **Lighter**: installer 377 MB -> about 184 MB; web pages use the WebView2 that comes with Windows; a leak that made memory swing up to 2 GB while a film played is fixed.
+- **Better looking**: colour themes (Midnight is the default), your own wallpaper, a calmer minimal design, Customise Home.
+- **Search + Explore**: one Search page with a filter button, recent searches and Explore (trending, in cinemas, top rated, by genre and streaming service).
+- **Richer title pages**: logo, score, age rating, where it streams, collections, cast and person pages, trailers that play (with sound) inside the app.
+- **Player**: one-click Sources/Tracks menus, audio decoder (SW / HW / HW+), subtitle renderer and fonts, seekable IStreamFlare videos, CNCVerse qualities and subtitles, correct subtitle after a source switch.
+- **Profiles you can edit**, a once-a-day reminder to star the project, extension update history and *Update all*.
+
+Install: download the MSI, run it; 0.1.5 - 0.1.8 upgrade in place and keep your data. The Details below list every change.
+
+**Details**
 
 **Smaller and lighter**
 - **Web pages now use Microsoft Edge WebView2, which comes with Windows 10 and 11, instead of a copy of Chromium inside the app.** The installer goes from 377 MB to about 213 MB, the installed app from about 595 MB to about 386 MB, and the data folder no longer grows by about 680 MB the first time an extension needs a web page. The old Chromium files (about 560 MB) are removed from the data folder by themselves after the update.
@@ -12,6 +24,27 @@ A much lighter app: the installer is about 40 % smaller, it takes less room on d
 - **The video player library is 3 times smaller** (39 MB instead of 121 MB): a build with only what playback needs (no video encoders, Vulkan, disc formats or scripting). Same player version, same formats, hardware decoding, subtitles and native GPU player. It no longer needs Vulkan to be installed.
 
 **Look**
+- **A friendly reminder once a day**: when the app has been open a few seconds, a small window asks for a star on GitHub or a donation (never on the first day, never over the player). It comes once every day; *Later* simply closes it.
+- **Edit your profiles**: the profile button at the top right opens your profiles, each with *Edit* (name, one of the pictures or a picture of your own). A new profile opens the editor at once.
+- **Search page**: the big search box has a *Filter* button next to it (the kinds of title) instead of a row of chips; the filters show above the results after a search. The search box in the top bar is hidden on this page (it only repeated the big one). The recent searches are one row with arrows that appear only while the pointer is over it.
+- **Customise Home**: the pencil next to the reload button on Home shows every row of the provider with a switch and up/down arrows to hide and reorder them (remembered per provider).
+- **Extension update history** (Settings > Updates & backup): which extensions were updated and when, from the automatic check and from Update Plugins.
+- Trailers and plain links no longer appear in History.
+- **Colour themes instead of grey**: *Midnight* (violet, the new default), *Crimson*, *Ocean*, *Matcha*, *Sunset*, *Dracula*, *Nord*, *Cinema gold* and the old *Classic*. A theme tints the pages, cards and menus, sets the accent colour, brightens the secondary text and puts two soft glows of its colours in the corners of every page (switchable). Selected filters and tabs are filled with the accent. Settings > Appearance > Theme.
+- **Your own wallpaper**: pick a picture (Settings > Appearance > Theme > Wallpaper) and it shows behind every page, dimmed as much as you like.
+- **History page**: *Continue watching* has a *See all* that opens everything you started, with resume, open, remove and *Clear history*.
+- **Home can be calmer**: switches for the big banner and the Continue watching row (Settings > Appearance).
+- **Update all** on the Extensions page, next to *Add repository*.
+- **Messages from the engine are visible now**: *Update Plugins* in Settings did work, but its messages ("Checking…", "All your extensions are up to date", "Updated 3") were drawn nowhere, so it looked dead. They show as toasts now, like restore and download messages.
+- **Explore lives on the Search page**: under the search box and the row of your recent searches (they scroll sideways now) you find a rotating banner, then trending (with big rank numbers), in cinemas, coming soon, top rated and airing lists for films and series from TMDB, and trending, airing, top rated and upcoming anime from AniList. Filter by **genre** and by **streaming service** (Netflix, Prime Video, Disney+, Hotstar, Apple TV+, Max, Hulu, Crunchyroll and more, for your country). A poster opens a search for that title in your extensions (right-click: *Search extensions*).
+- **Title pages know more** (data from TMDB): the title logo and backdrop when the extension sends none, the tagline, TMDB score and votes, age rating for your country, length, seasons and episodes, who directed or created it, studios and networks, **where it streams** (service logos), the **collection** it belongs to, a **trailer** button when the extension has none, a **Gallery** of backdrops and **Reviews**. *Cast & crew* shows real photos for the whole cast; a click opens the **person's page** (photo, age, biography, known for, full filmography). *More like this* is filled from TMDB when the extension gives no recommendations.
+- Posters from these lists open a search for the title in your extensions, so they work with every extension you have.
+- **Trailers play inside the app** (the trailer button used to open the browser; it still does when a trailer's video cannot be taken out of its page). When an extension sends none, TMDB's official trailer is used, and *Settings > Player > Show trailers* turns both off.
+- **Trailers have sound**: YouTube sends its picture and its sound as separate files, and only the picture was played. The player now opens the sound file beside the video (the best one), and trailers start at 1080p at most, H.264 first. The same applies to any other source that names its sound separately.
+- **A search that found only one or two sources is no longer remembered for 20 minutes** as "all there is": the next *Play* looks again (and shows what it found before at once).
+- **Studios and networks are links**: click *Netflix* or a studio on a title page to see everything it made. Director, creator and writer names open the person's page. The ⋯ menu has *Open on IMDb* and *Open on TMDB*.
+- **The Home banner gets TMDB artwork** (title logo and a wide backdrop) for titles the extension sent a small poster only.
+- **Settings > Appearance > Title information**: a switch for everything TMDB (off: the app never contacts it) and the **country** that decides the age rating and the streaming services.
 - **Player menus apply with one click**: Sources and Tracks no longer need a choice plus *Apply*. A click switches the source, subtitle, audio or video track or the audio decoder at once, the current choice has a check mark, the lists open at the current choice, and a click outside or Esc closes the menu. The video keeps playing so a change can be judged straight away.
 - **A click on the video pauses at once** (it used to wait about a third of a second to rule out a double click). A double click switches fullscreen and leaves playback as it was.
 - Filter chips (Search) are quiet when selected instead of solid white.

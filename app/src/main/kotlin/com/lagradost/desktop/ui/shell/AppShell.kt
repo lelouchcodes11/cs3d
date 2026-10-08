@@ -70,6 +70,7 @@ import com.lagradost.desktop.ui.components.SoftImage
 import com.lagradost.desktop.ui.components.UiImageView
 import com.lagradost.desktop.ui.fluent.Appearance
 import com.lagradost.desktop.ui.fluent.Backdrop
+import com.lagradost.desktop.ui.fluent.Themes
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
 import com.lagradost.desktop.ui.fluent.FluentMotion
@@ -178,6 +179,7 @@ fun AppShell() {
     LaunchedEffect(Navigator.current.id) { ShellState.dockHidden = false }
     Box(Modifier.fillMaxSize().background(c.bg)) {
         ScreenWarmup()
+        SupportPrompt.Effect()
         if (Navigator.current.route is Route.Player || Navigator.current.route is Route.Setup) {
             // the player and the setup wizard own the whole window
             PageHost()
@@ -240,13 +242,29 @@ private fun AmbientBackdrop() {
 private fun ContentArea(shape: Shape, topNav: Boolean = false) {
     val c = Fluent.colors
     val layer = if (Appearance.backdrop == Backdrop.Ambient) c.layer.copy(alpha = if (c.dark) 0.62f else 0.7f) else c.layer
+    val preset = Themes.byId(Appearance.theme)
+    val glowA = preset.glowA?.takeIf { Appearance.themeGlow && c.dark && Appearance.backdrop != Backdrop.Black }
     Box(
         Modifier
             .fillMaxSize()
             .clip(shape)
             .background(layer, shape)
+            // two soft colour glows of the theme, in the corners of the page
+            .drawBehind {
+                if (glowA != null) {
+                    drawRect(Brush.radialGradient(listOf(glowA.copy(alpha = 0.22f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.05f), radius = size.width * 0.55f))
+                    preset.glowB?.let { b -> drawRect(Brush.radialGradient(listOf(b.copy(alpha = 0.15f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.95f, size.height * 0.95f), radius = size.width * 0.5f)) }
+                }
+            }
             .border(Dp.Hairline, c.stroke, shape),
     ) {
+        // the user's own picture, dimmed with the page colour so the text stays readable
+        if (Appearance.wallpaper.isNotBlank()) {
+            val ctx = coil3.compose.LocalPlatformContext.current
+            val request = remember(Appearance.wallpaper) { coil3.request.ImageRequest.Builder(ctx).data(java.io.File(Appearance.wallpaper)).size(1920, 1080).build() }
+            coil3.compose.AsyncImage(request, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            Box(Modifier.fillMaxSize().background(layer.copy(alpha = Appearance.wallpaperDim)))
+        }
         // with the dock the page runs the whole height and scrolls under the floating dock (a page that ended above it left a flat band across the bottom);
         // scrolling pages add LocalDockInset to their end padding
         val dock = Appearance.navPosition == NavPosition.Bottom
@@ -407,6 +425,8 @@ private fun Page(entry: Entry) {
     when (val r = entry.route) {
         Route.Home -> HomeScreen()
         is Route.Search -> SearchScreen(r)
+        is Route.Person -> com.lagradost.desktop.ui.screens.person.PersonScreen(r)
+        Route.History -> com.lagradost.desktop.ui.screens.history.HistoryScreen()
         Route.Library -> LibraryScreen()
         Route.Downloads -> DownloadsScreen()
         Route.Extensions -> ExtensionsScreen()
@@ -423,6 +443,8 @@ private fun titleOf(route: Route): String? = when (route) {
     Route.Home -> null
     is Route.Search -> null
     // these pages have a big header of their own
+    is Route.Person -> null
+    Route.History -> null
     Route.Library -> null
     Route.Downloads -> null
     Route.Extensions -> null
@@ -456,6 +478,8 @@ private fun TopBar(topNav: Boolean) {
             .padding(horizontal = 12.dp),
     ) {
         val onHome = Navigator.current.route is Route.Home
+        // the Search page has its own big box until a search is made: a second one at the top would only repeat it
+        val searchLanding = (Navigator.current.route as? Route.Search)?.let { it.query.isNullOrBlank() } == true
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             // the title bar above the app has Back while the window is not maximized
             if ((topNav || dock) && !com.lagradost.desktop.platform.WinChrome.windowedBar) {
@@ -474,7 +498,7 @@ private fun TopBar(topNav: Boolean) {
             Box(Modifier.weight(1f))
             // on the Home page the box searches the extension chosen at the right; everywhere else all of them
             Box(Modifier.weight(3f).widthIn(min = 180.dp, max = 520.dp)) {
-                GlobalSearchBox(Modifier.fillMaxWidth().noWindowDrag("search"), only = if (onHome) selectedHomeProvider() else (Navigator.current.route as? Route.Search)?.only)
+                if (!searchLanding) GlobalSearchBox(Modifier.fillMaxWidth().noWindowDrag("search"), only = if (onHome) selectedHomeProvider() else (Navigator.current.route as? Route.Search)?.only)
             }
             Box(Modifier.weight(1f))
             if (onHome) {
@@ -596,7 +620,7 @@ private fun AccountAvatar() {
     val a = account
     Box(Modifier.size(32.dp).clip(CircleShape).background(c.control).border(Dp.Hairline, c.stroke, CircleShape).noWindowDrag("avatar").fluentClickable(rememberInteraction(), true, CircleShape, Role.Button) { showAccountPicker() }, contentAlignment = Alignment.Center) {
         if (a != null) {
-            UiImageView(a.image, a.name, Modifier.size(32.dp))
+            ProfileAvatar(a, 32.dp)
         } else {
             FText("?", color = c.textSecondary)
         }
@@ -620,7 +644,7 @@ private fun AccountButton(expanded: Boolean) {
     ) {
         Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.size(28.dp).clip(CircleShape).background(c.control).border(Dp.Hairline, c.stroke, CircleShape), contentAlignment = Alignment.Center) {
-                if (a != null) UiImageView(a.image, a.name, Modifier.size(28.dp)) else FText("?", color = c.textSecondary)
+                if (a != null) ProfileAvatar(a, 28.dp) else FText("?", color = c.textSecondary)
             }
         }
         if (expanded) FText(a?.name ?: "Profile", Modifier.padding(end = 12.dp), maxLines = 1, softWrap = false)

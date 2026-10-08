@@ -152,7 +152,9 @@ class RepoLinkGenerator(
         )
 
         synchronized(currentCache) {
-            currentCache.saturated = currentCache.linkCache.isNotEmpty()
+            // a search that came back with one or two links (a source that was down for a moment, a rate limit) must not be remembered
+            // for 20 minutes as "everything there is": the next Play looks again and shows what it has found before at once
+            currentCache.saturated = currentCache.linkCache.size >= 4
             currentCache.lastCachedTimestamp = unixTime
         }
 

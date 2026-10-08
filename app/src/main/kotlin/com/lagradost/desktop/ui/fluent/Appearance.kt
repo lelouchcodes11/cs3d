@@ -88,6 +88,29 @@ object Appearance {
     /** Subtitles: false = a styled subtitle (ASS, coloured SRT) keeps its own look, true = the user style for every subtitle ("universal") */
     var subtitleUniversal by mutableStateOf(false)
 
+    /** Title information (artwork, cast, ratings, where to watch) from TMDB; off means no request to it is made */
+    var tmdbEnabled by mutableStateOf(true)
+
+    /** Country code for age ratings and streaming services; empty follows the Windows region */
+    var tmdbRegion by mutableStateOf("")
+
+    /** Colour theme (see Themes): tinted surfaces and accent */
+    var theme by mutableStateOf("classic")
+
+    /** Two soft colour glows behind the pages (the theme names the colours; Classic has none) */
+    var themeGlow by mutableStateOf(true)
+
+    /** A picture of the user's own behind every page (a copy in the data folder; empty = none) and how much of the page colour covers it */
+    var wallpaper by mutableStateOf("")
+    var wallpaperDim by mutableStateOf(0.8f)
+
+    /** Profile pictures that move (see Profiles.kt); off keeps them still */
+    var animatedProfiles by mutableStateOf(true)
+
+    /** The banner at the top of Home and the Continue watching row can be switched off */
+    var homeBanner by mutableStateOf(true)
+    var homeContinue by mutableStateOf(true)
+
     private const val PREFIX = "desktop_look_"
 
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
@@ -116,6 +139,16 @@ object Appearance {
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
             subtitleUniversal = p.getBoolean(PREFIX + "sub_universal", false)
+            tmdbEnabled = p.getBoolean(PREFIX + "tmdb", true)
+            tmdbRegion = p.getString(PREFIX + "tmdb_region", "") ?: ""
+            // nothing saved yet: the colourful Midnight theme, unless the user had chosen an accent colour (then the Windows look stays)
+            theme = p.getString(PREFIX + "theme", null) ?: if (p.contains("desktop_accent_color")) "classic" else Themes.DEFAULT_ID
+            themeGlow = p.getBoolean(PREFIX + "theme_glow", true)
+            wallpaper = (p.getString(PREFIX + "wallpaper", "") ?: "").takeIf { java.io.File(it).isFile } ?: ""
+            wallpaperDim = p.getFloat(PREFIX + "wallpaper_dim", 0.8f).coerceIn(0.3f, 0.95f)
+            animatedProfiles = p.getBoolean(PREFIX + "animated_profiles", true)
+            homeBanner = p.getBoolean(PREFIX + "home_banner", true)
+            homeContinue = p.getBoolean(PREFIX + "home_continue", true)
         }
     }
 
@@ -142,6 +175,15 @@ object Appearance {
                 .putString(PREFIX + "audio_decoder", audioDecoder.name)
                 .putBoolean(PREFIX + "dock_auto_hide", dockAutoHide)
                 .putBoolean(PREFIX + "sub_universal", subtitleUniversal)
+                .putBoolean(PREFIX + "tmdb", tmdbEnabled)
+                .putString(PREFIX + "tmdb_region", tmdbRegion)
+                .putString(PREFIX + "theme", theme)
+                .putBoolean(PREFIX + "theme_glow", themeGlow)
+                .putString(PREFIX + "wallpaper", wallpaper)
+                .putFloat(PREFIX + "wallpaper_dim", wallpaperDim)
+                .putBoolean(PREFIX + "animated_profiles", animatedProfiles)
+                .putBoolean(PREFIX + "home_banner", homeBanner)
+                .putBoolean(PREFIX + "home_continue", homeContinue)
                 .apply()
         }
     }
@@ -149,7 +191,7 @@ object Appearance {
     fun reset() {
         navPosition = NavPosition.Top; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Medium; backdrop = Backdrop.Solid; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; anime4k = false; dockAutoHide = false
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; anime4k = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true
         save()
     }
 

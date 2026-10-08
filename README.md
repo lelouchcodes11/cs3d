@@ -59,7 +59,7 @@ Windows 10 or 11, 64-bit. Windows SmartScreen may ask for confirmation because t
 
 **Updating:** download the newest MSI from [Releases](../../releases) and run it over the old one. Your settings, accounts and extensions are kept. (Settings → About → *Get the newest version* opens the same page.) Follow the [Telegram channel](https://t.me/cs3d_official) to know when there is one.
 
-> **Pre-release.** The app is new and still gets updates often. If something is wrong, tell us on [Telegram](https://t.me/cs3d_official).
+> **Version 1.0.** The app still gets updates often. If something is wrong, tell us on [Telegram](https://t.me/cs3d_official).
 
 ---
 
@@ -73,7 +73,10 @@ Windows 10 or 11, 64-bit. Windows SmartScreen may ask for confirmation because t
 | 📺 **Live TV** | Live channels, including ClearKey-protected DASH streams with many audio languages, with a *Go live* button after you skip ahead. |
 | 💬 **Subtitles that work** | Embedded tracks, files, and online search (OpenSubtitles, SubDL, Subtitle Cat and others), one style for all of them: font, size, colours, shadow, position. |
 | 🧩 **Every CloudStream extension** | It runs on the CloudStream engine, so the extensions and repositories you know work here. You add them; the app ships with none. |
-| 🎨 **Make it yours** | Menu on the top, left, right or bottom; corner roundness, poster size, spacing, backdrop, interface size, animations. |
+| 🧭 **Explore** | A tab with what is trending, in cinemas, coming soon and top rated, for films, series and anime, filtered by genre and by streaming service (Netflix, Prime Video, Disney+, Hotstar and more). Pick a title and your extensions look for it. |
+| 🎞️ **Title pages with the details** | Logo and backdrop, TMDB score, age rating, who made it, where it streams, cast with photos (a click opens the person's page), a gallery, reviews, studios and collections, and a **trailer that plays inside the app**. Switch it off any time in Settings → Appearance. |
+| 🎨 **Make it yours** | Eight colour themes (Midnight, Crimson, Ocean, Matcha, Sunset, Dracula, Nord, Cinema gold) with soft colour glows, your own wallpaper, menu on the top, left, right or bottom; corner roundness, poster size, spacing, interface size, animations; choose and order the rows of Home. |
+| 🕘 **History** | Everything you started, with resume and remove. |
 | 🔗 **Your lists, synced** | AniList, MyAnimeList and Simkl: progress and lists follow you (you register a free API client of your own, the app explains the three steps). |
 | 🪟 **Looks like Windows 11** | Fluent design, one calm start-up screen, one title bar that hides when maximized. |
 | ▶️ **Your player if you prefer** | Open any link in **VLC** or your browser instead (Settings → Player → Preferred video player). |
@@ -175,3 +178,4 @@ AniList, MyAnimeList and Simkl need an API client of your own: register one on e
 </details>
 
 <p align="center"><sub>Licensed under GPL-3.0, like CloudStream. Built on the <a href="https://github.com/recloudstream/cloudstream">CloudStream</a> engine.</sub></p>
+<p align="center"><sub>Film and series information comes from <a href="https://www.themoviedb.org">TMDB</a>, anime lists from <a href="https://anilist.co">AniList</a>. This product uses the TMDB API but is not endorsed or certified by TMDB.</sub></p>

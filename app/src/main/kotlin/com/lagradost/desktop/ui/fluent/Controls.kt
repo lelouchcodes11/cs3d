@@ -655,8 +655,8 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
         modifier
             .height(32.dp)
             .clip(shape)
-            .background(if (selected) (if (c.dark) Color(0x29FFFFFF) else Color(0x1A000000)) else if (hovered) c.subtleHover else Color.Transparent, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) c.strokeStrong.copy(alpha = 0.5f) else c.stroke, shape)
+            .background(if (selected) c.accent.copy(alpha = if (c.dark) 0.30f else 0.22f) else if (hovered) c.subtleHover else Color.Transparent, shape)
+            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) c.accent.copy(alpha = 0.7f) else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,

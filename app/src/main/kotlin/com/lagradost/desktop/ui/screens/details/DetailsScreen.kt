@@ -113,6 +113,7 @@ import com.lagradost.desktop.ui.fluent.Shelf
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 import com.lagradost.desktop.ui.Toasts
+import kotlinx.coroutines.launch
 import com.lagradost.desktop.ui.screens.home.openCard
 import com.lagradost.desktop.ui.screens.home.stripHtml
 import com.lagradost.desktop.ui.shell.TopBarOverlay
@@ -259,7 +260,7 @@ private fun LinkLoadingCard(links: Int, subs: Int, skip: () -> Unit, cancel: () 
 
 // -------------------------------------------------------------------------------------------
 
-private enum class DetailsTab(val label: String) { Episodes("Episodes"), More("More like this"), Cast("Cast & crew") }
+private enum class DetailsTab(val label: String) { Episodes("Episodes"), More("More like this"), Cast("Cast & crew"), Gallery("Gallery"), Reviews("Reviews") }
 
 @Composable
 private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Route.Details, d: ResultData) {
@@ -281,6 +282,17 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
     val subscribed by vm.subscribeStatus.observeAsState()
     val count by vm.episodesCountText.observeAsState()
     val trailers by vm.trailers.observeAsState()
+    // TMDB: artwork, cast with photos, reviews, collection and where it streams, found by the ids the extension gave or by name and year
+    val isMovieTitle = movie != null
+    val tmdb by androidx.compose.runtime.produceState<com.lagradost.desktop.tmdb.TmdbInfo?>(null, route.url, isMovieTitle) {
+        value = runCatching { com.lagradost.desktop.tmdb.Tmdb.info(d.title, d.yearText.str()?.take(4)?.toIntOrNull(), isMovieTitle, d.syncData.values) }.getOrNull()
+    }
+    // the extension's own artwork wins; TMDB fills what it did not send
+    val shownData = remember(d, tmdb) { tmdb?.let { t -> d.copy(logoUrl = d.logoUrl ?: t.logo, backgroundPosterUrl = d.backgroundPosterUrl ?: d.posterBackgroundImage ?: t.backdrop, posterImage = d.posterImage ?: t.poster) } ?: d }
+    // Settings > Player > Show trailers also decides whether TMDB's trailer is offered
+    val showTrailers = remember { PreferenceManager.getDefaultSharedPreferences(DesktopBootstrap.activity).getBoolean(DesktopBootstrap.activity.getString(R.string.show_trailers_key), true) }
+    val tmdbTrailer = tmdb?.trailerKey?.takeIf { showTrailers }?.let { "https://www.youtube.com/watch?v=$it" }
+    val tmdbLinks = tmdb?.let { t -> listOfNotNull(t.imdbId?.let { "IMDb" to "https://www.imdb.com/title/$it/" }, "TMDB" to "https://www.themoviedb.org/${if (t.isMovie) "movie" else "tv"}/${t.id}") }.orEmpty()
 
     val listState = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -290,12 +302,15 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
         TopBarOverlay(scrolled)
         FluentScrollbar(listState, com.lagradost.desktop.ui.shell.TopBarHeight)
         val cast = d.actors.orEmpty()
-        val recs = recommendations.orEmpty()
+        val recs = recommendations.orEmpty().ifEmpty { tmdb?.similar.orEmpty() }
+        val tmdbCast = tmdb?.cast.orEmpty()
         val isMovie = movie != null
         val tabs = buildList {
             if (!isMovie) add(DetailsTab.Episodes)
             if (recs.isNotEmpty()) add(DetailsTab.More)
-            if (cast.isNotEmpty() || d.actorsText.str() != null) add(DetailsTab.Cast)
+            if (cast.isNotEmpty() || tmdbCast.isNotEmpty() || d.actorsText.str() != null) add(DetailsTab.Cast)
+            if ((tmdb?.backdrops?.size ?: 0) > 1) add(DetailsTab.Gallery)
+            if (tmdb?.reviews?.isNotEmpty() == true) add(DetailsTab.Reviews)
         }
         var tab by remember(route.url) { mutableStateOf<DetailsTab?>(null) }
         val shown = tab?.takeIf { it in tabs } ?: tabs.firstOrNull()
@@ -305,14 +320,15 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
 
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "header") {
-                Header(vm, d, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty(), trailers?.firstOrNull()?.mirros?.firstOrNull()?.second)
+                Header(vm, shownData, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty() || tmdbTrailer != null, trailers?.firstOrNull()?.mirros?.firstOrNull()?.second ?: tmdbTrailer, tmdbLinks)
             }
+            tmdb?.let { t -> item(key = "tmdb") { TmdbStrip(t) } }
             item(key = "trackers") { TrackerCard(sync) }
             if (tabs.isNotEmpty()) item(key = "tabs") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     com.lagradost.desktop.ui.fluent.PillTabs(
                         tabs.map { it.label }, tabs.indexOf(shown).coerceAtLeast(0), { tab = tabs[it] },
-                        counts = tabs.map { t -> when (t) { DetailsTab.More -> recs.size; DetailsTab.Cast -> cast.size.takeIf { it > 0 }; else -> null } },
+                        counts = tabs.map { t -> when (t) { DetailsTab.More -> recs.size; DetailsTab.Cast -> (tmdbCast.size.takeIf { it > 0 } ?: cast.size).takeIf { it > 0 }; DetailsTab.Gallery -> tmdb?.backdrops?.size; DetailsTab.Reviews -> tmdb?.reviews?.size; else -> null } },
                     )
                     Box(Modifier.weight(1f))
                     if (shown == DetailsTab.Episodes) count.str()?.let { FText(it, color = c.textSecondary) }
@@ -372,10 +388,17 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                         }
                     }
                 }
+                DetailsTab.Gallery -> tmdb?.let { t -> item(key = "gallery") { TmdbGallery(t, pageWidth) } }
+                DetailsTab.Reviews -> tmdb?.let { t -> item(key = "reviews") { TmdbReviews(t.reviews) } }
                 DetailsTab.Cast -> item(key = "cast") {
                     Column(Modifier.padding(horizontal = gutter)) {
                         val perRow = ((pageWidth - gutter * 2) / 150.dp).toInt().coerceAtLeast(3)
-                        cast.take(60).chunked(perRow).forEach { row ->
+                        // TMDB's cast has real photos and opens the person's page; the extension's list is the fallback
+                        if (tmdbCast.isNotEmpty()) tmdbCast.chunked(perRow).forEach { row ->
+                            Row(Modifier.padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                                row.forEach { a -> CastCard(a.name, a.image, a.role) { Navigator.go(Route.Person(a.id, a.name, a.image)) } }
+                            }
+                        } else cast.take(60).chunked(perRow).forEach { row ->
                             Row(Modifier.padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                                 row.forEach { a -> CastCard(a.actor.name, a.actor.image, a.roleString) }
                             }
@@ -390,12 +413,12 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
 }
 
 @Composable
-private fun CastCard(name: String, image: String?, role: String?) {
+private fun CastCard(name: String, image: String?, role: String?, onClick: (() -> Unit)? = null) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val scale by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1.03f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200))
-    Column(Modifier.width(132.dp).hoverable(source), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.width(132.dp).hoverable(source).let { if (onClick != null) it.fluentClickable(source, true, RoundedCornerShape(FluentShapes.card), Role.Button, onClick) else it }, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(112.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(c.layer)
                 .border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, CircleShape),
@@ -427,6 +450,7 @@ private fun Header(
     resumeText: String?,
     hasTrailer: Boolean,
     trailerUrl: String?,
+    links: List<Pair<String, String>>,
 ) {
     val c = Fluent.colors
     val backdrop = d.backgroundPosterUrl ?: d.posterBackgroundImage
@@ -447,7 +471,7 @@ private fun Header(
                 if (backdrop != null) RemoteImage(backdrop, d.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop, alignment = Alignment.TopCenter)
                 else com.lagradost.desktop.ui.components.SoftImage(poster, d.posterHeaders, Modifier.fillMaxSize(), alpha = 0.6f)
             }
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xF20B0B0E), 0.5f to Color(0x990B0B0E), 1f to Color(0x140B0B0E))))
+            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.95f), 0.5f to Fluent.colors.bg.copy(alpha = 0.6f), 1f to Fluent.colors.bg.copy(alpha = 0.08f))))
             Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
         }
 
@@ -477,7 +501,7 @@ private fun Header(
                 }
                 d.vpnText.str()?.let { FText(it, style = Fluent.type.caption, color = c.caution) }
                 Box(Modifier.height(4.dp))
-                ActionRow(vm, d, watch, favorite, subscribed, playEpisode, resumeText, hasTrailer, trailerUrl)
+                ActionRow(vm, d, watch, favorite, subscribed, playEpisode, resumeText, hasTrailer, trailerUrl, links)
             }
         }
     }
@@ -494,6 +518,7 @@ private fun ActionRow(
     resumeText: String?,
     hasTrailer: Boolean,
     trailerUrl: String?,
+    links: List<Pair<String, String>>,
 ) {
     val ctx = DesktopBootstrap.activity
     var bookmarkOpen by remember { mutableStateOf(false) }
@@ -535,7 +560,7 @@ private fun ActionRow(
                 vm.toggleSubscriptionStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "You will be told about new episodes" else "Subscription removed", false) }
             }, active = sub, size = 48.dp)
         }
-        if (hasTrailer && trailerUrl != null) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { DesktopPlatform.openExternalBrowser(trailerUrl) }, size = 48.dp)
+        if (hasTrailer && trailerUrl != null) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { playTrailer(trailerUrl) }, size = 48.dp)
         Box {
             com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.More, "More", { moreOpen = true }, size = 48.dp)
             if (moreOpen) {
@@ -545,11 +570,26 @@ private fun ActionRow(
                         if (url.startsWith("http")) add(MenuItem("Open in browser", Icons.OpenInNewWindow) { DesktopPlatform.openExternalBrowser(url) })
                         add(MenuItem("Copy link", Icons.Copy) { java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(url), null); Toasts.show("Link copied", false) })
                         add(MenuItem("Search for “${d.title}”", Icons.Search) { Navigator.search(d.title) })
+                        links.forEach { (name, link) -> add(MenuItem("Open on $name", Icons.OpenInNewWindow) { DesktopPlatform.openExternalBrowser(link) }) }
                     },
                     onDismiss = { moreOpen = false },
                 )
             }
         }
+    }
+}
+
+/** The trailer in the app's own player; the page in the browser when its video cannot be taken out of it */
+private fun playTrailer(url: String) {
+    Toasts.show("Loading the trailer…", false)
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        val found = java.util.Collections.synchronizedList(ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>())
+        kotlinx.coroutines.withTimeoutOrNull(20_000) { runCatching { com.lagradost.cloudstream3.utils.loadExtractor(url, null, {}, { found.add(it) }) } }
+        if (found.isEmpty()) { DesktopPlatform.openExternalBrowser(url); return@launch }
+        // up to 1080p (a 4K AV1 trailer asks a lot of the PC), H.264 first at each height
+        val fit = found.filter { it.quality in 1..1080 }.ifEmpty { found }
+        val best = fit.sortedWith(compareByDescending<com.lagradost.cloudstream3.utils.ExtractorLink> { it.quality }.thenByDescending { it.name.contains("H264") }).take(6)
+        Navigator.go(Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(best, emptyList()), 0, null))
     }
 }
 

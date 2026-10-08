@@ -620,6 +620,8 @@ class PlayerSession(
      * stops, pauses or changes source.
      */
     private fun saveProgress(position: Long, duration: Long) {
+        // a trailer or a plain link has no title page to come back to: it does not go into History
+        if (vm.generator is com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator && vm.state.generatorState?.id == null) return
         val id = vm.state.generatorState?.id
         val meta = currentMeta
         val next = nextMeta

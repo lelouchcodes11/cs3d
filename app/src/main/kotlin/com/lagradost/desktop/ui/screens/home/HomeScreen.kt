@@ -61,6 +61,7 @@ import com.lagradost.desktop.ui.fluent.shimmer
 import androidx.compose.ui.unit.sp
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.isMovieType
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.ui.WatchType
@@ -100,6 +101,8 @@ private val gutter = 36.dp
 
 /** Opens a card: a continue-watching entry resumes its episode, anything else opens the title page */
 fun openCard(card: SearchResponse) {
+    // a title from TMDB or the Explore lists belongs to no extension: the extensions are searched for it
+    if (card is com.lagradost.desktop.tmdb.TmdbCard) { Navigator.search(card.name); return }
     if (card is DataStoreHelper.ResumeWatchingResult && !card.isFromDownload && card.id != null) {
         Navigator.openDetails(card, START_ACTION_LOAD_EP, card.id)
     } else Navigator.openDetails(card)
@@ -138,20 +141,22 @@ fun HomeScreen() {
             item(key = "hero") {
                 val res = preview
                 val items = (res as? Resource.Success)?.value?.second.orEmpty()
-                if (items.isNotEmpty()) {
+                if (!com.lagradost.desktop.ui.fluent.Appearance.homeBanner) {
+                    Box(Modifier.height(com.lagradost.desktop.ui.shell.TopBarHeight + 8.dp))
+                } else if (items.isNotEmpty()) {
                     HomeHero(items, heroHeight, compact = maxWidth < 900.dp)
                 } else if (res == null || res is Resource.Loading) {
                     HeroSkeleton(heroHeight)
                 } else Box(Modifier.height(72.dp))
             }
             item(key = "header") {
-                HomeHeader(vm, apiName)
+                HomeHeader(vm, apiName, (page as? Resource.Success)?.value?.entries?.filter { it.value.list.list.isNotEmpty() }?.map { it.key }.orEmpty())
             }
             val resumeList = resume.orEmpty()
-            if (resumeList.isNotEmpty()) {
+            if (resumeList.isNotEmpty() && com.lagradost.desktop.ui.fluent.Appearance.homeContinue) {
                 item(key = "resume") {
                     Column(Modifier.padding(bottom = space)) {
-                        com.lagradost.desktop.ui.fluent.RichSectionHeader("Continue watching", Modifier.padding(horizontal = gutter), subtitle = "Pick up where you left off")
+                        com.lagradost.desktop.ui.fluent.RichSectionHeader("Continue watching", Modifier.padding(horizontal = gutter), subtitle = "Pick up where you left off", onSeeAll = { Navigator.go(Route.History) })
                         Box(Modifier.height(12.dp))
                         // plain posters like every other row: the bar along the bottom is how far you got, the line below what is next
                         Shelf(resumeList, cardWidth, gutter = gutter, spacing = 14.dp, key = { (it.id ?: it.url.hashCode()).toString() + it.name }) { card ->
@@ -192,7 +197,7 @@ fun HomeScreen() {
                 null, is Resource.Loading -> items(3, key = { "sk$it" }) { SkeletonRow(cardWidth) }
                 is Resource.Failure -> item(key = "error") { ErrorRow(res.errorString, vm) }
                 is Resource.Success -> {
-                    val rows = res.value.entries.filter { it.value.list.list.isNotEmpty() }
+                    val rows = HomeLayout.rowsFor(apiName.orEmpty(), res.value.entries.filter { it.value.list.list.isNotEmpty() }.map { it.key to it.value })
                     if (rows.isEmpty()) item(key = "empty") { EmptyHome() }
                     rows.forEach { (name, row) ->
                         item(key = "row-$name") {
@@ -259,7 +264,7 @@ private fun resumeLeft(card: SearchResponse): String? {
 // -------------------------------------------------------------------------------------------
 
 @Composable
-private fun HomeHeader(vm: HomeViewModel, apiName: String?) {
+private fun HomeHeader(vm: HomeViewModel, apiName: String?, rowNames: List<String>) {
     Row(
         Modifier.fillMaxWidth().padding(start = gutter, end = gutter, top = 8.dp, bottom = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -269,6 +274,7 @@ private fun HomeHeader(vm: HomeViewModel, apiName: String?) {
             "Browse", Modifier.weight(1f),
             subtitle = apiName?.takeIf { it.isNotBlank() && it != "NONE" }?.let { "From $it" },
         ) {
+            if (rowNames.isNotEmpty() && !apiName.isNullOrBlank()) IconButton(Icons.Edit, { HomeLayout.showDialog(apiName, rowNames) }, tooltip = "Customise Home: choose and order the rows", kind = ButtonKind.Standard, size = 36.dp)
             IconButton(Icons.Refresh, { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true, fromUI = false) }, tooltip = "Reload home page", kind = ButtonKind.Standard, size = 36.dp)
         }
     }
@@ -359,9 +365,17 @@ private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean) {
         index = (index + 1) % items.size
     }
     val current = items[index.coerceIn(0, items.lastIndex)]
+    // artwork TMDB has for slides the extension sent no backdrop or logo for: this slide and the next one are looked up
+    val art = remember(items) { androidx.compose.runtime.mutableStateMapOf<String, com.lagradost.desktop.tmdb.TmdbInfo>() }
+    LaunchedEffect(index, items) {
+        for (item in listOf(current, items[(index + 1) % items.size])) {
+            if (art.containsKey(item.url) || (item.backgroundPosterUrl != null && item.logoUrl != null)) continue
+            runCatching { com.lagradost.desktop.tmdb.Tmdb.info(item.name, item.year, item.type?.isMovieType() == true, item.syncData.values) }.getOrNull()?.let { art[item.url] = it }
+        }
+    }
     com.lagradost.desktop.ui.shell.AmbientArtwork(current.backgroundPosterUrl ?: current.posterUrl, current.posterHeaders)
     Box(Modifier.fillMaxWidth().height(height).hoverable(source)) {
-        Crossfade(current, animationSpec = com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(900), label = "heroBackdrop") { item -> HeroBackdrop(item) }
+        Crossfade(current, animationSpec = com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(900), label = "heroBackdrop") { item -> HeroBackdrop(item, art[item.url]?.backdrop) }
         AnimatedContent(
             current,
             transitionSpec = {
@@ -369,7 +383,7 @@ private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean) {
                     fadeOut(com.lagradost.desktop.ui.fluent.FluentMotion.tweenOut(160))
             },
             label = "heroText",
-        ) { item -> HeroText(item, compact, height) }
+        ) { item -> HeroText(item, compact, height, art[item.url]?.logo) }
         if (items.size > 1 && !compact) {
             com.lagradost.desktop.ui.fluent.FeaturedStrip(
                 count = items.size.coerceAtMost(6), selected = index.coerceAtMost(5),
@@ -397,7 +411,7 @@ private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
 
 /** Backdrop of the hero: still artwork, text scrims, and a fade into the page at the bottom (any backdrop style) */
 @Composable
-private fun HeroBackdrop(item: LoadResponse) {
+private fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null) {
     val zoom: androidx.compose.runtime.State<Float>? = null
     Box(
         Modifier.fillMaxSize()
@@ -407,7 +421,7 @@ private fun HeroBackdrop(item: LoadResponse) {
                 drawRect(Brush.verticalGradient(0.6f to Color.Black, 1f to Color.Transparent), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
             },
     ) {
-        val backdrop = item.backgroundPosterUrl
+        val backdrop = item.backgroundPosterUrl ?: tmdbBackdrop
         Box(Modifier.fillMaxSize().graphicsLayer { val s = zoom?.value ?: 1f; scaleX = s; scaleY = s; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.7f, 0.4f) }) {
             if (backdrop != null) {
                 RemoteImage(backdrop, item.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop)
@@ -423,13 +437,13 @@ private fun HeroBackdrop(item: LoadResponse) {
             }
         }
         // scrims: left for the text, top for the title bar
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xF20B0B0E), 0.38f to Color(0xB30B0B0E), 0.7f to Color(0x330B0B0E), 1f to Color.Transparent)))
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.95f), 0.38f to Fluent.colors.bg.copy(alpha = 0.7f), 0.7f to Fluent.colors.bg.copy(alpha = 0.2f), 1f to Color.Transparent)))
         Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
     }
 }
 
 @Composable
-private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp) {
+private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp, tmdbLogo: String? = null) {
     // the thumbnail strip is at the right: on a wide window the text can go lower, beside it
     val wide = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width / androidx.compose.ui.platform.LocalDensity.current.density >= 1150f
     val bottomPad = if (compact) 52.dp else if (wide) 64.dp else 132.dp
@@ -449,7 +463,7 @@ private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp) {
                 item.year?.let { com.lagradost.desktop.ui.fluent.ArtChip(it.toString()) }
                 item.score?.let { com.lagradost.desktop.ui.fluent.ArtChip("★ " + it.toString(10, 1)) }
             }
-            val logo = item.logoUrl
+            val logo = item.logoUrl ?: tmdbLogo
             if (logo != null) {
                 RemoteImage(logo, item.posterHeaders, item.name, Modifier.height(if (tight) 64.dp else if (compact) 80.dp else 110.dp).widthIn(max = 460.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
             } else {

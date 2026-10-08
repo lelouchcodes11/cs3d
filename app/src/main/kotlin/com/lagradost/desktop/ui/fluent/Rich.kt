@@ -107,8 +107,8 @@ fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
             val source = rememberInteraction()
             val hovered by source.collectIsHoveredAsState()
             val on = i == selected
-            // selected = a quiet neutral pill (no accent fill)
-            val bg by animateColorAsState(if (on) (if (c.dark) Color(0x2EFFFFFF) else Color(0x17000000)) else if (hovered) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
+            // selected = a pill tinted with the accent
+            val bg by animateColorAsState(if (on) c.accent.copy(alpha = if (c.dark) 0.34f else 0.24f) else if (hovered) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
             val fg = if (on || hovered) c.text else c.textSecondary
             val shape = RoundedCornerShape(50)
             Row(

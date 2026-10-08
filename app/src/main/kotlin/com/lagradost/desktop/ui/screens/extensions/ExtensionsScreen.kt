@@ -121,6 +121,8 @@ fun ExtensionsScreen() {
                         if (s.disabled > 0) StatTile(Icons.Warning, s.disabled.toString(), "disabled")
                     }
                 }
+                // the same as Settings > Updates & backup > Update Plugins: looks at every repository and installs newer versions of what is installed
+                com.lagradost.desktop.ui.fluent.PillButton("Update all", Icons.Refresh, primary = false, onClick = { ioTask { com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_manuallyReloadAndUpdatePlugins(ctx) } }, height = 42.dp)
                 com.lagradost.desktop.ui.fluent.PillButton("Add repository", Icons.Add, primary = true, onClick = { addRepositoryDialog(ext) }, height = 42.dp)
             }
             Box(Modifier.height(22.dp))

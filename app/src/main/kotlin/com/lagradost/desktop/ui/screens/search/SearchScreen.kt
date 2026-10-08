@@ -88,6 +88,7 @@ import com.lagradost.desktop.ui.screens.home.openCard
 import com.lagradost.desktop.ui.shell.ShellState
 import com.lagradost.desktop.ui.shell.TopBarHeight
 import androidx.compose.ui.semantics.Role
+import com.lagradost.desktop.ui.screens.explore.exploreSections
 import kotlinx.coroutines.launch
 
 private val gutter = 36.dp
@@ -182,7 +183,7 @@ fun SearchScreen(route: Route.Search) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val cardWidth = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width * (if (maxWidth >= 1008.dp) 1.05f else 0.92f)
         if (query.isEmpty()) {
-            HistoryPage(history.orEmpty(), vm, validTypes, types) { types = it; DataStoreHelper.searchPreferenceTags = it }
+            HistoryPage(history.orEmpty(), vm, validTypes, types, cardWidth) { types = it; DataStoreHelper.searchPreferenceTags = it }
             return@BoxWithConstraints
         }
         // every extension shows up as soon as it answers; the ones without results are left out
@@ -368,55 +369,84 @@ private fun NoResults(query: String) {
 
 private val landingWidth = 680.dp
 
-/** The Search page before anything is typed: one search box, the kinds of title to look for, the last searches */
+/** The kinds of title to search in, in a small window: the Search page itself stays clean until a search is made */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+private fun chooseTypes(validTypes: List<TvType>, current: List<TvType>, onTypes: (List<TvType>) -> Unit) {
+    val working = androidx.compose.runtime.mutableStateListOf<TvType>().apply { addAll(current.filter { it in validTypes }) }
+    Overlays.show(
+        Overlays.Dialog(title = "Filter", primary = "Done", close = "Close", width = 480.dp, onPrimary = {}) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FText("Search only these kinds of title. None selected means all of them.", color = Fluent.colors.textSecondary)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    validTypes.forEach { t ->
+                        Chip(typeName(t), t in working, onClick = {
+                            if (t in working) working.remove(t) else working.add(t)
+                            onTypes(working.toList())
+                        })
+                    }
+                }
+            }
+        },
+    )
+}
+
+/** The Search page before anything is typed: the search box with a filter button, the last searches in one row, and Explore below them */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel, validTypes: List<TvType>, types: List<TvType>, onTypes: (List<TvType>) -> Unit) {
+private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel, validTypes: List<TvType>, types: List<TvType>, cardWidth: androidx.compose.ui.unit.Dp, onTypes: (List<TvType>) -> Unit) {
     val c = Fluent.colors
     var text by remember { mutableStateOf("") }
-    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    // Ctrl+K reaches this box too: the one in the top bar is not shown on this page
+    val focus = ShellState.searchFocus
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val filters = remember { com.lagradost.desktop.ui.screens.explore.ExploreFilters() }
+    val rows = remember(filters.kind, filters.genre, filters.service, com.lagradost.desktop.tmdb.Tmdb.region, com.lagradost.desktop.tmdb.Tmdb.enabled) { com.lagradost.desktop.ui.screens.explore.ExploreClient.rows(filters.kind, filters.genre, filters.service) }
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = gutter, end = gutter, top = TopBarHeight + 64.dp, bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        contentPadding = PaddingValues(top = TopBarHeight + 28.dp, bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current),
     ) {
         item(key = "field") {
-            Column(Modifier.widthIn(max = landingWidth).fillMaxWidth()) {
-                SearchField(text, { text = it }, focus) { q ->
-                    val query = q.trim()
-                    if (query.isNotEmpty()) { ShellState.searchText = query; Navigator.search(query) }
-                }
-                if (validTypes.isNotEmpty()) {
-                    Box(Modifier.height(16.dp))
-                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        validTypes.forEach { t ->
-                            Chip(typeName(t), t in types, onClick = { onTypes(if (t in types) types - t else types + t) })
+            Box(Modifier.fillMaxWidth().padding(horizontal = gutter), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = landingWidth).fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            SearchField(text, { text = it }, focus) { q ->
+                                val query = q.trim()
+                                if (query.isNotEmpty()) { ShellState.searchText = query; Navigator.search(query) }
+                            }
+                        }
+                        // the kinds of title are not shown here: this button opens them when they are wanted
+                        if (validTypes.isNotEmpty()) Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
+                            IconButton(Icons.Filter, { chooseTypes(validTypes, types, onTypes) }, size = 44.dp, iconSize = 18.dp, tooltip = "Filter by kind of title", kind = if (types.count { it in validTypes }.let { it == 0 || it == validTypes.size }) ButtonKind.Standard else ButtonKind.Accent)
                         }
                     }
                 }
-                Box(Modifier.height(40.dp))
+            }
+        }
+        // the earlier searches: one row that scrolls sideways
+        item(key = "recent") {
+            Column(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 26.dp, bottom = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    FText("Recent", Modifier.weight(1f), style = Fluent.type.bodyStrong, color = c.textSecondary)
+                    FText("Recent searches", Modifier.weight(1f), style = Fluent.type.bodyStrong, color = c.textSecondary)
                     if (history.isNotEmpty()) Button("Clear", {
                         Overlays.message("Clear search history?", "All recent searches will be removed.", primary = "Clear", onPrimary = {
                             removeKeys("$currentAccount/$SEARCH_HISTORY_KEY")
                             vm.updateHistory()
                         })
-                    }, kind = ButtonKind.Subtle)
+                    }, kind = ButtonKind.Subtle, height = 28.dp)
                 }
-                Box(Modifier.height(6.dp))
-                if (history.isEmpty()) FText("Your searches show up here.", color = c.textTertiary, modifier = Modifier.padding(vertical = 10.dp))
+                Box(Modifier.height(8.dp))
+                if (history.isEmpty()) FText("Your searches show up here.", color = c.textTertiary, modifier = Modifier.padding(vertical = 6.dp))
+                // the arrows appear only while the pointer is over the row and there is more to scroll to; the wheel and Shift + wheel scroll it too
+                else Shelf(history.take(24), 160.dp, gutter = 0.dp, spacing = 8.dp, key = { it.key }) { item ->
+                    HistoryChip(item, onOpen = { ShellState.searchText = item.searchText; Navigator.search(item.searchText) }, onRemove = {
+                        removeKey("$currentAccount/$SEARCH_HISTORY_KEY", item.key)
+                        vm.updateHistory()
+                    })
+                }
             }
         }
-        items(history.take(8), key = { it.key }) { item ->
-            Box(Modifier.widthIn(max = landingWidth).fillMaxWidth()) {
-                HistoryRow(item, onOpen = { ShellState.searchText = item.searchText; Navigator.search(item.searchText) }, onRemove = {
-                    removeKey("$currentAccount/$SEARCH_HISTORY_KEY", item.key)
-                    vm.updateHistory()
-                })
-            }
-        }
+        exploreSections(filters, rows, cardWidth)
     }
 }
 
@@ -453,23 +483,21 @@ private fun SearchField(text: String, onText: (String) -> Unit, focus: androidx.
     }
 }
 
-/** One earlier search: the remove button sits in a reserved slot, hovering only changes colours */
+/** One earlier search as a pill: a click searches it again, the cross takes it off the list */
 @Composable
-private fun HistoryRow(item: SearchHistoryItem, onOpen: () -> Unit, onRemove: () -> Unit) {
+private fun HistoryChip(item: SearchHistoryItem, onOpen: () -> Unit, onRemove: () -> Unit) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.control)
+    val shape = RoundedCornerShape(50)
     Row(
-        Modifier.fillMaxWidth().height(44.dp).clip(shape).background(if (hovered) c.cardHover else Color.Transparent, shape)
-            .hoverable(source).fluentClickable(source, true, shape, Role.Button, onOpen).padding(start = 12.dp, end = 6.dp),
+        Modifier.height(36.dp).clip(shape).background(if (hovered) c.cardHover else c.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape)
+            .hoverable(source).fluentClickable(source, true, shape, Role.Button, onOpen).padding(start = 14.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.History, size = 15.dp, tint = c.textTertiary)
-        Box(Modifier.width(14.dp))
-        FText(item.searchText, Modifier.weight(1f), maxLines = 1)
-        Box(Modifier.size(32.dp).graphicsLayer { alpha = if (hovered) 1f else 0f }) {
-            IconButton(Icons.Close, onRemove, size = 32.dp, iconSize = 10.dp, tooltip = "Remove")
-        }
+        Icon(Icons.History, size = 13.dp, tint = c.textTertiary)
+        Box(Modifier.width(8.dp))
+        FText(item.searchText, Modifier.widthIn(max = 220.dp), maxLines = 1, softWrap = false)
+        Box(Modifier.size(28.dp)) { IconButton(Icons.Close, onRemove, size = 28.dp, iconSize = 9.dp, tooltip = "Remove") }
     }
 }

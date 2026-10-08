@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import com.lagradost.desktop.core.appVm
+import com.lagradost.desktop.core.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -201,12 +203,13 @@ private fun SearchResults(query: String) {
 @Composable
 private fun AccountHeader() {
     val c = Fluent.colors
-    val account = remember { runCatching { com.lagradost.cloudstream3.utils.DataStoreHelper.getCurrentAccount() }.getOrNull() }
+    val live by appVm<com.lagradost.cloudstream3.ui.home.HomeViewModel>().currentAccount.observeAsState()
+    val account = live ?: remember { runCatching { com.lagradost.cloudstream3.utils.DataStoreHelper.getCurrentAccount() }.getOrNull() }
     Row(
         Modifier.fillMaxWidth().background(c.card, RoundedCornerShape(FluentShapes.card)).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.card)).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(c.control)) { account?.let { UiImageView(it.image, it.name, Modifier.size(40.dp)) } }
+        Box(Modifier.size(40.dp)) { account?.let { com.lagradost.desktop.ui.shell.ProfileAvatar(it, 40.dp) } }
         Column {
             FText(account?.name ?: "CloudStream", style = Fluent.type.bodyStrong, maxLines = 1)
             FText("Settings", style = Fluent.type.caption, color = c.textSecondary)
@@ -259,7 +262,9 @@ private fun AppearanceCards() {
             }
         }
     }
+    ThemeCards()
     LayoutAndStyleCards()
+    TitleInfoCards()
 }
 
 @Composable

@@ -49,7 +49,7 @@ import com.lagradost.desktop.ui.fluent.TextBox
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 
-/** Profile picker: choose, add or remove a profile (each has its own library, history and settings keys) */
+/** Profile picker: choose, edit (name, animated picture), add or remove a profile (each has its own library, history and settings keys) */
 fun showAccountPicker(forStartup: Boolean = false) {
     val ctx = DesktopBootstrap.activity
     val vm = AppVms.get<AccountViewModel>()
@@ -64,6 +64,8 @@ fun showAccountPicker(forStartup: Boolean = false) {
                         ProfileTile(account, account.keyIndex == DataStoreHelper.selectedKeyIndex, onClick = {
                             vm.handleAccountSelect(account, ctx, forStartup)
                             dismiss()
+                        }, onEdit = {
+                            showProfileEditor(account) { accounts = runCatching { getAccounts(ctx) }.getOrDefault(accounts) }
                         }, onDelete = if (accounts.size > 1) ({
                             vm.handleAccountDelete(account, ctx)
                             accounts = runCatching { getAccounts(ctx) }.getOrDefault(accounts)
@@ -77,8 +79,11 @@ fun showAccountPicker(forStartup: Boolean = false) {
                             val n = name.trim()
                             if (n.isNotEmpty()) {
                                 val key = (accounts.maxOfOrNull { it.keyIndex } ?: 0) + 1
-                                vm.handleAccountUpdate(DataStoreHelper.Account(keyIndex = key, name = n, defaultImageIndex = key % 8), ctx)
+                                val created = DataStoreHelper.Account(keyIndex = key, name = n, defaultImageIndex = key % 8)
+                                vm.handleAccountUpdate(created, ctx)
                                 accounts = runCatching { getAccounts(ctx) }.getOrDefault(accounts)
+                                // a new profile starts with an animated look; the window to change it opens at once
+                                showProfileEditor(created) { accounts = runCatching { getAccounts(ctx) }.getOrDefault(accounts) }
                                 name = ""
                                 adding = false
                             }
@@ -91,20 +96,25 @@ fun showAccountPicker(forStartup: Boolean = false) {
 }
 
 @Composable
-private fun ProfileTile(account: DataStoreHelper.Account, current: Boolean, onClick: () -> Unit, onDelete: (() -> Unit)?) {
+private fun ProfileTile(account: DataStoreHelper.Account, current: Boolean, onClick: () -> Unit, onEdit: () -> Unit, onDelete: (() -> Unit)?) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
-        Modifier.width(112.dp).clip(shape).background(if (hovered) c.cardHover else c.card, shape)
+        Modifier.width(128.dp).clip(shape).background(if (hovered) c.cardHover else c.card, shape)
             .border(androidx.compose.ui.unit.Dp.Hairline, if (current) c.accent else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Button, onClick).padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(Modifier.size(72.dp).clip(CircleShape).background(c.control)) { UiImageView(account.image, account.name, Modifier.size(72.dp)) }
+        Box(Modifier.size(84.dp)) {
+            ProfileAvatar(account, 84.dp)
+        }
         FText(account.name, style = Fluent.type.bodyStrong, maxLines = 1)
         if (account.lockPin != null) Icon(Icons.Lock, size = 12.dp, tint = c.textSecondary)
-        if (onDelete != null && hovered && !current) Button("Remove", onDelete, kind = ButtonKind.Subtle, height = 24.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button("Edit", onEdit, kind = ButtonKind.Subtle, icon = Icons.Edit, height = 26.dp)
+            if (onDelete != null && hovered && !current) Button("Remove", onDelete, kind = ButtonKind.Subtle, height = 26.dp)
+        }
     }
 }

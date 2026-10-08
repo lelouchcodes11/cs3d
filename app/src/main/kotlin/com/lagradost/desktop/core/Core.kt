@@ -67,6 +67,12 @@ sealed interface Route {
     /** [only]: search in this extension only (Home page search); null searches all extensions */
     data class Search(val query: String? = null, val nonce: Long = System.nanoTime(), val only: String? = null) : Route
     data object Library : Route
+
+    /** What was started and not finished: the full list behind Continue watching */
+    data object History : Route
+
+    /** A person from TMDB: photo, biography and the films and series they are in */
+    data class Person(val id: Int, val name: String, val image: String?) : Route
     data object Downloads : Route
     data object Extensions : Route
     data class Settings(val page: String? = null) : Route

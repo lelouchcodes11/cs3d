@@ -319,8 +319,10 @@ object PluginManager {
                     File(pluginData.savedData.filePath),
                     true
                 ).let { success ->
-                    if (success)
+                    if (success) {
                         updatedPlugins.add(pluginData.onlineData.plugin.name)
+                        com.lagradost.desktop.platform.PluginUpdateLog.record(pluginData.onlineData.plugin.name, pluginData.onlineData.plugin.version)
+                    }
                 }
             }
         }
@@ -871,6 +873,7 @@ object PluginManager {
                     )
                 ) {
                     updatedPlugins.add(pluginData.onlineData.plugin.name)
+                    com.lagradost.desktop.platform.PluginUpdateLog.record(pluginData.onlineData.plugin.name, pluginData.onlineData.plugin.version)
                 }
             }
         }.also {

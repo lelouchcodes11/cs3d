@@ -736,9 +736,9 @@
     <string name="update_plugins">Update Plugins</string>
     <!--Manual Update Button-->
     <string name="update_plugins_manually">Update plugins manually</string>
-    <string name="starting_plugin_update_manually">Starting plugin update process!</string>
+    <string name="starting_plugin_update_manually">Checking your extensions for updates…</string>
     <string name="plugins_updated_manually">Successfully updated %d plugin(s)</string>
-    <string name="no_plugins_updated_manually">No plugins were updated.</string>
+    <string name="no_plugins_updated_manually">All your extensions are up to date.</string>
     <string name="player_notification_channel_name">Player notifications</string>
     <string name="player_notification_channel_description">The player notification for controlling the playback from the background</string>
     <string name="subtitles_from_embedded">Embedded</string>

@@ -160,6 +160,12 @@ object SettingsUpdatesScreen : SearchableSettings {
                         }
                     ),
                     Preference.PreferenceItem.TextPreference(
+                        title = "Extension update history",
+                        subtitle = "Which extensions were updated, and when",
+                        icon = painterResource(R.drawable.article_24px),
+                        onClick = { com.lagradost.desktop.ui.screens.settings.showPluginUpdateHistory() }
+                    ),
+                    Preference.PreferenceItem.TextPreference(
                         title = stringResource(R.string.test_extensions),
                         subtitle = stringResource(R.string.test_extensions_summary),
                         icon = painterResource(R.drawable.baseline_network_ping_24),

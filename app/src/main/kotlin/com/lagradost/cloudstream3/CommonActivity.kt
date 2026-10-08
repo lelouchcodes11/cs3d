@@ -170,6 +170,12 @@ object CommonActivity {
         }
         Log.i(TAG, "showToast = $message")
 
+        // desktop: the engine's toasts (extension updates, restore, downloads ...) go to the app's own toast layer; Android's custom-view Toast drew nothing here
+        runCatching {
+            com.lagradost.desktop.ui.Toasts.show(message.trim(), (duration ?: Toast.LENGTH_SHORT) == Toast.LENGTH_LONG)
+            return
+        }
+
         try {
             currentToast?.cancel()
         } catch (e: Exception) {

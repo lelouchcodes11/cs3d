@@ -209,14 +209,16 @@ fun FluentTheme(content: @Composable () -> Unit) {
         ThemeMode.Dark -> true
     }
     val system = remember(revision) { WinTheme.systemAccent() }
-    val override = FluentSettings.accentOverride
+    val preset = Themes.byId(Appearance.theme)
+    // the accent the user picked wins, then the theme's own, then the Windows one
+    val override = FluentSettings.accentOverride ?: preset.accent
     val accent = if (override == null) system else AccentPalette(
         androidx.compose.ui.graphics.lerp(override, Color.White, 0.6f), androidx.compose.ui.graphics.lerp(override, Color.White, 0.35f),
         androidx.compose.ui.graphics.lerp(override, Color.White, 0.15f), override, androidx.compose.ui.graphics.lerp(override, Color.Black, 0.15f),
         androidx.compose.ui.graphics.lerp(override, Color.Black, 0.3f), androidx.compose.ui.graphics.lerp(override, Color.Black, 0.45f),
     )
     val black = Appearance.backdrop == Backdrop.Black
-    val colors = remember(dark, accent, black) { fluentColors(dark, accent).let { if (dark && black) it.oled() else it } }
+    val colors = remember(dark, accent, black, preset) { fluentColors(dark, accent).themed(preset).let { if (dark && black) it.oled() else it } }
     val type = remember { fluentType(FluentFonts.text) }
     CompositionLocalProvider(LocalFluentColors provides colors, LocalFluentType provides type, content = content)
 }

@@ -54,7 +54,7 @@ actual open class YoutubeExtractor actual constructor() : ExtractorApi() {
         val videoStreams = info.videoOnlyStreams.orEmpty()
         if (videoStreams.isEmpty()) return false
 
-        val audioStreams = info.audioStreams.orEmpty()
+        val audioStreams = info.audioStreams.orEmpty().sortedByDescending { it.averageBitrate } // best sound first: the player opens the first one beside the video
         videoStreams.forEach { video ->
             callback(
                 newExtractorLink(

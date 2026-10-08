@@ -337,6 +337,9 @@ object DevServer {
                 when (q["route"] ?: "home") {
                     "home" -> nav.goTab(com.lagradost.desktop.core.Tab.Home)
                     "search" -> nav.search(q["q"], q["only"])
+                    "explore" -> nav.goTab(com.lagradost.desktop.core.Tab.Search)
+                    "history" -> nav.go(com.lagradost.desktop.core.Route.History)
+                    "person" -> nav.go(com.lagradost.desktop.core.Route.Person((q["q"] ?: "287").toInt(), q["name"] ?: "", null))
                     "library" -> nav.goTab(com.lagradost.desktop.core.Tab.Library)
                     "downloads" -> nav.goTab(com.lagradost.desktop.core.Tab.Downloads)
                     "extensions" -> nav.goTab(com.lagradost.desktop.core.Tab.Extensions)

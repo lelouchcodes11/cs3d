@@ -984,7 +984,9 @@ open class MpvPlayer : IPlayer {
             // the other readers on the stream it could not rewind and crashed (IStreamFlare "Mandaadi")
             // (only the reader is chosen: demuxer-lavf-format=hls also applied to the subtitle files added later and every SRT failed to open, MovieBox)
             val forceHls = onDemandFiles?.video?.contains("/gen/") == true
-            val options = listOfNotNull(audioId?.let { "aid=$it" }, onDemandFiles?.audio?.let { "audio-files-append=%${it.toByteArray().size}%$it" }, if (forceHls) "demuxer=lavf" else null)
+            // a source with video only (YouTube's adaptive streams) names its sound as a separate file: opened beside the video
+            val soundFile = onDemandFiles?.audio ?: link?.audioTracks?.firstOrNull()?.url?.takeIf { it.startsWith("http", ignoreCase = true) }
+            val options = listOfNotNull(audioId?.let { "aid=$it" }, soundFile?.let { "audio-files-append=%${it.toByteArray().size}%$it" }, if (forceHls) "demuxer=lavf" else null)
             if (options.isNotEmpty()) mpvCommand("loadfile", url, "replace", "-1", options.joinToString(",")) else mpvCommand("loadfile", url, "replace")
             setMpvProperty("pause", if (autoPlay == true) "no" else "yes")
             isPaused = autoPlay != true
