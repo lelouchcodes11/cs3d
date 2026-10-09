@@ -13,7 +13,11 @@ internal object Anime4K {
         files.joinToString(";") { name ->
             val file = File(dir, name)
             if (!file.isFile || file.length() == 0L) {
-                Thread.currentThread().contextClassLoader.getResourceAsStream("shaders/$name")!!.use { input -> file.outputStream().use { input.copyTo(it) } }
+                val stream = Thread.currentThread().contextClassLoader?.getResourceAsStream("shaders/$name")
+                    ?: Anime4K::class.java.classLoader?.getResourceAsStream("shaders/$name")
+                    ?: Anime4K::class.java.getResourceAsStream("/shaders/$name")
+                    ?: error("Shader resource shaders/$name not found")
+                stream.use { input -> file.outputStream().use { input.copyTo(it) } }
             }
             file.absolutePath.replace('\\', '/')
         }

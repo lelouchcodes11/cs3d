@@ -28,14 +28,9 @@ object OAuthCallback {
     @Volatile private var armedUntil = 0L
     @Volatile private var onLink: ((String) -> Unit)? = null
 
-    /**
-     * A sign-in is about to start: the callback page is accepted for the next 15 minutes and what it reports goes to [handler]
-     * as a `cloudstreamapp://<service>/#...` style link. Returns false when the port could not be taken.
-     */
+    /** Starts the loopback HTTP server if not already running */
     @Synchronized
-    fun arm(handler: (String) -> Unit): Boolean {
-        onLink = handler
-        armedUntil = System.currentTimeMillis() + WINDOW_MS
+    fun start(): Boolean {
         if (servers.isNotEmpty()) return true
         val started = ArrayList<HttpServer>()
         for (host in listOf("127.0.0.1", "::1")) {
@@ -55,28 +50,77 @@ object OAuthCallback {
         return started.isNotEmpty()
     }
 
-    private val hostOk = Regex("^(localhost|127\\.0\\.0\\.1|\\[::1\\]):$PORT$", RegexOption.IGNORE_CASE)
+    /**
+     * A sign-in is about to start: the callback page is accepted for the next 15 minutes and what it reports goes to [handler]
+     * as a `cloudstreamapp://<service>/#...` style link. Returns false when the port could not be taken.
+     */
+    @Synchronized
+    fun arm(handler: (String) -> Unit): Boolean {
+        onLink = handler
+        armedUntil = System.currentTimeMillis() + WINDOW_MS
+        start()
+        return servers.isNotEmpty()
+    }
+
+    private val validHosts = setOf("localhost", "127.0.0.1", "[::1]", "::1")
+    private val knownServices = setOf("anilistlogin", "mallogin", "simkl")
+
+    private fun isAllowedHost(hostHeader: String?): Boolean {
+        if (hostHeader.isNullOrBlank()) return false
+        val clean = hostHeader.trim().removePrefix("http://").removePrefix("https://")
+        val hostPart = if (clean.startsWith("[")) {
+            clean.substringBefore(']').trim() + "]"
+        } else {
+            clean.substringBefore(':').trim()
+        }
+        return hostPart.lowercase() in validHosts
+    }
 
     private fun handle(ex: HttpExchange) {
         val host = ex.requestHeaders.getFirst("Host").orEmpty()
         // a page of another site (DNS rebinding) is not talking to us
-        if (!hostOk.matches(host)) return reply(ex, 421, "text/plain", "wrong host")
+        if (!isAllowedHost(host)) return reply(ex, 421, "text/plain", "wrong host")
         val path = ex.requestURI.path.trim('/')
         if (ex.requestMethod == "POST" && path == "_cb") {
             val origin = ex.requestHeaders.getFirst("Origin")
-            if (origin != null && !hostOk.matches(origin.removePrefix("http://"))) return reply(ex, 403, "text/plain", "foreign origin")
-            if (System.currentTimeMillis() > armedUntil) return reply(ex, 409, "text/plain", "no sign-in is waiting")
+            if (origin != null && origin != "null" && !isAllowedHost(origin)) {
+                return reply(ex, 403, "text/plain", "foreign origin")
+            }
             val body = ex.requestBody.readNBytes(16_384).toString(Charsets.UTF_8)
-            val (id, search, hash) = body.split("\n").let { Triple(it.getOrElse(0) { "" }, it.getOrElse(1) { "" }, it.getOrElse(2) { "" }) }
-            if (!id.matches(Regex("[a-z]{3,20}"))) return reply(ex, 400, "text/plain", "bad service")
-            // the shape of the real redirect: ".../#access_token=..." (AniList) or "...?code=...&state=..." (MyAnimeList, Simkl)
-            val link = if (hash.isNotEmpty()) "cloudstreamapp://$id/$hash" else "cloudstreamapp://$id$search"
+            val (id, search, hash) = body.split("\n").let { Triple(it.getOrElse(0) { "" }.trim(), it.getOrElse(1) { "" }.trim(), it.getOrElse(2) { "" }.trim()) }
+            if (id !in knownServices && !id.matches(Regex("[a-z]{3,20}"))) return reply(ex, 400, "text/plain", "bad service")
+            
+            // Allow if armed or if it matches one of our known OAuth login services
+            if (armedUntil > 0L && System.currentTimeMillis() > armedUntil && id !in knownServices) {
+                return reply(ex, 409, "text/plain", "no sign-in is waiting")
+            }
+
+            // the shape of the redirect url handled by handleAppIntentUrl:
+            // keeps the loopback http address intact so token exchange redirect_uri matches
+            val link = if (hash.isNotBlank()) {
+                val cleanHash = if (hash.startsWith("#")) hash else "#$hash"
+                "http://localhost:$PORT/$id$cleanHash"
+            } else {
+                val cleanSearch = if (search.isNotBlank() && !search.startsWith("?")) "?$search" else search
+                "http://localhost:$PORT/$id$cleanSearch"
+            }
             armedUntil = 0L
-            val handler = onLink
-            EventQueue.invokeLater { handler?.invoke(link) }
+            val handler = onLink ?: { l ->
+                EventQueue.invokeLater {
+                    com.lagradost.desktop.ui.DesktopUiHost.window?.let { w ->
+                        w.isVisible = true
+                        w.toFront()
+                        w.requestFocus()
+                    }
+                    com.lagradost.desktop.NativeLinks.open(l)
+                }
+            }
+            EventQueue.invokeLater { handler.invoke(link) }
             return reply(ex, 200, "text/plain", "ok")
         }
-        if (ex.requestMethod == "GET" && path.matches(Regex("[a-z]{3,20}"))) return reply(ex, 200, "text/html; charset=utf-8", PAGE)
+        if (ex.requestMethod == "GET" && (path in knownServices || path.matches(Regex("[a-z]{3,20}")))) {
+            return reply(ex, 200, "text/html; charset=utf-8", PAGE)
+        }
         reply(ex, 404, "text/plain", "not found")
     }
 
@@ -98,12 +142,25 @@ object OAuthCallback {
         (function () {
           var id = location.pathname.replace(/^\/+/, "").split("/")[0];
           function show(t, m) { document.getElementById("t").textContent = t; document.getElementById("m").textContent = m; }
-          fetch("/_cb", { method: "POST", headers: { "Content-Type": "text/plain" }, body: id + "\n" + location.search + "\n" + location.hash })
+          var bodyData = id + "\n" + location.search + "\n" + location.hash;
+          var appLink = "cloudstreamapp://" + id + (location.hash ? "/" + location.hash : location.search);
+          fetch("/_cb", { method: "POST", headers: { "Content-Type": "text/plain" }, body: bodyData })
             .then(function (r) {
-              if (r.ok) { history.replaceState(null, "", "/" + id); show("You are signed in", "You can close this tab and go back to CloudStream."); }
-              else show("Nothing is waiting for a sign-in", "Start it again from CloudStream: Settings, Accounts & security.");
+              if (r.ok) {
+                try { history.replaceState(null, "", "/" + id); } catch (e) {}
+                show("You are signed in", "You can close this tab and return to CloudStream.");
+              } else {
+                show("Sign-in issue", "Start it again from CloudStream: Settings, Accounts & security.");
+              }
             })
-            .catch(function () { show("CloudStream did not answer", "Is CloudStream still open? Start the sign-in again from Settings, Accounts & security."); });
+            .catch(function () {
+              try {
+                window.location.href = appLink;
+                show("Redirecting to app…", "If CloudStream does not open, start the sign-in again from Settings.");
+              } catch (e) {
+                show("CloudStream did not answer", "Is CloudStream still open? Start the sign-in again from Settings, Accounts & security.");
+              }
+            });
         })();
         </script></body></html>
     """.trimIndent()

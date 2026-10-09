@@ -396,7 +396,7 @@ private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean) {
             Row(Modifier.align(Alignment.BottomStart).padding(start = gutter, bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items.forEachIndexed { i, _ ->
                     val w by androidx.compose.animation.core.animateDpAsState(if (i == index) 26.dp else 8.dp, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(320), label = "dot")
-                    Box(Modifier.size(w, 4.dp).clip(RoundedCornerShape(2.dp)).background(if (i == index) Color.White else Color(0x55FFFFFF)).clickableNoRipple { index = i })
+                    Box(Modifier.size(w, 4.dp).clip(RoundedCornerShape(2.dp)).background(if (i == index) Fluent.colors.accent else Color(0x55FFFFFF)).clickableNoRipple { index = i })
                 }
             }
         }

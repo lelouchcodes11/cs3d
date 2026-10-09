@@ -49,20 +49,80 @@ object HlsProxy {
     fun variants(address: String): List<Variant> =
         address.substringAfter("h=", "").substringBefore("&").takeIf { it.isNotEmpty() }?.let { variantsById[it] } ?: emptyList()
 
+    private class Prefetched(val result: java.util.concurrent.CompletableFuture<Pair<Int, ByteArray>>, val at: Long)
+    private val firstSegments = ConcurrentHashMap<String, Prefetched>()
+
+    private class Fetched(val status: Int, val body: ByteArray, val final: Boolean)
+    private class CacheEntry(val result: java.util.concurrent.CompletableFuture<Fetched>, val at: Long) {
+        /** The player has asked for it already: a playlist that can still change (live) is fetched again next time */
+        @Volatile
+        var consumed = false
+    }
+    private val cache = ConcurrentHashMap<String, CacheEntry>()
+    private val activeCalls = ConcurrentHashMap<String, java.util.concurrent.CopyOnWriteArrayList<okhttp3.Call>>()
+
+    /** Cancels any in-flight prefetch futures, active network calls and drops registered headers for [address] */
+    fun cancel(address: String?) {
+        if (address == null) return
+        val id = address.substringAfter("h=", "").substringBefore("&")
+        if (id.isNotEmpty()) {
+            headersById.remove(id)
+            interceptorsById.remove(id)
+            streamSubtitlesById.remove(id)
+            variantsById.remove(id)
+            activeCalls.remove(id)?.forEach { runCatching { it.cancel() } }
+            val it = firstSegments.entries.iterator()
+            while (it.hasNext()) {
+                val entry = it.next()
+                if (entry.key.startsWith("$id|")) {
+                    runCatching { entry.value.result.cancel(true) }
+                    it.remove()
+                }
+            }
+            val cIt = cache.entries.iterator()
+            while (cIt.hasNext()) {
+                val entry = cIt.next()
+                if (entry.key.startsWith("$id|")) {
+                    runCatching { entry.value.result.cancel(true) }
+                    cIt.remove()
+                }
+            }
+        }
+    }
+
+    /** Cancels all active prefetch futures, active network calls and clears proxy tables */
+    fun cancelAll() {
+        headersById.clear()
+        interceptorsById.clear()
+        streamSubtitlesById.clear()
+        variantsById.clear()
+        for ((_, calls) in activeCalls) {
+            for (call in calls) {
+                runCatching { call.cancel() }
+            }
+        }
+        activeCalls.clear()
+        for ((_, p) in firstSegments) {
+            runCatching { p.result.cancel(true) }
+        }
+        firstSegments.clear()
+        for ((_, c) in cache) {
+            runCatching { c.result.cancel(true) }
+        }
+        cache.clear()
+    }
+
     /**
      * First segments of the variants and renditions of a recorded stream, fetched all at once while the playlists are read: ffmpeg opens
      * the first segment of every one of them one after the other before it plays (a master with 3 qualities and 21 audio languages took
      * ~6 s). Each is handed out once, then dropped.
      */
-    private class Prefetched(val result: java.util.concurrent.CompletableFuture<Pair<Int, ByteArray>>, val at: Long)
-    private val firstSegments = ConcurrentHashMap<String, Prefetched>()
-
     private fun prefetchSegment(url: String, id: String, headers: Map<String, String>): String {
         val now = System.currentTimeMillis()
         firstSegments.entries.removeIf { now - it.value.at > 120_000 }
         val key = "$id|$url"
         firstSegments.computeIfAbsent(key) {
-            Prefetched(java.util.concurrent.CompletableFuture.supplyAsync({ getFull(url, headers, interceptorsById[id]).let { it.first to it.second } }, sidePool), now)
+            Prefetched(java.util.concurrent.CompletableFuture.supplyAsync({ getFull(url, headers, interceptorsById[id], id).let { it.first to it.second } }, sidePool), now)
         }
         return "http://127.0.0.1:${server.address.port}/seg?h=$id&u=${URLEncoder.encode(url, "UTF-8")}"
     }
@@ -72,7 +132,7 @@ object HlsProxy {
         val id = query(ex, "h") ?: ""
         val ready = firstSegments.remove("$id|$url")?.let { runCatching { it.result.get(30, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() }
         // asked for again later (a seek back to the start), or the early fetch failed: fetched now
-        val (code, fetched) = ready?.takeIf { it.first in 200..299 } ?: getFull(url, headersById[id] ?: emptyMap(), interceptorsById[id]).let { it.first to it.second }
+        val (code, fetched) = ready?.takeIf { it.first in 200..299 } ?: getFull(url, headersById[id] ?: emptyMap(), interceptorsById[id], id).let { it.first to it.second }
         if (code !in 200..299) { ex.sendResponseHeaders(code, -1); ex.close(); return }
         val body = withoutDisguise(fetched)
         ex.sendResponseHeaders(200, body.size.toLong())
@@ -186,7 +246,7 @@ object HlsProxy {
     private fun get(url: String, headers: Map<String, String>): Pair<Int, ByteArray> = getFull(url, headers).let { it.first to it.second }
 
     /** [get] and the address the answer came from after the redirects: relative addresses in a playlist are meant against that one */
-    private fun getFull(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null): Triple<Int, ByteArray, String> {
+    private fun getFull(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null, id: String? = null): Triple<Int, ByteArray, String> {
         val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: toUri(url).toString().toHttpUrl())
         var userAgent = false
         for ((k, v) in headers) {
@@ -197,19 +257,19 @@ object HlsProxy {
         }
         if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
         val client = com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(if (interceptor != null) 60 else 20, java.util.concurrent.TimeUnit.SECONDS).apply { interceptor?.let { addInterceptor(it) } }.build()
-        client.newCall(builder.build()).execute().use { r -> return Triple(r.code, r.body.bytes(), r.request.url.toString()) }
+        val call = client.newCall(builder.build())
+        if (id != null) {
+            activeCalls.computeIfAbsent(id) { java.util.concurrent.CopyOnWriteArrayList() }.add(call)
+        }
+        try {
+            call.execute().use { r -> return Triple(r.code, r.body.bytes(), r.request.url.toString()) }
+        } finally {
+            if (id != null) {
+                activeCalls[id]?.remove(call)
+            }
+        }
     }
 
-    private class Fetched(val status: Int, val body: ByteArray, val final: Boolean)
-    private class CacheEntry(val result: java.util.concurrent.CompletableFuture<Fetched>, val at: Long) {
-        /** The player has asked for it already: a playlist that can still change (live) is fetched again next time */
-        @Volatile
-        var consumed = false
-    }
-
-    // playlists that are fetched (and repaired) already or are on their way; the player asks for them one after the other,
-    // which with a slow wrapper service meant seconds of waiting for each of the variant and audio playlists
-    private val cache = ConcurrentHashMap<String, CacheEntry>()
     // eight at a time, in the order they were asked for
     private val pool = java.util.concurrent.ThreadPoolExecutor(8, 8, 30, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue()) { r ->
         Thread(r, "HlsProxy-fetch").apply { isDaemon = true }
@@ -237,7 +297,7 @@ object HlsProxy {
         cache[key] = entry
         pool.execute {
             try {
-                val (code, bytes, finalUrl) = getFull(url, headers, interceptorsById[id])
+                val (code, bytes, finalUrl) = getFull(url, headers, interceptorsById[id], id)
                 if (code !in 200..299) {
                     Log.w(TAG, "playlist $code: ${url.take(120)}")
                     future.complete(Fetched(code, ByteArray(0), false))

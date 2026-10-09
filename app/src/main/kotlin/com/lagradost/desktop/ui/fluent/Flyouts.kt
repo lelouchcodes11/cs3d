@@ -220,6 +220,7 @@ fun <T> ComboBox(
     icon: String? = null,
     minWidth: Dp = 120.dp,
     height: Dp = 32.dp,
+    trailingItem: (@Composable (T) -> Unit)? = null,
 ) {
     val c = Fluent.colors
     var open by remember { mutableStateOf(false) }
@@ -235,25 +236,30 @@ fun <T> ComboBox(
                 .height(height)
                 .clip(shape)
                 .background(if (!enabled) c.controlDisabled else if (hovered) c.controlHover else c.control, shape)
-                .border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape)
+                .border(androidx.compose.ui.unit.Dp.Hairline, if (enabled && (hovered || open)) c.accent.copy(alpha = 0.6f) else c.strokeStrong.copy(alpha = 0.45f), shape)
                 .fluentClickable(source, enabled, shape, Role.DropdownList) { open = !open }
                 .padding(start = 12.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) {
-                Icon(icon, size = 14.dp, tint = c.textSecondary)
+                Icon(icon, size = 14.dp, tint = c.accentText)
                 Box(Modifier.width(8.dp))
             }
             val text = selected?.let(label) ?: placeholder
             FText(text, Modifier.weight(1f, fill = false), color = if (selected == null) c.textTertiary else c.text, maxLines = 1)
+            if (selected != null && trailingItem != null) {
+                Box(Modifier.width(6.dp))
+                trailingItem(selected)
+            }
             Box(Modifier.width(12.dp))
-            Icon(Icons.ChevronDownSmall, size = 12.dp, tint = c.textSecondary)
+            Icon(Icons.ChevronDownSmall, size = 12.dp, tint = c.accentText)
         }
         if (open) {
             Popup(popupPositionProvider = BelowAnchor(2), onDismissRequest = { open = false }, properties = PopupProperties(focusable = true)) {
                 DropdownList(
                     items, selected, label,
                     width = with(density) { anchorWidth.toDp() },
+                    trailingItem = trailingItem,
                     onPick = { open = false; onSelect(it) },
                 )
             }
@@ -262,7 +268,7 @@ fun <T> ComboBox(
 }
 
 @Composable
-private fun <T> DropdownList(items: List<T>, selected: T?, label: (T) -> String, width: Dp, onPick: (T) -> Unit) {
+private fun <T> DropdownList(items: List<T>, selected: T?, label: (T) -> String, width: Dp, trailingItem: (@Composable (T) -> Unit)? = null, onPick: (T) -> Unit) {
     val c = Fluent.colors
     val focus = remember { FocusRequester() }
     val list = rememberLazyListState()
@@ -297,7 +303,13 @@ private fun <T> DropdownList(items: List<T>, selected: T?, label: (T) -> String,
             contentAlignment = Alignment.CenterStart,
         ) {
             if (isSel) Box(Modifier.align(Alignment.CenterStart).size(3.dp, 16.dp).background(c.accent, RoundedCornerShape(2.dp)))
-            FText(label(item), Modifier.padding(start = 4.dp), maxLines = 1, softWrap = false)
+            Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                FText(label(item), Modifier.weight(1f, fill = false), maxLines = 1, softWrap = false)
+                if (trailingItem != null) {
+                    Box(Modifier.width(8.dp))
+                    trailingItem(item)
+                }
+            }
         }
     }
     FlyoutSurface(

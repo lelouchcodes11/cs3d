@@ -210,10 +210,18 @@ fun SearchScreen(route: Route.Search) {
                             if (fresh) appear.animateTo(1f, androidx.compose.animation.core.tween(260))
                         }
                         Column(Modifier.padding(bottom = 30.dp).graphicsLayer { alpha = appear.value }) {
+                            val isStremio = com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(name) is com.lagradost.desktop.stremio.StremioApi
                             com.lagradost.desktop.ui.fluent.RichSectionHeader(
                                 name, Modifier.padding(horizontal = gutter),
                                 subtitle = "${list.list.size}${if (list.hasNext) "+" else ""} result${if (list.list.size == 1) "" else "s"}",
                                 onSeeAll = { Navigator.go(Route.Section("$query · $name", list.list)) },
+                                trailing = {
+                                    if (isStremio) {
+                                        Box(Modifier.padding(end = 12.dp)) {
+                                            com.lagradost.desktop.ui.fluent.StremioBadge()
+                                        }
+                                    }
+                                }
                             )
                             Box(Modifier.height(12.dp))
                             val state = rememberLazyListState()
@@ -332,7 +340,14 @@ private fun chooseProviders(selected: Set<String>, onDone: (Set<String>) -> Unit
                 Box(Modifier.height(8.dp))
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
                     items(all, key = { it }) { name ->
-                        CheckBox(name in working, { on -> if (on) working.add(name) else working.remove(name) }, Modifier.fillMaxWidth().padding(vertical = 6.dp), label = name)
+                        val isStremio = com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(name) is com.lagradost.desktop.stremio.StremioApi
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CheckBox(name in working, { on -> if (on) working.add(name) else working.remove(name) }, Modifier.weight(1f, fill = false), label = name)
+                            if (isStremio) {
+                                Box(Modifier.width(8.dp))
+                                com.lagradost.desktop.ui.fluent.StremioBadge()
+                            }
+                        }
                     }
                 }
             }
@@ -352,9 +367,11 @@ private fun SkeletonRow(cardWidth: androidx.compose.ui.unit.Dp) {
 /** The placeholder of an extension that is still searching */
 @Composable
 private fun SkeletonRow(name: String, cardWidth: androidx.compose.ui.unit.Dp) {
+    val isStremio = com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(name) is com.lagradost.desktop.stremio.StremioApi
     Column(Modifier.padding(bottom = 30.dp)) {
         Row(Modifier.padding(horizontal = gutter), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FText(name, style = Fluent.type.subtitle.copy(fontSize = 21.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = Fluent.colors.textTertiary, maxLines = 1)
+            if (isStremio) com.lagradost.desktop.ui.fluent.StremioBadge()
             FText("searching…", style = Fluent.type.caption, color = Fluent.colors.textTertiary)
         }
         Box(Modifier.height(12.dp))

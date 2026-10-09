@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.1
+
+**Stremio add-ons and torrents** (Settings > Stremio & torrents)
+- **Add any Stremio add-on** by its address (a `stremio://` or `https://` link, or paste the address from the add-on's page); popular ones are one click away. Add-ons with catalogs show on Home and in search like a provider of their own, with title pages, episodes, cast and the add-on's own sources. Add-ons with sources and subtitles (Torrentio, OpenSubtitles, ...) play the add-on titles. Add-ons and extensions stay apart: a title of an extension shows only that extension's sources and subtitles, never the add-ons'. Turn add-ons off, reorder or remove them, open their settings page, refresh them.
+- **Torrents play while they download.** The first time you choose a torrent source the app explains what it means and, with your yes, downloads the engine (TorrServer, about 60 MB, open source) from GitHub. It runs only while a torrent plays, listens on this PC only, stops five minutes after the last one and when the app closes, and clears the downloaded pieces when you leave the player. Settings: buffer size, encrypted peers only, disk use and clear, update/remove the engine.
+- **The player shows what a torrent does**: peers, speed and buffer while it starts and a small pill while it plays. Direct sources are always tried before torrents; among torrents the well-seeded ones come first, and a swarm that does not start is skipped after a minute like any other source. VLC gets the engine's address on this PC for a torrent.
+- A first start of the engine needs some time to find peers; a torrent with few peers can be slow or not start: this depends on the swarm and your connection.
+
+**A new player** (inspired by Ayu's, built for this app)
+- One fixed order: back button and what plays at the top left; at the bottom the seek bar, a capsule with the 10 s jumps, play and volume with the time beside it, and at the right a capsule of tools: **Sources**, **Subtitles**, **Audio & video** (named buttons on a wide window), then speed, episodes, picture in picture, settings and full screen. A thin seek bar that grows under the pointer with a bubble showing the time and the name of an intro / recap segment; the end time ("ends 10:11") shows when the window is wide. Nothing floats over the loading screen any more.
+- **Video & Audio** is one page (picture qualities, then audio tracks), **Settings has Keyboard shortcuts**, and the loading screen has **Show sources**: the sources found so far, to pick one without waiting. The Video & Audio, Subtitles and Sources menus open right above their own button (the settings gear keeps the right edge), and they are the first three rows of the settings menu.
+- Everything moves with one soft ease-out (controls slide in and out together, menus grow out of the button, the episode list slides in, the skip button rides above the controls); Motion Off in Settings turns it all off.
+- **Skip buttons** are white pills (Skip Intro / Skip Recap / Skip Credits / Next episode) that fill as the 5 s auto-skip countdown runs. A recap is skipped like an opening (checked with the real AniSkip, TheIntroDB and IntroDB answers for Jujutsu Kaisen S1 E3).
+- A pause that lasts shows a **Now playing** screen (title, episode, story, time left); resuming gives a soft pulse; the loading screen shows the episode picture.
+- **The GPU (native) player no longer disables the app's window**: its controls were a modal window, which made Windows disable the main window, so clicking the taskbar did nothing (a minimised app could not be restored), keys could be lost, and leaving from full screen froze the app. The controls window is now a plain layer over the video.
+- **Video screen title bar auto-hide**: The window title bar (minimize, maximize, close) automatically hides during video playback (in both maximized and full screen modes) and reveals smoothly when hovering near the top edge, ensuring an unobstructed viewing experience while keeping window controls accessible. The dot indicator on the Subtitles button is removed.
+- **Loading subtitle indicator repositioned**: The subtitle loading pill is placed lower to completely avoid overlapping with the top-right Video & Audio button.
+- **Video & Audio is the button at the top right** (its menu hangs below it); Subtitles and Sources stay in the bottom capsule.
+- **The GPU player opens in one piece**: its controls window used to show up small at the top left of the screen and then jump over the video; it now waits until it is in place.
+- **The episode list opens smoothly**: its rows (with the saved progress of every episode) are read off the window thread and it slides in as a layer.
+- **A spoiler that was shown can be hidden again**: right-click an episode or use its three dots (Hide spoiler / Show spoiler); the player's episode list has a hide button on a shown one.
+- **Leaving the GPU (native) player no longer freezes the app**: the video core is let go first and the page is taken apart after it, and no step waits for the core on the window thread (the freeze was the window waiting for a video core that was stuck on a network read).
+- The system tray menu showed Chinese characters (its text was handed to Windows as the wrong kind of string); fixed.
+
+**Fixes and polish**
+- Buttons use the accent colour (and a second, turned hue) instead of white; the season picker is visible; episode titles use the whole width; anime pages have a **Related** tab (prequels, sequels, side stories); spoilers in episode lists can be hidden.
+- AniList, MyAnimeList and Simkl sign-in work for everyone when the build contains the client IDs; **Add clone site** works on desktop.
+- **MyAnimeList sign-in** works with a client of App Type "web" too (Settings, Accounts & security, Sign-in keys has a field for its Client Secret), and a refused sign-in now says what MyAnimeList answered instead of "failed".
+- Related anime and "More like this" titles open a search in the extension you are in; right-click one to search all extensions.
+- Sources that answer with errors no longer freeze playback: a failing source is skipped quickly and kinds of source that failed lately move behind those that work.
+- *Classic* (the plain Windows colours) is the default colour theme again.
+
 ## 1.0.0
 
 The first official release. A lighter, better-looking app with a lot more to find: the installer is about 40 % smaller and it uses much less memory, there are colour themes and your own wallpaper, Explore and richer title pages (TMDB), trailers with sound inside the app, editable profiles, and many player, subtitle and extension fixes. Everything below is new since 0.1.8.

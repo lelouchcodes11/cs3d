@@ -136,7 +136,7 @@ private fun ExploreHero(first: ExploreRow) {
         }
         Row(Modifier.align(Alignment.BottomEnd).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items.forEachIndexed { i, _ ->
-                Box(Modifier.size(if (i == index) 22.dp else 8.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(if (i == index) Color.White else Color(0x55FFFFFF)).clickable(remember { MutableInteractionSource() }, null) { index = i })
+                Box(Modifier.size(if (i == index) 22.dp else 8.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(if (i == index) Fluent.colors.accent else Color(0x55FFFFFF)).clickable(remember { MutableInteractionSource() }, null) { index = i })
             }
         }
     }

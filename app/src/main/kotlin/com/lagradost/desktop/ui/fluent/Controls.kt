@@ -10,6 +10,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.TooltipPlacement
@@ -52,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -63,6 +65,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -214,6 +217,27 @@ fun Modifier.handCursor(): Modifier = pointerHoverIcon(PointerIcon.Hand)
 
 enum class ButtonKind { Standard, Accent, Subtle }
 
+/** The accent as a fill: a gradient from the accent into the theme's second colour, lighter under the pointer, darker when pressed */
+fun FluentColors.accentBrush(hovered: Boolean = false, pressed: Boolean = false): Brush {
+    fun tune(c: Color) = when {
+        pressed -> androidx.compose.ui.graphics.lerp(c, Color.Black, 0.18f)
+        hovered -> androidx.compose.ui.graphics.lerp(c, Color.White, 0.16f)
+        else -> c
+    }
+    return Brush.linearGradient(listOf(tune(accent), tune(accent2)), Offset.Zero, Offset(400f, 200f))
+}
+
+/** The soft coloured glow under a main button (a shadow tinted with the accent) */
+@Composable
+fun Modifier.accentGlow(shape: Shape, strength: Float = 1f): Modifier {
+    val a = Fluent.colors.accent
+    return this.shadow(14.dp * strength, shape, clip = false, ambientColor = a.copy(alpha = 0.45f), spotColor = a.copy(alpha = 0.75f))
+}
+
+/** A frosted button on artwork, tinted with the accent (white tinted toward the accent colour) */
+fun FluentColors.tintedGlass(hovered: Boolean): Color =
+    androidx.compose.ui.graphics.lerp(Color.White, accent, 0.45f).copy(alpha = if (hovered) 0.34f else 0.22f)
+
 @Composable
 fun Button(
     text: String,
@@ -249,25 +273,20 @@ fun ButtonBase(
     val hovered by source.collectIsHoveredAsState()
     val pressed by source.collectIsPressedAsState()
     val shape = RoundedCornerShape(FluentShapes.control)
-    val fill = when (kind) {
-        ButtonKind.Standard -> when {
+    val fill: Brush = when (kind) {
+        ButtonKind.Standard -> SolidColor(when {
             !enabled -> c.controlDisabled
             pressed -> c.controlPressed
             hovered -> c.controlHover
             else -> c.control
-        }
-        ButtonKind.Accent -> when {
-            !enabled -> c.controlDisabled
-            pressed -> c.accentPressed
-            hovered -> c.accentHover
-            else -> c.accent
-        }
-        ButtonKind.Subtle -> when {
+        })
+        ButtonKind.Accent -> if (!enabled) SolidColor(c.controlDisabled) else c.accentBrush(hovered, pressed)
+        ButtonKind.Subtle -> SolidColor(when {
             !enabled -> Color.Transparent
             pressed -> c.subtlePressed
             hovered -> c.subtleHover
             else -> Color.Transparent
-        }
+        })
     }
     val content0 = when {
         !enabled -> c.textDisabled
@@ -276,8 +295,8 @@ fun ButtonBase(
         else -> c.text
     }
     val stroke = when (kind) {
-        ButtonKind.Standard -> c.stroke
-        ButtonKind.Accent -> Color.Transparent
+        ButtonKind.Standard -> if (hovered && enabled) c.accent.copy(alpha = 0.55f) else c.stroke
+        ButtonKind.Accent -> if (enabled) Color.White.copy(alpha = 0.22f) else Color.Transparent
         ButtonKind.Subtle -> Color.Transparent
     }
     Row(
@@ -644,6 +663,55 @@ fun Badge(text: String, modifier: Modifier = Modifier, accent: Boolean = false) 
     ) { FText(text, style = Fluent.type.caption, color = if (accent) c.onAccent else c.textSecondary, maxLines = 1) }
 }
 
+/** Stremio logo icon: purple rounded disc with white forward-pointing play triangle */
+@Composable
+fun StremioLogo(size: Dp = 14.dp, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(size * 0.28f)
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    listOf(Color(0xFFA055F5), Color(0xFF6B26A6))
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(size * 0.55f)) {
+            val w = this.size.width
+            val h = this.size.height
+            val path = Path().apply {
+                moveTo(w * 0.2f, h * 0.1f)
+                lineTo(w * 0.9f, h * 0.5f)
+                lineTo(w * 0.2f, h * 0.9f)
+                close()
+            }
+            drawPath(path, color = Color.White)
+        }
+    }
+}
+
+/** Purple Stremio badge with logo for Stremio add-on providers */
+@Composable
+fun StremioBadge(modifier: Modifier = Modifier, showText: Boolean = true) {
+    val shape = RoundedCornerShape(4.dp)
+    Row(
+        modifier
+            .clip(shape)
+            .background(Color(0xFF8E4EC6).copy(alpha = 0.22f), shape)
+            .border(androidx.compose.ui.unit.Dp.Hairline, Color(0xFF8E4EC6).copy(alpha = 0.55f), shape)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        StremioLogo(size = 12.dp)
+        if (showText) {
+            FText("Stremio", style = Fluent.type.caption.copy(fontSize = 11.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color(0xFFD2A8FF), maxLines = 1)
+        }
+    }
+}
+
 /** Filter chip / segmented toggle button */
 @Composable
 fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: String? = null) {
@@ -655,17 +723,19 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
         modifier
             .height(32.dp)
             .clip(shape)
-            .background(if (selected) c.accent.copy(alpha = if (c.dark) 0.30f else 0.22f) else if (hovered) c.subtleHover else Color.Transparent, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) c.accent.copy(alpha = 0.7f) else c.stroke, shape)
+            // chosen = the accent gradient with dark/light text on it; the others are plainly visible buttons
+            .background(if (selected) c.accentBrush(hovered) else SolidColor(if (hovered) c.controlHover else c.control), shape)
+            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) Color.White.copy(alpha = 0.22f) else if (hovered) c.accent.copy(alpha = 0.55f) else c.strokeStrong.copy(alpha = 0.45f), shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val fg = if (selected) c.onAccent else c.text
         if (icon != null) {
-            Icon(icon, size = 14.dp, tint = if (selected) c.text else c.textSecondary)
+            Icon(icon, size = 14.dp, tint = fg)
             Box(Modifier.width(6.dp))
         }
-        FText(text, color = if (selected) c.text else c.textSecondary, maxLines = 1, softWrap = false)
+        FText(text, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = fg, maxLines = 1, softWrap = false)
     }
 }
 

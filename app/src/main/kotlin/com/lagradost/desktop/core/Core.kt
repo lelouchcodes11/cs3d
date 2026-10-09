@@ -132,6 +132,12 @@ class Entry(val route: Route) {
     }
 }
 
+/** Set by an open native video page: starts its orderly exit and runs the given step when the core is gone; false when it has nothing to wait for */
+object PlayerExit {
+    @Volatile
+    var hook: ((() -> Unit) -> Boolean)? = null
+}
+
 object Navigator {
     val stack = mutableStateListOf(Entry(Route.Home))
     val current: Entry get() = stack.last()
@@ -175,12 +181,17 @@ object Navigator {
         // an Android dialog of an extension (its settings, a prompt) has the Back key first, as on Android
         if (com.lagradost.desktop.ui.DesktopUiHost.closeTopAndroidDialog()) return true
         if (stack.size <= 1) return false
-        EventQueue.invokeLater {
-            if (stack.size > 1) {
-                lastWasBack = true
-                stack.removeAt(stack.lastIndex).vms.clear()
+        val pop = {
+            EventQueue.invokeLater {
+                if (stack.size > 1) {
+                    lastWasBack = true
+                    stack.removeAt(stack.lastIndex).vms.clear()
+                }
             }
         }
+        // a native video page lets its video core go before it is taken apart (see PlayerSession.closeThen)
+        if (stack.last().route is Route.Player && PlayerExit.hook?.invoke(pop) == true) return true
+        pop()
         return true
     }
 

@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.BuildConfig
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKey
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.setKey
+import com.lagradost.cloudstream3.ErrorLoadingException
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.ShowStatus
@@ -60,28 +61,60 @@ class MALApi : SyncAPI() {
     data class Payload(
         @JsonProperty("requestId") @SerialName("requestId") val requestId: Int,
         @JsonProperty("codeVerifier") @SerialName("codeVerifier") val codeVerifier: String,
+        @JsonProperty("redirectUri") @SerialName("redirectUri") val redirectUri: String? = null,
     )
 
     override suspend fun login(redirectUrl: String, payload: String?): AuthToken? {
-        val payloadData = parseJson<Payload>(payload!!)
-        val sanitizer = splitRedirectUrl(redirectUrl)
-        val state = sanitizer["state"]!!
+        val payloadData = try {
+            if (payload != null) parseJson<Payload>(payload) else null
+        } catch (_: Exception) { null }
+            ?: run {
+                val reqId = getKey<Int>("mal_oauth_request_id") ?: requestIdCounter
+                val verifier = getKey<String>("mal_oauth_code_verifier") ?: ""
+                val rUri = getKey<String>("mal_oauth_redirect_uri")
+                if (verifier.isNotEmpty()) Payload(reqId, verifier, rUri) else null
+            }
 
-        if (state != "RequestID${payloadData.requestId}") {
+        val sanitizer = splitRedirectUrl(redirectUrl)
+        val currentCode = sanitizer["code"] ?: return null
+
+        if (payloadData == null || payloadData.codeVerifier.isBlank()) {
+            android.util.Log.e("MALApi", "Cannot login to MAL: missing code_verifier")
             return null
         }
 
-        val currentCode = sanitizer["code"]!!
+        val state = sanitizer["state"]
+        if (state != null && payloadData.requestId > 0 && state != "RequestID${payloadData.requestId}") {
+            android.util.Log.w("MALApi", "State mismatch: $state vs RequestID${payloadData.requestId}, proceeding with code")
+        }
 
-        val token = app.post(
-            "$mainUrl/v1/oauth2/token",
-            data = mapOf(
-                "client_id" to key,
-                "code" to currentCode,
-                "code_verifier" to payloadData.codeVerifier,
-                "grant_type" to "authorization_code",
+        val redirectUri = when {
+            redirectUrl.startsWith("cloudstreamapp://") -> "cloudstreamapp://${redirectUrlIdentifier ?: "mallogin"}"
+            redirectUrl.contains("localhost") || redirectUrl.contains("127.0.0.1") || redirectUrl.contains("[::1]") ->
+                com.lagradost.desktop.net.OAuthCallback.redirectUrl(redirectUrlIdentifier ?: "mallogin")
+            else -> payloadData.redirectUri
+                ?: com.lagradost.desktop.net.OAuthCallback.redirectUrl(redirectUrlIdentifier ?: "mallogin")
+        }
+
+        val response = try {
+            app.post(
+                "$mainUrl/v1/oauth2/token",
+                data = withClientSecret(
+                    mapOf(
+                        "client_id" to key,
+                        "code" to currentCode,
+                        "code_verifier" to payloadData.codeVerifier,
+                        "grant_type" to "authorization_code",
+                        "redirect_uri" to redirectUri,
+                    )
+                )
             )
-        ).parsed<ResponseToken>()
+        } catch (t: Throwable) {
+            android.util.Log.e("MALApi", "Failed to exchange MAL token: $t")
+            throw t
+        }
+        if (!response.isSuccessful) throw tokenError(response.code, response.text)
+        val token = response.parsed<ResponseToken>()
         return AuthToken(
             accessTokenLifetime = APIHolder.unixTime + token.expiresIn.toLong(),
             refreshToken = token.refreshToken,
@@ -90,17 +123,32 @@ class MALApi : SyncAPI() {
     }
 
     override suspend fun user(token: AuthToken?): AuthUser? {
-        val user = app.get(
-            "$apiUrl/v2/users/@me",
-            headers = mapOf(
-                "Authorization" to "Bearer ${token?.accessToken ?: return null}"
-            ), cacheTime = 0
-        ).parsed<MalUser>()
-        return AuthUser(
-            id = user.id,
-            name = user.name,
-            profilePicture = user.picture,
-        )
+        val accessToken = token?.accessToken ?: return null
+        return try {
+            val res = app.get(
+                "$apiUrl/v2/users/@me",
+                headers = mapOf(
+                    "Authorization" to "Bearer $accessToken"
+                ), cacheTime = 0
+            ).text
+            try {
+                val user = parseJson<MalUser>(res)
+                AuthUser(
+                    id = user.id,
+                    name = user.name,
+                    profilePicture = user.picture,
+                )
+            } catch (_: Throwable) {
+                val jsonTree = org.json.JSONObject(res)
+                val id = jsonTree.optInt("id", 0).takeIf { it > 0 } ?: return null
+                val name = jsonTree.optString("name", "User")
+                val pic = jsonTree.optString("picture").takeIf { it.isNotBlank() }
+                AuthUser(id = id, name = name, profilePicture = pic)
+            }
+        } catch (t: Throwable) {
+            android.util.Log.e("MALApi", "Failed to fetch MAL user: $t")
+            null
+        }
     }
 
     override suspend fun search(auth: AuthData?, query: String): List<SyncAPI.SyncSearchResult>? {
@@ -353,25 +401,48 @@ class MALApi : SyncAPI() {
     }
 
     override fun loginRequest(): AuthLoginPage? {
-        val codeVerifier = generateCodeVerifier()
+        val codeVerifier = generateCodeVerifier().take(128)
         val requestId = ++requestIdCounter
         val codeChallenge = codeVerifier
-        val request = "$mainUrl/v1/oauth2/authorize?response_type=code&client_id=$key&code_challenge=$codeChallenge&state=RequestID$requestId"
+        val redirectUri = com.lagradost.desktop.net.OAuthCallback.redirectUrl(redirectUrlIdentifier ?: "mallogin")
+        val encodedRedirectUri = java.net.URLEncoder.encode(redirectUri, "UTF-8")
+        val request = "$mainUrl/v1/oauth2/authorize?response_type=code&client_id=$key&code_challenge=$codeChallenge&code_challenge_method=plain&redirect_uri=$encodedRedirectUri&state=RequestID$requestId"
+        setKey("mal_oauth_request_id", requestId)
+        setKey("mal_oauth_code_verifier", codeVerifier)
+        setKey("mal_oauth_redirect_uri", redirectUri)
         return AuthLoginPage(
             url = request,
-            payload = Payload(requestId, codeVerifier).toJson(),
+            payload = Payload(requestId, codeVerifier, redirectUri).toJson(),
         )
     }
 
+    /** A client of App Type "web" has a secret that the token requests must carry (an "other" client has none); entered under Sign-in keys */
+    private fun withClientSecret(form: Map<String, String>): Map<String, String> {
+        val secret = com.lagradost.cloudstream3.syncproviders.ApiKeys.malSecret
+        return if (secret.isEmpty()) form else form + ("client_secret" to secret)
+    }
+
+    /** MyAnimeList answers a refused token request with {"error": "...", "message": "..."}: say what it said instead of "failed to sign in" */
+    private fun tokenError(code: Int, body: String): ErrorLoadingException {
+        android.util.Log.e("MALApi", "MAL token request refused: HTTP $code $body")
+        val said = runCatching { org.json.JSONObject(body).let { it.optString("message").ifBlank { it.optString("error") } } }.getOrNull().orEmpty().ifBlank { "HTTP $code" }
+        val hint = if (code == 401) " The client is most likely App Type \"web\": enter its Client Secret under Settings, Accounts & security, Sign-in keys, or create an \"other\" client." else ""
+        return ErrorLoadingException("MyAnimeList refused the sign-in: $said.$hint")
+    }
+
     override suspend fun refreshToken(token: AuthToken): AuthToken? {
-        val res = app.post(
+        val response = app.post(
             "$mainUrl/v1/oauth2/token",
-            data = mapOf(
-                "client_id" to key,
-                "grant_type" to "refresh_token",
-                "refresh_token" to token.refreshToken!!,
+            data = withClientSecret(
+                mapOf(
+                    "client_id" to key,
+                    "grant_type" to "refresh_token",
+                    "refresh_token" to token.refreshToken!!,
+                )
             )
-        ).parsed<ResponseToken>()
+        )
+        if (!response.isSuccessful) throw tokenError(response.code, response.text)
+        val res = response.parsed<ResponseToken>()
         return AuthToken(
             accessToken = res.accessToken,
             refreshToken = res.refreshToken,
@@ -649,9 +720,9 @@ class MALApi : SyncAPI() {
     data class MalUser(
         @JsonProperty("id") @SerialName("id") val id: Int,
         @JsonProperty("name") @SerialName("name") val name: String,
-        @JsonProperty("location") @SerialName("location") val location: String,
-        @JsonProperty("joined_at") @SerialName("joined_at") val joinedAt: String,
-        @JsonProperty("picture") @SerialName("picture") val picture: String?,
+        @JsonProperty("location") @SerialName("location") val location: String? = null,
+        @JsonProperty("joined_at") @SerialName("joined_at") val joinedAt: String? = null,
+        @JsonProperty("picture") @SerialName("picture") val picture: String? = null,
     )
 
     @Serializable

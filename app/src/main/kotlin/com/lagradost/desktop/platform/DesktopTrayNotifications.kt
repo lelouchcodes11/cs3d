@@ -82,13 +82,13 @@ object DesktopTrayNotifications {
 
     private interface User32Lib : StdCallLibrary {
         fun CreatePopupMenu(): Pointer?
-        fun AppendMenuW(menu: Pointer, flags: Int, id: Long, text: String?): Boolean
+        fun AppendMenuW(menu: Pointer, flags: Int, id: Long, text: com.sun.jna.WString?): Boolean
         fun TrackPopupMenu(menu: Pointer, flags: Int, x: Int, y: Int, reserved: Int, hwnd: WinDef.HWND, rect: Pointer?): Int
         fun DestroyMenu(menu: Pointer): Boolean
         fun GetCursorPos(point: IntArray): Boolean
         fun SetForegroundWindow(hwnd: WinDef.HWND): Boolean
         fun PostMessageW(hwnd: WinDef.HWND, msg: Int, wParam: Long, lParam: Long): Boolean
-        fun RegisterWindowMessageW(name: String): Int
+        fun RegisterWindowMessageW(name: com.sun.jna.WString): Int
         fun CreateIconFromResourceEx(bits: ByteArray, size: Int, icon: Boolean, version: Int, cx: Int, cy: Int, flags: Int): Pointer?
         fun GetSystemMetrics(index: Int): Int
     }
@@ -147,7 +147,7 @@ object DesktopTrayNotifications {
 
     private fun runTrayWindow() {
         val u = user ?: return
-        taskbarCreated = u.RegisterWindowMessageW("TaskbarCreated")
+        taskbarCreated = u.RegisterWindowMessageW(com.sun.jna.WString("TaskbarCreated"))
         val instance = Kernel32.INSTANCE.GetModuleHandle(null)
         val className = "CloudStreamTrayWindow"
         val wc = WinUser.WNDCLASSEX()
@@ -225,9 +225,9 @@ object DesktopTrayNotifications {
         val u = user ?: return
         val menu = u.CreatePopupMenu() ?: return
         try {
-            u.AppendMenuW(menu, MF_STRING, CMD_OPEN.toLong(), "Open CloudStream")
+            u.AppendMenuW(menu, MF_STRING, CMD_OPEN.toLong(), com.sun.jna.WString("Open CloudStream"))
             u.AppendMenuW(menu, MF_SEPARATOR, 0, null)
-            u.AppendMenuW(menu, MF_STRING, CMD_EXIT.toLong(), "Exit")
+            u.AppendMenuW(menu, MF_STRING, CMD_EXIT.toLong(), com.sun.jna.WString("Exit"))
             val p = IntArray(2)
             u.GetCursorPos(p)
             u.SetForegroundWindow(h) // without it the menu does not close when clicking elsewhere

@@ -66,12 +66,21 @@ class FluentColors(
     val caution: Color,
     val critical: Color,
     val scrim: Color,
+    /** the second colour of the accent gradient (buttons, selected tabs): the theme's other colour blended into [accent] */
+    val accent2: Color = accent,
 )
 
-private fun fluentColors(dark: Boolean, a: AccentPalette): FluentColors =
+/** The same colour turned [degrees] around the colour wheel: the second stop of the accent gradient when the theme names none */
+private fun Color.hueShift(degrees: Float): Color {
+    val hsb = java.awt.Color.RGBtoHSB((red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt(), null)
+    return Color(java.awt.Color.HSBtoRGB(((hsb[0] + degrees / 360f) % 1f + 1f) % 1f, hsb[1], hsb[2]))
+}
+
+private fun fluentColors(dark: Boolean, a: AccentPalette, secondary: Color? = null): FluentColors =
     if (dark) FluentColors(
         dark = true,
         accent = a.light2, accentHover = a.light2.copy(alpha = 0.9f), accentPressed = a.light2.copy(alpha = 0.8f),
+        accent2 = if (secondary != null) androidx.compose.ui.graphics.lerp(a.light2, secondary, 0.55f) else a.light2.hueShift(38f),
         onAccent = Color.Black, accentText = a.light3,
         bg = Color(0xFF0E0F13), bgPane = Color(0xFF0E0F13), layer = Color(0xFF15161B),
         card = Color(0x0CFFFFFF), cardHover = Color(0x16FFFFFF), cardPressed = Color(0x09FFFFFF),
@@ -83,6 +92,7 @@ private fun fluentColors(dark: Boolean, a: AccentPalette): FluentColors =
     ) else FluentColors(
         dark = false,
         accent = a.dark1, accentHover = a.dark1.copy(alpha = 0.9f), accentPressed = a.dark1.copy(alpha = 0.8f),
+        accent2 = a.dark1.hueShift(38f),
         onAccent = Color.White, accentText = a.dark2,
         bg = Color(0xFFF3F3F3), bgPane = Color(0xFFEEEEEE), layer = Color(0xFFFAFAFA),
         card = Color(0xB3FFFFFF), cardHover = Color(0x80F9F9F9), cardPressed = Color(0x4DF9F9F9),
@@ -218,7 +228,9 @@ fun FluentTheme(content: @Composable () -> Unit) {
         androidx.compose.ui.graphics.lerp(override, Color.Black, 0.3f), androidx.compose.ui.graphics.lerp(override, Color.Black, 0.45f),
     )
     val black = Appearance.backdrop == Backdrop.Black
-    val colors = remember(dark, accent, black, preset) { fluentColors(dark, accent).themed(preset).let { if (dark && black) it.oled() else it } }
+    // the gradient of the buttons runs from the accent into the theme's other colour (an accent the user picked gets a plain tint instead)
+    val second = if (FluentSettings.accentOverride == null) preset.glowB else null
+    val colors = remember(dark, accent, black, preset, second) { fluentColors(dark, accent, second).themed(preset).let { if (dark && black) it.oled() else it } }
     val type = remember { fluentType(FluentFonts.text) }
     CompositionLocalProvider(LocalFluentColors provides colors, LocalFluentType provides type, content = content)
 }
@@ -239,5 +251,5 @@ private fun FluentColors.oled() = FluentColors(
     control = control, controlHover = controlHover, controlPressed = controlPressed, controlDisabled = controlDisabled,
     subtleHover = subtleHover, subtlePressed = subtlePressed, flyout = Color(0xFF151515), stroke = stroke, strokeStrong = strokeStrong, divider = divider,
     text = text, textSecondary = textSecondary, textTertiary = textTertiary, textDisabled = textDisabled,
-    success = success, caution = caution, critical = critical, scrim = scrim,
+    success = success, caution = caution, critical = critical, scrim = scrim, accent2 = accent2,
 )

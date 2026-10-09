@@ -64,11 +64,17 @@ object WinChrome {
     var revealed by mutableStateOf(false)
         private set
 
-    /** The caption bar hides itself while the window is maximized (not in full screen, where there is none) */
-    val autoHides: Boolean get() = enabled && maximized && !fullscreen && !pip
+    /**
+     * The video page keeps the title bar as a row of its own whatever the window state: a bar that slides over the app when the pointer
+     * touches the top edge can not be seen over the video (its window is above the app's) and the app could only be closed by leaving the video.
+     */
+    var keepBar by mutableStateOf(false)
 
-    /** The title bar is a row of its own above the app (a window that is not maximized, with the integrated title bar) */
-    val windowedBar: Boolean get() = enabled && !maximized && !fullscreen && !pip
+    /** The caption bar hides itself while the window is maximized or in full screen (not in pip) */
+    val autoHides: Boolean get() = enabled && (maximized || fullscreen) && !pip && !keepBar
+
+    /** The title bar is a row of its own above the app (a window that is not maximized and not full screen) */
+    val windowedBar: Boolean get() = enabled && (!maximized || keepBar) && !fullscreen && !pip
 
     /** Dev: a pretend pointer position (window px) used instead of the real pointer by [pollReveal] */
     @Volatile
@@ -131,6 +137,7 @@ object WinChrome {
         fun SetWindowLongPtrW(hwnd: WinDef.HWND, index: Int, value: Long): Long
         fun GetWindowLongPtrW(hwnd: WinDef.HWND, index: Int): Long
         fun CallWindowProcW(prev: Pointer, hwnd: WinDef.HWND, msg: Int, wParam: Long, lParam: Long): Long
+        fun DefWindowProcW(hwnd: WinDef.HWND, msg: Int, wParam: Long, lParam: Long): Long
         fun GetWindowRect(hwnd: WinDef.HWND, rect: IntArray): Boolean
         fun GetCursorPos(point: IntArray): Boolean
         fun GetClientRect(hwnd: WinDef.HWND, rect: IntArray): Boolean
@@ -159,6 +166,7 @@ object WinChrome {
     private const val WS_CAPTION = 0xC00000L
     private const val WS_THICKFRAME = 0x40000L
     private const val WM_SIZE = 0x0005
+    private const val WM_NCACTIVATE = 0x0086
     private const val WM_NCCALCSIZE = 0x0083
     private const val WM_NCHITTEST = 0x0084
     private const val WM_NCMOUSEMOVE = 0x00A0
@@ -246,7 +254,9 @@ object WinChrome {
             api.EnumChildWindows(top, WinUser.WNDENUMPROC { h, _ ->
                 val buf = CharArray(128)
                 val n = api.GetClassNameW(h, buf, buf.size)
-                if (n > 0 && String(buf, 0, n) == "SunAwtCanvas" && Pointer.nativeValue(h.pointer) !in subclassed) found += h
+                if (n > 0 && String(buf, 0, n) == "SunAwtCanvas" &&
+                    Pointer.nativeValue(h.pointer) !in subclassed &&
+                    !com.lagradost.desktop.ui.screens.player.NativeVideo.isNativeCanvas(h)) found += h
                 true
             }, null)
             for (child in found) {
@@ -277,7 +287,7 @@ object WinChrome {
     }
 
     private fun handleChild(api: User32Ex, prev: Pointer, top: WinDef.HWND, hwnd: WinDef.HWND, msg: Int, wParam: Long, lParam: Long): Long {
-        if (msg == WM_NCHITTEST && !fullscreen) {
+        if (msg == WM_NCHITTEST && (!fullscreen || revealed)) {
             try {
                 // the frame window answers for the caption buttons, the drag band and the top resize edge
                 if (hitTest(api, top, lParam) != HTCLIENT) return HTTRANSPARENT.toLong()
@@ -288,9 +298,30 @@ object WinChrome {
         return api.CallWindowProcW(prev, hwnd, msg, wParam, lParam)
     }
 
+    fun performCaptionCommand(id: Int) {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        val command = when (id) {
+            1 -> SC_MINIMIZE
+            2 -> if (fullscreen) {
+                com.lagradost.desktop.runtime.AndroidRuntime.host.setFullscreen(false)
+                return
+            } else if (api.IsZoomed(hwnd)) SC_RESTORE else SC_MAXIMIZE
+            else -> SC_CLOSE
+        }
+        api.PostMessageW(hwnd, WM_SYSCOMMAND, command.toLong(), 0L)
+    }
+
     private fun handle(api: User32Ex, prev: Pointer, hwnd: WinDef.HWND, msg: Int, wParam: Long, lParam: Long): Long {
         try {
             when (msg) {
+                WM_NCACTIVATE -> {
+                    // When using custom non-client frame (WM_NCCALCSIZE / DWM), DefWindowProcW with lParam = -1
+                    // tells Windows to update the activation state without repainting the non-client title bar.
+                    // Bypassing AwtWindow::WmNcActivate avoids acquiring AwtToolkit::GetInstance().GetTreeLock()
+                    // on the AWT-Windows toolkit thread, which deadlocks with EDT during owned dialog disposal.
+                    return api.DefWindowProcW(hwnd, msg, wParam, -1L)
+                }
                 WM_NCCALCSIZE -> if (wParam != 0L) {
                     // full screen: the client area is the whole window
                     if (fullscreen) return 0L
@@ -307,7 +338,7 @@ object WinChrome {
                 }
                 WM_NCHITTEST -> {
                     val result = api.CallWindowProcW(prev, hwnd, msg, wParam, lParam)
-                    if (result.toInt() != HTCLIENT || fullscreen) return result
+                    if (result.toInt() != HTCLIENT || (fullscreen && !revealed)) return result
                     return hitTest(api, hwnd, lParam).toLong()
                 }
                 WM_NCMOUSEMOVE -> {
@@ -341,12 +372,7 @@ object WinChrome {
                     pressed = 0
                     if (id != 0) {
                         if (id == was) {
-                            val command = when (id) {
-                                1 -> SC_MINIMIZE
-                                2 -> if (api.IsZoomed(hwnd)) SC_RESTORE else SC_MAXIMIZE
-                                else -> SC_CLOSE
-                            }
-                            api.PostMessageW(hwnd, WM_SYSCOMMAND, command.toLong(), 0L)
+                            performCaptionCommand(id)
                         }
                         return 0L
                     }
@@ -404,9 +430,11 @@ object WinChrome {
                 api.SetWindowLongPtrW(hwnd, GWL_STYLE, savedStyle and (WS_CAPTION or WS_THICKFRAME).inv())
                 fullscreen = true
                 hover = 0
+                revealed = false
                 api.SetWindowPos(hwnd, Pointer(-1), left, top, width, height, SWP_FRAMECHANGED or SWP_SHOWWINDOW)
             } else {
                 fullscreen = false
+                revealed = false
                 if (savedStyle != 0L) api.SetWindowLongPtrW(hwnd, GWL_STYLE, savedStyle)
                 val r = savedRect
                 if (r != null) api.SetWindowPos(hwnd, Pointer(-2), r[0], r[1], r[2] - r[0], r[3] - r[1], SWP_FRAMECHANGED or SWP_SHOWWINDOW)

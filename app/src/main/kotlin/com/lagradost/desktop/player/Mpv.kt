@@ -133,6 +133,7 @@ interface Mpv : Library {
     fun mpv_initialize(ctx: Pointer): Int
     fun mpv_destroy(ctx: Pointer)
     fun mpv_terminate_destroy(ctx: Pointer)
+    fun mpv_wakeup(ctx: Pointer)
     fun mpv_set_option_string(ctx: Pointer, name: String, data: String): Int
     fun mpv_command(ctx: Pointer, args: Array<String?>): Int
     fun mpv_command_async(ctx: Pointer, reply_userdata: Long, args: Array<String?>): Int

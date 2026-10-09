@@ -57,6 +57,8 @@ object Warmups {
                 }
             }
         }, "old-chromium-cleanup").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
+        // the GPU player's video window class gets its black background before the first video (else that opens with a white flash)
+        Thread({ runCatching { Thread.sleep(2_500); com.lagradost.desktop.ui.screens.player.NativeVideo.warmUp() } }, "video-window-warm-up").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
         // the XML files of the app's strings (a page's first string waited for them)
         timed("resources") { DesktopBootstrap.resourceIndex().warm(AndroidRuntime.context.resources.configuration) }
         // the saved lists the first pages read: parsing their JSON the first time includes setting up Jackson for the classes

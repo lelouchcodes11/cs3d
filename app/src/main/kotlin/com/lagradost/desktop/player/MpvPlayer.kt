@@ -40,6 +40,11 @@ open class MpvPlayer : IPlayer {
         /** A live channel waiting this long for data is opened again (ms) */
         private const val LIVE_STALL_MS = 12_000L
 
+        /** How long the picture may stand still after another embedded subtitle track was chosen before the file is opened again with it */
+        private const val SWITCH_PATIENCE_MS = 12_000L
+        /** The picture has not moved this long after a subtitle switch: pause and play once, what the viewer did by hand */
+        private const val NUDGE_MS = 2_500L
+
         /** Client errors that bounded ranges, headers and the app's HTTP client can cure; 404/410 and rate limits (429) they cannot */
         private val RANGE_RETRY_STATUS = setOf(400, 403, 405, 406, 416)
 
@@ -586,6 +591,20 @@ open class MpvPlayer : IPlayer {
             "eof-reached" -> {
                 if (data != null && format == Mpv.MPV_FORMAT_FLAG) {
                     val eof = data.getInt(0) != 0
+                    // a long file that "ends" seconds after it opened, which was not started near its end, was not delivered: a host that refused
+                    // or garbled the start of it (HubCloud / 4KHDHub workers) leaves mpv with a few bytes of the end, it sat on the last frame
+                    // (black picture, nothing said). That is a failed source, so the app goes to the next one.
+                    val sinceLoad = System.currentTimeMillis() - loadStartedAt
+                    if (eof && !isEnded && fileLoaded && !liveStream && currentDurationMs > 120_000L && sinceLoad < 20_000L &&
+                        (startPositionMs ?: 0L) < currentDurationMs - 120_000L && currentPositionMs >= currentDurationMs - 3_000L
+                    ) {
+                        Log.w(TAG, "the file ended ${sinceLoad / 1000} s after it opened, at its very end ($currentPositionMs of $currentDurationMs ms): the source did not deliver it")
+                        isEnded = true
+                        isPlaying = false
+                        postEvent(ErrorEvent(androidx.media3.common.PlaybackException("The source ended right after it started (the host did not deliver the file)", null, androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED)))
+                        updateStatus()
+                        return
+                    }
                     if (eof && !isEnded) {
                         isEnded = true
                         isPlaying = false
@@ -663,6 +682,12 @@ open class MpvPlayer : IPlayer {
 
     /** A new audio decoder choice (SW / HW / HW+) while a video plays: mpv reopens the sound in place, the position stays */
     fun applyAudioDecoder() = setMpvProperty("audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
+
+    /** Dynamically applies or removes Anime4K shaders at runtime */
+    fun applyAnime4k() {
+        val shaders = if (com.lagradost.desktop.ui.fluent.Appearance.anime4k) Anime4K.option().orEmpty() else ""
+        setMpvProperty("glsl-shaders", shaders)
+    }
 
     /** How the sound of the playing track is decoded: its codec, and whether it goes undecoded to the receiver ("spdif-ac3") */
     fun audioDecodingNow(): String? {
@@ -871,6 +896,8 @@ open class MpvPlayer : IPlayer {
             // the extension decodes or answers some requests itself (getVideoInterceptor, which ExoPlayer applies on Android): files go through the range server with it
             if (videoInterceptor(link) != null && !isHls(link) && !isDash(link) && link.url.startsWith("http", ignoreCase = true)) useRangeProxy = true
             rangeTried = false
+            // testing: -Dcloudstream.forcerange=1 plays every plain file through the range server
+            if (System.getProperty("cloudstream.forcerange") != null && isPlainFile(link)) useRangeProxy = true
         }
         lastHttpStatus = 0
         currentLink = link
@@ -958,6 +985,12 @@ open class MpvPlayer : IPlayer {
             data != null -> data.uri.toString()
             else -> null
         }
+        val oldAddr = playingAddress
+        if (oldAddr != null && oldAddr != url) {
+            runCatching { DashProxy.cancel(oldAddr) }
+            runCatching { HlsProxy.cancel(oldAddr) }
+            runCatching { RangeProxy.cancel(oldAddr) }
+        }
         playingAddress = url
         liveStream = false
 
@@ -986,7 +1019,8 @@ open class MpvPlayer : IPlayer {
             val forceHls = onDemandFiles?.video?.contains("/gen/") == true
             // a source with video only (YouTube's adaptive streams) names its sound as a separate file: opened beside the video
             val soundFile = onDemandFiles?.audio ?: link?.audioTracks?.firstOrNull()?.url?.takeIf { it.startsWith("http", ignoreCase = true) }
-            val options = listOfNotNull(audioId?.let { "aid=$it" }, soundFile?.let { "audio-files-append=%${it.toByteArray().size}%$it" }, if (forceHls) "demuxer=lavf" else null)
+            val sidAtOpen = openWithSid?.also { openWithSid = null }
+            val options = listOfNotNull(audioId?.let { "aid=$it" }, sidAtOpen?.let { "sid=$it" }, soundFile?.let { "audio-files-append=%${it.toByteArray().size}%$it" }, if (forceHls) "demuxer=lavf" else null)
             if (options.isNotEmpty()) mpvCommand("loadfile", url, "replace", "-1", options.joinToString(",")) else mpvCommand("loadfile", url, "replace")
             setMpvProperty("pause", if (autoPlay == true) "no" else "yes")
             isPaused = autoPlay != true
@@ -1188,10 +1222,11 @@ open class MpvPlayer : IPlayer {
             val cached = downloadedSubtitles[link]?.takeIf { java.io.File(it).isFile }
             val got = if (cached != null) DownloadedSubtitle(cached, false) else downloadSubtitle(sub, link)
             got.path?.let { downloadedSubtitles[link] = it; url = it }
-            webPage = got.webPage
+            // nothing usable came: mpv is not given the address (it would fetch it itself, with no limit, and a slow host held the player); the subtitle is reported as dead
+            webPage = got.webPage || got.path == null
         }
         var result = if (webPage) -1 else mpvCommandResult(*addArgs(url).toTypedArray())
-        Log.i(TAG, "sub-add ${sub.name} (${url.take(160)}): ${if (webPage) "a web page, not a subtitle" else mpv.mpv_error_string(result)}")
+        Log.i(TAG, "sub-add ${sub.name} (${url.take(160)}): ${if (webPage) "not a usable subtitle" else mpv.mpv_error_string(result)}")
         if (generation != fileGeneration) return null // another file is playing now
         synchronized(trackMapLock) {
             if (result < 0) { externalTracks[sub.getId()] = -1; externalFailedAt[sub.getId()] = System.currentTimeMillis(); return null }
@@ -1227,8 +1262,15 @@ open class MpvPlayer : IPlayer {
                 Log.w(TAG, "subtitle download ${response.code} ${bytes.size} bytes, ${if (html) "an HTML page, not a subtitle" else "no subtitle"}: ${head.take(100)}")
                 DownloadedSubtitle(null, html)
             } else {
-                val ext = sub.mimeType.let { m -> when { m.contains("vtt") -> ".vtt"; m.contains("ass") || m.contains("ssa") -> ".ass"; else -> ".srt" } }
-                DownloadedSubtitle(java.io.File.createTempFile("subtitle-", ext, java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "cache").also { it.mkdirs() }).apply { deleteOnExit(); writeBytes(bytes) }.absolutePath, false)
+                // unpacked (zip, gzip), made UTF-8, named by what it is and checked for cues: a file that only looked like a subtitle is refused here
+                val clean = SubtitleFiles.normalize(bytes)
+                if (clean == null) {
+                    Log.w(TAG, "subtitle download ${bytes.size} bytes: not a usable subtitle (no cues): ${head.take(80)}")
+                    DownloadedSubtitle(null, true)
+                } else {
+                    Log.i(TAG, "subtitle ${clean.cues} cues (${clean.extension}) from ${bytes.size} bytes")
+                    DownloadedSubtitle(java.io.File.createTempFile("subtitle-", clean.extension, java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "cache").also { it.mkdirs() }).apply { deleteOnExit(); writeBytes(clean.bytes) }.absolutePath, false)
+                }
             }
         }
     } catch (t: Throwable) {
@@ -1262,19 +1304,85 @@ open class MpvPlayer : IPlayer {
         // already on screen: nothing to do. Every batch of sources or subtitles that arrived (a source collects them for minutes) used to
         // select it again and report "loading" / "on", which popped the subtitle pill up over and over
         val known = if (embedded) sub.url.toIntOrNull() else externalTracks[sub.getId()]?.takeIf { it >= 0 }
-        if (known != null && getMpvPropertyString("sid") == known.toString()) return
+        if (known != null && getMpvPropertyString("sid") == known.toString()) {
+            // the file was opened again with this track (see watchTrackSwitch): the pill that said "loading" is told it is on
+            if (embedded && reopenedWith == sub) { reopenedWith = null; postEvent(SubtitleLoadEvent(SubtitleLoadState.Loaded, sub)) }
+            return
+        }
         if (!embedded) postEvent(SubtitleLoadEvent(SubtitleLoadState.Loading, sub))
         val id = if (embedded) sub.url.toIntOrNull() else ensureExternal(sub)
         // another file plays or another subtitle was chosen while this one was fetched: that choice has its own task
         if (handle == null || generation != fileGeneration || preferredSubtitle != sub) return
         Log.i(TAG, "subtitle selection: ${sub.name} -> track $id")
         if (id != null) {
+            // a track of the open file chosen while the picture runs: mpv re-reads the stream from here (see watchTrackSwitch)
+            val before = currentPositionMs
+            val running = firstFrameLogged && before > 1500 && !liveStream && !userPaused
+            val watch = embedded && running
+            if (watch) postEvent(SubtitleLoadEvent(SubtitleLoadState.Loading, sub))
             setMpvProperty("sid", id.toString())
-            if (!embedded) postEvent(SubtitleLoadEvent(SubtitleLoadState.Loaded, sub))
+            if (watch) watchTrackSwitch(sub, id, before)
+            else {
+                if (!embedded) postEvent(SubtitleLoadEvent(SubtitleLoadState.Loaded, sub))
+                if (running) watchTrackSwitch(sub, id, before, reopen = false)
+            }
         } else {
             Log.w(TAG, "could not load the subtitles \"${sub.name.trim()}\"")
             postEvent(SubtitleLoadEvent(SubtitleLoadState.Failed, sub))
         }
+    }
+
+    /** The track (mpv id) to select when the next file opens: part of the open, no switch in a running file (see watchTrackSwitch) */
+    @Volatile
+    private var openWithSid: Int? = null
+
+    @Volatile
+    private var reopenedWith: SubtitleData? = null
+
+    /**
+     * Switching to another embedded subtitle track makes mpv re-read the file from the playback position (a "refresh seek": the packets of
+     * the new track were thrown away while it was not selected). On a host that is slow to answer a new range request, or that refuses
+     * some of them (the "Instant Download" workers of HubCloud / 4KHDHub answer HTTP 403 to part of them), the picture stood still and
+     * "loading" never ended. The pill says what is going on, and when the picture has not moved on after [SWITCH_PATIENCE_MS] the file
+     * is opened again at this position with the track chosen at the open (the way a DASH audio track is changed), which needs no switch.
+     */
+    private fun watchTrackSwitch(sub: SubtitleData, trackId: Int, positionBefore: Long, reopen: Boolean = true) {
+        val generation = fileGeneration
+        val began = System.currentTimeMillis()
+        Thread({
+            try {
+                var nudged = false
+                while (true) {
+                    Thread.sleep(400)
+                    if (handle == null || isReleased || generation != fileGeneration || preferredSubtitle != sub) return@Thread
+                    // the viewer paused or the film ended: nothing to wait for
+                    if (userPaused || isEnded || currentPositionMs - positionBefore >= 600) {
+                        postEvent(SubtitleLoadEvent(SubtitleLoadState.Loaded, sub))
+                        return@Thread
+                    }
+                    val waited = System.currentTimeMillis() - began
+                    // still: pause and play once, which is what the viewer had to do to get the picture going again
+                    if (!nudged && waited > NUDGE_MS) {
+                        nudged = true
+                        Log.i(TAG, "subtitle switch: the picture stood still for ${NUDGE_MS / 1000.0} s, pause and play")
+                        setMpvProperty("pause", "yes")
+                        Thread.sleep(250)
+                        if (!userPaused) setMpvProperty("pause", "no")
+                    }
+                    if (waited > SWITCH_PATIENCE_MS) break
+                }
+                if (!reopen) return@Thread
+                Log.w(TAG, "subtitle track $trackId: the picture stood still for ${SWITCH_PATIENCE_MS / 1000} s after the switch, opening the file again with it")
+                val ctx = currentContext ?: return@Thread
+                mainHandler.post {
+                    if (handle == null || isReleased || generation != fileGeneration || preferredSubtitle != sub) return@post
+                    openWithSid = trackId
+                    reopenedWith = sub
+                    loadPlayer(ctx, true, currentLink, currentUri, currentPositionMs.takeIf { it > 0 } ?: positionBefore, activeSubtitles, sub, !userPaused, false)
+                }
+            } catch (_: InterruptedException) {
+            }
+        }, "MpvPlayer-TrackSwitch").apply { isDaemon = true }.start()
     }
 
     override fun setActiveSubtitles(subtitles: Set<SubtitleData>) {
@@ -1341,6 +1449,18 @@ open class MpvPlayer : IPlayer {
         com.lagradost.desktop.runtime.DesktopAudio.removeListener(volumeListener)
         // the surface stays attached (the PlayerView keeps this player) and shows nothing until the next load
         surface?.clearFrame()
+
+        val addr = playingAddress
+        playingAddress = null
+        if (addr != null) {
+            runCatching { DashProxy.cancel(addr) }
+            runCatching { HlsProxy.cancel(addr) }
+            runCatching { RangeProxy.cancel(addr) }
+        }
+        runCatching { DashProxy.cancelAll() }
+        runCatching { HlsProxy.cancelAll() }
+        runCatching { RangeProxy.cancelAll() }
+
         // Detach everything from the caller's thread at once; tearing the core down can block for seconds on a
         // stuck network read, which froze the whole window when leaving a video.
         val render = synchronized(renderLock) {
@@ -1354,17 +1474,40 @@ open class MpvPlayer : IPlayer {
         val loop = eventThread
         eventThread = null
         if (render != null) runCatching { mpv.mpv_render_context_set_update_callback(render, null, null) }
+
+        if (ctx != null) {
+            // Stop playback asynchronously so demuxer and decoder threads abort immediately
+            runCatching { mpv.mpv_command_async(ctx, 0L, arrayOf("stop", null)) }
+            runCatching { mpv.mpv_wakeup(ctx) }
+        }
+
+        val started = System.currentTimeMillis()
         Thread({
             try {
                 // the event loop polls this core; it must be gone before the core is destroyed
-                loop?.let { if (it !== Thread.currentThread()) it.join(2000) }
+                loop?.let { if (it !== Thread.currentThread()) it.join(1000) }
                 // the render context goes before the core (render.h)
                 if (render != null) mpv.mpv_render_context_free(render)
+                // never on the UI thread: this call waits for mpv's core, which can be stuck on a network read for seconds
+                if (ctx != null && native) runCatching { mpv.mpv_set_property_string(ctx, "wid", "0") }
                 if (ctx != null) mpv.mpv_terminate_destroy(ctx)
             } catch (t: Throwable) {
                 Log.w(TAG, "Error terminating mpv: ${t.message}")
+            } finally {
+                Log.i(TAG, "core destroyed after ${System.currentTimeMillis() - started} ms")
+                destroyed.complete(Unit)
             }
         }, "MpvPlayer-Destroy").apply { isDaemon = true; start() }
+    }
+
+    /** Completes when the core is gone, together with the video window it made (a native player page must not go away before) */
+    val destroyed = java.util.concurrent.CompletableFuture<Unit>()
+
+    /** Detaches the native window (wid=0) so mpv's Direct3D 11 swapchain releases the Canvas HWND */
+    fun detachNativeWindow() {
+        val ctx = handle ?: return
+        // the call waits for the core: not on the UI thread
+        if (native) Thread({ runCatching { mpv.mpv_set_property_string(ctx, "wid", "0") } }, "MpvPlayer-Detach").apply { isDaemon = true; start() }
     }
 
     override fun isActive(): Boolean = handle != null && !isReleased

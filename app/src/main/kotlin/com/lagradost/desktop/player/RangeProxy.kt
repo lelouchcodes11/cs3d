@@ -38,6 +38,25 @@ object RangeProxy {
 
         @Volatile
         var ranges = true
+
+        /** The host refused the file after every retry: until then the player is told so at once (see handle) */
+        @Volatile
+        var refusedUntil = 0L
+
+        @Volatile
+        var refusedCode = 502
+
+        @Volatile
+        var cancelled = false
+        val activeCalls = java.util.concurrent.CopyOnWriteArrayList<okhttp3.Call>()
+
+        fun cancel() {
+            cancelled = true
+            for (call in activeCalls) {
+                runCatching { call.cancel() }
+            }
+            activeCalls.clear()
+        }
     }
 
     private val entries = ConcurrentHashMap<String, Entry>()
@@ -57,6 +76,21 @@ object RangeProxy {
         }
     }
 
+    /** Cancels any in-flight requests and chunk download loops for [address] */
+    fun cancel(address: String?) {
+        if (address == null) return
+        val id = address.substringAfter("/m/", "").substringBefore("/")
+        entries.remove(id)?.cancel()
+    }
+
+    /** Cancels all active proxy entries */
+    fun cancelAll() {
+        for ((_, entry) in entries) {
+            entry.cancel()
+        }
+        entries.clear()
+    }
+
     /** Address to give the player instead of [url]; the file name (and with it the extension) is kept, players guess the format from it */
     fun wrap(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null): String {
         if (entries.size > 50) entries.clear()
@@ -66,8 +100,19 @@ object RangeProxy {
         return "http://127.0.0.1:${server.address.port}/m/$id/$name"
     }
 
+    private class UpstreamResult(val entry: Entry, val call: okhttp3.Call, val response: okhttp3.Response) : java.io.Closeable {
+        override fun close() {
+            try {
+                response.close()
+            } finally {
+                entry.activeCalls.remove(call)
+            }
+        }
+    }
+
     /** [fresh]: on a new connection; some hosts decide per connection (edge server) whether they serve a request, a retry on the same one fails again */
-    private fun upstream(entry: Entry, range: String?, fresh: Boolean = false): okhttp3.Response {
+    private fun upstream(entry: Entry, range: String?, fresh: Boolean = false): UpstreamResult {
+        if (entry.cancelled) throw IOException("cancelled")
         val builder = Request.Builder().url(entry.url.toHttpUrlOrNull() ?: throw IOException("bad address ${entry.url}"))
         var userAgent = false
         for ((k, v) in entry.headers) {
@@ -80,7 +125,21 @@ object RangeProxy {
         if (fresh) builder.header("Connection", "close")
         // the extension's video interceptor (getVideoInterceptor) sees every request, as with ExoPlayer on Android
         val client = (if (fresh) freshClient else sharedClient).let { c -> entry.interceptor?.let { c.newBuilder().addInterceptor(it).build() } ?: c }
-        return client.newCall(builder.build()).execute()
+        val call = client.newCall(builder.build())
+        entry.activeCalls.add(call)
+        val started = System.nanoTime()
+        try {
+            if (entry.cancelled) {
+                call.cancel()
+                throw IOException("cancelled")
+            }
+            val response = call.execute()
+            Log.i(TAG, "upstream ${range ?: "whole file"}${if (fresh) " (new connection)" else ""}: HTTP ${response.code} after ${(System.nanoTime() - started) / 1_000_000} ms")
+            return UpstreamResult(entry, call, response)
+        } catch (t: Throwable) {
+            entry.activeCalls.remove(call)
+            throw t
+        }
     }
 
     /** Learns the size (and type) of the file with a one byte range; false when the host refused */
@@ -88,8 +147,10 @@ object RangeProxy {
         if (entry.total >= 0) return 200
         var refused = 0
         for (attempt in 1..RETRIES) {
+            if (entry.cancelled) return 502
             try {
-                upstream(entry, "bytes=0-0", fresh = attempt > 1).use { r ->
+                upstream(entry, "bytes=0-0", fresh = attempt > 1).use { res ->
+                    val r = res.response
                     if (r.code == 206) {
                         entry.total = r.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull() ?: -1L
                         entry.contentType = r.header("Content-Type")
@@ -106,6 +167,7 @@ object RangeProxy {
                     if (r.code in 400..499) refused = r.code // may be this connection only: try again on a new one
                 }
             } catch (e: IOException) {
+                if (entry.cancelled) return 502
                 Log.w(TAG, "probe attempt $attempt: ${e.javaClass.simpleName} ${e.message}")
             }
         }
@@ -115,6 +177,11 @@ object RangeProxy {
     private fun handle(ex: HttpExchange) {
         val id = ex.requestURI.path.removePrefix("/m/").substringBefore('/')
         val entry = entries[id] ?: run { ex.sendResponseHeaders(404, -1); return }
+        // the host refused this file a moment ago: say so again at once, mpv would only start another round of retries
+        if (System.currentTimeMillis() < entry.refusedUntil) {
+            ex.sendResponseHeaders(entry.refusedCode, -1)
+            return
+        }
         val status = probe(entry)
         if (status !in 200..299) {
             ex.sendResponseHeaders(if (status in 400..499) status else 502, -1)
@@ -149,6 +216,37 @@ object RangeProxy {
             ex.sendResponseHeaders(416, -1)
             return
         }
+        // The first piece is fetched before the player is answered. A host that keeps refusing it (the "Instant Download" workers of HubCloud /
+        // 4KHDHub answer HTTP 403 for as long as they like) gives the player a real error, which makes the app go to the next source; an
+        // answer of "200 OK" followed by nothing made mpv retry the "partial file" for ever (the picture never started, or after choosing a
+        // subtitle, which makes mpv re-read from the playback position, never came back).
+        var firstFailures = 0
+        var firstCode = 0
+        var first: UpstreamResult? = null
+        var firstLast = 0L
+        while (first == null && !entry.cancelled) {
+            val last = if (entry.ranges) minOf(end, start + CHUNK - 1) else end
+            try {
+                val res = upstream(entry, if (entry.ranges) "bytes=$start-$last" else null, fresh = firstFailures > 0)
+                val r = res.response
+                if (r.code == 206 || r.code == 200) { first = res; firstLast = last } else { firstCode = r.code; res.close(); throw IOException("HTTP ${r.code}") }
+            } catch (e: IOException) {
+                if (entry.cancelled) return
+                firstFailures++
+                Log.w(TAG, "first piece at $start: ${e.message} (attempt $firstFailures)")
+                if (firstFailures >= RETRIES) {
+                    entry.refusedCode = if (firstCode in 400..499) firstCode else 502
+                    entry.refusedUntil = System.currentTimeMillis() + 20_000
+                    Log.w(TAG, "the host keeps refusing (HTTP ${entry.refusedCode}): the player is told")
+                    ex.sendResponseHeaders(entry.refusedCode, -1)
+                    return
+                }
+            }
+        }
+        if (entry.cancelled) {
+            first?.close()
+            return
+        }
         val length = if (total >= 0) end - start + 1 else -1L
         if (partial) {
             ex.responseHeaders.add("Content-Range", "bytes $start-$end/${if (total >= 0) total else "*"}")
@@ -160,14 +258,18 @@ object RangeProxy {
         var position = start
         var failures = 0
         var chunkStart = start
-        while (position <= end) {
+        var pending: UpstreamResult? = first
+        while (position <= end && !entry.cancelled) {
             // after a failure in the middle of a chunk the whole chunk is asked for again, from its own start, and what the player
             // has got already is skipped: some hosts accept only the ranges they saw before, not "bytes=<odd position>-"
             val from = if (failures > 0) chunkStart else position
             if (failures == 0) chunkStart = position
-            val last = if (entry.ranges) minOf(end, from + CHUNK - 1) else end
+            val last = if (pending != null) firstLast else if (entry.ranges) minOf(end, from + CHUNK - 1) else end
             try {
-                upstream(entry, if (entry.ranges) "bytes=$from-$last" else null, fresh = failures > 0).use { r ->
+                val opened = pending ?: upstream(entry, if (entry.ranges) "bytes=$from-$last" else null, fresh = failures > 0)
+                pending = null
+                opened.use { res ->
+                    val r = res.response
                     if (r.code != 206 && r.code != 200) throw IOException("HTTP ${r.code}")
                     val body = r.body
                     val input = body.byteStream()
@@ -176,7 +278,7 @@ object RangeProxy {
                     if (position > from) input.skipNBytes(position - from)
                     val buffer = ByteArray(64 * 1024)
                     var left = last - position + 1
-                    while (left > 0) {
+                    while (left > 0 && !entry.cancelled) {
                         val n = input.read(buffer, 0, minOf(buffer.size.toLong(), left).toInt())
                         if (n < 0) break
                         try { out.write(buffer, 0, n) } catch (e: IOException) { return } // the player went away (seek, stop)
@@ -184,10 +286,11 @@ object RangeProxy {
                         left -= n
                         failures = 0
                     }
-                    if (left > 0 && total >= 0 && position <= last) throw IOException("chunk ended early")
+                    if (left > 0 && total >= 0 && position <= last && !entry.cancelled) throw IOException("chunk ended early")
                     if (total < 0 && left > 0) { position = end + 1 } // size unknown: the end of the file
                 }
             } catch (e: IOException) {
+                if (entry.cancelled) return
                 failures++
                 Log.w(TAG, "continuing at $position after ${e.javaClass.simpleName} ${e.message} (attempt $failures)")
                 if (failures >= RETRIES) return // closing the connection early tells the player

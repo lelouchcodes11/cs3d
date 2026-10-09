@@ -34,8 +34,8 @@ private val sections = listOf(
         com.lagradost.desktop.net.OAuthCallback.redirectUrl("anilistlogin"), "https://anilist.co/settings/developer",
     ),
     KeySection(
-        "MyAnimeList", listOf(ApiKeys.Key.MAL_ID),
-        "Create ID: App Type \"other\", Redirect URL as below, the rest as you like. Paste the Client ID.",
+        "MyAnimeList", listOf(ApiKeys.Key.MAL_ID, ApiKeys.Key.MAL_SECRET),
+        "Create ID: App Type \"other\", Redirect URL as below, the rest as you like. Paste the Client ID. The Client Secret is only for an App Type \"web\" client (\"Client authentication failed\" at sign-in means it is needed).",
         com.lagradost.desktop.net.OAuthCallback.redirectUrl("mallogin"), "https://myanimelist.net/apiconfig",
     ),
     KeySection(

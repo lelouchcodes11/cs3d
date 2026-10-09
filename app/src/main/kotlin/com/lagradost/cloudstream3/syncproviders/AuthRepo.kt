@@ -28,6 +28,24 @@ abstract class AuthRepo(open val api: AuthAPI) {
 
     companion object {
         private val oauthPayload: MutableMap<String, String?> = mutableMapOf()
+
+        fun setOAuthPayload(idPrefix: String, payload: String?) {
+            synchronized(oauthPayload) {
+                oauthPayload[idPrefix] = payload
+            }
+            if (payload != null) {
+                com.lagradost.cloudstream3.CloudStreamApp.setKey("oauth_payload", idPrefix, payload)
+            } else {
+                com.lagradost.cloudstream3.CloudStreamApp.removeKey("oauth_payload", idPrefix)
+            }
+        }
+
+        fun getOAuthPayload(idPrefix: String): String? {
+            return synchronized(oauthPayload) {
+                oauthPayload[idPrefix]
+                    ?: com.lagradost.cloudstream3.CloudStreamApp.getKey<String>("oauth_payload", idPrefix)
+            }
+        }
     }
 
     @Throws
@@ -51,9 +69,7 @@ abstract class AuthRepo(open val api: AuthAPI) {
             return true
         }
         val page = api.loginRequest() ?: return false
-        synchronized(oauthPayload) {
-            oauthPayload.put(idPrefix, page.payload)
-        }
+        setOAuthPayload(idPrefix, page.payload)
         // the service sends the browser back to http://localhost:52526/<service> (a page of this app), which hands the answer to the
         // same login code as the old cloudstreamapp:// link did; that link still works for clients registered with it
         com.lagradost.desktop.net.OAuthCallback.arm { link ->
@@ -146,11 +162,12 @@ abstract class AuthRepo(open val api: AuthAPI) {
         )
 
         val currentAccounts = AccountManager.accounts(idPrefix)
-        if (currentAccounts.any { it.user.id == newAccount.user.id }) {
-            throw ErrorLoadingException("Already logged into this account")
+        val newAccounts = if (currentAccounts.any { it.user.id == newAccount.user.id }) {
+            currentAccounts.map { if (it.user.id == newAccount.user.id) newAccount else it }.toTypedArray()
+        } else {
+            currentAccounts + newAccount
         }
 
-        val newAccounts = currentAccounts + newAccount
         AccountManager.updateAccounts(idPrefix, newAccounts)
         AccountManager.updateAccountsId(idPrefix, user.id)
         if (this is SyncRepo) {
@@ -171,10 +188,9 @@ abstract class AuthRepo(open val api: AuthAPI) {
 
     @Throws
     suspend fun login(redirectUrl: String): Boolean {
+        val payload = getOAuthPayload(api.idPrefix)
         return setupLogin(
-            api.login(
-                redirectUrl,
-                synchronized(oauthPayload) { oauthPayload[api.idPrefix] }) ?: return false
+            api.login(redirectUrl, payload) ?: return false
         )
     }
 }

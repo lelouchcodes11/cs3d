@@ -2,6 +2,8 @@ package com.lagradost.desktop.ui.screens.extensions
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,6 +74,7 @@ import com.lagradost.desktop.ui.fluent.Icons
 import com.lagradost.desktop.ui.fluent.MenuItem
 import com.lagradost.desktop.ui.fluent.Overlays
 import com.lagradost.desktop.ui.fluent.ProgressRing
+import com.lagradost.desktop.ui.fluent.StremioLogo
 import com.lagradost.desktop.ui.fluent.TextBox
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
@@ -79,6 +82,7 @@ import com.lagradost.desktop.ui.shell.TopBarHeight
 import androidx.compose.ui.focus.FocusRequester
 
 private const val INSTALLED = "__installed__"
+private const val STREMIO = "__stremio__"
 
 @Composable
 fun ExtensionsScreen() {
@@ -105,6 +109,7 @@ fun ExtensionsScreen() {
         plugins.search(null)
         val sel = selected ?: return@LaunchedEffect
         if (sel == INSTALLED) plugins.updatePluginListLocal()
+        else if (sel == STREMIO) { /* Stremio page manages its own data */ }
         else repoList.firstOrNull { it.url == sel }?.let { plugins.updatePluginList(ctx, listOf(it)) }
     }
 
@@ -135,46 +140,70 @@ fun ExtensionsScreen() {
                         item(key = INSTALLED) {
                             RepoRow("Installed", "Everything downloaded or loaded locally", null, selected == INSTALLED, Icons.Download, { selected = INSTALLED }, null)
                         }
+                        item(key = STREMIO) {
+                            RepoRow("Stremio add-ons", "Add-ons, streams and torrents", null, selected == STREMIO, Icons.Link, { selected = STREMIO }, null, customIcon = { StremioLogo(size = 24.dp) })
+                        }
                         items(repoList.toList(), key = { it.url }) { repo ->
-                            RepoRow(repo.name, repo.url, repo.iconUrl, selected == repo.url, Icons.Extensions, { selected = repo.url }, repo)
+                            val isStremio = repo.name.contains("stremio", ignoreCase = true) || repo.url.contains("stremio", ignoreCase = true)
+                            val customIcon: (@Composable () -> Unit)? = if (isStremio && repo.iconUrl == null) {
+                                { StremioLogo(size = 24.dp) }
+                            } else null
+                            RepoRow(repo.name, repo.url, repo.iconUrl, selected == repo.url, Icons.Extensions, { selected = repo.url }, repo, customIcon = customIcon)
                         }
                         if (repoList.isEmpty()) item(key = "no-repos") {
                             FText("No repositories yet. Add one with its URL (or a short code), then install the providers you want.", color = c.textSecondary, style = Fluent.type.caption, modifier = Modifier.padding(8.dp))
                         }
                     }
                 }
-                // ---- plugins of the selected repository
+                // ---- plugins or stremio add-ons of the selected category
                 Column(Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, end = 28.dp)) {
                     val sel = selected
-                    val repo = repoList.firstOrNull { it.url == sel }
-                    Row(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            FText(if (sel == INSTALLED) "Installed extensions" else repo?.name ?: "Extensions", style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 1)
-                            FText(repo?.url ?: "${list?.second?.size ?: 0} extensions", style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+                    if (sel == STREMIO) {
+                        Row(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                FText("Stremio add-ons", style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 1)
+                                FText("Add-ons, their sources and subtitles, torrent streaming", style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+                            }
                         }
-                        TextBox(
-                            query, { query = it; plugins.search(it.ifBlank { null }) }, Modifier.width(if (compact) 200.dp else 280.dp),
-                            placeholder = "Filter extensions", leadingIcon = Icons.Search,
-                        )
-                        if (repo != null) Button("Install all", { PluginsViewModel.downloadAll(ctx, repo, plugins) }, icon = Icons.Download, height = 34.dp)
-                    }
-                    Box(Modifier.height(16.dp))
-                    val items = list?.second.orEmpty()
-                    if (sel == null || (list == null)) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ProgressRing() }
-                    } else if (items.isEmpty()) {
-                        EmptyPlugins(sel == INSTALLED)
-                    } else {
-                        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-                        val columns = ((this@BoxWithConstraints.maxWidth - (if (compact) 250.dp else 320.dp) - 44.dp) / 380.dp).toInt().coerceIn(1, 3)
-                        val rows = items.chunked(columns)
+                        Box(Modifier.height(16.dp))
+                        val scroll = rememberScrollState()
                         Box(Modifier.fillMaxSize()) {
-                            FluentScrollbar(listState)
-                            LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current, end = 12.dp)) {
-                                items(rows.size, key = { i -> rows[i].joinToString("|") { it.pluginWrapper.plugin.url + "|" + it.pluginWrapper.plugin.internalName } }) { i ->
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                        rows[i].forEach { item -> Box(Modifier.weight(1f)) { PluginCard(item, plugins, repo?.let { listOf(it) } ?: emptyList(), sel == INSTALLED) } }
-                                        repeat(columns - rows[i].size) { Box(Modifier.weight(1f)) }
+                            FluentScrollbar(scroll)
+                            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(end = 12.dp, bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
+                                com.lagradost.desktop.ui.screens.settings.StremioPage()
+                            }
+                        }
+                    } else {
+                        val repo = repoList.firstOrNull { it.url == sel }
+                        Row(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                FText(if (sel == INSTALLED) "Installed extensions" else repo?.name ?: "Extensions", style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 1)
+                                FText(repo?.url ?: "${list?.second?.size ?: 0} extensions", style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+                            }
+                            TextBox(
+                                query, { query = it; plugins.search(it.ifBlank { null }) }, Modifier.width(if (compact) 200.dp else 280.dp),
+                                placeholder = "Filter extensions", leadingIcon = Icons.Search,
+                            )
+                            if (repo != null) Button("Install all", { PluginsViewModel.downloadAll(ctx, repo, plugins) }, icon = Icons.Download, height = 34.dp)
+                        }
+                        Box(Modifier.height(16.dp))
+                        val items = list?.second.orEmpty()
+                        if (sel == null || (list == null)) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ProgressRing() }
+                        } else if (items.isEmpty()) {
+                            EmptyPlugins(sel == INSTALLED)
+                        } else {
+                            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+                            val columns = ((this@BoxWithConstraints.maxWidth - (if (compact) 250.dp else 320.dp) - 44.dp) / 380.dp).toInt().coerceIn(1, 3)
+                            val rows = items.chunked(columns)
+                            Box(Modifier.fillMaxSize()) {
+                                FluentScrollbar(listState)
+                                LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current, end = 12.dp)) {
+                                    items(rows.size, key = { i -> rows[i].joinToString("|") { it.pluginWrapper.plugin.url + "|" + it.pluginWrapper.plugin.internalName } }) { i ->
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                            rows[i].forEach { item -> Box(Modifier.weight(1f)) { PluginCard(item, plugins, repo?.let { listOf(it) } ?: emptyList(), sel == INSTALLED) } }
+                                            repeat(columns - rows[i].size) { Box(Modifier.weight(1f)) }
+                                        }
                                     }
                                 }
                             }
@@ -209,7 +238,16 @@ private fun EmptyPlugins(installed: Boolean) {
 }
 
 @Composable
-private fun RepoRow(name: String, url: String, iconUrl: String?, selected: Boolean, fallbackIcon: String, onClick: () -> Unit, repo: RepositoryData?) {
+private fun RepoRow(
+    name: String,
+    url: String,
+    iconUrl: String?,
+    selected: Boolean,
+    fallbackIcon: String,
+    onClick: () -> Unit,
+    repo: RepositoryData?,
+    customIcon: (@Composable () -> Unit)? = null,
+) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
@@ -231,8 +269,12 @@ private fun RepoRow(name: String, url: String, iconUrl: String?, selected: Boole
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(Modifier.size(42.dp).clip(RoundedCornerShape(FluentShapes.small)).background(if (selected) c.accent.copy(alpha = 0.2f) else c.control), contentAlignment = Alignment.Center) {
-                Icon(fallbackIcon, size = 18.dp, tint = if (selected) c.accentText else c.textSecondary)
-                if (iconUrl != null) RemoteImage(iconUrl, null, null, Modifier.size(42.dp), ContentScale.Crop)
+                if (customIcon != null) {
+                    customIcon()
+                } else {
+                    Icon(fallbackIcon, size = 18.dp, tint = if (selected) c.accentText else c.textSecondary)
+                    if (iconUrl != null) RemoteImage(iconUrl, null, null, Modifier.size(42.dp), ContentScale.Crop)
+                }
             }
             Column(Modifier.weight(1f)) {
                 FText(name, style = Fluent.type.bodyStrong, maxLines = 1)

@@ -73,6 +73,7 @@ Windows 10 or 11, 64-bit. Windows SmartScreen may ask for confirmation because t
 | 📺 **Live TV** | Live channels, including ClearKey-protected DASH streams with many audio languages, with a *Go live* button after you skip ahead. |
 | 💬 **Subtitles that work** | Embedded tracks, files, and online search (OpenSubtitles, SubDL, Subtitle Cat and others), one style for all of them: font, size, colours, shadow, position. |
 | 🧩 **Every CloudStream extension** | It runs on the CloudStream engine, so the extensions and repositories you know work here. You add them; the app ships with none. |
+| 🧲 **Stremio add-ons and torrents** | Add any Stremio add-on by its address (Settings → Stremio & torrents): catalogs, search, episodes and sources appear like any other provider; add-ons and extensions stay apart (an extension's titles show only its own sources). Torrent sources play while they download, through a small open-source engine (TorrServer) that the app downloads once, only after you agree, and stops when nothing plays. Off until you turn it on. |
 | 🧭 **Explore** | A tab with what is trending, in cinemas, coming soon and top rated, for films, series and anime, filtered by genre and by streaming service (Netflix, Prime Video, Disney+, Hotstar and more). Pick a title and your extensions look for it. |
 | 🎞️ **Title pages with the details** | Logo and backdrop, TMDB score, age rating, who made it, where it streams, cast with photos (a click opens the person's page), a gallery, reviews, studios and collections, and a **trailer that plays inside the app**. Switch it off any time in Settings → Appearance. |
 | 🎨 **Make it yours** | Eight colour themes (Midnight, Crimson, Ocean, Matcha, Sunset, Dracula, Nord, Cinema gold) with soft colour glows, your own wallpaper, menu on the top, left, right or bottom; corner roundness, poster size, spacing, interface size, animations; choose and order the rows of Home. |
@@ -150,7 +151,7 @@ CloudStream for Windows is **free** and has no ads. It is made in spare time. If
 
 ## 📜 About content
 
-The app contains **no extensions and no content**. Extensions are made by other people and added by you; you are responsible for what you use them for.
+The app contains **no extensions, no Stremio add-ons and no content**. Extensions and add-ons are made by other people and added by you; you are responsible for what you use them for. The app is not affiliated with Stremio. Torrents are shared with other people's computers while they play and your IP address is visible to them (a VPN hides it); only play what you are allowed to.
 
 <details>
 <summary>For developers</summary>

@@ -37,8 +37,8 @@ object Themes {
 
     fun byId(id: String?): ThemePreset = if (id == null) classic else all.firstOrNull { it.id == id } ?: classic
 
-    /** The first start (nothing saved) gets Midnight, a user who had picked an accent colour keeps the Classic look */
-    const val DEFAULT_ID = "midnight"
+    /** The first start (nothing saved) and "Reset to default" get Classic: the plain Windows colours (the other themes are a choice in Settings > Appearance) */
+    const val DEFAULT_ID = "classic"
 }
 
 /** The colours of a dark theme: tinted surfaces, brighter secondary text; the accent stays the one in [FluentColors] */
@@ -53,6 +53,6 @@ internal fun FluentColors.themed(p: ThemePreset): FluentColors {
         subtleHover = t.copy(alpha = 0.10f), subtlePressed = t.copy(alpha = 0.06f),
         flyout = p.flyout, stroke = t.copy(alpha = 0.15f), strokeStrong = t.copy(alpha = 0.34f), divider = t.copy(alpha = 0.12f),
         text = Color.White, textSecondary = Color(0xE0FFFFFF), textTertiary = Color(0xA3FFFFFF), textDisabled = Color(0x66FFFFFF),
-        success = success, caution = caution, critical = critical, scrim = scrim,
+        success = success, caution = caution, critical = critical, scrim = scrim, accent2 = accent2,
     )
 }

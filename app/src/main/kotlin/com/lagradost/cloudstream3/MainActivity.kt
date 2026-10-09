@@ -303,7 +303,7 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                         println("Repository url: $realUrl")
                         loadRepository(realUrl)
                         return true
-                    } else if (str.contains(APP_STRING)) {
+                    } else if (str.contains(APP_STRING) || str.contains("localhost:${com.lagradost.desktop.net.OAuthCallback.PORT}") || str.contains("127.0.0.1:${com.lagradost.desktop.net.OAuthCallback.PORT}") || AccountManager.allApis.any { it.isValidRedirectUrl(str) }) {
                         for (api in AccountManager.allApis) {
                             if (api.isValidRedirectUrl(str)) {
                                 ioSafe {
@@ -324,8 +324,10 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                                         )
                                     } catch (t: Throwable) {
                                         logError(t)
+                                        // the service's own words (a refused client, a wrong secret) say more than "failed"
                                         showToast(
-                                            txt(R.string.authenticated_user_fail, api.name)
+                                            (t as? ErrorLoadingException)?.message?.let { txt(it) }
+                                                ?: txt(R.string.authenticated_user_fail, api.name)
                                         )
                                     }
                                 }

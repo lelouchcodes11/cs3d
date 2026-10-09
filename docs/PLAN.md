@@ -4,7 +4,7 @@ This is the only doc. Read it fully before changing code. At the end of every se
 ("Status") and section 5 ("Work packages": tick items, add what you learned). Keep it short: replace stale
 text, don't append logs.
 
-Last updated: 2026-10-03 (session 14, second round: see section 21b).
+Last updated: 2026-10-09 (session 45: Live stream teardown deadlock fix, DashProxy cancellation, WinChrome WM_NCACTIVATE handling, native player canvas isolation).
 
 ---
 
@@ -1038,3 +1038,213 @@ Owner: "app looks too pale, colours not attracting", "check the update extension
 - Test gotcha: after `/quit` wait until no `CloudStream.exe` runs before relaunching on the same dev port, or screenshots come from the dying instance.
 - **Round 2 (same night)**: animated looks are switched off (`const val ANIMATED_LOOKS = false` in `Profiles.kt`; `ProfileLooks.get` returns Picture, the editor shows name + the 7 stock pictures + own picture, the Settings switch is gone; the drawing code and `Appearance.animatedProfiles` stay for later). Search landing: no type chips; `chooseTypes` dialog behind a Filter `IconButton` (Accent while a subset is chosen); history row is a `Shelf` (arrows only on hover); `AppShell.TopBar` skips `GlobalSearchBox` when the route is `Route.Search` with a blank query, and the landing field uses `ShellState.searchFocus` so Ctrl+K still works. Theme default unchanged: Midnight on a fresh start, Classic when `desktop_accent_color` existed (the owner's own data was saved as Classic).
 - Test: `./gradlew :app:createDistributable` builds into `app/build/compose/binaries/main/app/CloudStream` without touching `dist/` (use it while the owner's portable copy is running; `portableDist` only when no `CloudStream.exe` runs).
+
+## 41. Buttons, episode lists, related anime, spoilers, failing HubCloud sources (2026-10-08, night 2)
+
+Owner list: endless loading after choosing subtitles (4KHDHub, Zinkmovies), anime episode titles cut off (KickAssAnime), no prequels/sequels, buttons only white, season picker not visible, AniList sign-in for other users, spoilers.
+
+- **Buttons**: `FluentColors.accent2` (second gradient colour: the theme's `glowB` blended into the accent, a +38 degree hue turn of the accent when the theme names none or the user picked an accent) and `accentBrush()` / `accentGlow()` / `tintedGlass()` in `Controls.kt`. Accent `Button`, `PillButton` (Play, Search ...), selected `Chip` / `PillTabs`, active `GlassCircleButton`, the player's play/pause disc, carousel dots and the featured-strip ring all use it; secondary pills are glass tinted with the accent; `ComboBox`/standard buttons get an accent edge on hover. No more white main buttons (slider knobs stay white by the colour rule).
+- **Details**: season picker has its own line (chips up to 6 seasons, else a 190 dp `ComboBox`), unselected chips are visible buttons; episode titles use the whole width (3 lines + tooltip), rating/filler under the title; **Related** tab for anime (`AnimeRelations.kt`: AniList GraphQL, id from the page's `anilist`/`mal` sync data or a title search, prequel/sequel/side story/spin-off/alternative..., cards open a search; gated by the TMDB "Title information" switch); **spoilers** (`Appearance.hideSpoilers` default on, `hideSpoilerTitles` off; Settings > Appearance > Spoilers; chip above the list): the still of every episode after the next unwatched one is blurred and its description hidden, the eye pill on the card reveals it.
+- **AniList / MAL / Simkl for everyone**: the client IDs are public identifiers (they are in every authorise URL), so they can be built in: `anilist.key`, `mal.key`, `simkl.id` in `local.properties` (or env ANILIST_KEY / MAL_KEY / SIMKL_CLIENT_ID); register `http://localhost:52526/anilistlogin`, `/mallogin`, `/simkl` as redirect URLs. Simkl's PIN sign-in needs no secret. Nothing was changed in the sign-in flow itself.
+- **Failing HubCloud "Instant Download" workers** (cdnfileshub.workers.dev, 4KHDHub/Zinkmovies style direct MKV links): they answer HTTP 403 to the 4 MiB range for minutes. Found with new `RangeProxy: upstream ... HTTP n after x ms` log lines. Before: the proxy answered 200 and closed the body early, mpv retried "partial file" for ever or opened a corrupt file at its end (`eof-reached`, black picture, nothing said). Now: `RangeProxy.handle` fetches the first piece before answering and gives the player the real error (and remembers it 20 s), mpv fails, the session goes to the next source (verified: 30 GB source refused, 65 GB source played ~15 s later); an EOF within 20 s of the open at the very end of a long file (not started there) is an `ErrorEvent` (`MpvPlayer` eof-reached rule).
+- **Subtitle switch**: `watchTrackSwitch` in `MpvPlayer`: choosing another embedded track mid-playback shows the "Loading subtitles" pill, and if the picture has not moved for 12 s the file is opened again at the position with `sid=` as a loadfile option (`openWithSid`). Switching measured at 0.8-9 s on working sources (mpv re-reads from the playback position). Could not reproduce the owner's exact "endless loading" after choosing a subtitle; the 403 behaviour above is the likeliest cause. Dev endpoint `/subpick?n=` selects the n-th entry of `/sublist`.
+- Test copy of the owner's data for runs: copy `shared_prefs`, `files`, `code_cache` only, rewrite the extension paths, set `loggedIn` false and the Firebase URL to a dead address (Ultima sync), run `runDev -PdataDir` with `JAVA_TOOL_OPTIONS=-Dcloudstream.ipcport=52999`.
+
+**Round 2 (same night)**
+- Default theme is Classic again (`Themes.DEFAULT_ID`): first start and "Reset to default" give the plain Windows colours; Midnight etc. are a choice. Saved choices are kept.
+- AniList / MAL / Simkl client IDs are in `local.properties` (git-ignored) and baked in (`BuildConfig`); Simkl has no secret (PIN sign-in). Redirect URLs to register: `http://localhost:52526/anilistlogin`, `/mallogin`, `/simkl`.
+- **Clone site never worked on desktop**: upstream loads the clones in `MainActivity.onCreate` (`onAllPluginsLoaded`), which the native UI never runs. `DesktopBootstrap.loadClonedSites` now runs after every plugin load and when a clone is added. Engine dialogs: `WhiteButton` style (`android-res/values/styles.xml`) is filled with `colorPrimary`/`colorOnPrimary` (the accent) and `NativeApp` re-populates the context themes whenever the colours change.
+- **Zinkmovies is broken at the source, not in the app**: its domain list (`phisher98/TVVVV/domains.json`) gives `new4.zinkmovies.foo`, which now hops to `new4.zinkmovies.cc` and then to a landing page (`redirect.zinkmovies.org`, `?re=zink` -> `new5.zinkmovies.monster`); the saved cf_clearance is for the dead domain, so the plugin asks for Cloudflare again for ever. The live site `new5.zinkmovies.monster` answers HTTP 200 with the saved cookie but has a new page layout (`movies-grid` links, no `<article>`): the plugin finds 0 results there too (verified through a clone). Needs a plugin update from its author.
+- **4KHDHub**: all 16 sources of Inception and the first 7 of an episode were started one by one: 14 / 16 play in 4-24 s, the "HubCloud [Instant Download]" workers (one worker host per link) refuse or start slowly (10-25 s), "10Gbps [Download]" and "[Pixeldrain]" start in 4-6 s. New `net/HostHealth.kt`: among sources of the same quality the kinds that failed (extractor + bracket label, kept 6 h, also across runs, `desktop_source_health_v1`) go last, "instant download" starts with a prior of 1; a failed link keeps its place (`nextLink` wraps to untried ones). Subtitles of the sources are the video's own tracks and rendered fine (checked `sub-text`). Pixeldrain answers 403 for a while after many requests from one IP (my probing), not a bug.
+- Dev: `/apisearch?name=&q=` (one provider's search with the error), `/httpprobe` `&find=<regex>` / `&max=`; `local.properties` and the scratch data copy are never committed.
+
+## 42. Stremio add-ons and torrents (2026-10-08, night 3)
+
+Owner: "add stremio and torrent support like ayu's app, super proper". `reference/ayu-client` was read for the design only (it is GPL-3; this is our own code). Packages `desktop/stremio` and `desktop/torrent`; settings page `StremioSettings.kt` (Settings > Stremio & torrents).
+
+- **Protocol** (`StremioModels.kt`, `StremioClient.kt`): manifest (resources as strings or objects with types/idPrefixes, catalogs with `extra` or old `extraSupported/extraRequired`, `behaviorHints` configurable/p2p), resource URLs `/{resource}/{type}/{id}[/{extra}].json` (ids URL-encoded, extras `k=v&k2=v2`, the manifest's query string kept), meta with `videos`, streams (`url`, `ytId`, `infoHash`+`fileIdx`+`sources`, `externalUrl`, `proxyHeaders`), subtitles. TTL cache for catalogs/meta.
+- **Add-ons as providers** (`StremioAddons.kt`, `StremioApi.kt`): every add-on with catalogs/meta becomes a `MainAPI` in `APIHolder.allProviders` (same trick as clone sites, re-synced after every plugin load through `afterPluginsLoadedEvent`): Home rows from catalogs without a required extra, paging with `skip`, search, `load` (movie/series/anime/live by type and id prefix `kitsu:`/`mal:`/`anilist:`...), episodes carry `Target(type,id)` JSON, `loadLinks` asks all stream/subtitle add-ons. Prefs key `desktop_stremio_addons_v1`; Cinemeta is the default, Torrentio / OpenSubtitles v3 / Anime Kitsu are one-click suggestions.
+- **No enrichment (changed 2026-10-09):** the first version added Stremio streams and subtitles to titles of any extension (`StremioStreams.collectForOther` in `RepoLinkGenerator`, IMDb id lookup, a Settings switch). The owner wanted the two worlds apart, so it was removed: an extension title gets only its own extension's sources, a Stremio title only the add-ons' (all stream add-ons that offer the id). Related / "More like this" cards search the extension of the page (`Navigator.search(name, only = apiName)`), right-click offers all extensions. MAL: the token request carries an optional client secret (App Type web) and a refused sign-in shows MAL's own message.
+- **Torrent engine** (`TorrentEngine.kt`, `TorrentConsent.kt`): TorrServer (YouROK, GPL-3, MatriX.145.2, `TorrServer-windows-amd64.exe` 63.6 MB) downloaded from GitHub only after the owner agrees, run as a child process on `127.0.0.1` (`-p port -i 127.0.0.1 -d data -l log --dontkill`, no console window), API: `POST /torrents {add|get|drop|list}`, `POST /settings`, `GET /stream/<name>?link=<hash>&index=<1-based>&play|&preload`, `/echo`, `/shutdown`. File choice (`pickFile`): the add-on's `fileIdx` (+1), else the episode in a pack (E1 does not match E10), else the file name, else the biggest video. Settings applied: disk cache on, `RemoveCacheOnDrop`, cache size, no Bonjour/DLNA, 80 connections, optional forced encryption. Stops 5 min after the last torrent, in a shutdown hook, an orphan from a crash is shut down at the next start.
+- **Player**: `PlayerSession.loadLink` resolves a magnet / .torrent link (consent first, `torrentBusy` stops the stall watchdog while a question is open) to the engine's HTTP stream, which mpv plays; loading overlay shows the phase, peers, speed and buffer %; `TorrentPill` while playing; leaving the player drops the torrent and clears its cache; VLC / browser hand-off gets the engine's URL (`resolvedTorrent`). Source sort (`PlayerGeneratorViewModel`): direct sources first; torrents with fewer than 3 reported seeders last; then quality; then the most seeders (`seeders` is read from the add-on's title, kept in `extractorData`). Source list shows a "Torrent" tag. `LOADTYPE_INAPP` includes TORRENT/MAGNET.
+- **Tests**: `StremioProtocolTest` (7 tests: addresses, manifests, streams, magnets, meta, file choice) pass. Live: Cinemeta Home/search/details, Anime Kitsu episodes, Torrentio 75 sources for Inception, OpenSubtitles 90 subtitles, 68 Torrentio sources added to a StreamPlay title, consent -> download (63.6 MB, under 10 s) -> start -> BBB web-seeded torrent plays at 7 MB/s with seeking, drop + cache clear on leaving, engine gone after quit.
+- **Limits to tell the owner**: a swarm needs peers: on this PC / ISP a torrent that the add-on lists with 28 seeders had 4 peers after 60 s and was skipped (next source tried, as designed); the first start of the engine needs time for DHT. Windows may show a firewall prompt for TorrServer. `externalUrl` streams are only logged. Not affiliated with Stremio; Torrentio / Kitsu are third-party services that can be down.
+- Dev: `/stremio?add=|remove=|enable=&on=|streams=<type>|<id>|list=1`, `/open?api=&url=&name=` (Details by address), `/click?x=&y=` takes screenshot pixels.
+
+## 43. IntroDB for Anime, MAL OAuth fix, Anime4K, Anti-Spoiler view, Skip Placement & Auto-skip, Stremio Badges, Seekbar Time Toggle (2026-10-09)
+
+Eight specific features and fixes implemented across player, extensions, integrations, and UI:
+
+1. **IntroDB for Anime & Movie skips** (`IntroDbSkip.kt`, `TheIntroDBSkip.kt`):
+   - Added support for `TvType.Anime`, `TvType.OVA`, `TvType.AnimeMovie`, `TvType.Cartoon`, and `TvType.Movie` in `supportedTypes` across both `IntroDbSkip` and `TheIntroDBSkip`.
+   - Added season fallback `season = episode.season ?: 1` (resolves anime episodes having null seasons).
+   - Movie handling: passes `is_movie=true` without season/episode parameters when title type is Movie or AnimeMovie.
+   - Fallback IMDb/TMDb resolution: when IDs are missing, resolves via TMDB metadata lookup (`Tmdb.info(title, year, isMovie, hints)`).
+   - Added fallback from millisecond values (`start_ms`, `end_ms`) to second values (`start_sec`, `end_sec`) in `IntroDbSkip`, and guarded `TheIntroDBSkip` network parsing with `runCatching`.
+
+2. **MyAnimeList (MAL) Authentication fix** (`MALApi.kt`):
+   - Fixed OAuth PKCE authorization: added missing `code_challenge_method=plain` query parameter to authorization URL.
+   - Enforced code verifier length restriction to 128 characters maximum (`take(128)`) to satisfy MAL API requirements.
+   - Added matching `redirect_uri` in both the authorization request URL (`$encodedRedirectUri`) and the token exchange POST request body, avoiding code invalidation/burnout.
+
+3. **Anime4K Real-time Shader filter** (`PlayerMenu.kt`, `MpvPlayer.kt`, `Anime4K.kt`):
+   - Added `applyAnime4k()` in `MpvPlayer` to dynamically inject and remove Anime4K GLSL shader pipelines (`glsl-shaders` property) at runtime without restarting player or stream.
+   - Added `MenuPage.Anime4K` page in player settings menu (`PlayerMenu.kt`). Auto-enables `Appearance.nativePlayer = true` when Anime4K is turned on so the GPU shaders actually take effect.
+   - Added robust classloader fallback for extracting shader files in `Anime4K.kt`.
+
+4. **Non-spoiler View for unviewed episodes** (`PlayerScreen.kt`, `DetailsScreen.kt`):
+   - In `EpisodesPanel` (`PlayerScreen.kt`), episodes after current playback index (`index > currentEpisodeIndex`) that are unviewed have thumbnails blurred (`Modifier.blur(16.dp)`), dark overlay with quick-reveal toggle button, and masked titles (`"Episode $epNumber"`).
+   - In `DetailsScreen.kt`, adjusted spoiler visibility so unviewed episodes past current watched index are blurred and titles/descriptions masked until explicitly unmasked with the eye button.
+
+5. **Skip Button Placement & Auto-skip 5-second countdown** (`PlayerScreen.kt`, `Appearance.kt`, `PlayerMenu.kt`):
+   - Skip button alignment separated by stamp category: Opening/Intro/Recap placed on bottom-left (`Alignment.BottomStart`), Ending/Credits/Outro placed on bottom-right (`Alignment.BottomEnd`).
+   - Added `autoSkipStamps` and `autoSkipDelay5s` preferences in `Appearance.kt` with full persistence.
+   - Auto-skip logic: when auto-skip is enabled, if 5-second delay is enabled, displays countdown button ("Skip in Ns") before automatically seeking past intro/outro; countdown only ticks while playback is active; if delay is disabled, skips immediately; if auto-skip is disabled, displays interactive skip button.
+   - Added Skip settings subpage in player menu (`SkipPage`) with clearly visible auto-skip and 5-second toggle controls.
+
+6. **Stremio in Extensions Menu & Stremio Provider Badges** (`ExtensionsScreen.kt`, `SettingsScreen.kt`, `Controls.kt`, `Flyouts.kt`, `ProviderSelector.kt`, `SearchScreen.kt`):
+   - Moved Stremio add-on management into the Extensions screen sidebar (`STREMIO` entry) hosting `StremioPage()`.
+   - Hidden redundant `Page.Stremio` in Settings sidebar.
+   - Created `StremioLogo` (custom vector play icon inside purple gradient rounded badge) and `StremioBadge` composable.
+   - Extended `ComboBox` with `trailingItem` slot to render `StremioBadge` (with Stremio logo) in Home provider dropdown (`ProviderSelector.kt`).
+   - Rendered Stremio logo badge next to Stremio-based provider items in Search results (`SearchScreen.kt`), skeleton loading rows, and provider selection flyout.
+
+7. **Seekbar Total vs. Remaining Time toggle** (`PlayerScreen.kt`, `Appearance.kt`):
+   - In player seekbar row (`SeekRow`), duration label is clickable (`fluentClickable`).
+   - Toggles display between total video duration (e.g. `24:15`) and remaining countdown time (e.g. `-18:42`).
+   - Persisted in `Appearance.showRemainingTime`.
+
+8. **Documentation**:
+   - Comprehensive documentation added to Section 43 in `docs/PLAN.md`.
+
+## 44. MAL OAuth Fixes, Extensions Stremio Logo, Anime Source Separation, and Accurate AniSkip Timestamps (2026-10-09)
+
+Four major stability and integration issues addressed:
+
+1. **MyAnimeList (MAL) OAuth Login Flow Fixes** (`OAuthCallback.kt`, `DesktopBootstrap.kt`, `DesktopUiHost.kt`, `MainActivity.kt`, `AuthAPI.kt`, `AuthRepo.kt`, `MALApi.kt`):
+   - **Persistent OAuth Payload & Multi-Process Survival**: In `AuthRepo.kt`, persisted `oauthPayload` to `DataStore` (using `CloudStreamApp.setKey` / `CloudStreamApp.getKey`) so that OAuth authorization codes returning via a fresh app instance or external protocol dispatch retain their `codeVerifier` and `requestId`.
+   - **Re-login Grace Handling**: In `AuthRepo.setupLogin`, when an account with the same user ID already exists, updated the existing account's token and user object instead of throwing `ErrorLoadingException("Already logged into this account")`.
+   - **MalUser Deserialization Resilience**: In `MALApi.kt`, marked `location`, `joinedAt`, and `picture` as nullable (`String? = null`) with explicit defaults in `MalUser`, plus JSONObject fallback parsing, preventing JSON deserialization failures when MAL's `/v2/users/@me` endpoint omits these fields.
+   - **OAuth Request ID, Code Verifier & Redirect URI Recovery**: Saved `requestId`, `codeVerifier`, and `redirectUri` to persistent settings during `loginRequest()` and automatically recovered them if `payload` is null in `login()`. Matched token exchange `redirect_uri` to the incoming URL scheme (`http://localhost:$PORT/mallogin` vs `cloudstreamapp://mallogin`).
+   - **Loopback Server & Intent Handling**:
+     - `OAuthCallback.kt`: Added eager `start()` call in `DesktopBootstrap.kt` during engine initialization.
+     - Relaxed host/origin validation to accept `localhost`, `127.0.0.1`, `::1`, and `[::1]:52526` (fixed IPv6 host parsing where `substringBefore(':')` returned `"["`). Allowed `origin == "null"`.
+     - In HTML callback page, fixed loopback callback bug: removed erroneous `window.location.href = appLink` from `.then(r.ok)` where `history.replaceState` stripped parameters and sent an empty code to the app triggering "Failed to authenticate MAL". Preserved intact query parameters in fallback `.catch()`.
+     - Dispatched loopback link format `http://localhost:$PORT/$id$cleanSearch` to preserve redirect URI scheme for token exchange.
+     - `DesktopUiHost.kt`: Intercepted loopback HTTP URLs (`localhost:52526`, `127.0.0.1:52526`, `[::1]:52526`) and forwarded them directly to `MainActivity.handleAppIntentUrl` instead of looping back to the external browser.
+     - `MainActivity.handleAppIntentUrl`: Expanded URL condition to accept loopback addresses and URLs matching any API redirect pattern in `AccountManager.allApis`.
+     - `AuthAPI.isValidRedirectUrl`: Fixed matching logic to handle both `/$id` and `://$id`, and required `code=`, `token=`, or `error=` parameter presence so bare redirect URLs do not trigger failed login attempts.
+
+2. **Stremio Logo in Extensions Sidebar & Repository Lists** (`ExtensionsScreen.kt`):
+   - Added `customIcon: (@Composable () -> Unit)? = null` parameter to `RepoRow`.
+   - In `ExtensionsScreen.kt`, passed `StremioLogo(size = 24.dp)` to the `STREMIO` repository sidebar item, displaying the branded purple Stremio logo alongside the add-on count badge.
+   - In repository item rows (`repoList`), rendered `StremioLogo(size = 24.dp)` for any Stremio repository row where `repo.name` or `repo.url` contains "stremio" and `iconUrl` is null.
+
+3. **Exclusion of Stremio Add-on Sources for Anime Extension Titles** (`RepoLinkGenerator.kt`, `StremioStreams.kt`):
+   - In `RepoLinkGenerator.kt`, introduced comprehensive anime detection: checking `page.type` against `TvType.Anime`, `TvType.OVA`, and `TvType.AnimeMovie`, checking if `page is AnimeLoadResponse`, checking `page.syncData` keys (`mal`, `anilist`, `kitsu`), checking anime tags, and inspecting provider name and supportedTypes.
+   - Passed `page = currentResponse` to `RepoLinkGenerator` in `ResultViewModel2.kt` (`loadLinks`).
+   - If the media is anime, completely bypassed `StremioStreams.collectForOther` parallel link fetching, preventing unrelated torrent/add-on streams from cluttering the anime sources list.
+   - In `StremioStreams.collectForOther`, added comprehensive early return guard checking `AnimeLoadResponse`, anime types, syncData, tags, and anime provider names.
+
+4. **Accurate Anime Intro Skip Timestamps & Live-action Disambiguation** (`AniSkip.kt`, `IntroDbSkip.kt`, `TheIntroDBSkip.kt`, `VideoSkipIntegrationTest.kt`):
+   - **AniSkip AniList GraphQL Multi-Season & Offset Resolution**:
+     - Expanded `AniSkip.supportedTypes` to include `TvType.TvSeries` and `TvType.Movie` so anime titles loaded under TV series types are not skipped by `SkipAPI.videoStamps`.
+     - In `AniSkip.stamps`, added comprehensive anime check (`AnimeLoadResponse`, anime types, `syncData` keys `mal`/`anilist`/`kitsu`, anime tags, and anime provider names). Non-anime titles return null without overhead.
+     - Rewrote `resolveFromAniList`: when `season > 1`, performs targeted AniList query with search `"$cleanTitle Season $season"` and recursively traverses multi-level nested `SEQUEL` relations to resolve exact MAL IDs and episode counts for Season 2, Season 3, Season 4, etc.
+     - Added robust absolute and relative episode offset resolution:
+       - Maps absolute episode numbers (e.g. Ep 38 in Season 3) to season-relative numbers against target season MAL ID.
+       - Maps show-wide absolute episode numbers (when season is not provided) to the correct season's MAL ID and relative episode number.
+       - Handles single-entry continuous MAL shows (e.g. Naruto Shippuden / Black Clover) when season is split in extensions.
+     - Falls back to query AniSkip without episode duration constraint when duration-constrained query returns no stamps.
+     - Stopped mutating `data.syncData["mal"]` to prevent corrupting subsequent queries across seasons.
+     - Added `cleanTitle` helper to strip dub/sub labels and bracketed release tags.
+   - **TheIntroDB & IntroDB Anime Guard**:
+     - In `IntroDbSkip.kt` and `TheIntroDBSkip.kt`, expanded `isAnime` check to include `AnimeLoadResponse`, `syncData` (`mal`, `anilist`, `kitsu`), tags, and anime provider names.
+     - For anime titles, TMDB lookup results that do not belong to the "Animation" genre (e.g. live-action One Piece or live-action Cowboy Bebop) are rejected, preventing incorrect live-action TV show timestamps from being applied to anime episodes.
+   - **Integration Tests**:
+     - Verified supported types in `VideoSkipIntegrationTest.kt` (including `TvSeries` and `Movie` for AniSkip), tested `cleanTitle` normalization, tested `extractSeasonNumber`, and confirmed MAL OAuth payload serialization and recovery.
+
+
+
+## 45. Live Stream Teardown Deadlock Fix & Player Teardown Hardening (2026-10-09)
+
+Resolved a compound triple-deadlock and freeze occurring when navigating back from live stream playback (e.g. JIO TV live channels such as "Sun Gemini HD" with `Appearance.nativePlayer = true`):
+
+1. **AWT Toolkit & Win32 Custom Chrome Deadlock Elimination** (`WinChrome.kt`):
+   - **Root Cause**: When navigating back from `PlayerScreen`, Compose disposes the secondary transparent `DialogWindow` (`NativeOverlayWindow`), invoking `Window.dispose()` -> `doDispose()` -> `hide()` -> `WComponentPeer.hide()`. In OpenJDK Windows AWT (`awt_Component.cpp`), `WComponentPeer.hide()` enters `AwtToolkit::SyncCall` holding `Component.getTreeLock()` on the EDT. Hiding the owned dialog causes Windows Win32 to send `WM_NCACTIVATE` / `WM_ACTIVATE` to the main application window (`DesktopUiHost.window`). Because `WinChrome` subclassed the main window procedure and did not handle `WM_NCACTIVATE`, the message was forwarded to AWT's native `AwtWindow::WndProc`. In `awt_Window.cpp`, `AwtWindow::WmNcActivate` attempts to acquire `AwtToolkit::GetTreeLock()`, which deadlocked `AWT-Windows` against the EDT.
+   - **Fix**: Added `WM_NCACTIVATE (0x0086)` handling in `WinChrome.handle` returning `api.DefWindowProcW(hwnd, msg, wParam, -1L)`. Per Microsoft custom frame specs (DWM / `WM_NCCALCSIZE`), passing `lParam = -1` updates the window activation state without repainting the non-client title bar, completely bypassing `AwtWindow::WmNcActivate` and eliminating the TreeLock contention on the toolkit thread.
+   - Added `DefWindowProcW` binding to `User32Ex`.
+
+2. **Native Video Canvas Isolation from WinChrome Subclassing & VO Detach** (`WinChrome.kt`, `NativeVideo.kt`):
+   - **Root Cause**: `WinChrome.refreshChildren` periodically enumerated child windows with class name `"SunAwtCanvas"` and subclassed them with JNA (`handleChild`). When `NativeVideoHost` mounted an AWT `Canvas` for mpv Direct3D 11 rendering (`wid`), `WinChrome` subclassed it as well. mpv's D3D11 swapchain hooked the HWND, causing DXGI and JNA hook collisions and routing teardown messages through JNA callbacks on `AWT-Windows`. Furthermore, clearing `canvasHwnd = 0L` on disposal exposed the HWND to re-subclassing during teardown.
+   - **Fix**:
+     - Added `NativeVideo.isNativeCanvas(hwnd)` with persistent `nativeCanvasHwnds` concurrent set, retaining all HWNDs ever associated with `NativeVideo` so `WinChrome.refreshChildren` permanently ignores them even during and after disposal.
+     - In `NativeVideoHost.onDispose`, proactively invoked `MpvPlayer.active?.detachNativeWindow()` to reset `wid = "0"` before AWT Canvas peer destruction, preventing mpv's VO thread from rendering into an invalid HWND.
+
+3. **MpvPlayer Teardown Pipeline Hardening** (`MpvPlayer.kt`, `Mpv.kt`):
+   - **Root Cause**: Previously, `MpvPlayer.release()` detached references and spawned `MpvPlayer-Destroy` to execute `mpv_terminate_destroy(ctx)` without stopping active playback or clearing `wid`. For live DASH streams, mpv's demuxer thread was actively blocked on synchronous network socket reads, and the VO thread was attached to the canvas HWND. Calling `mpv_terminate_destroy` caused mpv to synchronously join its internal threads, hanging the destroy thread for 15+ seconds.
+   - **Fix**:
+     - When `release()` runs: immediately resets `wid` to `"0"` (`mpv_set_property_string(ctx, "wid", "0")`) to unbind the D3D11 swapchain from the canvas HWND.
+     - Sends non-blocking async stop command (`mpv_command_async(ctx, 0L, arrayOf("stop", null))`) to halt demuxer and decoder pipelines.
+     - Added `mpv_wakeup(ctx)` to `Mpv.kt` JNA interface and invoked it during `release()` to wake `eventThread` instantly without waiting on `mpv_wait_event` timeouts.
+     - Exposed `detachNativeWindow()` on `MpvPlayer` for proactive detachment on canvas teardown.
+
+4. **Multi-Proxy In-Flight Request Cancellation & Active Call Lifecycle** (`DashProxy.kt`, `HlsProxy.kt`, `RangeProxy.kt`):
+   - **Root Cause**:
+     - In `DashProxy.kt`, `upstream()` was previously removing `Call` from `entry.activeCalls` in its `finally` block before response body streaming began. In-flight body streaming was thus uncancelled when `DashProxy.cancel()` was called.
+     - In `RangeProxy.kt` and `HlsProxy.kt`, cancellation mechanisms did not exist. Navigating away from HLS or MP4 streams left active background thread pools, futures, and socket reads running.
+     - In `RangeProxy.kt`, `activeCalls` tracking had race conditions and call leaks across probe and chunk downloads.
+   - **Fix**:
+     - Refactored `DashProxy.upstream` to an inline closure `block(r)` that holds `Call` in `activeCalls` during the entire response body streaming process. Added checks for `entry.cancelled` inside the byte copy loop to abort immediately on cancel.
+     - Implemented `RangeProxy.cancel(address)` and `RangeProxy.cancelAll()`. Designed `UpstreamResult` (implementing `Closeable`) to tie `Call` lifecycle in `activeCalls` to stream consumption, closing the response and removing the call safely on finish.
+     - Implemented `HlsProxy.cancel(address)` and `HlsProxy.cancelAll()`. Added in-flight OkHttp call tracking (`activeCalls`), cancelled prefetch futures in `firstSegments`, cancelled pending playlist futures in `cache`, and cleared header/variant tables.
+     - Updated `MpvPlayer.release()` to invoke `cancel()` and `cancelAll()` across all three proxies (`DashProxy`, `HlsProxy`, `RangeProxy`).
+
+5. **Player Focus Guarding** (`PlayerScreen.kt`, `PlayerSession.kt`):
+   - Exposed `val isReleased: Boolean get() = released` on `PlayerSession`.
+   - In `PlayerScreen.kt`, guarded `LaunchedEffect(dialogsOpen)` so focus requests (`DesktopUiHost.window?.requestFocus()`, `focus.requestFocus()`) do not trigger after the player session has been released or during exit transitions.
+
+6. **Automated Verification**:
+   - Added `DashProxyTest.kt` unit tests:
+     - `testDashProxyWrapAndCancel`, `testDashProxyCancelAll`: verified URL wrapping and safe cancellation.
+     - `testDashProxyInFlightCancellation`: verified in-flight socket read termination within 2 seconds using a slow mock chunk stream.
+     - `testRangeProxyAndHlsProxyCancel`: verified multi-proxy cancellation handling.
+     - `testRangeProxyInFlightCancellation`: verified in-flight RangeProxy streaming cancellation within 2 seconds.
+   - Added `testMpvWakeupAndStop` to `MpvTest.kt` verifying `mpv_wakeup`, `mpv_command_async("stop")`, and `wid` unbinding.
+   - Full test suite passed across all projects (`:app:test`, `:android:test`) with 100% pass rate.
+
+## 43. Player redesign (2026-10-09)
+
+Owner: "redesign the player super cool, get inspired from Ayu's app (smoothness and UI), no need to build exactly". Ayu's player is HTML/CSS in WebView2 over libmpv (`reference/ayu-client/.../player-ui`, seen by assembling player.html + player.css with a stub); only the look and motion were taken, all code is ours.
+
+- `ui/screens/player/PlayerChromeModern.kt` (new): `ModernChrome` (top: glass back button, title, `TopPills` source+quality / subtitles / audio; bottom: `ModernSeekBar`, two `Capsule`s, `TimeText` with end time when >= 1100 dp wide, compact below 760 dp), `GlassButton`, `SeekGlyph` (canvas, no font), `PlayButton` (white), `SkipPill`, `PauseInfo`, `ResumePulse`, `glide()` (cubic-bezier 0.16,1,0.3,1; snap when Appearance.motion is Off). The Classic player style keeps the old `PlayerChrome`.
+- Rules kept: controls hide 2 s after the last move, accent = bars, white = knobs and the main button, one paged menu (`PlayerMenu`, now opens from the pill (top) or the gear (bottom) with a grow-in). Animations read their state inside layer / draw blocks (`graphicsLayer`, `drawBehind`) so the position tick never recomposes anything; measured 59.9 fps, 0 late frames, 0 drops with the new controls up.
+- `PlayerScreen`: `SkipLayer` (skip + next-episode pills, countdown), episodes panel is a floating opaque card that slides in, loading overlay with the episode picture. `PlayerSession.episodeDescription / episodePoster / debugStamp`.
+- Dev: `/player?stamp=Recap&from=0&to=60000` puts a segment on the video; `/skipcheck?title=..&mal=..&ep=..&dur=..` asks every skip provider (AniSkip, TheIntroDB, IntroDb, AnimeSkip) what it has. Skip recap verified: JJK S1E3 gives Recap 0.5-41.6 s from all three.
+- Known: `SkipAPI.videoStamps` returns the FIRST provider that has anything (order AniSkip, TheIntroDB, IntroDb, AnimeSkip), it does not merge them; so a recap that only TheIntroDB knows is missed when AniSkip has an opening for the episode.
+
+### 43b. Same day, after the owner saw it ("controls scrambled, not in order", "app hung after leaving a video", "Chinese in the tray menu")
+
+- Layout rebuilt in a fixed order (see CHANGELOG): the top pills are gone; Sources / Subtitles / Audio & video are named buttons in the right capsule (labels from 1040 dp, a mark on Subtitles when one is on); `MenuPage.Tracks` = audio + video qualities; Keyboard shortcuts row in the settings root; the bottom controls are not drawn while `loadingText` / `failure` is up; `SourcesPanel` (Show sources) on the loading and failure screens.
+- **Hang after leaving a video (native player on, e.g. Re:ANIME / JIO TV):** hang report 07:41 showed the UI thread in `Window.dispose -> WComponentPeer.hide` while the AWT-Windows thread sat in WinChrome's `CallWindowProcW` and `MpvPlayer-Destroy` in `mpv_terminate_destroy`: the overlay / canvas windows were destroyed while mpv's own child window (another thread) still existed, and `release()` and `detachNativeWindow()` called `mpv_set_property_string(wid)` synchronously on the UI thread. Now: `Navigator.back()` asks `PlayerExit.hook` -> `PlayerSession.closeThen` first (native pages only): the core is released, `wid=0` and `mpv_terminate_destroy` run on the destroy thread, the page shows a dark "closing" screen, and the route pops when `MpvPlayer.destroyed` completes (20 s cap). Measured: core gone in ~120 ms, page gone ~0.5 s later, UI answers throughout. NOT reproduced with a stalling server (my stall test still exited in 0.2 s), so the real Re:ANIME case is unverified.
+- **Tray menu in Chinese:** `AppendMenuW` / `RegisterWindowMessageW` were declared with `String` and loaded without `W32APIOptions.UNICODE_OPTIONS`, so JNA sent ANSI bytes to a wide API ("Open" -> U+704F U+6E65); now `WString` (checked by reading the menu text back with GetMenuStringW). TaskbarCreated had the same bug (the icon was not re-added after an Explorer restart).
+- Dev: `/overlayshot` (the native controls window as Skia drew it), `/player?hold=1` keeps the controls up.
+
+### 43c. Third round (taskbar, full screen exit, menus)
+
+- **Root cause of "app does not come to front" and the full screen exit freeze:** `NativeOverlayWindow` is a Compose `DialogWindow`, which is DOCUMENT_MODAL; AWT disables the owner (`mainEnabled=false`, `WS_DISABLED` in the style) while it is up. A disabled window ignores `SC_RESTORE` (taskbar click on a minimised app; measured: stays iconic in native mode, restores in standard mode; `OpenIcon` / `ShowWindow(SW_RESTORE)` did restore), does not take keys, and disposing a modal dialog is the `WWindowPeer.hide` / `modalEnable` step of the 07:41 hang dump. Fix: the dialog is set MODELESS when it is created (hide, `modalityType = MODELESS`, show). Verified in dev: `mainEnabled=true`, `overlayModality=MODELESS`, SC_RESTORE restores, full screen -> Back leaves in ~0.7 s. Dev: `/winstate?act=minimize|restore|front|back|open|showna`.
+- Menus (`PlayerMenu`) open above the button that was clicked: the buttons report `boundsInRoot()`, `PlayerContent.menuAnchor` places the card (clamped to the window), `originX` sets the grow-in origin. Root order: Video & Audio, Subtitles, Sources, then speed, picture size, audio output, Anime4K, skip, then shortcuts / VLC / browser.
+- Episode list: `PlayerSession.episodes()` ran on the UI thread (a `getViewPos` DataStore read per episode); now `produceState` on IO, and the panel is a `graphicsLayer` slide (no per-frame re-layout of the list).
+- Spoilers: `EpisodeCard` menu entry Hide / Show spoiler (state `uncovered`), player episode list hide button.
+- Play button stays between the two 10 s jumps (the owner asked for left, then for the middle again).
+
+### 43d. Fourth round
+
+- Video & Audio moved to a one-button capsule at the top right (`Capsule(44.dp)`); the menu hangs below a button in the upper half of the window (`fromTop`, `belowTop`).
+- **Opening glitch ("small screen at the top left, then it grows"):** measured with dev `/winrects` every 50 ms after Play: the native controls window first existed at `0,0 600x450` (the dialog's default place) and only then jumped to the canvas rect. `NativeOverlayWindow` now starts from the canvas bounds when known, is `visible = placed`, and shows 80 ms after it has its bounds. After: first sample already `154,139 1611x894`.
+- Test hygiene: the owner's portable app was running while I tested. A second instance forwards its arguments to a running one (single-instance IPC), so test copies must use `JAVA_TOOL_OPTIONS=-Dcloudstream.ipcport=52999`; `portableDist` must not run while `dist/CloudStream-Portable/CloudStream.exe` runs (use `createDistributable`).
+
+### 43e. Fifth round
+
+- **Title bar on the video page:** `WinChrome.autoHides` (maximised window: the bar slides over the app when the pointer touches the top edge) can not work over the native player: the mpv child window and the controls window are above the app's layer. `WinChrome.keepBar` (set by `PlayerContent`) makes `windowedBar` true and `autoHides` false, so the bar is a row of its own above the video also when maximised; full screen and picture in picture are unchanged. Verified in dev: maximised window, native player, canvas starts below the bar, `/hit` reports CLOSE / MINBUTTON at its right end.
+- The accent dot on the Subtitles button (`ToolButton(on = ...)`) is removed.

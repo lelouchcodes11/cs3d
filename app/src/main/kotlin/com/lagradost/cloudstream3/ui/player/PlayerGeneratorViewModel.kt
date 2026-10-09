@@ -109,10 +109,15 @@ data class VideoState(
         return links.map { link ->
             // negative because we want to sort highest quality first
             link.toDisplayLink(qualityProfile, hideNegativeSources, hideErrorSources)
-        }.sortedBy {
-            // negative because we want to sort highest quality first
-            -it.priority
-        }.also { value -> sortedLinks[qualityProfile] = value }
+        }.sortedWith(
+            // direct sources before torrents (they start in seconds and need nothing turned on); then the highest quality first; among equal quality the kinds of source that failed lately go last
+            // (desktop: HostHealth; a link that failed itself keeps its place, the order of what was tried must not change)
+            // (torrents: the ones with hardly any seeders go last, they would not buffer; then by quality, then the most seeders)
+            compareBy<DisplayLink> { if (com.lagradost.desktop.torrent.TorrentEngine.isTorrent(it.link.first)) 1 else 0 }
+                .thenBy { d -> com.lagradost.desktop.torrent.TorrentEngine.seeders(d.link.first)?.let { if (it < 3) 1 else 0 } ?: 0 }
+                .thenBy { -it.priority }
+                .thenBy { d -> -(com.lagradost.desktop.torrent.TorrentEngine.seeders(d.link.first) ?: 0) }.thenBy { if (hasLinkErrored(it.link)) 0 else com.lagradost.desktop.net.HostHealth.penalty(it.link.first) },
+        ).also { value -> sortedLinks[qualityProfile] = value }
     }
 
     @Contract(pure = true)
@@ -158,7 +163,11 @@ data class VideoState(
     fun set(items: Collection<VideoSkipStamp>): VideoState = copy(stamps = items.toPersistentList())
 
     @Contract(pure = true)
-    fun addError(item: VideoLink): VideoState = copy(erroredLinks = erroredLinks.add(item))
+    fun addError(item: VideoLink): VideoState {
+        // desktop: the host is remembered for a while, see HostHealth (the sort below puts its links last)
+        com.lagradost.desktop.net.HostHealth.failed(item.first)
+        return copy(erroredLinks = erroredLinks.add(item))
+    }
 
     @Contract(pure = true)
     fun setError(items: Collection<VideoLink>): VideoState = copy(erroredLinks = items.toPersistentSet())

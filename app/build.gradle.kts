@@ -36,7 +36,7 @@ kotlin {
 val appVersion = "4.8.0"
 
 /** This desktop app's own release version: the installer, the About page and the update checker (a GitHub release tag `v<this>`) */
-val desktopVersion = "1.0.0"
+val desktopVersion = "1.0.1"
 
 /**
  * Generates com.lagradost.cloudstream3.R and packages the resources: the Android libraries' res/

@@ -83,6 +83,7 @@ object Icons {
     const val Pin = ""
     const val Lock = ""
     const val Eye = ""
+    const val Hide = ""
     const val Theme = ""
     const val Language = ""
     const val Paste = ""

@@ -6,8 +6,10 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 val LOADTYPE_INAPP = setOf(
     ExtractorLinkType.VIDEO,
     ExtractorLinkType.DASH,
-    // desktop: no torrents (TORRENT and MAGNET links are not offered)
     ExtractorLinkType.M3U8,
+    // desktop: torrents are played through the torrent engine (TorrentEngine); they are listed whether it is on or not, the player asks first
+    ExtractorLinkType.TORRENT,
+    ExtractorLinkType.MAGNET,
 )
 
 val LOADTYPE_INAPP_DOWNLOAD = setOf(

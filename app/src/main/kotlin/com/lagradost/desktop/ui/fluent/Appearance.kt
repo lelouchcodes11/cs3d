@@ -75,6 +75,15 @@ object Appearance {
     /** Native player only: the Anime4K neural filters sharpen and enlarge low resolution anime (needs a fairly strong graphics card) */
     var anime4k by mutableStateOf(false)
 
+    /** Automatically skip intro/outro skip stamps */
+    var autoSkipStamps by mutableStateOf(false)
+
+    /** Show a 5-second countdown timer before auto-skipping */
+    var autoSkipDelay5s by mutableStateOf(false)
+
+    /** Show remaining time (-18:42) instead of total duration on the seek bar */
+    var showRemainingTime by mutableStateOf(false)
+
     /** Who decodes the sound (SW / HW / HW+, see [AudioDecoder]); changed in the player it applies at once. A state of its own for the settings list */
     val audioDecoderState = mutableStateOf(AudioDecoder.Software)
     var audioDecoder by audioDecoderState
@@ -106,6 +115,10 @@ object Appearance {
 
     /** Profile pictures that move (see Profiles.kt); off keeps them still */
     var animatedProfiles by mutableStateOf(true)
+
+    /** Episode lists: stills and descriptions of episodes you have not reached yet are blurred / hidden, so they cannot spoil the story; titles too when [hideSpoilerTitles] */
+    var hideSpoilers by mutableStateOf(true)
+    var hideSpoilerTitles by mutableStateOf(false)
 
     /** The banner at the top of Home and the Continue watching row can be switched off */
     var homeBanner by mutableStateOf(true)
@@ -149,6 +162,11 @@ object Appearance {
             animatedProfiles = p.getBoolean(PREFIX + "animated_profiles", true)
             homeBanner = p.getBoolean(PREFIX + "home_banner", true)
             homeContinue = p.getBoolean(PREFIX + "home_continue", true)
+            hideSpoilers = p.getBoolean(PREFIX + "hide_spoilers", true)
+            hideSpoilerTitles = p.getBoolean(PREFIX + "hide_spoiler_titles", false)
+            autoSkipStamps = p.getBoolean(PREFIX + "auto_skip_stamps", false)
+            autoSkipDelay5s = p.getBoolean(PREFIX + "auto_skip_delay_5s", false)
+            showRemainingTime = p.getBoolean(PREFIX + "show_remaining_time", false)
         }
     }
 
@@ -172,6 +190,9 @@ object Appearance {
                 .putBoolean(PREFIX + "smooth_motion", smoothMotion)
                 .putBoolean(PREFIX + "native_player", nativePlayer)
                 .putBoolean(PREFIX + "anime4k", anime4k)
+                .putBoolean(PREFIX + "auto_skip_stamps", autoSkipStamps)
+                .putBoolean(PREFIX + "auto_skip_delay_5s", autoSkipDelay5s)
+                .putBoolean(PREFIX + "show_remaining_time", showRemainingTime)
                 .putString(PREFIX + "audio_decoder", audioDecoder.name)
                 .putBoolean(PREFIX + "dock_auto_hide", dockAutoHide)
                 .putBoolean(PREFIX + "sub_universal", subtitleUniversal)
@@ -184,6 +205,8 @@ object Appearance {
                 .putBoolean(PREFIX + "animated_profiles", animatedProfiles)
                 .putBoolean(PREFIX + "home_banner", homeBanner)
                 .putBoolean(PREFIX + "home_continue", homeContinue)
+                .putBoolean(PREFIX + "hide_spoilers", hideSpoilers)
+                .putBoolean(PREFIX + "hide_spoiler_titles", hideSpoilerTitles)
                 .apply()
         }
     }
@@ -191,7 +214,7 @@ object Appearance {
     fun reset() {
         navPosition = NavPosition.Top; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Medium; backdrop = Backdrop.Solid; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; anime4k = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; anime4k = false; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true; hideSpoilers = true; hideSpoilerTitles = false
         save()
     }
 

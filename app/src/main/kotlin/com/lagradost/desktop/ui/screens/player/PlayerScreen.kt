@@ -33,10 +33,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import com.lagradost.desktop.ui.fluent.Appearance
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -91,10 +93,12 @@ import com.lagradost.desktop.core.Route
 import com.lagradost.desktop.runtime.AndroidRuntime
 import com.lagradost.desktop.ui.components.RemoteImage
 import com.lagradost.desktop.ui.fluent.Button
+import com.lagradost.desktop.ui.shell.RevealedTitleBar
 import com.lagradost.desktop.ui.shell.noWindowDrag
 import com.lagradost.desktop.ui.fluent.ButtonKind
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.accentBrush
 import com.lagradost.desktop.ui.fluent.FlyoutSurface
 import com.lagradost.desktop.ui.fluent.Icon
 import com.lagradost.desktop.ui.fluent.IconButton
@@ -121,7 +125,7 @@ private val blankCursor = PointerIcon(
     Toolkit.getDefaultToolkit().createCustomCursor(BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB), Point(0, 0), "blank"),
 )
 
-private fun fmt(ms: Long): String {
+internal fun fmt(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
     val h = total / 3600
     val m = (total % 3600) / 60
@@ -179,6 +183,11 @@ object PlayerKeys {
     var handler: ((KeyEvent) -> Boolean)? = null
 }
 
+/** Dev: keeps the controls up (/player?hold=1) so that they can be looked at */
+object PlayerDev {
+    var hold by mutableStateOf(false)
+}
+
 @Composable
 private fun PlayerContent(s: PlayerSession) {
     val c = Fluent.colors
@@ -187,6 +196,8 @@ private fun PlayerContent(s: PlayerSession) {
     var lastActivity by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // the player menu (PlayerMenu.kt): the page it shows, null when it is closed
     var menuPage by remember { mutableStateOf<MenuPage?>(null) }
+    // the menu comes up from the pills at the top, or from the buttons at the bottom
+    var menuAnchor by remember { mutableStateOf<Rect?>(null) }
     var showEpisodes by remember { mutableStateOf(false) }
     var hoveringControls by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(true) }
@@ -201,6 +212,16 @@ private fun PlayerContent(s: PlayerSession) {
     // has no native window); it is given up for the standard player when it can not start
     val nativeRequested = remember { NativeVideo.available() }
     val native = nativeRequested && !NativeVideo.broken
+    // leaving a native video page: the video core goes first, the page is taken apart after it (see PlayerSession.closeThen)
+    DisposableEffect(s, native) {
+        // Back can come from any thread (the end of a playlist); the player is released on the UI thread
+        val hook: (() -> Unit) -> Boolean = { done ->
+            if (java.awt.EventQueue.isDispatchThread()) s.closeThen(done)
+            else { java.awt.EventQueue.invokeLater { if (!s.closeThen(done)) done() }; true }
+        }
+        if (native) com.lagradost.desktop.core.PlayerExit.hook = hook
+        onDispose { if (com.lagradost.desktop.core.PlayerExit.hook === hook) com.lagradost.desktop.core.PlayerExit.hook = null }
+    }
 
     /** The mouse moved or was pressed: the controls show and the 2 s countdown starts again. Keys never call this. */
     fun poke(local: Offset?) {
@@ -216,8 +237,8 @@ private fun PlayerContent(s: PlayerSession) {
 
     // Controls go away 2 s after the last mouse movement, unless the pointer is on them (or a menu / the episode list is open).
     // Keyboard shortcuts show their own small bubble instead (volume, seek, speed ...), never the controls.
-    LaunchedEffect(lastActivity, hoveringControls, menuPage, showEpisodes) {
-        if (hoveringControls || menuPage != null || showEpisodes) {
+    LaunchedEffect(lastActivity, hoveringControls, menuPage, showEpisodes, PlayerDev.hold) {
+        if (hoveringControls || menuPage != null || showEpisodes || PlayerDev.hold) {
             visible = true
             return@LaunchedEffect
         }
@@ -346,38 +367,63 @@ private fun PlayerContent(s: PlayerSession) {
                 }
             }
     // everything over the picture
-    val overlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+    val overlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = overlay@{
+        // the page is going: a dark screen with a ring, nothing else touches the released player
+        if (s.closing) {
+            Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) { ProgressRing(size = 40.dp, color = Color.White) }
+            return@overlay
+        }
         if (s.loadingText != null && s.failure == null) LoadingOverlay(s) else if (s.failure != null) FailureOverlay(s)
         // playing, but no picture moves: waiting for data (shown after 0.3 s so that short stalls do not flicker)
         BufferingRing(s.loadingText == null && s.failure == null && s.status == CSPlayerLoading.IsBuffering, Modifier.align(Alignment.Center))
         // a paused video says so, also when the controls are hidden
         if (s.loadingText == null && s.failure == null && s.status == CSPlayerLoading.IsPaused && !pip) PausedBadge(s, Modifier.align(Alignment.Center))
 
-        // skip intro / outro / next episode
-        val stamp = s.activeStamp
-        AnimatedVisibility(stamp != null && !pip, Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = if (visible) 132.dp else 40.dp), enter = fadeIn(tween(167)), exit = fadeOut(tween(100))) {
-            if (stamp != null) Button(stamp.uiText.asStringNull(com.lagradost.desktop.DesktopBootstrap.activity) ?: "Skip", { s.skipStamp() }, kind = ButtonKind.Accent, icon = Icons.Next, height = 40.dp)
+        // a pause that lasts, with nobody on the controls: the picture says what it is
+        var pauseInfo by remember { mutableStateOf(false) }
+        LaunchedEffect(s.status, visible, s.loadingText, s.failure, pip) {
+            if (s.status == CSPlayerLoading.IsPaused && !visible && s.loadingText == null && s.failure == null && !pip) { delay(1100); pauseInfo = true } else pauseInfo = false
         }
-        val remaining = s.durationMs - s.positionMs
-        if (!pip && s.hasNext && s.durationMs > 0 && remaining in 1..25_000 && stamp == null) {
-            Box(Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = if (visible) 132.dp else 40.dp)) {
-                Button("Next episode in ${remaining / 1000 + 1}s", { s.nextEpisode() }, kind = ButtonKind.Accent, icon = Icons.Next, height = 40.dp)
-            }
-        }
+        if (!pip) PauseInfo(s, pauseInfo)
+        if (!pip) ResumePulse(s, Modifier.align(Alignment.Center))
 
+        // skip intro / recap / credits, next episode
+        SkipLayer(s, visible, pip)
+
+        val modernChrome = Appearance.playerStyle == com.lagradost.desktop.ui.fluent.PlayerStyle.Modern
         if (pip) {
             PipControls(s, visible)
+        } else if (modernChrome) {
+            ModernChrome(
+                s, visible, fullscreen, { p, anchor -> menuAnchor = anchor; menuPage = if (menuPage == p) null else p },
+                { showEpisodes = !showEpisodes }, ::toggleFullscreen, { topBounds = it }, { bottomBounds = it }, showEpisodes, loading = s.loadingText != null || s.failure != null,
+            )
         } else AnimatedVisibility(visible, enter = fadeIn(tween(200)), exit = fadeOut(tween(350))) {
-            PlayerChrome(s, fullscreen, { menuPage = if (menuPage == it) null else it }, { showEpisodes = !showEpisodes }, ::toggleFullscreen, { topBounds = it }, { bottomBounds = it })
+            PlayerChrome(s, fullscreen, { menuAnchor = null; menuPage = if (menuPage == it) null else it }, { showEpisodes = !showEpisodes }, ::toggleFullscreen, { topBounds = it }, { bottomBounds = it })
         }
 
-        // the menu, above the buttons at the bottom right; a click anywhere else closes it (and does not pause the video)
+        // the menu, above the buttons at the bottom right (or below the pills at the top); a click anywhere else closes it (and does not pause the video)
         val page = menuPage
         if (page != null && !pip) androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { menuPage = null } })
+            // it opens above the button that was clicked (the settings gear, Sources ...), not in a corner
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val anchor = menuAnchor
+            val anchorX = anchor?.let { with(density) { it.center.x.toDp() } }
+            // a button in the upper half (Video & Audio at the top right): the menu hangs below it
+            val below = anchor != null && with(density) { anchor.center.y.toDp() } < maxHeight / 2
+            val belowTop = anchor?.let { with(density) { it.bottom.toDp() } + 10.dp } ?: 80.dp
+            val menuStart = anchorX?.let { (it - 180.dp).coerceIn(16.dp, (maxWidth - 360.dp - 16.dp).coerceAtLeast(16.dp)) }
             PlayerMenu(
-                s, page, { menuPage = it }, maxHeight = (maxHeight - 160.dp).coerceAtLeast(200.dp),
-                Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 80.dp),
+                s, page, { menuPage = it },
+                maxHeight = (if (below) maxHeight - belowTop - 24.dp else maxHeight - 200.dp).coerceAtLeast(200.dp),
+                when {
+                    menuStart != null && below -> Modifier.align(Alignment.TopStart).padding(start = menuStart, top = belowTop)
+                    menuStart != null -> Modifier.align(Alignment.BottomStart).padding(start = menuStart, bottom = 108.dp)
+                    else -> Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = if (modernChrome) 108.dp else 80.dp)
+                },
+                fromTop = below,
+                originX = if (menuStart != null && anchorX != null) ((anchorX - menuStart) / 360.dp).coerceIn(0f, 1f) else 1f,
             )
         }
         LaunchedEffect(pip) { if (pip) menuPage = null }
@@ -385,11 +431,15 @@ private fun PlayerContent(s: PlayerSession) {
         HudOverlay(s, Modifier.align(Alignment.TopCenter).padding(top = if (pip) 36.dp else 56.dp))
         // subtitles: fetching, on, or given up; at the top right, lower while the controls are shown
         if (!pip) {
-            val pillTop by androidx.compose.animation.core.animateDpAsState(if (visible) 64.dp else 16.dp, tween(200))
-            SubtitlePill(s, Modifier.align(Alignment.TopEnd).padding(top = pillTop, end = 20.dp + com.lagradost.desktop.ui.shell.captionInset))
+            val pillTop by androidx.compose.animation.core.animateDpAsState(if (visible) (if (modernChrome) 112.dp else 96.dp) else 24.dp, glide(300))
+            SubtitlePill(s, Modifier.align(Alignment.TopEnd).padding(top = pillTop, end = 28.dp + com.lagradost.desktop.ui.shell.captionInset))
+            TorrentPill(s, Modifier.align(Alignment.TopStart).padding(top = pillTop, start = 28.dp))
         }
 
-        AnimatedVisibility(showEpisodes && !pip, Modifier.align(Alignment.CenterEnd), enter = fadeIn(tween(167)), exit = fadeOut(tween(120))) {
+        val episodesOn = showEpisodes && !pip
+        val panelReveal by androidx.compose.animation.core.animateFloatAsState(if (episodesOn) 1f else 0f, if (episodesOn) glide(420) else tween(180))
+        val panelThere by remember { androidx.compose.runtime.derivedStateOf { panelReveal > 0.01f } }
+        if (panelThere) Box(Modifier.align(Alignment.CenterEnd).graphicsLayer { alpha = panelReveal; translationX = (1f - panelReveal) * 72.dp.toPx() }) {
             EpisodesPanel(s, onClose = { showEpisodes = false })
         }
     }
@@ -423,14 +473,70 @@ private fun PlayerContent(s: PlayerSession) {
                     com.lagradost.desktop.ui.FluentRequestDialogs()
                     com.lagradost.desktop.ui.LegacyOverlays()
                     com.lagradost.desktop.ui.fluent.DialogLayer()
+                    RevealedTitleBar()
                 }
             }
             // the keys come back to the player when the dialog closes
             // (the dialog's window had the keyboard: the main window gets it back, then the player's own focus)
-            LaunchedEffect(dialogsOpen) { if (!dialogsOpen) { delay(120); runCatching { com.lagradost.desktop.ui.DesktopUiHost.window?.requestFocus() }; runCatching { focus.requestFocus() } } }
+            LaunchedEffect(dialogsOpen) { if (!dialogsOpen && !s.isReleased) { delay(120); if (!s.isReleased) { runCatching { com.lagradost.desktop.ui.DesktopUiHost.window?.requestFocus() }; runCatching { focus.requestFocus() } } } }
         } else {
             overlay()
         }
+    }
+}
+
+/**
+ * The skip button of the segment that plays (an opening or a recap at the left, credits and the like at the right) and the next-episode
+ * button before the end. Automatic skipping counts down on the button itself. They ride above the controls while these are shown.
+ */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.SkipLayer(s: PlayerSession, visible: Boolean, pip: Boolean) {
+    val stamp = s.activeStamp
+    var countdown by remember(stamp) { mutableStateOf(5) }
+    LaunchedEffect(stamp, Appearance.autoSkipStamps, Appearance.autoSkipDelay5s) {
+        if (stamp != null && Appearance.autoSkipStamps) {
+            if (!Appearance.autoSkipDelay5s) {
+                s.skipStamp()
+            } else {
+                countdown = 5
+                while (countdown > 0) {
+                    kotlinx.coroutines.delay(1000L)
+                    if (s.status == CSPlayerLoading.IsPlaying) countdown--
+                }
+                if (s.activeStamp == stamp) s.skipStamp()
+            }
+        }
+    }
+    val isOpening = stamp != null && when (stamp.timestamp.type) {
+        com.lagradost.cloudstream3.utils.videoskip.SkipType.Opening,
+        com.lagradost.cloudstream3.utils.videoskip.SkipType.Recap,
+        com.lagradost.cloudstream3.utils.videoskip.SkipType.MixedOpening,
+        com.lagradost.cloudstream3.utils.videoskip.SkipType.Intro -> true
+        else -> false
+    }
+    val above by androidx.compose.animation.core.animateDpAsState(if (visible) 150.dp else 44.dp, glide(420))
+    val enter = fadeIn(glide(300)) + androidx.compose.animation.slideInVertically(glide(460)) { it / 2 }
+    val exit = fadeOut(tween(140)) + androidx.compose.animation.slideOutVertically(tween(160)) { it / 3 }
+    // the last stamp stays while the button fades out
+    var lastStamp by remember { mutableStateOf(stamp) }
+    if (stamp != null) lastStamp = stamp
+    AnimatedVisibility(
+        stamp != null && !pip,
+        Modifier.align(if (isOpening) Alignment.BottomStart else Alignment.BottomEnd).padding(start = 28.dp, end = 28.dp, bottom = above),
+        enter = enter, exit = exit,
+    ) {
+        val shown = stamp ?: lastStamp
+        if (shown != null) {
+            val label = shown.uiText.asStringNull(com.lagradost.desktop.DesktopBootstrap.activity) ?: "Skip"
+            SkipPill(label, if (Appearance.autoSkipStamps && Appearance.autoSkipDelay5s) (5 - countdown) / 5f else null, { s.skipStamp() })
+        }
+    }
+    val remaining = s.durationMs - s.positionMs
+    AnimatedVisibility(
+        !pip && s.hasNext && s.durationMs > 0 && remaining in 1..25_000 && stamp == null,
+        Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = above), enter = enter, exit = exit,
+    ) {
+        SkipPill("Next episode in ${(remaining / 1000 + 1).coerceAtLeast(1)} s", (1f - remaining / 25_000f).coerceIn(0f, 1f), { s.nextEpisode() })
     }
 }
 
@@ -538,12 +644,27 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVideoImage(imag
 
 @Composable
 private fun LoadingOverlay(s: PlayerSession) {
-    Box(Modifier.fillMaxSize().background(Color(0xFF0B0B0B)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            ProgressRing(size = 56.dp, color = Color.White)
-            FText(s.title, style = Fluent.type.subtitle, color = Color.White, maxLines = 2)
-            s.episodeLabel?.let { FText(it, color = Color(0xCCFFFFFF)) }
-            FText(s.loadingText ?: "", color = Color(0xCCFFFFFF), maxLines = 2)
+    var listOpen by remember { mutableStateOf(false) }
+    Box(
+        Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF191D26), Color(0xFF08090B)), radius = 1500f)).pointerInput(Unit) { detectTapGestures { } },
+        contentAlignment = Alignment.Center,
+    ) {
+        // the episode's own picture, dark and blurred, behind the words
+        s.episodePoster?.let { RemoteImage(it, null, null, Modifier.fillMaxSize().blur(40.dp).graphicsLayer { alpha = 0.3f }, ContentScale.Crop) }
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x66000000), 0.5f to Color.Transparent, 1f to Color(0x99000000))))
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.widthIn(max = 600.dp).padding(24.dp)) {
+            FText(s.title, style = Fluent.type.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color.White, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            s.episodeLabel?.let { FText(it, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), color = Color(0xCCFFFFFF), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+            Box(Modifier.height(10.dp))
+            ProgressBar(null, Modifier.width(320.dp), height = 3.dp)
+            FText(s.loadingText ?: "", color = Color(0xB3FFFFFF), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            // a torrent: who it is downloaded from and how far the first part is
+            s.torrent?.let { t ->
+                if (t.peers > 0 || t.speedBps > 0) FText("${t.peers} peers (${t.seeds} seeds)" + (if (t.speedBps > 0) "  ·  " + com.lagradost.desktop.torrent.TorrentConsent.speed(t.speedBps) else ""), style = Fluent.type.caption, color = Color(0xB3FFFFFF))
+                if (t.percent in 1..99) ProgressBar(t.percent / 100f, Modifier.width(260.dp))
+            }
             // which source is being started, and how far down the list it is
             if (s.startingSource) {
                 s.sourceName?.lineSequence()?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { FText(it, color = Color(0xB3FFFFFF), maxLines = 1) }
@@ -566,8 +687,13 @@ private fun LoadingOverlay(s: PlayerSession) {
                     s.waitingForMoreSources -> Button("Stop looking", { s.skipLoading() }, icon = Icons.Refresh)
                     s.canSkipLoading -> Button("Play now (${s.linksFound})", { s.skipLoading() }, kind = ButtonKind.Accent, icon = Icons.Play)
                 }
+                // the sources found so far, to pick one by hand without waiting
+                if (s.linksFound > 0) Button(if (listOpen) "Hide sources" else "Show sources (${s.linksFound})", { listOpen = !listOpen }, icon = Icons.Link)
                 Button("Cancel", { Navigator.back() })
             }
+        }
+        }
+        if (listOpen) SourcesPanel(s, { listOpen = false }, Modifier.padding(end = 28.dp))
         }
     }
 }
@@ -598,7 +724,10 @@ private fun PausedBadge(s: PlayerSession, modifier: Modifier) {
 
 @Composable
 private fun FailureOverlay(s: PlayerSession) {
+    var listOpen by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Color(0xE6101010)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.widthIn(max = 520.dp).padding(24.dp)) {
             Icon(Icons.Warning, size = 40.dp, tint = Fluent.colors.caution)
             FText("This video could not be played", style = Fluent.type.subtitle, color = Color.White)
@@ -606,7 +735,51 @@ private fun FailureOverlay(s: PlayerSession) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (s.hasNextMirror) Button("Try next source", { s.nextMirror() }, kind = ButtonKind.Accent, icon = Icons.Next)
                 Button("Reload sources", { s.reloadSources() }, icon = Icons.Refresh)
+                if (s.linksFound > 0) Button(if (listOpen) "Hide sources" else "Show sources (${s.linksFound})", { listOpen = !listOpen }, icon = Icons.Link)
                 Button("Back", { Navigator.back() })
+            }
+        }
+        }
+        if (listOpen) SourcesPanel(s, { listOpen = false }, Modifier.padding(end = 28.dp))
+        }
+    }
+}
+
+/** The sources found so far, to pick one by hand while the player is still looking (or after it gave up) */
+@Composable
+internal fun SourcesPanel(s: PlayerSession, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val items = s.sources().filter { it.usable || it.current }
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier.width(420.dp).heightIn(max = 460.dp).clip(shape).background(Color(0xF0101114), shape).border(Dp.Hairline, GlassBorder, shape)
+            .pointerInput(Unit) { detectTapGestures { } },
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                FText("Sources", style = Fluent.type.subtitle, color = Color.White, maxLines = 1)
+                FText("${items.size} found" + if (s.loadingMore) "  ·  still looking" else "", style = Fluent.type.caption, color = Color(0x99FFFFFF), maxLines = 1)
+            }
+            IconButton(Icons.Close, onClose, tooltip = "Close", tint = Color.White)
+        }
+        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).padding(bottom = 8.dp)) {
+            if (items.isEmpty()) item { FText("Nothing yet…", Modifier.padding(horizontal = 18.dp, vertical = 12.dp), style = Fluent.type.caption, color = Color(0x99FFFFFF)) }
+            itemsIndexed(items) { _, src ->
+                val source = rememberInteraction()
+                val hovered by source.collectIsHoveredAsState()
+                val rowShape = RoundedCornerShape(10.dp)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(rowShape)
+                        .background(if (src.current) Color(0x26FFFFFF) else if (hovered) Color(0x14FFFFFF) else Color.Transparent, rowShape)
+                        .fluentClickable(source, true, rowShape, Role.Button) { s.selectSource(src.link) }.padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        FText(src.name.lineSequence().first(), style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
+                        if (src.quality.isNotBlank()) FText(src.quality, style = Fluent.type.caption, color = Color(0xB3FFFFFF), maxLines = 1)
+                    }
+                    if (src.current) FText(if (s.startingSource) "Starting…" else "Playing", style = Fluent.type.caption, color = Fluent.colors.accentText, maxLines = 1)
+                    else Icon(Icons.Play, size = 12.dp, tint = Color(0x80FFFFFF))
+                }
             }
         }
     }
@@ -680,7 +853,28 @@ private fun SeekRow(s: PlayerSession) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         if (!s.live) FText(fmt(s.positionMs), Modifier.widthIn(min = 52.dp), style = time, color = Color.White, maxLines = 1, softWrap = false)
         Box(Modifier.weight(1f)) { SeekBar(s) }
-        if (!s.live) FText(fmt(s.durationMs), Modifier.widthIn(min = 52.dp), style = time.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal), color = Color(0xB3FFFFFF), maxLines = 1, softWrap = false, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+        if (!s.live) {
+            val remainingMs = (s.durationMs - s.positionMs).coerceAtLeast(0L)
+            val text = if (Appearance.showRemainingTime) "-${fmt(remainingMs)}" else fmt(s.durationMs)
+            val tooltip = if (Appearance.showRemainingTime) "Remaining time (click for total)" else "Total duration (click for remaining)"
+            com.lagradost.desktop.ui.fluent.Tooltip(tooltip) {
+                val shape = RoundedCornerShape(4.dp)
+                FText(
+                    text,
+                    Modifier.widthIn(min = 54.dp)
+                        .clip(shape)
+                        .fluentClickable(rememberInteraction(), true, shape, Role.Button) {
+                            Appearance.showRemainingTime = !Appearance.showRemainingTime
+                            Appearance.save()
+                        },
+                    style = time.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal),
+                    color = Color(0xB3FFFFFF),
+                    maxLines = 1,
+                    softWrap = false,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                )
+            }
+        }
     }
 }
 
@@ -838,21 +1032,21 @@ private fun PlayPauseButton(s: PlayerSession) {
     val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.92f else if (hovered) 1.06f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(140))
     com.lagradost.desktop.ui.fluent.Tooltip("Play / Pause (Space)") {
         Box(
-            Modifier.size(42.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(Color.White, CircleShape)
+            Modifier.size(42.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(c.accentBrush(hovered, pressed), CircleShape)
                 .fluentClickable(source, true, CircleShape, Role.Button) { s.togglePlay() },
             contentAlignment = Alignment.Center,
         ) {
             androidx.compose.animation.AnimatedContent(playing, transitionSpec = {
                 (fadeIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(160)) + androidx.compose.animation.scaleIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200), initialScale = 0.6f)) togetherWith
                     (fadeOut(com.lagradost.desktop.ui.fluent.FluentMotion.tweenOut(100)) + androidx.compose.animation.scaleOut(com.lagradost.desktop.ui.fluent.FluentMotion.tweenOut(100), targetScale = 0.6f))
-            }) { p -> Icon(if (p) Icons.Pause else Icons.Play, size = 18.dp, tint = Color(0xFF111114)) }
+            }) { p -> Icon(if (p) Icons.Pause else Icons.Play, size = 18.dp, tint = c.onAccent) }
         }
     }
 }
 
 /** Mute button; the slider slides out while the pointer is on it */
 @Composable
-private fun VolumeControl(s: PlayerSession) {
+internal fun VolumeControl(s: PlayerSession) {
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     var dragging by remember { mutableStateOf(false) }
@@ -874,7 +1068,7 @@ private fun VolumeControl(s: PlayerSession) {
 
 /** Live: a red dot and LIVE at the live point; behind it, how far, and a click goes back to live */
 @Composable
-private fun LivePill(s: PlayerSession) {
+internal fun LivePill(s: PlayerSession) {
     val behind = s.liveBehindS ?: 0.0
     val atLive = behind < 12.0
     val source = rememberInteraction()
@@ -902,24 +1096,39 @@ private fun LivePill(s: PlayerSession) {
 @Composable
 private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
     val c = Fluent.colors
-    val items = s.episodes()
+    val items by androidx.compose.runtime.produceState(emptyList<PlayerSession.EpisodeItem>(), s.episodeVersion) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { s.episodes() }
+    }
     val listState = rememberLazyListState()
-    LaunchedEffect(Unit) { items.indexOfFirst { it.current }.takeIf { it >= 0 }?.let { listState.scrollToItem((it - 1).coerceAtLeast(0)) } }
+    LaunchedEffect(items.isNotEmpty()) { items.indexOfFirst { it.current }.takeIf { it >= 0 }?.let { listState.scrollToItem((it - 1).coerceAtLeast(0)) } }
+    // a card that floats at the right edge (it slides in, see the caller)
+    val panelShape = RoundedCornerShape(18.dp)
     Column(
-        Modifier.fillMaxHeight().width(380.dp).background(PlayerSurface).border(androidx.compose.ui.unit.Dp.Hairline, PlayerSurfaceBorder)
-            .padding(top = if (com.lagradost.desktop.platform.WinChrome.enabled && !com.lagradost.desktop.platform.WinChrome.fullscreen) 34.dp else 0.dp)
+        Modifier.padding(top = if (com.lagradost.desktop.platform.WinChrome.windowedBar) 46.dp else 12.dp, end = 12.dp, bottom = 12.dp)
+            .fillMaxHeight().width(392.dp).clip(panelShape).background(Color(0xFF161719), panelShape).border(androidx.compose.ui.unit.Dp.Hairline, PlayerSurfaceBorder, panelShape)
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
         Row(Modifier.fillMaxWidth().padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
             FText("Episodes", Modifier.weight(1f), style = Fluent.type.subtitle, color = Color.White)
             IconButton(Icons.Close, onClose, tooltip = "Close", tint = Color.White)
         }
+        val currentIdx = items.indexOfFirst { it.current }
+        val uncoveredIds = remember { mutableStateListOf<Int>() }
         LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
-            itemsIndexed(items) { _, item ->
+            itemsIndexed(items) { index, item ->
                 val ep = item.episode
                 val source = rememberInteraction()
                 val hovered by source.collectIsHoveredAsState()
                 val shape = RoundedCornerShape(6.dp)
+
+                val isAfterCurrent = if (currentIdx >= 0) index > currentIdx else {
+                    val firstUnwatched = items.indexOfFirst { it.fraction <= 0f && it.episode.videoWatchState != com.lagradost.cloudstream3.ui.result.VideoWatchState.Watched }
+                    firstUnwatched >= 0 && index > firstUnwatched
+                }
+                val isUnviewed = item.fraction <= 0f && ep.videoWatchState != com.lagradost.cloudstream3.ui.result.VideoWatchState.Watched
+                val spoilerAhead = Appearance.hideSpoilers && isAfterCurrent && isUnviewed
+                val isCovered = spoilerAhead && (ep.id !in uncoveredIds)
+
                 Row(
                     Modifier.padding(horizontal = 8.dp, vertical = 2.dp).fillMaxWidth().clip(shape)
                         .background(if (item.current) Color(0x22FFFFFF) else if (hovered) Color(0x14FFFFFF) else Color.Transparent, shape)
@@ -929,7 +1138,17 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Box(Modifier.size(112.dp, 63.dp).clip(RoundedCornerShape(4.dp)).background(Color(0x22FFFFFF))) {
-                        RemoteImage(ep.poster, null, null, Modifier.fillMaxSize(), ContentScale.Crop)
+                        RemoteImage(ep.poster, null, null, if (isCovered) Modifier.fillMaxSize().blur(16.dp) else Modifier.fillMaxSize(), ContentScale.Crop)
+                        if (isCovered) {
+                            Box(Modifier.fillMaxSize().background(Color(0x66000000)))
+                            Box(
+                                Modifier.align(Alignment.Center).clip(CircleShape).background(Color(0x99000000)).padding(6.dp)
+                                    .fluentClickable(rememberInteraction(), true, CircleShape, Role.Button) { uncoveredIds.add(ep.id) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Eye, size = 14.dp, tint = Color.White)
+                            }
+                        }
                         if (item.current) Box(Modifier.fillMaxSize().background(Color(0x66000000)), contentAlignment = Alignment.Center) { Icon(Icons.Play, size = 20.dp, tint = Color.White) }
                         if (item.fraction > 0f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()) { ProgressBar(item.fraction, height = 3.dp) }
                     }
@@ -938,8 +1157,11 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
                             if (ep.season != null) append("S${ep.season} · ")
                             append("Episode ${ep.episode}")
                         }, style = Fluent.type.caption, color = Color(0xCCFFFFFF), maxLines = 1)
-                        FText(ep.name ?: "Episode ${ep.episode}", style = Fluent.type.bodyStrong, color = Color.White, maxLines = 2)
+                        val title = if (isCovered) "Episode ${ep.episode}" else (ep.name ?: "Episode ${ep.episode}")
+                        FText(title, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 2)
                     }
+                    // a spoiler that was shown can be covered again
+                    if (spoilerAhead && !isCovered) IconButton(Icons.Hide, { uncoveredIds.remove(ep.id) }, tooltip = "Hide spoiler", size = 28.dp, iconSize = 14.dp, tint = Color(0xCCFFFFFF))
                 }
             }
         }
@@ -1083,3 +1305,21 @@ private fun HudOverlay(s: PlayerSession, modifier: Modifier) {
     }
 }
 
+
+/** While a torrent plays: the peers it comes from, the speed and how full the buffer is (the viewer sees why it stalls) */
+@Composable
+private fun TorrentPill(s: PlayerSession, modifier: Modifier) {
+    val t = s.torrent ?: return
+    if (s.loadingText != null) return
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier.widthIn(max = 420.dp).background(PlayerSurface, shape).border(androidx.compose.ui.unit.Dp.Hairline, PlayerSurfaceBorder, shape).padding(start = 12.dp, end = 14.dp).height(32.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Link, size = 14.dp, tint = Fluent.colors.accent)
+        FText(
+            "Torrent  ·  ${t.peers} peers  ·  ${com.lagradost.desktop.torrent.TorrentConsent.speed(t.speedBps)}" + if (t.percent in 1..99) "  ·  buffer ${t.percent} %" else "",
+            style = Fluent.type.caption, color = Color(0xE6FFFFFF), maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+    }
+}

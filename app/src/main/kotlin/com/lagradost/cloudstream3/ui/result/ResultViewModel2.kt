@@ -1269,7 +1269,7 @@ class ResultViewModel2 : ViewModel() {
         clearCache: Boolean = false,
         isCasting: Boolean = false
     ): LinkLoadingResult {
-        val tempGenerator = RepoLinkGenerator(listOf(result))
+        val tempGenerator = RepoLinkGenerator(listOf(result), page = currentResponse)
 
         val links: MutableSet<ExtractorLink> = mutableSetOf()
         val subs: MutableSet<SubtitleData> = mutableSetOf()

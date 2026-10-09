@@ -1,5 +1,6 @@
 package com.lagradost.desktop.tools
 
+import com.lagradost.cloudstream3.newAnimeLoadResponse
 import com.lagradost.desktop.runtime.LogBuffer
 import kotlinx.coroutines.async
 import okhttp3.Request
@@ -43,6 +44,16 @@ import javax.swing.SwingUtilities
  * GET /back   GET /state   GET /log?lines=200
  */
 object DevServer {
+    private interface UserDbg : com.sun.jna.win32.StdCallLibrary {
+        fun IsIconic(h: com.sun.jna.Pointer): Boolean
+        fun GetLastActivePopup(h: com.sun.jna.Pointer): com.sun.jna.Pointer?
+        fun SwitchToThisWindow(h: com.sun.jna.Pointer, altTab: Boolean)
+        fun OpenIcon(h: com.sun.jna.Pointer): Boolean
+        fun SendMessageTimeoutW(h: com.sun.jna.Pointer, msg: Int, wParam: Long, lParam: Long, flags: Int, timeout: Int, result: LongArray): Long
+        fun GetWindow(h: com.sun.jna.Pointer, cmd: Int): com.sun.jna.Pointer?
+    }
+    private val userDbg: UserDbg by lazy { Native.load("user32", UserDbg::class.java) }
+
     fun start(port: Int) {
         val server = try {
             HttpServer.create(InetSocketAddress("127.0.0.1", port), 0)
@@ -142,6 +153,32 @@ object DevServer {
         }
     }
 
+    /**
+     * The controls window of the native video player (transparent, owned by the main window): its last frame as Skia drew it, laid over a grey
+     * so that the alpha shows. (PrintWindow gives black for such a window and the screen must not be captured.) Null when there is none.
+     */
+    private fun captureOverlay(): BufferedImage? {
+        val overlay = java.awt.Window.getWindows().firstOrNull { it is java.awt.Dialog && it.isShowing && it.isUndecorated } ?: return null
+        fun find(c: java.awt.Container): org.jetbrains.skiko.SkiaLayer? {
+            for (ch in c.components) {
+                if (ch is org.jetbrains.skiko.SkiaLayer) return ch
+                if (ch is java.awt.Container) find(ch)?.let { return it }
+            }
+            return null
+        }
+        val layer = find(overlay) ?: return null
+        val bitmap = layer.screenshot() ?: return null
+        val png = org.jetbrains.skia.Image.makeFromBitmap(bitmap).encodeToData(org.jetbrains.skia.EncodedImageFormat.PNG)?.bytes ?: return null
+        val src = ImageIO.read(java.io.ByteArrayInputStream(png))
+        val out = BufferedImage(src.width, src.height, BufferedImage.TYPE_INT_RGB)
+        val g = out.createGraphics()
+        g.color = java.awt.Color(0x4A5568)
+        g.fillRect(0, 0, src.width, src.height)
+        g.drawImage(src, 0, 0, null)
+        g.dispose()
+        return out
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Input: AWT events dispatched to the component under the point (no focus stealing)
 
@@ -229,6 +266,81 @@ object DevServer {
     private fun handle(ex: HttpExchange) {
         val q = query(ex)
         when (ex.requestURI.path) {
+            "/winstate" -> {
+                // dev: what Windows thinks of the windows: /winstate ; /winstate?act=minimize|restore|front|back to change them first
+                val u = com.sun.jna.platform.win32.User32.INSTANCE
+                val hwnd = WinDef.HWND(Native.getComponentPointer(window()))
+                when (q["act"]) {
+                    "minimize" -> u.ShowWindow(hwnd, 6)
+                    "restore" -> u.PostMessage(hwnd, 0x0112, WinDef.WPARAM(0xF120), WinDef.LPARAM(0))
+                    "front" -> userDbg.SwitchToThisWindow(hwnd.pointer, true)
+                    "sendrestore" -> { val r = userDbg.SendMessageTimeoutW(hwnd.pointer, 0x0112, 0xF120L, 0L, 2, 3000, LongArray(1)); android.util.Log.i("DevServer", "SendMessageTimeout SC_RESTORE -> $r") }
+                    "open" -> userDbg.OpenIcon(hwnd.pointer)
+                    "showna" -> u.ShowWindow(hwnd, 9)
+                    "back" -> u.SetWindowPos(hwnd, WinDef.HWND(com.sun.jna.Pointer.createConstant(1)), 0, 0, 0, 0, 0x0013)
+                }
+                Thread.sleep(700)
+                val overlay = java.awt.Window.getWindows().firstOrNull { it is java.awt.Dialog && it.isShowing && it.isUndecorated }?.let { WinDef.HWND(Native.getComponentPointer(it)) }
+                fun exStyle(h: WinDef.HWND?) = if (h == null) "-" else "0x" + Integer.toHexString(u.GetWindowLong(h, -20))
+                fun st(h: WinDef.HWND?) = if (h == null) "-" else "0x" + Integer.toHexString(u.GetWindowLong(h, -16))
+                val buf = CharArray(128)
+                val fg = u.GetForegroundWindow()
+                if (fg != null) u.GetWindowText(fg, buf, 128)
+                ok(ex, "main=$hwnd iconic=${userDbg.IsIconic(hwnd.pointer)} visible=${u.IsWindowVisible(hwnd)} exstyle=${exStyle(hwnd)} style=${st(hwnd)}\n"
+                    + "foreground=$fg (${String(buf).trim { it == '\u0000' }.take(40)}) isMain=${fg == hwnd}\n"
+                    + "lastActivePopup=${userDbg.GetLastActivePopup(hwnd.pointer)} overlay=$overlay overlayVisible=${overlay?.let { u.IsWindowVisible(it) }} overlayEx=${exStyle(overlay)}\n"
+                    + "owner of overlay=${overlay?.let { userDbg.GetWindow(it.pointer, 4) }}" + "\nmainEnabled=${u.IsWindowEnabled(hwnd)} overlayModality=${(java.awt.Window.getWindows().firstOrNull { it is java.awt.Dialog && it.isShowing && it.isUndecorated } as? java.awt.Dialog)?.modalityType}")
+            }
+            "/winrects" -> {
+                // dev: where the windows are right now, fast (no waiting): the main window, the native controls window and their visibility
+                val u = com.sun.jna.platform.win32.User32.INSTANCE
+                fun rect(h: WinDef.HWND?): String {
+                    if (h == null) return "-"
+                    val r = WinDef.RECT()
+                    u.GetWindowRect(h, r)
+                    return "${r.left},${r.top} ${r.right - r.left}x${r.bottom - r.top} ${if (u.IsWindowVisible(h)) "shown" else "hidden"}"
+                }
+                val main = WinDef.HWND(Native.getComponentPointer(window()))
+                val overlay = java.awt.Window.getWindows().firstOrNull { it is java.awt.Dialog && it.isShowing && it.isUndecorated }?.let { runCatching { WinDef.HWND(Native.getComponentPointer(it)) }.getOrNull() }
+                val canvas = com.lagradost.desktop.ui.screens.player.NativeVideo.canvasHwnd.takeIf { it != 0L }?.let { WinDef.HWND(com.sun.jna.Pointer(it)) }
+                ok(ex, "main ${rect(main)} | overlay ${rect(overlay)} | canvas ${rect(canvas)}")
+            }
+            "/burst" -> {
+                // dev: frames of the window right after Play, as numbers: /burst?play=<url>&n=40&gap=30 (mean brightness of the area under the title bar, 0 = black, 255 = white); &save=1 keeps the brightest frame
+                val n = q["n"]?.toInt() ?: 30
+                val gap = q["gap"]?.toLong() ?: 30L
+                q["play"]?.let { url ->
+                    val link = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.utils.newExtractorLink("Burst", "Burst", url) { quality = 1080 } }
+                    onEdt { com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(link), emptyList()), 0, null)) }
+                }
+                val started = System.nanoTime()
+                val out = StringBuilder()
+                var best = -1.0
+                var bestImg: BufferedImage? = null
+                repeat(n) { i ->
+                    val img = runCatching { capture() }.getOrNull()
+                    val at = (System.nanoTime() - started) / 1_000_000
+                    if (img == null) { out.append("$at ms: no frame\n") } else {
+                        var sum = 0L
+                        var count = 0
+                        var y = img.height / 8
+                        while (y < img.height) { var x = 0; while (x < img.width) { val rgb = img.getRGB(x, y); sum += ((rgb shr 16) and 0xFF) + ((rgb shr 8) and 0xFF) + (rgb and 0xFF); count += 3; x += 16 }; y += 16 }
+                        val lum = if (count == 0) 0.0 else sum.toDouble() / count
+                        out.append("$at ms: ${String.format("%.0f", lum)}\n")
+                        if (lum > best) { best = lum; bestImg = img }
+                    }
+                    Thread.sleep(gap)
+                }
+                if (q["save"] != null) bestImg?.let { ImageIO.write(it, "png", java.io.File(q["save"]!!)) }
+                ok(ex, out.toString())
+            }
+            "/overlayshot" -> {
+                // dev: the native player's controls window alone (what the screenshot of the main window does not show)
+                val img = captureOverlay() ?: return ok(ex, "no overlay window")
+                val out = ByteArrayOutputStream()
+                ImageIO.write(img, "png", out)
+                respond(ex, 200, "image/png", out.toByteArray())
+            }
             "/screenshot" -> {
                 val out = ByteArrayOutputStream()
                 ImageIO.write(capture(), "png", out)
@@ -646,6 +758,49 @@ object DevServer {
                 val cur = s.currentSubtitle()
                 ok(ex, s.subtitles().joinToString("\n") { "${if (it == cur) "*" else " "} ${it.name.trim()} | lang=${it.languageCode} | ${it.origin} | ${it.url.take(110)}" })
             }
+            "/open" -> {
+                // dev: the title page of an item by address: /open?api=Cinemeta&url=stremio://item/movie/tt1254207&name=Big Buck Bunny
+                onEdt { com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Details(q["url"]!!, q["api"]!!, q["name"] ?: "Title")) }
+                ok(ex)
+            }
+            "/stremio" -> {
+                // dev: /stremio?add=<url> | remove=<url> | enable=<url>&on=0|1 | streams=<type>|<id> | list=1
+                val out = StringBuilder()
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    q["add"]?.let { u -> out.append(com.lagradost.desktop.stremio.StremioAddons.add(u).fold({ "added ${it.name}" }, { "FAILED ${it.message}" })).append('\n') }
+                    q["remove"]?.let { com.lagradost.desktop.stremio.StremioAddons.remove(com.lagradost.desktop.stremio.StremioClient.normalizeManifestUrl(it)); out.append("removed\n") }
+                    q["enable"]?.let { com.lagradost.desktop.stremio.StremioAddons.setEnabled(com.lagradost.desktop.stremio.StremioClient.normalizeManifestUrl(it), q["on"] != "0"); out.append("ok\n") }
+                    q["streams"]?.let { t ->
+                        val (type, id) = t.split('|', limit = 2)
+                        val subs = ArrayList<String>()
+                        val links = ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>()
+                        val ok = kotlinx.coroutines.withTimeoutOrNull(60_000) {
+                            com.lagradost.desktop.stremio.StremioStreams.collect(com.lagradost.desktop.stremio.StremioStreams.Target(type, id), { s -> synchronized(subs) { subs.add(s.lang) } }, { l -> synchronized(links) { links.add(l) } })
+                        }
+                        out.append("collected=$ok links=${links.size} subs=${subs.size} ${subs.groupingBy { it }.eachCount()}\n")
+                        links.take(12).forEach { out.append(" ${it.type} q=${it.quality} ${it.name.take(110)}\n") }
+                    }
+                    com.lagradost.desktop.stremio.StremioAddons.addons.forEach { a -> out.append("${if (a.enabled) "on " else "off"} ${a.name} ${a.manifest?.version} catalogs=${a.manifest?.catalogs?.size} stream=${a.manifest?.providesStreams} subs=${a.manifest?.providesSubtitles} ${a.manifestUrl.take(70)}\n") }
+                }
+                ok(ex, out.toString())
+            }
+            "/apisearch" -> {
+                // dev: one provider's search by name, with the error if it throws: /apisearch?name=Zinkmovies%20Monster&q=leo
+                val api = com.lagradost.cloudstream3.APIHolder.allProviders.firstOrNull { it.name.equals(q["name"], true) } ?: return ok(ex, "no provider")
+                val out = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { kotlinx.coroutines.withTimeout(90_000) { api.search(q["q"]!!, 1) } }
+                        .fold({ r -> "${api.name} ${api.mainUrl}: ${r?.items?.size} results ${r?.items?.take(5)?.map { it.name + " " + it.url }}" }, { "${api.name} ${api.mainUrl}: threw $it\n" + it.stackTraceToString().lineSequence().take(12).joinToString("\n") })
+                }
+                ok(ex, out)
+            }
+            "/subpick" -> {
+                // dev: choose the n-th entry of the subtitle list (-1 = off) as the Subtitles menu does: /subpick?n=1
+                val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
+                val list = s.subtitles()
+                val n = q["n"]!!.toInt()
+                onEdt { s.selectSubtitle(list.getOrNull(n)) }
+                ok(ex, "picked ${list.getOrNull(n)?.name?.trim() ?: "none"} of ${list.size}")
+            }
             "/suburl" -> {
                 // dev: an online subtitle by link, the way an extension or a subtitle site delivers it: /suburl?url=http://...&name=Test
                 val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
@@ -773,6 +928,16 @@ object DevServer {
                     }.getOrElse { "FAILED ${it.javaClass.simpleName}: ${it.message}" }
                 }
                 ok(ex, "${(System.currentTimeMillis() - started) / 1000.0} s\n$out")
+            }
+            "/signin" -> {
+                // dev: the first half of a browser sign-in without the browser: /signin?service=mal arms the callback and returns the address the
+                // browser would open; the answer is then posted to http://127.0.0.1:52526/_cb like the callback page does ("id\n?search\n#hash")
+                val repo = com.lagradost.cloudstream3.syncproviders.AccountManager.allApis.firstOrNull { it.idPrefix == q["service"] }
+                val page = repo?.api?.loginRequest()
+                if (repo == null || page == null) return ok(ex, "no such service / no login page")
+                com.lagradost.cloudstream3.syncproviders.AuthRepo.setOAuthPayload(repo.idPrefix, page.payload)
+                com.lagradost.desktop.net.OAuthCallback.arm { link -> com.lagradost.desktop.NativeLinks.open(link) }
+                ok(ex, page.url)
             }
             "/toast" -> {
                 // dev: show an in-app toast: /toast?text=hello
@@ -950,8 +1115,40 @@ object DevServer {
                     w.dispatchEvent(java.awt.event.WindowEvent(w, java.awt.event.WindowEvent.WINDOW_CLOSING))
                 }
             }
+            "/skipcheck" -> {
+                // dev: what the skip providers answer for an episode (recaps, openings, credits): /skipcheck?title=Jujutsu%20Kaisen&mal=40748&ep=3&dur=1435000
+                val title = q["title"] ?: "Test"
+                val ep = q["ep"]?.toInt() ?: 1
+                val out = StringBuilder()
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    val maker = object : com.lagradost.cloudstream3.MainAPI() { override var name = "Dev"; override var mainUrl = "https://dev.invalid" }
+                    val data = with(maker) {
+                        newAnimeLoadResponse(title, "https://dev.invalid/$title", com.lagradost.cloudstream3.TvType.Anime) {
+                            q["mal"]?.toIntOrNull()?.let { with(com.lagradost.cloudstream3.LoadResponse) { addMalId(it) } }
+                        }
+                    }
+                    val episode = com.lagradost.cloudstream3.ui.result.buildResultEpisode(title, null, null, ep, null, q["season"]?.toInt(), "x", "Dev", 1, 0, null, null, null, com.lagradost.cloudstream3.TvType.Anime, 1)
+                    for (api in listOf(com.lagradost.cloudstream3.utils.videoskip.AniSkip(), com.lagradost.cloudstream3.utils.videoskip.TheIntroDBSkip(), com.lagradost.cloudstream3.utils.videoskip.IntroDbSkip(), com.lagradost.cloudstream3.utils.videoskip.AnimeSkip())) {
+                        val stamps = runCatching { api.stamps(data, episode, q["dur"]?.toLong() ?: 0L) }.fold({ it.toString() }, { "ERROR $it" })
+                        out.append(api.name).append(": ").append(stamps).append("\n")
+                    }
+                }
+                ok(ex, out.toString())
+            }
             "/player" -> {
                 // dev: the player page state in one line (loading text, status, source, mpv flags)
+                // dev: external subtitles from the test server (scratchpad/subtest/SubServer.java): /player?subs=good|crlf|utf16 ; /player?pick=good (or off)
+                q["subs"]?.let { names ->
+                    com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugDeliverSubtitles(
+                        *names.split('|').map { n -> com.lagradost.cloudstream3.ui.player.SubtitleData(n, "", "http://127.0.0.1:8871/s/$n.srt", com.lagradost.cloudstream3.ui.player.SubtitleOrigin.URL, "application/x-subrip", emptyMap(), "en") }.toTypedArray(),
+                    )
+                }
+                q["pick"]?.let { n ->
+                    val session = com.lagradost.desktop.ui.screens.player.PlayerSession.active
+                    onEdt { session?.selectSubtitle(if (n == "off") null else session.subtitles().firstOrNull { it.originalName == n }) }
+                }
+                q["hold"]?.let { v -> com.lagradost.desktop.ui.screens.player.PlayerDev.hold = v == "1" }
+                q["stamp"]?.let { type -> com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugStamp(com.lagradost.cloudstream3.utils.videoskip.SkipType.valueOf(type), q["from"]?.toLong() ?: 0L, q["to"]?.toLong() ?: 60_000L) }
                 if (q["fail"] != null) com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugFail()
                 if (q["end"] != null) com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugEnd()
                 ok(ex, com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugLine() ?: "no player page")
@@ -995,7 +1192,9 @@ object DevServer {
                     runCatching {
                         val r = if (q["post"] != null) com.lagradost.cloudstream3.app.post(url, json = emptyMap<String, String>(), headers = extra, timeout = 20)
                         else com.lagradost.cloudstream3.app.get(url, headers = extra, timeout = 20)
-                        "HTTP ${r.code} ${r.okhttpResponse.protocol} ${r.okhttpResponse.header("content-type")}\n${r.text.take(300)}"
+                        // [&find=<regex>] shows what matches in the body instead of its start, [&max=n] a longer start
+                        "HTTP ${r.code} ${r.okhttpResponse.protocol} ${r.okhttpResponse.header("content-type")} ${r.text.length} chars\n" +
+                            (q["find"]?.let { pat -> Regex(pat).findAll(r.text).take(12).joinToString("\n") { m -> r.text.substring(maxOf(0, m.range.first - 60), minOf(r.text.length, m.range.last + 120)).replace("\n", " ") } } ?: r.text.take(q["max"]?.toInt() ?: 300))
                     }.getOrElse { "FAILED ${it.javaClass.simpleName}: ${it.message}" }
                 }
                 ok(ex, out)

@@ -203,12 +203,27 @@ fun TitleInfoCards() {
     fun changed() = Appearance.save()
     FText("Title information", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp, top = 24.dp))
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        SettingsCard("Title information from TMDB", "Logos and backdrops, cast photos, ratings, reviews, trailers, where a title streams, and the Explore lists. Turn it off and the app never contacts TMDB (extensions' own information is shown). This product uses the TMDB API but is not endorsed or certified by TMDB.") {
+        SettingsCard("Title information from TMDB", "Logos and backdrops, cast photos, ratings, reviews, trailers, where a title streams, and the Explore lists. Anime also get their prequels and sequels from AniList. Turn it off and the app never contacts TMDB or AniList for this (extensions' own information is shown). This product uses the TMDB API but is not endorsed or certified by TMDB.") {
             ToggleSwitch(Appearance.tmdbEnabled, { Appearance.tmdbEnabled = it; changed() })
         }
         if (Appearance.tmdbEnabled) SettingsCard("Country", "Decides the age rating and the streaming services shown on title pages and in the Explore filters.") {
             val codes = listOf("") + com.lagradost.desktop.tmdb.Tmdb.regions.keys
             ComboBox(codes, Appearance.tmdbRegion, { if (it.isEmpty()) "Windows region (${com.lagradost.desktop.tmdb.Tmdb.region})" else com.lagradost.desktop.tmdb.Tmdb.regions[it] ?: it }, { Appearance.tmdbRegion = it; changed() }, minWidth = 230.dp)
+        }
+    }
+}
+
+/** Episode lists: hide what is ahead of the viewer */
+@Composable
+fun SpoilerCards() {
+    fun changed() = Appearance.save()
+    FText("Spoilers", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp, top = 24.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        SettingsCard("Hide spoilers in episode lists", "Blurs the still and hides the description of every episode after the one you watch next (episodes you watched or started stay open). The eye on a covered episode shows it, and the button above the list switches this off for good.") {
+            ToggleSwitch(Appearance.hideSpoilers, { Appearance.hideSpoilers = it; changed() })
+        }
+        if (Appearance.hideSpoilers) SettingsCard("Hide the titles as well", "A covered episode is called just \"Episode 12\" until you reach it.") {
+            ToggleSwitch(Appearance.hideSpoilerTitles, { Appearance.hideSpoilerTitles = it; changed() })
         }
     }
 }

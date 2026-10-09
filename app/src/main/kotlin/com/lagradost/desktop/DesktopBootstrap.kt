@@ -9,6 +9,10 @@ import com.google.android.material.snackbar.Snackbar
 import com.lagradost.cloudstream3.APIHolder.allProviders
 import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.APIHolder.initAll
+import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKey as appGetKey
+import com.lagradost.cloudstream3.APIHolder
+import kotlin.reflect.full.createInstance
+import kotlinx.coroutines.sync.withLock
 import com.lagradost.cloudstream3.actions.temp.fcast.FcastManager
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.ui.APIRepository
@@ -167,6 +171,45 @@ object DesktopBootstrap {
         return act
     }
 
+    private val cloneLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * Settings > General > Clone site: a copy of an extension's site under another address (a site that moved, an ISP block). Upstream
+     * makes them after each load of the extensions in MainActivity.onCreate, which the native UI never runs: the clones were saved but
+     * never appeared. They are made again after every load, and when one is added.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun loadClonedSites(success: Boolean) {
+        ioSafe {
+            cloneLock.withLock {
+                allProviders.withLock {
+                    try {
+                        appGetKey<Array<com.lagradost.cloudstream3.ui.settings.SettingsGeneral.CustomSite>>(com.lagradost.cloudstream3.utils.USER_PROVIDER_API)?.let { list ->
+                            list.forEach { custom ->
+                                if (allProviders.any { it.name == custom.name && it.mainUrl == custom.url.trimEnd('/') }) return@forEach
+                                allProviders.firstOrNull { it::class.simpleName == custom.parentClassName }?.let {
+                                    allProviders.add(
+                                        it::class.createInstance().apply {
+                                            name = custom.name
+                                            lang = custom.lang
+                                            mainUrl = custom.url.trimEnd('/')
+                                            canBeOverridden = false
+                                        },
+                                    )
+                                    Log.i(TAG, "cloned site ${custom.name} (${custom.url}) of ${custom.parentClassName}")
+                                }
+                            }
+                        }
+                        apis = allProviders.distinctBy { it.lang + it.name + it.mainUrl + it::class.qualifiedName }
+                        APIHolder.apiMap = null
+                    } catch (e: Exception) {
+                        logError(e)
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * The non-UI part of upstream MainActivity.onCreate. Headless tools and the native UI call it;
      * the legacy Android UI runs the real activity lifecycle through [launch]. [loadPlugins] false is
@@ -189,6 +232,10 @@ object DesktopBootstrap {
         CommonActivity.loadThemes(act)
         act.updateLocale()
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: theme and locale")
+        if (!activityLifecycle) MainActivity.afterPluginsLoadedEvent += ::loadClonedSites
+        // Stremio add-ons with catalogs are providers: made after every load of the extensions (which may rebuild the list) and at the start
+        MainActivity.afterPluginsLoadedEvent += { ioSafe { com.lagradost.desktop.stremio.StremioAddons.syncProviders() } }
+        com.lagradost.desktop.stremio.StremioAddons.start()
         if (activityLifecycle) act.performCreate(null as Bundle?)
         act.updateTv()
 
@@ -248,6 +295,8 @@ object DesktopBootstrap {
         act.updateHasTrailers()
 
         // Desktop: deep links from the command line are passed to handleAppIntentUrl by main()
+        // Start OAuth loopback callback listener for AniList / MyAnimeList / Simkl browser logins
+        ioSafe { com.lagradost.desktop.net.OAuthCallback.start() }
 
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: before fcast")
         FcastManager().init(act, false)

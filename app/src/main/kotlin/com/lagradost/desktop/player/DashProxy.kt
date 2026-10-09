@@ -148,6 +148,18 @@ object DashProxy {
         var manifestAt = 0L
         val manifestLock = Any()
 
+        @Volatile
+        var cancelled = false
+        val activeCalls = java.util.concurrent.CopyOnWriteArrayList<okhttp3.Call>()
+
+        fun cancel() {
+            cancelled = true
+            for (call in activeCalls) {
+                runCatching { call.cancel() }
+            }
+            activeCalls.clear()
+        }
+
         fun serverNow() = System.currentTimeMillis() + clockOffsetMs
     }
 
@@ -177,7 +189,9 @@ object DashProxy {
 
     /** Reads the manifest again (at most once a second, shared by all waiting requests) */
     private fun refreshManifest(entry: Entry) {
+        if (entry.cancelled) return
         synchronized(entry.manifestLock) {
+            if (entry.cancelled) return
             if (System.currentTimeMillis() - entry.manifestAt < 1000) return
             runCatching {
                 val builder = Request.Builder().url(entry.url.toHttpUrlOrNull() ?: return)
@@ -185,7 +199,17 @@ object DashProxy {
                 entry.cookieFor(builder.build().url.host, entry.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value)?.let { builder.header("Cookie", it) }
                 if (entry.headers.keys.none { it.equals("User-Agent", true) }) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
                 builder.cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
-                client.newCall(builder.build()).execute().use { r -> if (r.isSuccessful) { followManifest(entry, r); learn(entry, normalize(entry, r.body.bytes()), r.header("Date")) } else entry.manifestAt = System.currentTimeMillis() }
+                val call = client.newCall(builder.build())
+                entry.activeCalls.add(call)
+                try {
+                    if (entry.cancelled) {
+                        call.cancel()
+                        return
+                    }
+                    call.execute().use { r -> if (r.isSuccessful) { followManifest(entry, r); learn(entry, normalize(entry, r.body.bytes()), r.header("Date")) } else entry.manifestAt = System.currentTimeMillis() }
+                } finally {
+                    entry.activeCalls.remove(call)
+                }
             }.onFailure { entry.manifestAt = System.currentTimeMillis() }
         }
     }
@@ -201,11 +225,15 @@ object DashProxy {
         if (value <= first.newest(entry.serverNow())) return
         val started = System.currentTimeMillis()
         val deadline = started + (3 * first.segmentMs + 4000).coerceIn(6000, 12_000)
-        while (System.currentTimeMillis() < deadline) {
+        while (!entry.cancelled && System.currentTimeMillis() < deadline) {
             refreshManifest(entry)
             val t = track() ?: return
-            if (value <= t.newest(entry.serverNow())) break
-            Thread.sleep(250)
+            if (entry.cancelled || value <= t.newest(entry.serverNow())) break
+            var slept = 0L
+            while (!entry.cancelled && slept < 250) {
+                Thread.sleep(50)
+                slept += 50
+            }
         }
         if (entry.waits++ % 50 == 0) Log.i(TAG, "live segment held until listed (${entry.waits}): ${System.currentTimeMillis() - started} ms for ${address.takeLast(60)}")
     }
@@ -230,6 +258,21 @@ object DashProxy {
     /** Whether a [wrap] address plays a live (dynamic) manifest */
     fun isLive(address: String): Boolean = address.substringAfter("/d/", "").substringBefore("/").let { entries[it]?.live == true }
 
+    /** Cancels any active upstream requests and waiting loops for [address] (a [wrap] address or URL) */
+    fun cancel(address: String?) {
+        if (address == null) return
+        val id = address.substringAfter("/d/", "").substringBefore("/")
+        entries.remove(id)?.cancel()
+    }
+
+    /** Cancels all active proxy entries */
+    fun cancelAll() {
+        for ((_, entry) in entries) {
+            entry.cancel()
+        }
+        entries.clear()
+    }
+
     /** Address to give the player instead of [url] (the manifest); segments are asked for next to it */
     fun wrap(url: String, headers: Map<String, String>): String {
         if (entries.size > 50) entries.clear()
@@ -239,7 +282,8 @@ object DashProxy {
         return "http://127.0.0.1:${server.address.port}/d/$id/$name"
     }
 
-    private fun upstream(entry: Entry, url: String, ex: HttpExchange, fresh: Boolean): okhttp3.Response {
+    private inline fun <T> upstream(entry: Entry, url: String, ex: HttpExchange, fresh: Boolean, block: (okhttp3.Response) -> T): T {
+        if (entry.cancelled) throw IOException("cancelled")
         val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: throw IOException("bad address $url"))
         var userAgent = false
         for ((k, v) in entry.headers) {
@@ -252,12 +296,33 @@ object DashProxy {
         ex.requestHeaders.getFirst("Range")?.let { builder.header("Range", it) }
         if (fresh) builder.header("Connection", "close")
         if (ex.requestMethod.equals("HEAD", true)) builder.head()
-        return (if (fresh) freshClient else client).newCall(builder.build()).execute()
+        val call = (if (fresh) freshClient else client).newCall(builder.build())
+        entry.activeCalls.add(call)
+        try {
+            if (entry.cancelled) {
+                call.cancel()
+                throw IOException("cancelled")
+            }
+            val response = call.execute()
+            return response.use { r ->
+                if (entry.cancelled) {
+                    call.cancel()
+                    throw IOException("cancelled")
+                }
+                block(r)
+            }
+        } finally {
+            entry.activeCalls.remove(call)
+        }
     }
 
     private fun handle(ex: HttpExchange) {
         val path = ex.requestURI.rawPath.removePrefix("/d/")
         val entry = entries[path.substringBefore('/')] ?: run { ex.sendResponseHeaders(404, -1); return }
+        if (entry.cancelled) {
+            ex.sendResponseHeaders(503, -1)
+            return
+        }
         val asked = path.substringAfter('/', "")
         val isManifest = asked == entry.name
         // a segment under one of the absolute BaseURLs the manifest named ("b0/..."), see normalize
@@ -268,6 +333,10 @@ object DashProxy {
         // the segment's place in the live manifest: which stream, which number (or time)
         val matched = if (!isManifest && entry.live) entry.timeline?.match(rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: "")) else null
         if (matched != null) waitForListing(entry, matched.first.id, matched.second, rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: ""))
+        if (entry.cancelled) {
+            ex.sendResponseHeaders(503, -1)
+            return
+        }
         // a segment of a live stream that was sent just now is not sent again, see the notes above
         val key = if (matched != null) "track:" + matched.first.id else if (!isManifest && entry.live) rest.replace(TIMED, "$1").takeIf { it != rest } else null
         if (key != null && entry.last[key] == rest) {
@@ -281,18 +350,23 @@ object DashProxy {
         // a live segment that is listed but not on this CDN edge yet is waited for (it usually is there within a moment)
         val waitUntil = System.currentTimeMillis() + PUBLISH_WAIT_MS
         var attempt = 0
-        while (attempt < RETRIES) {
+        while (!entry.cancelled && attempt < RETRIES) {
             attempt++
             try {
-                upstream(entry, url, ex, fresh = attempt > 1).use { r ->
+                upstream(entry, url, ex, fresh = attempt > 1) { r ->
+                    if (entry.cancelled) return@upstream
                     if (r.code == 404 && key != null && System.currentTimeMillis() < waitUntil) {
                         // ffmpeg's answer to a 404 at the live edge is to skip to the next number and later come back to
                         // segments it has played already: the sound jumped back two seconds and the picture slowed down to
                         // meet it again. Holding the request until the segment exists keeps the demuxer in order.
                         attempt--
                         if (entry.waits++ % 50 == 0) Log.i(TAG, "live segment not published yet, waiting (${entry.waits}): ${rest.takeLast(60)}")
-                        Thread.sleep(400)
-                        return@use
+                        var slept = 0L
+                        while (!entry.cancelled && slept < 400) {
+                            Thread.sleep(50)
+                            slept += 50
+                        }
+                        return@upstream
                     }
                     if (r.code !in 200..299) {
                         ex.sendResponseHeaders(r.code, -1)
@@ -328,7 +402,7 @@ object DashProxy {
                     val out = ex.responseBody
                     val buffer = ByteArray(64 * 1024)
                     var sent = 0L
-                    while (true) {
+                    while (!entry.cancelled) {
                         val n = input.read(buffer)
                         if (n < 0) break
                         try { out.write(buffer, 0, n) } catch (e: IOException) { return } // the player went away
@@ -340,9 +414,10 @@ object DashProxy {
             } catch (e: IOException) {
                 failure = e
                 Log.w(TAG, "attempt $attempt for ${rest.takeLast(60)}: ${e.javaClass.simpleName} ${e.message}")
-                if (started) return // the body broke off in the middle: closing the connection tells the player
+                if (started || entry.cancelled) return // the body broke off in the middle or was cancelled
             }
         }
+        if (entry.cancelled) return
         // the player sees a failed open, like for a server that is down
         runCatching { ex.sendResponseHeaders(502, -1) }
         Log.w(TAG, "giving up on ${rest.takeLast(60)}: ${failure?.message}")

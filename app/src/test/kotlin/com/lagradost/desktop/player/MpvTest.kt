@@ -27,4 +27,28 @@ class MpvTest {
             mpv.mpv_terminate_destroy(handle)
         }
     }
+
+    @Test
+    fun testMpvWakeupAndStop() {
+        val mpv = Mpv.INSTANCE
+        val handle = mpv.mpv_create()
+        assertNotNull(handle, "mpv_create should return non-null handle")
+
+        try {
+            mpv.mpv_set_option_string(handle, "vo", "null")
+            mpv.mpv_set_option_string(handle, "ao", "null")
+            val initResult = mpv.mpv_initialize(handle)
+            assertEquals(0, initResult, "mpv_initialize should succeed")
+
+            // Test setting wid property to 0 and waking up event loop
+            mpv.mpv_set_property_string(handle, "wid", "0")
+            mpv.mpv_wakeup(handle)
+
+            // Test non-blocking async stop command
+            val asyncStopResult = mpv.mpv_command_async(handle, 0L, arrayOf("stop", null))
+            assertEquals(0, asyncStopResult, "mpv_command_async stop should return 0")
+        } finally {
+            mpv.mpv_terminate_destroy(handle)
+        }
+    }
 }

@@ -1,5 +1,7 @@
 package com.lagradost.desktop
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxWidth
 import com.lagradost.desktop.ui.shell.ExternalTitleBar
 import com.lagradost.desktop.ui.shell.RevealedTitleBar
@@ -119,6 +121,11 @@ fun ApplicationScope.NativeWindow() {
                 ThemeBridge.textColorPrimary = c.text.toArgb()
                 ThemeBridge.textColorSecondary = c.textSecondary.toArgb()
                 ThemeBridge.isDark = c.dark
+                // the themes of the contexts were made with the first colours: the next dialog or extension screen reads the current ones
+                runCatching {
+                    ThemeBridge.populate(com.lagradost.desktop.DesktopBootstrap.activity.theme)
+                    ThemeBridge.populate(com.lagradost.desktop.runtime.AndroidRuntime.context.theme)
+                }
             }
             LaunchedEffect(Unit) {
                 // first run wizard, then the profile picker when there are several profiles
@@ -169,8 +176,10 @@ fun ApplicationScope.NativeWindow() {
                         }
                     }
                 }
-                // a maximized window shows it over the app while the pointer is at the top edge
-                RevealedTitleBar()
+                // a maximized or fullscreen window shows it over the app while the pointer is at the top edge
+                if (!com.lagradost.desktop.ui.screens.player.NativeVideo.overlayActive) {
+                    RevealedTitleBar()
+                }
             }
         }
     }

@@ -1,6 +1,11 @@
 package com.lagradost.desktop.ui.screens.player
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import com.lagradost.desktop.ui.fluent.Motion
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -42,6 +47,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lagradost.cloudstream3.ui.player.SubtitleData
 import com.lagradost.cloudstream3.ui.player.SubtitleOrigin
 import com.lagradost.cloudstream3.utils.SubtitleHelper
@@ -62,8 +68,9 @@ import com.lagradost.desktop.ui.fluent.rememberInteraction
 // Same rows, sizes and colours on every page; the player is always dark, so the colours are fixed (not the app theme's).
 
 enum class MenuPage(val title: String) {
-    Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Subtitles("Subtitles"), SubtitleTiming("Subtitle delay and size"),
+    Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Tracks("Video & Audio"), Subtitles("Subtitles"), SubtitleTiming("Subtitle delay and size"),
     Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"),
+    Anime4K("Anime upscaling (Anime4K)"), Skip("Skip intro & credits"),
 }
 
 /** Every panel and bubble over the video (menu, episodes, volume and seek bubbles, subtitle pill): one surface */
@@ -85,10 +92,20 @@ private val ROW_HEIGHT = 44.dp
 
 /** The menu card; [onPage] null closes it. [maxHeight]: the room above the controls */
 @Composable
-internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) -> Unit, maxHeight: Dp, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(12.dp)
+internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) -> Unit, maxHeight: Dp, modifier: Modifier = Modifier, fromTop: Boolean = false, originX: Float = 1f) {
+    val shape = RoundedCornerShape(16.dp)
+    // it comes up out of the button that opened it: a little scale, a soft slide, a fade
+    val appear = remember { Animatable(if (Appearance.motion == Motion.Off) 1f else 0f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, glide(300)) }
     Box(
-        modifier.width(MENU_WIDTH).clip(shape).background(MenuColors.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, MenuColors.border, shape)
+        modifier.width(MENU_WIDTH)
+            .graphicsLayer {
+                val k = 0.94f + 0.06f * appear.value
+                scaleX = k; scaleY = k; alpha = appear.value
+                translationY = (1f - appear.value) * 16.dp.toPx() * (if (fromTop) -1f else 1f)
+                transformOrigin = TransformOrigin(originX, if (fromTop) 0f else 1f)
+            }
+            .clip(shape).background(MenuColors.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, MenuColors.border, shape)
             // clicks on the card stay on the card (the layer behind it closes the menu)
             .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
     ) {
@@ -111,11 +128,14 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                     MenuPage.Sources -> SourcesPage(s, onPage)
                     MenuPage.Quality -> QualityPage(s)
                     MenuPage.Audio -> AudioPage(s)
+                    MenuPage.Tracks -> TracksPage(s)
                     MenuPage.Subtitles -> SubtitlesPage(s, onPage)
                     MenuPage.SubtitleTiming -> SubtitleTimingPage(s)
                     MenuPage.Speed -> ChoicePage(speeds.map { speedLabel(it) }, speeds.indexOf(s.speed)) { s.changeSpeed(speeds[it]) }
                     MenuPage.Picture -> ChoicePage(Resize.entries.map { it.label }, Resize.entries.indexOf(s.resize)) { s.changeResize(Resize.entries[it]) }
                     MenuPage.Decoder -> DecoderPage()
+                    MenuPage.Anime4K -> Anime4KPage()
+                    MenuPage.Skip -> SkipPage()
                 }
             }
         }
@@ -130,21 +150,24 @@ private fun speedLabel(v: Float) = if (v == 1f) "Normal" else "${v.toString().re
 @Composable
 private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     Column(Modifier.verticalScrollIfNeeded()) {
-        NavRow(Icons.Link, "Source", s.sourceName?.lineSequence()?.firstOrNull()) { onPage(MenuPage.Sources) }
-        NavRow(Icons.Video, "Quality", qualityLabel(s)) { onPage(MenuPage.Quality) }
-        NavRow(Icons.Audio, "Audio", s.currentAudio()?.let { a -> audioLabel(a, s.audioTracks().indexOfFirst { it.id == a.id }.coerceAtLeast(0)) }) { onPage(MenuPage.Audio) }
+        // the three things a viewer changes most, in the order of the buttons under the picture
+        NavRow(Icons.Video, "Video & Audio", listOfNotNull(qualityLabel(s), s.currentAudio()?.let { a -> audioLabel(a, s.audioTracks().indexOfFirst { it.id == a.id }.coerceAtLeast(0)).substringBefore(" • ") }).joinToString(" · ").ifBlank { null }) { onPage(MenuPage.Tracks) }
         NavRow(Icons.Subtitles, "Subtitles", s.currentSubtitle()?.originalName?.trim() ?: "Off") { onPage(MenuPage.Subtitles) }
+        NavRow(Icons.Link, "Sources", s.sourceName?.lineSequence()?.firstOrNull()) { onPage(MenuPage.Sources) }
         Divider()
         NavRow(Icons.Speed, "Playback speed", speedLabel(s.speed)) { onPage(MenuPage.Speed) }
         NavRow(Icons.Aspect, "Picture size", s.resize.label) { onPage(MenuPage.Picture) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
+        NavRow(Icons.Anime, "Anime upscaling (Anime4K)", if (Appearance.anime4k) "On" else "Off") { onPage(MenuPage.Anime4K) }
+        NavRow(Icons.Skip, "Skip intro & credits", if (Appearance.autoSkipStamps) (if (Appearance.autoSkipDelay5s) "Auto (5s)" else "Auto") else "Manual") { onPage(MenuPage.Skip) }
         Divider()
+        ActionRow(Icons.Help, "Keyboard shortcuts") { onPage(null); Shortcuts.show() }
         ActionRow(Icons.Play, "Open in VLC") { onPage(null); s.openExternal(vlc = true) }
         ActionRow(Icons.OpenInNewWindow, "Open in browser") { onPage(null); s.openExternal(vlc = false) }
     }
 }
 
-private fun qualityLabel(s: PlayerSession): String? {
+internal fun qualityLabel(s: PlayerSession): String? {
     val v = s.currentVideo() ?: return s.resolution
     return tier(v.width, v.height) ?: v.label ?: s.resolution
 }
@@ -200,6 +223,30 @@ private fun AudioPage(s: PlayerSession) {
     ChoicePage(audio.mapIndexed { i, t -> audioLabel(t, i) }, pick) { if (it != pick) { pick = it; s.selectAudio(audio[it]) } }
 }
 
+/** The audio tracks and the picture qualities of the video in one page: what a viewer means by "tracks" */
+@Composable
+private fun TracksPage(s: PlayerSession) {
+    val audio = s.audioTracks()
+    var audioPick by remember { mutableStateOf(audio.indexOfFirst { it.id == s.currentAudio()?.id }.coerceAtLeast(0)) }
+    val video = s.videoTracks().sortedByDescending { it.height ?: 0 }
+    var videoPick by remember { mutableStateOf(video.indexOfFirst { it.id == s.currentVideo()?.id }) }
+    Column(Modifier.verticalScrollIfNeeded()) {
+        SectionLabel("Video")
+        if (video.isEmpty()) Note(s.resolution?.let { "$it, the only quality of this source" } ?: "The only quality of this source")
+        video.forEachIndexed { i, t ->
+            CheckRow(tier(t.width, t.height) ?: t.label ?: "${i + 1}", i == videoPick, detail = if (t.width != null && t.height != null) "${t.width}×${t.height}" else null) { if (i != videoPick) { videoPick = i; s.selectVideo(t) } }
+        }
+        SectionLabel("Audio")
+        if (audio.isEmpty()) Note("No audio track")
+        audio.forEachIndexed { i, t -> CheckRow(audioLabel(t, i), i == audioPick) { if (i != audioPick) { audioPick = i; s.selectAudio(t) } } }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    FText(text.uppercase(), Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp), style = Fluent.type.caption.copy(letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold), color = MenuColors.tertiary, maxLines = 1)
+}
+
 @Composable
 private fun DecoderPage() {
     var pick by remember { mutableStateOf(Appearance.audioDecoder) }
@@ -213,6 +260,48 @@ private fun DecoderPage() {
                     ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyAudioDecoder() }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun Anime4KPage() {
+    var pick by remember { mutableStateOf(Appearance.anime4k) }
+    Column {
+        CheckRow("Off", !pick, detail = "Standard video playback") {
+            if (pick) {
+                pick = false
+                Appearance.anime4k = false
+                Appearance.save()
+                ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyAnime4k() }
+            }
+        }
+        CheckRow("Anime4K (bloc97)", pick, detail = "Neural filters that clean up and sharpen anime in real time (GPU player)") {
+            if (!pick) {
+                pick = true
+                Appearance.anime4k = true
+                Appearance.nativePlayer = true
+                Appearance.save()
+                ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyAnime4k() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SkipPage() {
+    var autoSkip by remember { mutableStateOf(Appearance.autoSkipStamps) }
+    var delay5s by remember { mutableStateOf(Appearance.autoSkipDelay5s) }
+    Column {
+        CheckRow("Auto-skip", autoSkip, detail = "Automatically skip openings, recaps and credits") {
+            autoSkip = !autoSkip
+            Appearance.autoSkipStamps = autoSkip
+            Appearance.save()
+        }
+        CheckRow("5-second toggle to skip", delay5s, detail = "Show a 5s countdown timer before auto-skipping") {
+            delay5s = !delay5s
+            Appearance.autoSkipDelay5s = delay5s
+            Appearance.save()
         }
     }
 }

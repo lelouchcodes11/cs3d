@@ -38,6 +38,11 @@ fun ProviderSelector(modifier: Modifier = Modifier) {
         placeholder = "Choose a source",
         icon = Icons.Globe,
         minWidth = 190.dp,
+        trailingItem = { name ->
+            if (com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(name) is com.lagradost.desktop.stremio.StremioApi) {
+                com.lagradost.desktop.ui.fluent.StremioBadge()
+            }
+        },
     )
 }
 

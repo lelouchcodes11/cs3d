@@ -68,6 +68,7 @@ import com.mihon.presentation.settings.Preference
 private enum class Page(val id: String, val title: String, val glyph: String, val tint: Long, val about: String, val hidden: Boolean = false) {
     General("general", "General", Icons.Settings, 0xFF6E7BF2, "Language, providers, downloads and behaviour"),
     Player("player", "Player", Icons.Play, 0xFFE5484D, "Playback, sources, subtitles and controls"),
+    Stremio("stremio", "Stremio & torrents", Icons.Link, 0xFF8E4EC6, "Add-ons, their sources and subtitles, torrent streaming", hidden = true),
     Appearance("ui", "Appearance", Icons.Theme, 0xFFD6409F, "Theme, colours, layout and motion"),
     Updates("updates", "Updates & backup", Icons.Update, 0xFF30A46C, "App and extension updates, backups"),
     Accounts("account", "Accounts & security", Icons.Person, 0xFFF76B15, "Sync accounts, profiles and lock"),
@@ -120,7 +121,7 @@ private fun rawPrefsOf(page: Page): List<Preference> = when (page) {
     Page.Appearance -> SettingsUIScreen.getPreferences()
     Page.Updates -> SettingsUpdatesScreen.getPreferences()
     Page.Accounts -> SettingsAccountScreen.getPreferences()
-    Page.About, Page.Subtitles -> emptyList()
+    Page.About, Page.Subtitles, Page.Stremio -> emptyList()
 }
 
 @Composable
@@ -171,6 +172,7 @@ private fun PageContent(page: Page) {
     Box(Modifier.padding(bottom = 22.dp, top = 4.dp)) { com.lagradost.desktop.ui.fluent.PageHeader(page.title, subtitle = page.about) }
     when (page) {
         Page.About -> AboutPage()
+        Page.Stremio -> StremioPage()
         Page.Subtitles -> SubtitleStyleEditor()
         else -> {
             if (page == Page.Appearance) {
@@ -265,6 +267,7 @@ private fun AppearanceCards() {
     ThemeCards()
     LayoutAndStyleCards()
     TitleInfoCards()
+    SpoilerCards()
 }
 
 @Composable

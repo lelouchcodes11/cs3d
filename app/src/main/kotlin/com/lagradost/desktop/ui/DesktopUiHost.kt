@@ -129,9 +129,21 @@ class DesktopUiHost : UiHost {
 
         if (data != null && (action == null || action == Intent.ACTION_VIEW) && intent.`package` == null) {
             val scheme = intent.data?.scheme?.lowercase()
-            when (scheme) {
-                "http", "https", "mailto" -> return openUrl(data)
-                null -> {}
+            val isLoopbackAuth = scheme == "http" && (
+                data.contains("localhost:${com.lagradost.desktop.net.OAuthCallback.PORT}/") ||
+                data.contains("127.0.0.1:${com.lagradost.desktop.net.OAuthCallback.PORT}/") ||
+                data.contains("[::1]:${com.lagradost.desktop.net.OAuthCallback.PORT}/")
+            )
+            when {
+                isLoopbackAuth -> {
+                    var handled = false
+                    EventQueue.invokeAndWait {
+                        handled = MainActivity.handleAppIntentUrl(DesktopBootstrap.activity, data, false, intent.extras)
+                    }
+                    if (handled) return true
+                }
+                scheme == "http" || scheme == "https" || scheme == "mailto" -> return openUrl(data)
+                scheme == null -> {}
                 else -> {
                     // cloudstreamapp://, cloudstreamrepo://, csshare: ... deep links into the app
                     var handled = false

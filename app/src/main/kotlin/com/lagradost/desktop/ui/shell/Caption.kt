@@ -27,6 +27,9 @@ import androidx.compose.ui.unit.dp
 import com.lagradost.desktop.platform.WinChrome
 import com.lagradost.desktop.ui.fluent.Fluent
 import com.lagradost.desktop.ui.fluent.Icon
+import androidx.compose.ui.semantics.Role
+import com.lagradost.desktop.ui.fluent.fluentClickable
+import com.lagradost.desktop.ui.fluent.rememberInteraction
 
 /** Room the pages leave at the right of the top row for the caption buttons (0 with the native title bar) */
 val captionInset: Dp
@@ -88,7 +91,7 @@ fun ExternalTitleBar() {
     }
 }
 
-/** The bar of a maximized window: over the app while the pointer is at the top edge, gone the moment it leaves */
+/** The bar of a maximized or fullscreen window: over the app while the pointer is at the top edge, gone the moment it leaves */
 @Composable
 fun BoxScope.RevealedTitleBar() {
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -97,7 +100,7 @@ fun BoxScope.RevealedTitleBar() {
             kotlinx.coroutines.delay(20)
         }
     }
-    if (!WinChrome.enabled || WinChrome.fullscreen || WinChrome.pip || !WinChrome.autoHides) return
+    if (!WinChrome.enabled || WinChrome.pip || !WinChrome.autoHides) return
     val enter = androidx.compose.animation.slideInVertically(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(120)) { -it } + androidx.compose.animation.fadeIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(100))
     val exit = androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(70)) { -it } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(60))
     androidx.compose.animation.AnimatedVisibility(WinChrome.revealed, Modifier.align(Alignment.TopStart).fillMaxWidth(), enter = enter, exit = exit) {
@@ -108,18 +111,21 @@ fun BoxScope.RevealedTitleBar() {
 @Composable
 private fun CaptionButtons() {
     val c = Fluent.colors
-    CaptionButton("", 1, c.subtleHover, Color.Unspecified)
-    CaptionButton(if (WinChrome.maximized) "" else "", 2, c.subtleHover, Color.Unspecified)
-    CaptionButton("", 3, Color(0xFFC42B1C), Color.White)
+    CaptionButton("", 1, c.subtleHover, Color.Unspecified) { WinChrome.performCaptionCommand(1) }
+    CaptionButton(if (WinChrome.maximized || WinChrome.fullscreen) "" else "", 2, c.subtleHover, Color.Unspecified) { WinChrome.performCaptionCommand(2) }
+    CaptionButton("", 3, Color(0xFFC42B1C), Color.White) { WinChrome.performCaptionCommand(3) }
 }
 
 @Composable
-private fun CaptionButton(glyph: String, id: Int, hoverFill: Color, hoverTint: Color) {
+private fun CaptionButton(glyph: String, id: Int, hoverFill: Color, hoverTint: Color, onClick: () -> Unit = {}) {
     val c = Fluent.colors
+    val source = rememberInteraction()
     val hovered = WinChrome.hover == id
     val pressed = hovered && WinChrome.pressed == id
     Box(
-        Modifier.size(46.dp, TitleBarHeight).background(if (pressed) hoverFill.copy(alpha = hoverFill.alpha * 0.7f) else if (hovered) hoverFill else Color.Transparent),
+        Modifier.size(46.dp, TitleBarHeight)
+            .background(if (pressed) hoverFill.copy(alpha = hoverFill.alpha * 0.7f) else if (hovered) hoverFill else Color.Transparent)
+            .fluentClickable(source, true, androidx.compose.ui.graphics.RectangleShape, Role.Button) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Icon(glyph, size = 10.dp, tint = if (hovered && hoverTint != Color.Unspecified) hoverTint else c.text)

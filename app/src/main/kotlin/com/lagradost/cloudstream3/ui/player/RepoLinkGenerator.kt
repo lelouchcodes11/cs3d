@@ -4,6 +4,9 @@ import android.util.Log
 import com.lagradost.cloudstream3.APIHolder.getApiFromNameNull
 import com.lagradost.cloudstream3.APIHolder.unixTime
 import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.isMovieType
+import kotlinx.coroutines.async
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.ui.result.ResultEpisode
 import com.lagradost.cloudstream3.utils.AppContextUtils.html
@@ -104,16 +107,12 @@ class RepoLinkGenerator(
             }
         }
 
-        val result = APIRepository(
-            getApiFromNameNull(current.apiName) ?: throw Exception("This provider does not exist")
-        ).loadLinks(
-            current.data,
-            isCasting = isCasting,
-            subtitleCallback = { file ->
+        val api = getApiFromNameNull(current.apiName) ?: throw Exception("This provider does not exist")
+        val onSubtitle: (com.lagradost.cloudstream3.SubtitleFile) -> Unit = onSubtitle@{ file ->
                 Log.d(TAG, "Loaded SubtitleFile: $file")
                 val correctFile = PlayerSubtitleHelper.getSubtitleData(file)
                 if (correctFile.url.isBlank() || !currentSubsUrls.add(correctFile.url)) {
-                    return@loadLinks
+                    return@onSubtitle
                 }
 
                 // this part makes sure that all names are unique for UX
@@ -131,11 +130,11 @@ class RepoLinkGenerator(
                         currentCache.lastCachedTimestamp = unixTime
                     }
                 }
-            },
-            callback = { link ->
+        }
+        val onLink: (ExtractorLink) -> Unit = onLink@{ link ->
                 Log.d(TAG, "Loaded ExtractorLink: $link")
                 if (link.url.isBlank() || !currentLinksUrls.add(link.url)) {
-                    return@loadLinks
+                    return@onLink
                 }
 
                 synchronized(currentCache) {
@@ -148,8 +147,11 @@ class RepoLinkGenerator(
                         currentCache.lastCachedTimestamp = unixTime
                     }
                 }
-            }
-        )
+        }
+
+        // only what the extension itself has: a Stremio add-on's streams belong to the Stremio titles and an extension's to its own
+        // (the two used to be mixed: Stremio sources were added to every CloudStream title)
+        val result = APIRepository(api).loadLinks(current.data, isCasting = isCasting, subtitleCallback = onSubtitle, callback = onLink)
 
         synchronized(currentCache) {
             // a search that came back with one or two links (a source that was down for a moment, a rate limit) must not be remembered

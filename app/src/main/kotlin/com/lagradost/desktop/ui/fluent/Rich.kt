@@ -33,6 +33,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -107,18 +109,20 @@ fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
             val source = rememberInteraction()
             val hovered by source.collectIsHoveredAsState()
             val on = i == selected
-            // selected = a pill tinted with the accent
-            val bg by animateColorAsState(if (on) c.accent.copy(alpha = if (c.dark) 0.34f else 0.24f) else if (hovered) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
-            val fg = if (on || hovered) c.text else c.textSecondary
+            // selected = a pill filled with the accent gradient
+            val bg by animateColorAsState(if (hovered && !on) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
+            val fg = if (on) c.onAccent else if (hovered) c.text else c.textSecondary
             val shape = RoundedCornerShape(50)
             Row(
-                Modifier.height(34.dp).clip(shape).background(bg, shape).fluentClickable(source, true, shape, Role.Tab) { onSelect(i) }.padding(horizontal = 16.dp),
+                Modifier.height(34.dp).clip(shape)
+                    .background(if (on) c.accentBrush(hovered) else SolidColor(bg), shape)
+                    .fluentClickable(source, true, shape, Role.Tab) { onSelect(i) }.padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 FText(text, style = Fluent.type.bodyStrong, color = fg, maxLines = 1, softWrap = false)
                 counts?.getOrNull(i)?.let { n ->
                     Box(Modifier.width(8.dp))
-                    Box(Modifier.background(c.control, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
+                    Box(Modifier.background(if (on) c.onAccent.copy(alpha = 0.16f) else c.control, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
                         FText(n.toString(), style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1, softWrap = false)
                     }
                 }
@@ -197,7 +201,7 @@ fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int)
             Box(
                 Modifier.size(132.dp, 74.dp).graphicsLayer { scaleX = scale; scaleY = scale }
                     .clip(shape).background(Color(0xFF15161A))
-                    .border(if (on) 2.dp else Dp.Hairline, if (on) Color.White else Color(0x33FFFFFF), shape)
+                    .border(if (on) 2.dp else Dp.Hairline, if (on) c.accent else Color(0x33FFFFFF), shape)
                     .fluentClickable(source, true, shape, Role.Button) { onSelect(i) },
             ) {
                 RemoteImage(url, headers, null, Modifier.fillMaxSize(), ContentScale.Crop)
@@ -217,13 +221,15 @@ fun GlassCircleButton(glyph: String, tooltip: String, onClick: () -> Unit, modif
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val bg by animateColorAsState(if (active) c.accent.copy(alpha = 0.25f) else if (hovered) Color(0x40FFFFFF) else Color(0x24FFFFFF), FluentMotion.tweenStd(140))
+    val glass by animateColorAsState(c.tintedGlass(hovered), FluentMotion.tweenStd(140))
     Tooltip(tooltip) {
         Box(
-            modifier.size(size).clip(CircleShape).background(bg, CircleShape).border(Dp.Hairline, if (active) c.accent else Color(0x33FFFFFF), CircleShape)
+            modifier.size(size).clip(CircleShape)
+                .background(if (active) c.accentBrush(hovered) else SolidColor(glass), CircleShape)
+                .border(Dp.Hairline, if (active) Color.White.copy(alpha = 0.25f) else c.accent.copy(alpha = if (hovered) 0.7f else 0.4f), CircleShape)
                 .fluentClickable(source, true, CircleShape, Role.Button, onClick),
             contentAlignment = Alignment.Center,
-        ) { Icon(glyph, size = 16.dp, tint = if (active) c.accentText else Color.White) }
+        ) { Icon(glyph, size = 16.dp, tint = if (active) c.onAccent else Color.White) }
     }
 }
 
@@ -233,15 +239,17 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val scale = 1f
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, FluentMotion.tweenIn(120))
     val shape = RoundedCornerShape(50)
-    // on artwork the main action is plain white with dark text, the others frosted: no accent glow
-    val bg = if (primary) Color.White.copy(alpha = if (hovered) 0.86f else 1f) else Color.White.copy(alpha = if (hovered) 0.22f else 0.14f)
-    val fg = if (primary) Color(0xFF111114) else Color.White
+    // the main action is filled with the theme's accent gradient and glows a little; the others are frosted glass tinted with the accent
+    val fg = if (primary) c.onAccent else Color.White
     Row(
         modifier.height(height).graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(shape).background(bg, shape)
-            .border(Dp.Hairline, if (primary) Color.Transparent else Color(0x40FFFFFF), shape)
+            .then(if (primary) Modifier.accentGlow(shape, if (hovered) 1.25f else 0.9f) else Modifier)
+            .clip(shape)
+            .background(if (primary) c.accentBrush(hovered, pressed) else SolidColor(c.tintedGlass(hovered)), shape)
+            .border(Dp.Hairline, if (primary) Color.White.copy(alpha = 0.3f) else c.accent.copy(alpha = if (hovered) 0.7f else 0.4f), shape)
             .focusRing(source, shape)
             .fluentClickable(source, true, shape, Role.Button, onClick)
             .padding(horizontal = 24.dp),
@@ -260,10 +268,10 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
 fun ArtChip(text: String, accent: Boolean = false) {
     val c = Fluent.colors
     Box(
-        Modifier.background(if (accent) Color(0x40FFFFFF) else Color(0x26FFFFFF), RoundedCornerShape(50))
-            .border(Dp.Hairline, Color(0x2EFFFFFF), RoundedCornerShape(50))
+        Modifier.background(if (accent) SolidColor(c.accent.copy(alpha = 0.9f)) else SolidColor(Color(0x26FFFFFF)), RoundedCornerShape(50))
+            .border(Dp.Hairline, if (accent) Color.White.copy(alpha = 0.25f) else Color(0x2EFFFFFF), RoundedCornerShape(50))
             .padding(horizontal = 10.dp, vertical = 3.dp),
-    ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = Color.White, maxLines = 1, softWrap = false) }
+    ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = if (accent) c.onAccent else Color.White, maxLines = 1, softWrap = false) }
 }
 
 /** Overlay content on a 16:9 still with a gradient for legibility */

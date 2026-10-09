@@ -171,9 +171,11 @@ abstract class AuthAPI {
             get() = unixTimeMS
 
         fun splitRedirectUrl(redirectUrl: String): Map<String, String> {
-            return splitUrlParameters(
-                redirectUrl.replace(APP_STRING, "https").replace("/#", "?")
-            )
+            val normalized = redirectUrl
+                .replace(APP_STRING, "https")
+                .replace("/#", "?")
+                .replace("#", "?")
+            return splitUrlParameters(normalized)
         }
 
         fun generateCodeVerifier(): String {
@@ -189,8 +191,13 @@ abstract class AuthAPI {
 
     /** Is this url a valid redirect url for this service? */
     @Throws
-    open fun isValidRedirectUrl(url: String): Boolean =
-        redirectUrlIdentifier != null && url.contains("/$redirectUrlIdentifier")
+    open fun isValidRedirectUrl(url: String): Boolean {
+        val id = redirectUrlIdentifier ?: return false
+        val matchesIdentifier = url.contains("/$id") || url.contains("://$id")
+        if (!matchesIdentifier) return false
+        // Must carry OAuth callback payload: code, token, or error
+        return url.contains("code=") || url.contains("token=") || url.contains("error=")
+    }
 
     /** OAuth2 login from a valid redirectUrl, and payload given in loginRequest */
     @Throws

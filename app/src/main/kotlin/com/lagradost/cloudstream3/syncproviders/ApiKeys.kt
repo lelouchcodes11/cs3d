@@ -19,6 +19,7 @@ object ApiKeys {
     enum class Key(val label: String, val secret: Boolean = false) {
         ANILIST_ID("AniList client ID"),
         MAL_ID("MyAnimeList client ID"),
+        MAL_SECRET("MyAnimeList client secret (only for App Type web)", secret = true),
         SIMKL_ID("Simkl client ID"),
         SIMKL_SECRET("Simkl client secret", secret = true),
     }
@@ -26,6 +27,7 @@ object ApiKeys {
     private fun builtIn(key: Key): String? = when (key) {
         Key.ANILIST_ID -> BuildConfig.ANILIST_KEY
         Key.MAL_ID -> BuildConfig.MAL_KEY
+        Key.MAL_SECRET -> ""
         Key.SIMKL_ID -> BuildConfig.SIMKL_CLIENT_ID
         Key.SIMKL_SECRET -> BuildConfig.SIMKL_CLIENT_SECRET
     }.trim().takeIf { it.isNotEmpty() && it != "null" }
@@ -45,6 +47,7 @@ object ApiKeys {
 
     val aniList: String get() = get(Key.ANILIST_ID)
     val mal: String get() = get(Key.MAL_ID)
+    val malSecret: String get() = get(Key.MAL_SECRET)
     val simklId: String get() = get(Key.SIMKL_ID)
     val simklSecret: String get() = get(Key.SIMKL_SECRET)
 
