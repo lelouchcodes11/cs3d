@@ -115,6 +115,8 @@ data class VideoState(
             // (torrents: the ones with hardly any seeders go last, they would not buffer; then by quality, then the most seeders)
             compareBy<DisplayLink> { if (com.lagradost.desktop.torrent.TorrentEngine.isTorrent(it.link.first)) 1 else 0 }
                 .thenBy { d -> com.lagradost.desktop.torrent.TorrentEngine.seeders(d.link.first)?.let { if (it < 3) 1 else 0 } ?: 0 }
+                // 4K, REMUX and huge files after the lighter ones (setting "Prefer smooth sources"); they stay in the list
+                .thenBy { d -> if (com.lagradost.desktop.ui.fluent.Appearance.smoothSources && com.lagradost.desktop.net.SourceWeight.heavy(d.link.first)) 1 else 0 }
                 .thenBy { -it.priority }
                 .thenBy { d -> -(com.lagradost.desktop.torrent.TorrentEngine.seeders(d.link.first) ?: 0) }.thenBy { if (hasLinkErrored(it.link)) 0 else com.lagradost.desktop.net.HostHealth.penalty(it.link.first) },
         ).also { value -> sortedLinks[qualityProfile] = value }

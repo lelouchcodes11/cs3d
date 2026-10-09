@@ -132,6 +132,9 @@ fun LayoutAndStyleCards() {
         SettingsCard("Native GPU player (beta)", "mpv draws the video with its own GPU renderer in a window of its own, in step with your screen's refresh, and the controls float above it. Smoothest motion and the least CPU, but still being tested: if the picture or the controls misbehave, switch it off. Applies to the next video.") {
             ToggleSwitch(Appearance.nativePlayer, { Appearance.nativePlayer = it; changed() })
         }
+        SettingsCard("Prefer smooth sources", "When a title is played, 4K, REMUX and very large files are tried after the lighter ones: they are the sources that stall on slow hosts and buffer or drop frames on a weak graphics card. All of them stay in the Sources list. Turn it off to always try the highest quality first.") {
+            ToggleSwitch(Appearance.smoothSources, { Appearance.smoothSources = it; changed() })
+        }
         SettingsCard("Anime upscaling (Anime4K)", "Neural filters that clean up and enlarge low resolution anime. Works with the native GPU player only, and asks a lot of the graphics card. Applies to the next video. Anime4K by bloc97 (MIT).") {
             ToggleSwitch(Appearance.anime4k, { Appearance.anime4k = it; changed() })
         }

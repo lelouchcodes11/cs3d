@@ -159,6 +159,11 @@ object DevServer {
      */
     private fun captureOverlay(): BufferedImage? {
         val overlay = java.awt.Window.getWindows().firstOrNull { it is java.awt.Dialog && it.isShowing && it.isUndecorated } ?: return null
+        return skiaShot(overlay)
+    }
+
+    /** What Skia drew into [target]'s layer, laid over a grey ground so that transparency shows */
+    private fun skiaShot(target: java.awt.Window): BufferedImage? {
         fun find(c: java.awt.Container): org.jetbrains.skiko.SkiaLayer? {
             for (ch in c.components) {
                 if (ch is org.jetbrains.skiko.SkiaLayer) return ch
@@ -166,7 +171,7 @@ object DevServer {
             }
             return null
         }
-        val layer = find(overlay) ?: return null
+        val layer = find(target) ?: return null
         val bitmap = layer.screenshot() ?: return null
         val png = org.jetbrains.skia.Image.makeFromBitmap(bitmap).encodeToData(org.jetbrains.skia.EncodedImageFormat.PNG)?.bytes ?: return null
         val src = ImageIO.read(java.io.ByteArrayInputStream(png))
@@ -343,8 +348,49 @@ object DevServer {
             }
             "/screenshot" -> {
                 val out = ByteArrayOutputStream()
-                ImageIO.write(capture(), "png", out)
+                // ?sk=1: what Skia drew (the window's Skia layer), for when PrintWindow returns a blank window (screen locked, window covered)
+                if (q["sk"] != null) {
+                    val img = skiaShot(window()) ?: return ok(ex, "no skia layer")
+                    ImageIO.write(img, "png", out)
+                } else ImageIO.write(capture(), "png", out)
                 respond(ex, 200, "image/png", out.toByteArray())
+            }
+            "/bookmark" -> {
+                // dev: puts a title into the Local library (Watching): /bookmark?name=Heat&type=Movie ; &type=Anime for an anime ; delete=1 removes it again
+                val name = q["name"]!!
+                val id = q["id"]?.toInt() ?: name.hashCode()
+                val data = com.lagradost.cloudstream3.utils.DataStoreHelper
+                if (q["delete"] != null) data.deleteBookmarkedData(id) else {
+                    val now = System.currentTimeMillis()
+                    data.setBookmarkedData(id, com.lagradost.cloudstream3.utils.DataStoreHelper.BookmarkedData(now, id, now, name, q["url"] ?: "https://example.invalid/$id", q["api"] ?: "Dev",
+                        com.lagradost.cloudstream3.TvType.valueOf(q["type"] ?: "Movie"), q["poster"], null))
+                    data.setResultWatchState(id, com.lagradost.cloudstream3.ui.WatchType.WATCHING.internalId)
+                }
+                ok(ex)
+            }
+            "/pip" -> {
+                // dev: picture in picture on or off (as the I key does): /pip?on=1
+                val session = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
+                onEdt { session.setPip(q["on"] != "0") }
+                Thread.sleep(600)
+                ok(ex, "pip=${com.lagradost.desktop.platform.WinChrome.pip}")
+            }
+            "/pipdrag" -> {
+                // dev: the small window dragged by (dx, dy) screen pixels, as a pointer would (a pretend pointer, the real one stays): /pipdrag?dx=-300&dy=-200
+                val chrome = com.lagradost.desktop.platform.WinChrome
+                chrome.debugCursor = intArrayOf(q["x"]?.toInt() ?: 1000, q["y"]?.toInt() ?: 600)
+                chrome.pipDragBegin()
+                chrome.debugCursor = intArrayOf((q["x"]?.toInt() ?: 1000) + (q["dx"]?.toInt() ?: 0), (q["y"]?.toInt() ?: 600) + (q["dy"]?.toInt() ?: 0))
+                chrome.pipDragMove()
+                chrome.pipDragEnd()
+                chrome.debugCursor = null
+                ok(ex, "done")
+            }
+            "/details" -> {
+                // dev: opens a title page: /details?url=<address>&api=<provider name>&name=<title> (a library item of AniList has api=AniList)
+                val nav = com.lagradost.desktop.core.Navigator
+                nav.go(com.lagradost.desktop.core.Route.Details(q["url"]!!, q["api"] ?: "", q["name"] ?: "", null, 0, null))
+                ok(ex)
             }
             "/click" -> {
                 click(q["x"]!!.toInt(), q["y"]!!.toInt(), q["button"] == "right", q["count"]?.toInt() ?: 1)
@@ -1151,7 +1197,9 @@ object DevServer {
                 q["stamp"]?.let { type -> com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugStamp(com.lagradost.cloudstream3.utils.videoskip.SkipType.valueOf(type), q["from"]?.toLong() ?: 0L, q["to"]?.toLong() ?: 60_000L) }
                 if (q["fail"] != null) com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugFail()
                 if (q["end"] != null) com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugEnd()
-                ok(ex, com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugLine() ?: "no player page")
+                val dev = com.lagradost.desktop.ui.screens.player.PlayerDev
+                ok(ex, (com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugLine() ?: "no player page") +
+                    " controls=${dev.controlsShown} pokes=${dev.pokes} overControls=${dev.overControls} pip=${com.lagradost.desktop.platform.WinChrome.pip}")
             }
             "/tlsinfo" -> {
                 // dev: which TLS stack and HTTP version the app's client and a plain OkHttp client get

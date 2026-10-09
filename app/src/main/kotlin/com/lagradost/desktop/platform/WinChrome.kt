@@ -150,6 +150,8 @@ object WinChrome {
         fun EnumChildWindows(hwnd: WinDef.HWND, cb: WinUser.WNDENUMPROC, data: Pointer?): Boolean
         fun GetClassNameW(hwnd: WinDef.HWND, buf: CharArray, max: Int): Int
         fun MonitorFromWindow(hwnd: WinDef.HWND, flags: Int): Pointer?
+        /** [point]: the POINT structure passed by value, x in the low 32 bits and y in the high ones */
+        fun MonitorFromPoint(point: Long, flags: Int): Pointer?
         fun GetMonitorInfoW(monitor: Pointer, info: Pointer): Boolean
         fun TrackMouseEvent(event: Pointer): Boolean
         fun PostMessageW(hwnd: WinDef.HWND, msg: Int, wParam: Long, lParam: Long): Boolean
@@ -166,6 +168,7 @@ object WinChrome {
     private const val WS_CAPTION = 0xC00000L
     private const val WS_THICKFRAME = 0x40000L
     private const val WM_SIZE = 0x0005
+    private const val WM_SIZING = 0x0214
     private const val WM_NCACTIVATE = 0x0086
     private const val WM_NCCALCSIZE = 0x0083
     private const val WM_NCHITTEST = 0x0084
@@ -180,6 +183,8 @@ object WinChrome {
     private const val SC_CLOSE = 0xF060
     private const val WM_NCMOUSELEAVE = 0x02A2
     private const val HTCLIENT = 1
+    private const val HTLEFT = 10
+    private const val HTBOTTOMRIGHT = 17
     private const val HTCAPTION = 2
     private const val HTMINBUTTON = 8
     private const val HTMAXBUTTON = 9
@@ -194,6 +199,7 @@ object WinChrome {
     private const val SWP_NOSIZE = 0x1
     private const val SWP_NOMOVE = 0x2
     private const val SWP_NOZORDER = 0x4
+    private const val SWP_NOACTIVATE = 0x10
     private const val SWP_FRAMECHANGED = 0x20
     private const val SWP_SHOWWINDOW = 0x40
     private const val SW_MAXIMIZE = 3
@@ -336,8 +342,16 @@ object WinChrome {
                 WM_SIZE -> {
                     maximized = api.IsZoomed(hwnd)
                 }
+                // the small window keeps the video's shape while an edge or a corner is dragged
+                WM_SIZING -> if (pip && pipAspect > 0f) {
+                    keepPipAspect(api, hwnd, wParam.toInt(), Pointer(lParam))
+                    return 1L
+                }
                 WM_NCHITTEST -> {
                     val result = api.CallWindowProcW(prev, hwnd, msg, wParam, lParam)
+                    // the small window is resized by the grips of its picture, which keep its shape and let the video follow: the system's
+                    // invisible border around it would resize it without the picture following
+                    if (pip && result.toInt() in HTLEFT..HTBOTTOMRIGHT) return HTCLIENT.toLong()
                     if (result.toInt() != HTCLIENT || (fullscreen && !revealed)) return result
                     return hitTest(api, hwnd, lParam).toLong()
                 }
@@ -449,13 +463,30 @@ object WinChrome {
     private var pipSavedRect: IntArray? = null
     private var pipSavedZoomed = false
     private var pipSavedMinimum: java.awt.Dimension? = null
+
+    /** Where the small window was when it was left (window rectangle), so that it comes back there */
     private var pipRect: IntArray? = null
-    const val PIP_STRIP_DP = 28
-    private const val PIP_WIDTH_DP = 420
+
+    /** The picture's width in pixels the user made the small window last time */
+    private var pipClientWidth = 0
+
+    /** Width / height of the video in the small window; its window keeps this shape (0: not in picture in picture) */
+    @Volatile
+    private var pipAspect = 0f
+
+    /** The bar of the small window that shows on hover (title, back to the app, close) */
+    const val PIP_STRIP_DP = 30
+    private const val PIP_WIDTH_DP = 440
+    private const val PIP_MIN_WIDTH_DP = 240
+
+    /** The edge of the screen's work area a dragged small window sticks to within this distance */
+    private const val PIP_SNAP_DP = 16
 
     /**
      * Picture in picture: the window becomes a small borderless one in the corner of the screen's work area, above
      * every other window; leaving restores the size, position and maximized state. [aspect] is width / height of the video.
+     * The picture fills the whole window; it is moved by dragging the picture ([pipDragBegin]) and resized by its edges and corners (the
+     * window keeps the video's shape, see [keepPipAspect]).
      */
     fun setPip(window: Window, on: Boolean, aspect: Float): Boolean {
         val api = user ?: return false
@@ -475,13 +506,18 @@ object WinChrome {
                 info.setInt(0, 40)
                 if (!api.GetMonitorInfoW(monitor, info)) return false
                 val scale = (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0
-                val width = (PIP_WIDTH_DP * scale).toInt()
-                val height = (width / aspect.coerceIn(1f, 2.6f)).toInt() + (PIP_STRIP_DP * scale).toInt() / 2
+                // the window holds invisible resize borders at its left, right and bottom: the picture is what is left inside
+                val (fx, fy) = frame(api, hwnd)
+                pipAspect = aspect.coerceIn(1f, 2.6f)
+                val workWidth = info.getInt(28) - info.getInt(20)
+                val pictureWidth = (pipClientWidth.takeIf { it > 0 } ?: (PIP_WIDTH_DP * scale).toInt()).coerceIn((PIP_MIN_WIDTH_DP * scale).toInt(), (workWidth * 0.8).toInt())
+                val width = pictureWidth + 2 * fx
+                val height = (pictureWidth / pipAspect).toInt() + fy
                 val margin = (24 * scale).toInt()
                 // where it was last time, when that is still on this monitor
                 val last = pipRect
-                val x = last?.get(0)?.takeIf { it >= info.getInt(20) && it + width <= info.getInt(28) } ?: (info.getInt(28) - width - margin)
-                val y = last?.get(1)?.takeIf { it >= info.getInt(24) && it + height <= info.getInt(32) } ?: (info.getInt(32) - height - margin)
+                val x = last?.get(0)?.takeIf { it >= info.getInt(20) && it + width <= info.getInt(28) } ?: (info.getInt(28) - width - margin + fx)
+                val y = last?.get(1)?.takeIf { it >= info.getInt(24) && it + height <= info.getInt(32) } ?: (info.getInt(32) - height - margin + fy)
                 pipSavedMinimum = window.minimumSize
                 window.minimumSize = java.awt.Dimension(0, 0)
                 pip = true
@@ -489,8 +525,13 @@ object WinChrome {
                 api.SetWindowPos(hwnd, Pointer(-1), x, y, width, height, SWP_FRAMECHANGED or SWP_SHOWWINDOW)
             } else {
                 pip = false
+                pipAspect = 0f
+                pipDragging = false
                 val now = IntArray(4)
-                if (api.GetWindowRect(hwnd, now)) pipRect = now
+                if (api.GetWindowRect(hwnd, now)) {
+                    pipRect = now
+                    pipClientWidth = now[2] - now[0] - 2 * frame(api, hwnd).first
+                }
                 pipSavedMinimum?.let { window.minimumSize = it }
                 val r = pipSavedRect
                 if (r != null) api.SetWindowPos(hwnd, Pointer(-2), r[0], r[1], r[2] - r[0], r[3] - r[1], SWP_FRAMECHANGED or SWP_SHOWWINDOW)
@@ -502,11 +543,188 @@ object WinChrome {
         }.getOrDefault(false)
     }
 
+    /**
+     * WM_SIZING of the small window (an edge of the system's resize border was dragged): the rectangle is corrected like [fitPip] does.
+     * The small window has no such border any more (see the hit test), this stays as the safety net.
+     */
+    private fun keepPipAspect(api: User32Ex, hwnd: WinDef.HWND, edge: Int, rect: Pointer) {
+        val r = intArrayOf(rect.getInt(0), rect.getInt(4), rect.getInt(8), rect.getInt(12))
+        fitPip(api, hwnd, edge, r)
+        rect.setInt(0, r[0])
+        rect.setInt(4, r[1])
+        rect.setInt(8, r[2])
+        rect.setInt(12, r[3])
+    }
+
+    /**
+     * Corrects the window rectangle [r] (left, top, right, bottom) so that the picture inside it (the window minus its invisible borders at the left,
+     * right and bottom) keeps the shape of the video and is not smaller than the minimum; the edge or corner that is not being dragged stays
+     * where it is. [edge] numbers as WMSZ_*: left 1, right 2, top 3, topleft 4, topright 5, bottom 6, bottomleft 7, bottomright 8.
+     */
+    private fun fitPip(api: User32Ex, hwnd: WinDef.HWND, edge: Int, r: IntArray) {
+        var left = r[0]
+        var top = r[1]
+        var right = r[2]
+        var bottom = r[3]
+        val (fx, fy) = frame(api, hwnd)
+        val scale = (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0
+        var pictureWidth = right - left - 2 * fx
+        var pictureHeight = bottom - top - fy
+        // the top and bottom edges change the height: the width follows; every other edge or corner: the height follows the width
+        if (edge == 3 || edge == 6) pictureWidth = (pictureHeight * pipAspect).toInt() else pictureHeight = (pictureWidth / pipAspect).toInt()
+        val minimum = (PIP_MIN_WIDTH_DP * scale).toInt()
+        if (pictureWidth < minimum) { pictureWidth = minimum; pictureHeight = (pictureWidth / pipAspect).toInt() }
+        val width = pictureWidth + 2 * fx
+        val height = pictureHeight + fy
+        if (edge == 1 || edge == 4 || edge == 7) left = right - width else right = left + width
+        if (edge == 3 || edge == 4 || edge == 5) top = bottom - height else bottom = top + height
+        r[0] = left
+        r[1] = top
+        r[2] = right
+        r[3] = bottom
+    }
+
+    // resizing the small window by dragging an edge or a corner of the picture (grips drawn by the player page), read like the move below
+    private var resizeEdge = 0
+    private val resizeCursor = IntArray(2)
+    private val resizeWindow = IntArray(4)
+
+    fun pipResizeBegin(edge: Int) {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        if (!pip) return
+        if (pipDragging) {
+            // the pointer was pressed a few pixels ago (a drag only starts after a little movement): measure from there, the window follows at once
+            dragCursor.copyInto(resizeCursor)
+            dragWindow.copyInto(resizeWindow)
+            resizeEdge = edge
+            return
+        }
+        cursorPos(api, resizeCursor)
+        resizeEdge = if (api.GetWindowRect(hwnd, resizeWindow)) edge else 0
+    }
+
+    fun pipResizeMove() {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        if (!pip || resizeEdge == 0) return
+        val cursor = IntArray(2)
+        if (!cursorPos(api, cursor)) return
+        val dx = cursor[0] - resizeCursor[0]
+        val dy = cursor[1] - resizeCursor[1]
+        val r = resizeWindow.clone()
+        val edge = resizeEdge
+        if (edge == 1 || edge == 4 || edge == 7) r[0] += dx
+        if (edge == 2 || edge == 5 || edge == 8) r[2] += dx
+        if (edge == 3 || edge == 4 || edge == 5) r[1] += dy
+        if (edge == 6 || edge == 7 || edge == 8) r[3] += dy
+        fitPip(api, hwnd, edge, r)
+        // not larger than the screen's work area
+        val monitor = api.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+        if (monitor != null) {
+            val info = Memory(40)
+            info.setInt(0, 40)
+            if (api.GetMonitorInfoW(monitor, info) && r[2] - r[0] > (info.getInt(28) - info.getInt(20)) * 0.9) return
+        }
+        api.SetWindowPos(hwnd, null, r[0], r[1], r[2] - r[0], r[3] - r[1], SWP_NOZORDER or SWP_NOACTIVATE)
+        pipMoved = true
+    }
+
+    fun pipResizeEnd() {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        if (resizeEdge == 0) return
+        resizeEdge = 0
+        val now = IntArray(4)
+        if (api.GetWindowRect(hwnd, now)) {
+            pipRect = now
+            pipClientWidth = now[2] - now[0] - 2 * frame(api, hwnd).first
+        }
+    }
+
+    // moving the small window by dragging the picture. The pointer's own position is read from Windows (the window moves under it, so the
+    // position an event carries does not change), which also makes it work from the controls window of the native video player.
+    private val dragCursor = IntArray(2)
+
+    /** Dev: a pretend pointer position (screen px) used instead of the real one while dragging the small window */
+    @Volatile
+    var debugCursor: IntArray? = null
+
+    private fun cursorPos(api: User32Ex, out: IntArray): Boolean {
+        debugCursor?.let { out[0] = it[0]; out[1] = it[1]; return true }
+        return api.GetCursorPos(out)
+    }
+    private val dragWindow = IntArray(4)
+    private var pipDragging = false
+    private var dragMoves = 0
+
+    /** The pointer took the small window somewhere since it was pressed: that release is the end of a drag, not a click */
+    @Volatile
+    var pipMoved = false
+
+    fun pipDragBegin() {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        if (!pip) return
+        cursorPos(api, dragCursor)
+        pipDragging = api.GetWindowRect(hwnd, dragWindow)
+        dragMoves = 0
+        pipMoved = false
+        android.util.Log.i("WinChrome", "picture in picture drag begins: pointer ${dragCursor.toList()}, window ${dragWindow.toList()}, ok $pipDragging")
+    }
+
+    /** Puts the small window where the pointer has taken it: it stays on a screen and sticks to the edges of the work area it is near */
+    fun pipDragMove() {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        if (!pip || !pipDragging) return
+        val cursor = IntArray(2)
+        if (!cursorPos(api, cursor)) return
+        val width = dragWindow[2] - dragWindow[0]
+        val height = dragWindow[3] - dragWindow[1]
+        var x = dragWindow[0] + cursor[0] - dragCursor[0]
+        var y = dragWindow[1] + cursor[1] - dragCursor[1]
+        // the work area (not under the taskbar) of the screen the pointer is on
+        val monitor = api.MonitorFromPoint((cursor[0].toLong() and 0xFFFFFFFFL) or (cursor[1].toLong() shl 32), MONITOR_DEFAULTTONEAREST)
+        if (monitor != null) {
+            val info = Memory(40)
+            info.setInt(0, 40)
+            if (api.GetMonitorInfoW(monitor, info)) {
+                val scale = (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0
+                val snap = (PIP_SNAP_DP * scale).toInt()
+                val (fx, fy) = frame(api, hwnd)
+                val left = info.getInt(20) - fx
+                val top = info.getInt(24)
+                val right = info.getInt(28) + fx
+                val bottom = info.getInt(32) + fy
+                if (Math.abs(x - left) < snap) x = left
+                if (Math.abs(x + width - right) < snap) x = right - width
+                if (Math.abs(y - top) < snap) y = top
+                if (Math.abs(y + height - bottom) < snap) y = bottom - height
+                // the whole picture stays on the screen the pointer is on
+                x = x.coerceIn(left, maxOf(left, right - width))
+                y = y.coerceIn(top, maxOf(top, bottom - height))
+            }
+        }
+        val moved = api.SetWindowPos(hwnd, null, x, y, 0, 0, SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE)
+        if (x != dragWindow[0] || y != dragWindow[1]) pipMoved = true
+        if (dragMoves++ < 3) android.util.Log.i("WinChrome", "picture in picture drag: window to $x,$y ok $moved")
+    }
+
+    fun pipDragEnd() {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        if (!pipDragging) return
+        pipDragging = false
+        val now = IntArray(4)
+        if (api.GetWindowRect(hwnd, now)) pipRect = now
+    }
+
     /** What the pointer is over (window pixels): top resize edge, caption buttons, the drag band or the app */
     fun classify(x: Int, y: Int, width: Int, scale: Double, zoomed: Boolean): Int {
         // resize from the top edge (the system only knows the other edges now)
         val edge = (6 * scale).toInt()
-        if (!zoomed && y < edge) {
+        if (!zoomed && !pip && y < edge) {
             val corner = (12 * scale).toInt()
             return when {
                 x < corner -> HTTOPLEFT
@@ -525,8 +743,9 @@ object WinChrome {
                 fromRight in bw * 2 until bw * 3 -> return HTMINBUTTON
             }
         }
-        // draggable band: everything in it that is not a control
-        val band = ((if (pip) PIP_STRIP_DP else DRAG_HEIGHT_DP) * scale).toInt()
+        // draggable band: everything in it that is not a control. The small window has none: it is dragged by its picture (pipDragBegin), which
+        // works over the video of the native player too, where the frame window never sees the pointer
+        val band = if (pip) 0 else (DRAG_HEIGHT_DP * scale).toInt()
         if (y < band) {
             val inControl = noDrag.values.any { x >= it[0] && x < it[2] && y >= it[1] && y < it[3] }
             if (!inControl) return HTCAPTION

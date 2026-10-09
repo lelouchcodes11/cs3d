@@ -38,6 +38,8 @@ fun PosterGrid(
     onEnd: (() -> Unit)? = null,
     menu: ((SearchResponse) -> List<MenuEntry>)? = null,
     header: (LazyGridScope.() -> Unit)? = null,
+    /** What a click on a card does; null opens its title page */
+    onOpen: ((SearchResponse) -> Unit)? = null,
 ) {
     if (onEnd != null) {
         LaunchedEffect(state, items.size) {
@@ -60,7 +62,7 @@ fun PosterGrid(
     ) {
         header?.invoke(this)
         items(unique, key = { it.url + it.apiName }) { card ->
-            PosterCard(card, { openCard(card) }, width = null, showType = showType, menu = menu?.let { m -> { m(card) } })
+            PosterCard(card, { if (onOpen != null) onOpen(card) else openCard(card) }, width = null, showType = showType, menu = menu?.let { m -> { m(card) } })
         }
     }
     }

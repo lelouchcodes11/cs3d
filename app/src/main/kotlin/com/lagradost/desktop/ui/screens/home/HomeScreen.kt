@@ -108,10 +108,15 @@ fun openCard(card: SearchResponse) {
     } else Navigator.openDetails(card)
 }
 
-/** Rows whose order means something get big rank numbers */
-private fun isRankedRow(name: String): Boolean {
-    val n = name.lowercase()
-    return listOf("top", "trending", "popular", "most watched", "hot").any { n.contains(it) }
+/**
+ * Only a row that says it is a short chart ("Top 10 in India", "Top 5 today") gets big rank numbers. Matching "top", "popular", "hot" ...
+ * anywhere in a name numbered nearly every row of StreamPlay and CineStream ("Hotstar", "Top Rated", "Popular on Netflix"), which are long lists.
+ */
+private val chartName = Regex("""\btop[\s-]*(\d{1,2}|five|ten|twenty)\b""", RegexOption.IGNORE_CASE)
+
+private fun chartSize(name: String): Int? {
+    val word = chartName.find(name)?.groupValues?.get(1)?.lowercase() ?: return null
+    return when (word) { "five" -> 5; "ten" -> 10; "twenty" -> 20; else -> word.toIntOrNull() }?.takeIf { it in 3..20 }
 }
 
 @Composable
@@ -202,7 +207,8 @@ fun HomeScreen() {
                     rows.forEach { (name, row) ->
                         item(key = "row-$name") {
                             Column(Modifier.padding(bottom = space)) {
-                                val ranked = isRankedRow(name) && !row.list.isHorizontalImages
+                                val chart = chartSize(name)
+                                val ranked = chart != null && !row.list.isHorizontalImages
                                 com.lagradost.desktop.ui.fluent.RichSectionHeader(
                                     name, Modifier.padding(horizontal = gutter),
                                     onSeeAll = { Navigator.go(Route.Section(name, row.list.list)) },
@@ -219,7 +225,7 @@ fun HomeScreen() {
                                     }
                                 }
                                 if (ranked) {
-                                    val shown = row.list.list.take(10)
+                                    val shown = row.list.list.take(chart ?: 10)
                                     Shelf(shown, w, gutter = gutter, spacing = 6.dp, state = state, key = { it.url }) { card ->
                                         com.lagradost.desktop.ui.fluent.RankedPoster(shown.indexOf(card) + 1, w) {
                                             PosterCard(card, { openCard(card) }, null)

@@ -101,6 +101,11 @@ object DesktopBootstrap {
     fun initApplication(dataDir: File? = null) {
         runCatching { Security.insertProviderAt(org.conscrypt.Conscrypt.newProvider(), 1) } // before OkHttp is first used, see main()
         if (dataDir != null) AndroidRuntime.init(dataDir) else AndroidRuntime.init()
+        // a new data folder after an update (a fresh portable copy, a wiped install folder) gets the settings of the last version back
+        if (dataDir == null) {
+            com.lagradost.desktop.platform.DataKeep.restoreIfFresh(AndroidRuntime.dataDir)
+            com.lagradost.desktop.platform.DataKeep.start()
+        }
         TrustStore.install(AndroidRuntime.dataDir)
         // the trust store (a few hundred certificates) takes over a second to parse, and the first HTTPS client of the engine, created on the UI thread,
         // would wait for that: it is read here, in parallel with the rest of the start-up, and the JDK keeps the result

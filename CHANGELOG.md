@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+**Updates keep your repositories and extensions**
+- A second copy of your settings (repositories, the list of extensions, accounts, watch history, bookmarks, look) is kept in `%LOCALAPPDATA%\CloudStream-keep`. When a new version starts with a data folder that has nothing in it (an update unpacked into a new portable folder, an installer that replaced the install folder), the copy is put back and the extension files are downloaded again. A data folder you delete yourself stays empty when the version is the same.
+- Extensions were saved with their absolute path, so a data folder that was copied or moved listed its extensions but never loaded them (and lost them with the old folder). The path is now looked up in the current data folder, and a missing extension file is downloaded again from the address it came from.
+
+**Library**
+- **AniList, MyAnimeList and Simkl titles open without StreamPlay.** They only opened because StreamPlay's anime provider happens to claim `anilist.co` addresses; without it the page said "This provider does not exist". Now an extension that claims the title opens it as before, and when none does the extensions are searched for the title (right-click: *Open*, *Search all extensions*, *Open on AniList*).
+- **Anime filter**: a list that holds anime and films or series gets **All / Anime / Movies & TV** with counts (remembered); the status tabs count what the filter shows.
+
+**Home**
+- Only rows that say they are a short chart ("Top 10 ...", "Top 5 ...") get the big rank numbers. Every row of StreamPlay and CineStream used to have them ("Popular", "Top Rated", "Hotstar" and "Trending" matched).
+
+**Player**
+- **Picture in picture works**: the picture is the whole window, drag it anywhere to move it (it stays on the screen and sticks to its edges), drag an edge or corner to resize it (it keeps the video's shape and remembers its size and place), click plays or pauses, double click goes back to the app; title, back and close show on hover. With the native GPU player the window could not be moved at all (its controls window sat above the strip that dragged it).
+- **Controls that showed again and again**: a pointer that rests no longer shows them (Compose repeats the last position when something under it changes), the native player's two windows no longer disagree about whether the pointer is on the controls, and a press no longer cancels itself (the first click on a video with hidden controls only showed them).
+- **Prefer smooth sources** (Settings > Look, on by default): the automatic choice tries 4K, REMUX and files over 25 GB after the lighter ones. StreamPlay and CineStream list those first, and they buffer on slow hosts and drop frames on a weak graphics card. All sources stay in the Sources list.
+- The native player's controls window asked Windows for the video's place 60 times a second (a blocking call into the thread of the title bar); the UI-freeze log shows it stuck there for up to 2.5 s. It now follows the window's own move and resize events.
+
 ## 1.0.1
 
 **Stremio add-ons and torrents** (Settings > Stremio & torrents)

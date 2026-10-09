@@ -51,6 +51,8 @@ object PrefsBackup {
             // oldest first (the names sort by time)
             root.listFiles { f -> f.isDirectory && f.name.startsWith("prefs-") }?.sortedBy { it.name }?.dropLast(KEEP)?.forEach { it.deleteRecursively() }
             Log.i(TAG, "copied ${files.size} preference files to ${folder.name} ($reason)")
+            // and the copy outside the data folder that survives an update
+            DataKeep.mirror()
         }.onFailure { Log.w(TAG, "backup failed: ${it.message}") }
     }
 }

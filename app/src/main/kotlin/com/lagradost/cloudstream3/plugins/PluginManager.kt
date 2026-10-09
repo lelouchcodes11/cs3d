@@ -177,7 +177,42 @@ object PluginManager {
 
 
     fun getPluginsOnline(): Array<PluginData> {
-        return getKey<Array<PluginData>>(PLUGINS_KEY) ?: emptyArray()
+        return (getKey<Array<PluginData>>(PLUGINS_KEY) ?: emptyArray()).let { saved -> Array(saved.size) { saved[it].rebased() } }
+    }
+
+    /**
+     * desktop: the path of an extension is saved absolute, so a data folder that was copied or moved (a portable copy, an update unpacked into a
+     * new folder next to the old one, a settings backup put back after a re-install) pointed at files of the old place: the extensions were listed
+     * but never loaded, and gone with the old folder. What comes after `files/Extensions/` is looked for in this run's data folder instead.
+     */
+    private fun PluginData.rebased(): PluginData {
+        if (!isOnline) return this
+        val tail = filePath.replace('\\', '/').substringAfterLast("/files/$ONLINE_PLUGINS_FOLDER/", "")
+        if (tail.isEmpty()) return this
+        val here = File(com.lagradost.desktop.runtime.AndroidRuntime.filesDir(), "$ONLINE_PLUGINS_FOLDER/$tail")
+        // the old file still works when nothing is here yet
+        if (here.absolutePath == filePath || (!here.exists() && File(filePath).exists())) return this
+        return copy(filePath = here.absolutePath)
+    }
+
+    /**
+     * desktop: extensions that are listed but whose file is not in the data folder (it was moved without them, or the settings were put back
+     * into a fresh folder) are downloaded again from the address they came from, a few at a time.
+     * @return how many were downloaded
+     */
+    suspend fun downloadMissingPluginFiles(activity: Activity): Int {
+        val missing = getPluginsOnline().filter { !it.url.isNullOrBlank() && !File(it.filePath).exists() }
+        if (missing.isEmpty()) return 0
+        Log.i(TAG, "${missing.size} extension files are missing, downloading them again")
+        val gate = kotlinx.coroutines.sync.Semaphore(4)
+        val done = java.util.concurrent.atomic.AtomicInteger()
+        missing.amap { data ->
+            gate.withPermit {
+                // one more try: the connection can drop while many files are fetched
+                if ((1..2).any { downloadPlugin(activity, data.url!!, null, data.internalName, File(data.filePath), false) }) done.incrementAndGet()
+            }
+        }
+        return done.get()
     }
 
     fun getPluginsLocal(): Array<PluginData> {
@@ -468,6 +503,15 @@ object PluginManager {
     @Throws
     suspend fun ___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(context: Context) {
         assertNonRecursiveCallstack()
+
+        // desktop: files that are not in this data folder are fetched first
+        (context as? Activity)?.let { act ->
+            try {
+                downloadMissingPluginFiles(act)
+            } catch (e: Exception) {
+                logError(e)
+            }
+        }
 
         // Load all plugins as fast as possible!
         (getPluginsOnline()).toList().amap { pluginData ->

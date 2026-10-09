@@ -72,6 +72,9 @@ object Appearance {
     /** Video: mpv draws with its own GPU renderer in a window of its own and the controls float above it (beta); applies to the next video */
     var nativePlayer by mutableStateOf(false)
 
+    /** The automatic choice of a source puts 4K, REMUX and very large files behind the lighter ones: they stall on slow hosts and weak graphics cards (the Sources list still has them) */
+    var smoothSources by mutableStateOf(true)
+
     /** Native player only: the Anime4K neural filters sharpen and enlarge low resolution anime (needs a fairly strong graphics card) */
     var anime4k by mutableStateOf(false)
 
@@ -148,6 +151,7 @@ object Appearance {
             hoverZoom = p.getBoolean(PREFIX + "hover_zoom", true)
             smoothMotion = p.getBoolean(PREFIX + "smooth_motion", true)
             nativePlayer = p.getBoolean(PREFIX + "native_player", false)
+            smoothSources = p.getBoolean(PREFIX + "smooth_sources", true)
             anime4k = p.getBoolean(PREFIX + "anime4k", false)
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
@@ -189,6 +193,7 @@ object Appearance {
                 .putBoolean(PREFIX + "hover_zoom", hoverZoom)
                 .putBoolean(PREFIX + "smooth_motion", smoothMotion)
                 .putBoolean(PREFIX + "native_player", nativePlayer)
+                .putBoolean(PREFIX + "smooth_sources", smoothSources)
                 .putBoolean(PREFIX + "anime4k", anime4k)
                 .putBoolean(PREFIX + "auto_skip_stamps", autoSkipStamps)
                 .putBoolean(PREFIX + "auto_skip_delay_5s", autoSkipDelay5s)
@@ -214,7 +219,7 @@ object Appearance {
     fun reset() {
         navPosition = NavPosition.Top; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Medium; backdrop = Backdrop.Solid; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; anime4k = false; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true; hideSpoilers = true; hideSpoilerTitles = false
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; anime4k = false; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true; hideSpoilers = true; hideSpoilerTitles = false
         save()
     }
 

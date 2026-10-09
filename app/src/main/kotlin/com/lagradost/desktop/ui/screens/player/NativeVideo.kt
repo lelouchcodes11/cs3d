@@ -190,19 +190,38 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
         }
         FluentTheme { ScaledContent { content() } }
     }
+    // The window follows the video's place. It used to ask Windows for that place every 16 ms (`locationOnScreen` is a blocking call into the
+    // AWT toolkit thread, the same thread that runs the window procedure of the title bar and of mpv's child window): the UI-freeze log of a
+    // native video session shows `getLocationOnScreen` and `findHeavyweightUnderCursor` stuck for 1.5 to 2.5 s, which is the video page feeling hung.
+    // Now it asks when the canvas or any window above it moved, resized or was shown (those events arrive in step with a window drag); the
+    // timer is only a safety net.
     LaunchedEffect(canvas) {
         var lastX = Int.MIN_VALUE; var lastY = 0; var lastW = 0; var lastH = 0
-        while (true) {
-            runCatching {
-                val at = videoOrigin(canvas)
-                if (at != null) {
-                    if (at.x != lastX || at.y != lastY) { state.position = WindowPosition(at.x.dp, at.y.dp); lastX = at.x; lastY = at.y }
-                    if (canvas.width != lastW || canvas.height != lastH) { state.size = DpSize(canvas.width.dp, canvas.height.dp); lastW = canvas.width; lastH = canvas.height }
-                    // in place: let the window take its bounds, then show it
-                    if (!placed && lastW > 0 && lastH > 0) { delay(80); placed = true }
+        val wake = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+        val listener = object : java.awt.event.ComponentAdapter() {
+            override fun componentMoved(e: java.awt.event.ComponentEvent?) { wake.trySend(Unit) }
+            override fun componentResized(e: java.awt.event.ComponentEvent?) { wake.trySend(Unit) }
+            override fun componentShown(e: java.awt.event.ComponentEvent?) { wake.trySend(Unit) }
+        }
+        val chain = generateSequence<java.awt.Component>(canvas) { it.parent }.toList()
+        chain.forEach { it.addComponentListener(listener) }
+        try {
+            while (true) {
+                runCatching {
+                    val at = videoOrigin(canvas)
+                    if (at != null) {
+                        if (at.x != lastX || at.y != lastY) { state.position = WindowPosition(at.x.dp, at.y.dp); lastX = at.x; lastY = at.y }
+                        if (canvas.width != lastW || canvas.height != lastH) { state.size = DpSize(canvas.width.dp, canvas.height.dp); lastW = canvas.width; lastH = canvas.height }
+                        // in place: let the window take its bounds, then show it
+                        if (!placed && lastW > 0 && lastH > 0) { delay(80); placed = true }
+                    }
                 }
+                // a drag sends many events: look at most every 8 ms; with none, every quarter of a second (every frame until the window is placed)
+                kotlinx.coroutines.withTimeoutOrNull(if (placed) 250L else 16L) { wake.receive() }
+                delay(8)
             }
-            delay(16)
+        } finally {
+            chain.forEach { it.removeComponentListener(listener) }
         }
     }
 }

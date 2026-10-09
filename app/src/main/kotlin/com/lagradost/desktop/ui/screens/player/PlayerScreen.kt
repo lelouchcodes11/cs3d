@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -186,6 +188,11 @@ object PlayerKeys {
 /** Dev: keeps the controls up (/player?hold=1) so that they can be looked at */
 object PlayerDev {
     var hold by mutableStateOf(false)
+
+    /** Dev: how many pointer moves made the controls show, and whether they are shown now (a resting pointer must not count up) */
+    @Volatile var pokes = 0
+    @Volatile var controlsShown = true
+    @Volatile var overControls = false
 }
 
 @Composable
@@ -245,6 +252,7 @@ private fun PlayerContent(s: PlayerSession) {
         delay(2000)
         visible = false
     }
+    LaunchedEffect(visible, hoveringControls) { PlayerDev.controlsShown = visible; PlayerDev.overControls = hoveringControls }
     LaunchedEffect(Unit) { focus.requestFocus() }
     // the window changes size and may lose the keyboard focus when it enters or leaves full screen
     LaunchedEffect(fullscreen, pip) { delay(250); runCatching { focus.requestFocus() } }
@@ -330,12 +338,14 @@ private fun PlayerContent(s: PlayerSession) {
                         val start = downAt ?: continue
                         downAt = null
                         if (change.isConsumed || (change.position - start).getDistance() > viewConfiguration.touchSlop) continue
+                        // the small window was dragged: the pointer is where it was pressed in the window's own terms, which looks like a click
+                        if (com.lagradost.desktop.platform.WinChrome.pip && com.lagradost.desktop.platform.WinChrome.pipMoved) continue
                         val now = System.currentTimeMillis()
                         if (now - lastClick < 350) {
                             lastClick = 0L
                             // back to how it was before the first click (the state the first click set may not be reported yet)
                             if (playingBefore) s.play() else s.pause()
-                            if (pip) s.setPip(false) else toggleFullscreen()
+                            if (com.lagradost.desktop.platform.WinChrome.pip) s.setPip(false) else toggleFullscreen()
                         } else {
                             lastClick = now
                             playingBefore = s.status == CSPlayerLoading.IsPlaying
@@ -346,17 +356,31 @@ private fun PlayerContent(s: PlayerSession) {
             }
         }
     }
-    val pointerWatch = Modifier
-            .pointerInput(Unit) {
+    // The pointer: moving it shows the controls. [ownsHover]: this window's events say whether the pointer is on the controls. With the native video
+    // player two windows see the mouse (the app's window under the video and the transparent controls window above it, whose coordinates differ):
+    // only the controls window decides, else the answer flipped between the two (the controls hid under a pointer that rested on them and came
+    // back at the next twitch).
+    fun pointerWatch(ownsHover: Boolean): Modifier = Modifier
+            .pointerInput(ownsHover) {
                 awaitPointerEventScope {
+                    // where the pointer last made the controls show: Compose repeats the last position as a Move when something under a resting pointer
+                    // changes (the cursor going blank, controls sliding away), and that used to show the controls again and again
+                    var shownAt: Offset? = null
                     while (true) {
                         val e = awaitPointerEvent(PointerEventPass.Initial)
                         val position = e.changes.firstOrNull()?.position
                         when (e.type) {
-                            PointerEventType.Move -> poke(position)
-                            PointerEventType.Press -> { poke(position); runCatching { focus.requestFocus() } }
+                            PointerEventType.Move -> {
+                                val before = shownAt
+                                if (position != null && (before == null || (position - before).getDistance() >= 2f)) {
+                                    shownAt = position
+                                    PlayerDev.pokes++
+                                    poke(if (ownsHover) position else null)
+                                }
+                            }
+                            PointerEventType.Press -> { shownAt = position; if (ownsHover && com.lagradost.desktop.platform.WinChrome.pip) com.lagradost.desktop.platform.WinChrome.pipDragBegin(); poke(if (ownsHover) position else null); runCatching { focus.requestFocus() } }
                             // the pointer left the window: nothing is hovered any more
-                            PointerEventType.Exit -> hoveringControls = false
+                            PointerEventType.Exit -> if (ownsHover) { hoveringControls = false; shownAt = null }
                             PointerEventType.Scroll -> {
                                 val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
                                 // the wheel scrolls an open menu, the episode list or a dialog, never the volume under it
@@ -392,7 +416,7 @@ private fun PlayerContent(s: PlayerSession) {
 
         val modernChrome = Appearance.playerStyle == com.lagradost.desktop.ui.fluent.PlayerStyle.Modern
         if (pip) {
-            PipControls(s, visible)
+            PipControls(s, visible, tapGestures)
         } else if (modernChrome) {
             ModernChrome(
                 s, visible, fullscreen, { p, anchor -> menuAnchor = anchor; menuPage = if (menuPage == p) null else p },
@@ -428,7 +452,7 @@ private fun PlayerContent(s: PlayerSession) {
         }
         LaunchedEffect(pip) { if (pip) menuPage = null }
 
-        HudOverlay(s, Modifier.align(Alignment.TopCenter).padding(top = if (pip) 36.dp else 56.dp))
+        HudOverlay(s, Modifier.align(Alignment.TopCenter).padding(top = if (pip) 14.dp else 56.dp))
         // subtitles: fetching, on, or given up; at the top right, lower while the controls are shown
         if (!pip) {
             val pillTop by androidx.compose.animation.core.animateDpAsState(if (visible) (if (modernChrome) 112.dp else 96.dp) else 24.dp, glide(300))
@@ -453,19 +477,20 @@ private fun PlayerContent(s: PlayerSession) {
             .onFocusChanged { rootFocused = it.hasFocus }
             .focusable()
             .onPreviewKeyEvent(::onKey)
-            .let { if (!visible && !paused) it.pointerHoverIcon(blankCursor) else it }
-            .then(pointerWatch),
+            // always there, only its icon changes: adding and removing the modifier changed the root's pointer chain at the moment of a press, which cancelled the press (no click, no drag)
+            .pointerHoverIcon(if (!visible && !paused) blankCursor else PointerIcon.Default)
+            .then(pointerWatch(!native)),
     ) {
         if (native) NativeVideoHost(Modifier.fillMaxSize()) else VideoSurface(s, Modifier.fillMaxSize().then(tapGestures))
         if (native) {
             val dialogsOpen = com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty()
             NativeOverlayWindow(focusable = dialogsOpen) {
-                Box(Modifier.fillMaxSize().then(pointerWatch)) {
+                Box(Modifier.fillMaxSize().then(pointerWatch(true))) {
                     // the picture's layer under the controls (taps play and pause, a double tap is full screen); nearly invisible, not transparent:
                     // a fully transparent pixel of a window lets the pointer through to the video below
                     Box(
                         Modifier.fillMaxSize().background(Color(0x01000000))
-                            .let { if (!visible && !paused) it.pointerHoverIcon(blankCursor) else it }
+                            .pointerHoverIcon(if (!visible && !paused) blankCursor else PointerIcon.Default)
                             .then(tapGestures),
                     )
                     overlay()
@@ -540,32 +565,79 @@ private fun androidx.compose.foundation.layout.BoxScope.SkipLayer(s: PlayerSessi
     }
 }
 
-/** Picture in picture: a strip at the top that drags the small window (and goes back / closes), play and progress on hover */
+/**
+ * Picture in picture: the picture is the whole window. Press and drag anywhere on it to move the window (it sticks to the edges of the screen),
+ * drag its edges or corners to resize it (it keeps the video's shape); a click plays or pauses, a double click goes back to the app. The title,
+ * back to the app and close buttons, play and the progress show while the pointer is moving over it.
+ */
 @Composable
-private fun PipControls(s: PlayerSession, visible: Boolean) {
-    val strip = com.lagradost.desktop.platform.WinChrome.PIP_STRIP_DP.dp
-    Box(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.align(Alignment.TopStart).fillMaxWidth().height(strip).background(Color(0xB3000000)).padding(start = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FText(listOfNotNull(s.title, s.episodeLabel).joinToString(" · "), Modifier.weight(1f), style = Fluent.type.caption, color = Color(0xE6FFFFFF), maxLines = 1)
-            IconButton(Icons.BackToWindow, { s.setPip(false) }, Modifier.noWindowDrag("pipBack"), tooltip = "Back to the app (Esc)", size = strip, iconSize = 12.dp, tint = Color.White)
-            IconButton(Icons.Close, { Navigator.back() }, Modifier.noWindowDrag("pipClose"), tooltip = "Close", size = strip, iconSize = 12.dp, tint = Color.White)
+private fun PipControls(s: PlayerSession, visible: Boolean, taps: Modifier) {
+    val bar = com.lagradost.desktop.platform.WinChrome.PIP_STRIP_DP.dp
+    // the window is moved from here, not by the frame window: over the video of the native player the frame never sees the pointer
+    val drag = Modifier.pointerInput(Unit) {
+        detectDragGestures(
+            onDragStart = { },
+            onDragEnd = { com.lagradost.desktop.platform.WinChrome.pipDragEnd() },
+            onDragCancel = { com.lagradost.desktop.platform.WinChrome.pipDragEnd() },
+        ) { change, _ ->
+            change.consume()
+            com.lagradost.desktop.platform.WinChrome.pipDragMove()
         }
+    }
+    Box(Modifier.fillMaxSize().then(taps).then(drag)) {
         AnimatedVisibility(visible, Modifier.fillMaxSize(), enter = fadeIn(tween(120)), exit = fadeOut(tween(250))) {
             Box(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.align(Alignment.TopStart).fillMaxWidth().height(bar + 10.dp)
+                        .background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))).padding(start = 12.dp, top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FText(listOfNotNull(s.title, s.episodeLabel).joinToString(" · "), Modifier.weight(1f), style = Fluent.type.caption, color = Color(0xE6FFFFFF), maxLines = 1)
+                    IconButton(Icons.BackToWindow, { s.setPip(false) }, tooltip = "Back to the app (Esc)", size = bar, iconSize = 13.dp, tint = Color.White)
+                    IconButton(Icons.Close, { Navigator.back() }, tooltip = "Close", size = bar, iconSize = 13.dp, tint = Color.White)
+                }
                 Box(Modifier.align(Alignment.Center).size(52.dp).background(Color(0x99000000), CircleShape), contentAlignment = Alignment.Center) {
                     IconButton(if (s.status == CSPlayerLoading.IsPlaying) Icons.Pause else Icons.Play, { s.togglePlay() }, size = 52.dp, iconSize = 22.dp, tint = Color.White)
                 }
-                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(horizontal = 12.dp, vertical = 6.dp)) {
                     val duration = s.durationMs.coerceAtLeast(1)
                     ProgressBar((s.positionMs.toFloat() / duration).coerceIn(0f, 1f), Modifier.fillMaxWidth(), height = 3.dp)
                     FText("${fmt(s.positionMs)} / ${fmt(s.durationMs)}", style = Fluent.type.caption, color = Color(0xCCFFFFFF), maxLines = 1)
                 }
             }
         }
+        // the grips: the edges and corners resize the window (always there, drawn by the pointer's shape only)
+        val edge = 6.dp
+        val corner = 16.dp
+        PipGrip(3, Alignment.TopCenter, Modifier.fillMaxWidth().height(edge), java.awt.Cursor.N_RESIZE_CURSOR)
+        PipGrip(6, Alignment.BottomCenter, Modifier.fillMaxWidth().height(edge), java.awt.Cursor.S_RESIZE_CURSOR)
+        PipGrip(1, Alignment.CenterStart, Modifier.fillMaxHeight().width(edge), java.awt.Cursor.W_RESIZE_CURSOR)
+        PipGrip(2, Alignment.CenterEnd, Modifier.fillMaxHeight().width(edge), java.awt.Cursor.E_RESIZE_CURSOR)
+        PipGrip(4, Alignment.TopStart, Modifier.size(corner), java.awt.Cursor.NW_RESIZE_CURSOR)
+        PipGrip(5, Alignment.TopEnd, Modifier.size(corner), java.awt.Cursor.NE_RESIZE_CURSOR)
+        PipGrip(7, Alignment.BottomStart, Modifier.size(corner), java.awt.Cursor.SW_RESIZE_CURSOR)
+        PipGrip(8, Alignment.BottomEnd, Modifier.size(corner), java.awt.Cursor.SE_RESIZE_CURSOR)
     }
+}
+
+/** One grip of the small window: [edge] numbers as WMSZ_* (left 1, right 2, top 3, topleft 4, topright 5, bottom 6, bottomleft 7, bottomright 8) */
+@Composable
+private fun BoxScope.PipGrip(edge: Int, at: Alignment, size: Modifier, cursor: Int) {
+    val chrome = com.lagradost.desktop.platform.WinChrome
+    Box(
+        Modifier.align(at).then(size)
+            .pointerHoverIcon(PointerIcon(java.awt.Cursor.getPredefinedCursor(cursor)))
+            .pointerInput(edge) {
+                detectDragGestures(
+                    onDragStart = { chrome.pipResizeBegin(edge) },
+                    onDragEnd = { chrome.pipResizeEnd() },
+                    onDragCancel = { chrome.pipResizeEnd() },
+                ) { change, _ ->
+                    change.consume()
+                    chrome.pipResizeMove()
+                }
+            },
+    )
 }
 
 // ------------------------------------------------------------------------------------------------
