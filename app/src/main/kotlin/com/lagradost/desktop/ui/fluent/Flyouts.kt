@@ -109,8 +109,12 @@ class RightOfAnchor(private val gap: Int = 4) : PopupPositionProvider {
 fun FlyoutSurface(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.overlay)
+    // menus and lists open with a short fade and a little growth from their top edge instead of appearing at once
+    val appear = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(if (Appearance.motion == Motion.Off) 1f else 0f) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (appear.value < 1f) appear.animateTo(1f, androidx.compose.animation.core.tween(FluentMotion.ms(150), easing = FluentMotion.enter)) }
     Box(
         modifier
+            .graphicsLayer { alpha = appear.value; val grow = 0.97f + 0.03f * appear.value; scaleX = grow; scaleY = grow; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f) }
             .background(c.flyout, shape)
             .border(androidx.compose.ui.unit.Dp.Hairline, if (c.dark) Color(0x66757575) else Color(0x33000000), shape)
             .clip(shape),

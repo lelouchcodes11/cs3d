@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -40,6 +42,8 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -68,7 +72,7 @@ fun RichSectionHeader(title: String, modifier: Modifier = Modifier, subtitle: St
     val c = Fluent.colors
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            FText(title, style = Fluent.type.subtitle.copy(fontSize = 21.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+            FText(title, style = Fluent.type.subtitle.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), maxLines = 1)
             if (subtitle != null) FText(subtitle, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
         }
         trailing()
@@ -77,7 +81,7 @@ fun RichSectionHeader(title: String, modifier: Modifier = Modifier, subtitle: St
 }
 
 @Composable
-fun SeeAllLink(onClick: () -> Unit, text: String = "See all") {
+fun SeeAllLink(onClick: () -> Unit, text: String = "View all") {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
@@ -94,6 +98,55 @@ fun SeeAllLink(onClick: () -> Unit, text: String = "See all") {
     }
 }
 
+/** Text tabs for pages over artwork: the shown one is white and one thin line glides (spring) from the tab you leave to the one you open */
+@Composable
+fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, counts: List<Int?>? = null) {
+    val c = Fluent.colors
+    // where each tab sits (px), so the line can glide between them
+    val spots = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateMapOf<Int, Pair<Float, Float>>() }
+    val target = spots[selected]
+    val spec = if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap<Float>() else androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 460f)
+    val lineX by animateFloatAsState(target?.first ?: 0f, spec, label = "tabX")
+    val lineW by animateFloatAsState(target?.second ?: 0f, spec, label = "tabW")
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    Box(modifier.horizontalScroll(rememberScrollState())) {
+        Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.Bottom) {
+            tabs.forEachIndexed { i, text ->
+                val source = rememberInteraction()
+                val hovered by source.collectIsHoveredAsState()
+                val on = i == selected
+                val tint by animateColorAsState(if (on) c.text else if (hovered) c.textSecondary else c.textTertiary, FluentMotion.tweenStd(160), label = "tabTint")
+                Column(
+                    Modifier
+                        .onPlacedAt { x, w -> spots[i] = x to w }
+                        .fluentClickable(source, true, RoundedCornerShape(4.dp), Role.Tab) { onSelect(i) },
+                ) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        FText(text, style = Fluent.type.subtitle.copy(fontSize = 19.sp, fontWeight = FontWeight.SemiBold), color = tint, maxLines = 1, softWrap = false)
+                        counts?.getOrNull(i)?.takeIf { it > 0 }?.let { n ->
+                            FText(n.toString(), style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = c.textTertiary, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 6.dp, bottom = 3.dp))
+                        }
+                    }
+                    Box(Modifier.padding(top = 7.dp).height(2.dp))
+                }
+            }
+        }
+        if (target != null) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .offset { androidx.compose.ui.unit.IntOffset(lineX.toInt(), 0) }
+                    .width(with(density) { lineW.toDp() })
+                    .height(2.dp)
+                    .background(c.text, RoundedCornerShape(1.dp)),
+            )
+        }
+    }
+}
+
+private fun Modifier.onPlacedAt(onPlace: (Float, Float) -> Unit): Modifier =
+    this.then(Modifier.onGloballyPositioned { onPlace(it.positionInParent().x, it.size.width.toFloat()) })
+
 /**
  * Pill tabs: the selected one sits on a filled pill. Counts (optional) show as small badges.
  */
@@ -109,20 +162,20 @@ fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
             val source = rememberInteraction()
             val hovered by source.collectIsHoveredAsState()
             val on = i == selected
-            // selected = a pill filled with the accent gradient
+            // selected = a flat light pill with dark text
             val bg by animateColorAsState(if (hovered && !on) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
-            val fg = if (on) c.onAccent else if (hovered) c.text else c.textSecondary
+            val fg = if (on) c.bg else if (hovered) c.text else c.textSecondary
             val shape = RoundedCornerShape(50)
             Row(
                 Modifier.height(34.dp).clip(shape)
-                    .background(if (on) c.accentBrush(hovered) else SolidColor(bg), shape)
+                    .background(if (on) SolidColor(c.text.copy(alpha = if (hovered) 0.9f else 1f)) else SolidColor(bg), shape)
                     .fluentClickable(source, true, shape, Role.Tab) { onSelect(i) }.padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 FText(text, style = Fluent.type.bodyStrong, color = fg, maxLines = 1, softWrap = false)
                 counts?.getOrNull(i)?.let { n ->
                     Box(Modifier.width(8.dp))
-                    Box(Modifier.background(if (on) c.onAccent.copy(alpha = 0.16f) else c.control, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
+                    Box(Modifier.background(if (on) c.bg.copy(alpha = 0.14f) else c.control, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
                         FText(n.toString(), style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1, softWrap = false)
                     }
                 }
@@ -185,31 +238,41 @@ fun RankedPoster(rank: Int, width: Dp, content: @Composable () -> Unit) {
     }
 }
 
-/** A row of small cards that pick the hero item; the shown one is outlined and fills while it is on screen */
+/**
+ * A row of small cards that pick the hero item. The shown one is wide (a spring opens it, the others close), carries the title and a thin line that
+ * fills while it is on screen; the rest are narrow slices of their artwork that open a little when the pointer is over them.
+ */
 @Composable
-fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int) -> Pair<String?, Map<String, String>?>, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val c = Fluent.colors
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int) -> Pair<String?, Map<String, String>?>, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, label: (Int) -> String = { "" }) {
+    val spec = if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap<Dp>() else androidx.compose.animation.core.spring(dampingRatio = 0.82f, stiffness = 360f)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         for (i in 0 until count) {
             val on = i == selected
             val source = rememberInteraction()
             val hovered by source.collectIsHoveredAsState()
-            val scale by animateFloatAsState(if (on) 1f else if (hovered) 0.97f else 0.92f, FluentMotion.tweenIn(220))
-            val dim by animateFloatAsState(if (on) 0f else if (hovered) 0.25f else 0.5f, FluentMotion.tweenIn(220))
-            val shape = RoundedCornerShape(FluentShapes.small)
+            val width by animateDpAsState(if (on) 168.dp else if (hovered) 66.dp else 54.dp, spec, label = "stripW")
+            val dim by animateFloatAsState(if (on) 0f else if (hovered) 0.2f else 0.45f, FluentMotion.tweenIn(220), label = "stripDim")
+            val shape = RoundedCornerShape(14.dp)
             val (url, headers) = image(i)
             Box(
-                Modifier.size(132.dp, 74.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+                Modifier.size(width, 64.dp)
                     .clip(shape).background(Color(0xFF15161A))
-                    .border(if (on) 2.dp else Dp.Hairline, if (on) c.accent else Color(0x33FFFFFF), shape)
+                    .border(Dp.Hairline, if (on) Color(0x80FFFFFF) else Color(0x24FFFFFF), shape)
                     .fluentClickable(source, true, shape, Role.Button) { onSelect(i) },
             ) {
                 RemoteImage(url, headers, null, Modifier.fillMaxSize(), ContentScale.Crop)
                 Box(Modifier.fillMaxSize().graphicsLayer { alpha = dim }.background(Color.Black))
-                if (on) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).drawBehind {
-                    drawRect(Color(0x55FFFFFF))
-                    drawRect(c.accent, size = androidx.compose.ui.geometry.Size(size.width * progress().coerceIn(0f, 1f), size.height))
-                })
+                if (on) {
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color(0xCC000000))))
+                    label(i).takeIf { it.isNotBlank() }?.let { name ->
+                        FText(name, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = Color.White, maxLines = 1, modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 12.dp, bottom = 15.dp))
+                    }
+                    // the line floats inside the slice: on the bottom row it ran into the 1 px edge and its ends into the rounded corners
+                    Box(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 12.dp, bottom = 8.dp).fillMaxWidth().height(2.dp).drawBehind {
+                        drawRoundRect(Color(0x40FFFFFF), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+                        drawRoundRect(Color.White, size = androidx.compose.ui.geometry.Size(size.width * progress().coerceIn(0f, 1f), size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+                    })
+                }
             }
         }
     }
@@ -221,15 +284,16 @@ fun GlassCircleButton(glyph: String, tooltip: String, onClick: () -> Unit, modif
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val glass by animateColorAsState(c.tintedGlass(hovered), FluentMotion.tweenStd(140))
+    // dark glass with a thin white edge; the switched-on one (favourite, subscribed) is a flat white disc
+    val glass by animateColorAsState(if (hovered) Color(0x66000000) else Color(0x4D000000), FluentMotion.tweenStd(140))
     Tooltip(tooltip) {
         Box(
             modifier.size(size).clip(CircleShape)
-                .background(if (active) c.accentBrush(hovered) else SolidColor(glass), CircleShape)
-                .border(Dp.Hairline, if (active) Color.White.copy(alpha = 0.25f) else c.accent.copy(alpha = if (hovered) 0.7f else 0.4f), CircleShape)
+                .background(if (active) SolidColor(Color.White) else SolidColor(glass), CircleShape)
+                .border(Dp.Hairline, Color.White.copy(alpha = if (active) 0f else if (hovered) 0.5f else 0.3f), CircleShape)
                 .fluentClickable(source, true, CircleShape, Role.Button, onClick),
             contentAlignment = Alignment.Center,
-        ) { Icon(glyph, size = 16.dp, tint = if (active) c.onAccent else Color.White) }
+        ) { Icon(glyph, size = 16.dp, tint = if (active) Color(0xFF0B0B0F) else Color.White) }
     }
 }
 
@@ -242,17 +306,24 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, FluentMotion.tweenIn(120))
     val shape = RoundedCornerShape(50)
-    // the main action is filled with the theme's accent gradient and glows a little; the others are frosted glass tinted with the accent
-    val fg = if (primary) c.onAccent else Color.White
+    // the main action: a flat white button with dark text (Settings > Look can give it the accent colour instead); the others are dark glass with a thin white edge
+    val white = primary && Appearance.whitePrimary
+    val fg = if (white) Color(0xFF0B0B0F) else if (primary) c.onAccent else Color.White
+    val fill: androidx.compose.ui.graphics.Brush = when {
+        white -> SolidColor(Color.White.copy(alpha = if (pressed) 0.82f else if (hovered) 0.92f else 1f))
+        primary -> c.accentBrush(hovered, pressed)
+        else -> SolidColor(if (hovered) Color(0x66000000) else Color(0x4D000000))
+    }
     Row(
         modifier.height(height).graphicsLayer { scaleX = scale; scaleY = scale }
-            .then(if (primary) Modifier.accentGlow(shape, if (hovered) 1.25f else 0.9f) else Modifier)
+            .then(if (primary && !white) Modifier.accentGlow(shape, if (hovered) 1.25f else 0.9f) else Modifier)
             .clip(shape)
-            .background(if (primary) c.accentBrush(hovered, pressed) else SolidColor(c.tintedGlass(hovered)), shape)
-            .border(Dp.Hairline, if (primary) Color.White.copy(alpha = 0.3f) else c.accent.copy(alpha = if (hovered) 0.7f else 0.4f), shape)
+            .background(fill, shape)
+            .border(Dp.Hairline, if (primary) Color.Transparent else Color.White.copy(alpha = if (hovered) 0.5f else 0.3f), shape)
             .focusRing(source, shape)
             .fluentClickable(source, true, shape, Role.Button, onClick)
             .padding(horizontal = 24.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (glyph != null) {
@@ -268,10 +339,10 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
 fun ArtChip(text: String, accent: Boolean = false) {
     val c = Fluent.colors
     Box(
-        Modifier.background(if (accent) SolidColor(c.accent.copy(alpha = 0.9f)) else SolidColor(Color(0x26FFFFFF)), RoundedCornerShape(50))
-            .border(Dp.Hairline, if (accent) Color.White.copy(alpha = 0.25f) else Color(0x2EFFFFFF), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 3.dp),
-    ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = if (accent) c.onAccent else Color.White, maxLines = 1, softWrap = false) }
+        // a thin outlined tag (an age rating, a type): no fill, no accent
+        Modifier.border(Dp.Hairline, Color.White.copy(alpha = if (accent) 0.7f else 0.45f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+    ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = Color.White.copy(alpha = if (accent) 1f else 0.85f), maxLines = 1, softWrap = false) }
 }
 
 /** Overlay content on a 16:9 still with a gradient for legibility */

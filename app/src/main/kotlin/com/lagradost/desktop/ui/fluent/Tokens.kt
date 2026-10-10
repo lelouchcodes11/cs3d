@@ -118,15 +118,16 @@ class FluentType(
 private fun style(size: TextUnit, line: TextUnit, weight: FontWeight, family: FontFamily): TextStyle =
     TextStyle(fontFamily = family, fontSize = size, lineHeight = line, fontWeight = weight)
 
-private fun fluentType(family: FontFamily) = FluentType(
+// headings (page titles, row titles, tabs, the hero) are set in Manrope, a geometric sans bundled with the app; the text stays Segoe UI
+private fun fluentType(family: FontFamily, heading: FontFamily = FluentFonts.heading) = FluentType(
     caption = style(12.sp, 16.sp, FontWeight.Normal, family),
     body = style(14.sp, 20.sp, FontWeight.Normal, family),
     bodyStrong = style(14.sp, 20.sp, FontWeight.SemiBold, family),
     bodyLarge = style(18.sp, 24.sp, FontWeight.Normal, family),
-    subtitle = style(20.sp, 28.sp, FontWeight.SemiBold, family),
-    title = style(28.sp, 36.sp, FontWeight.SemiBold, family),
-    titleLarge = style(40.sp, 52.sp, FontWeight.SemiBold, family),
-    display = style(68.sp, 92.sp, FontWeight.SemiBold, family),
+    subtitle = style(20.sp, 28.sp, FontWeight.SemiBold, heading),
+    title = style(28.sp, 36.sp, FontWeight.Bold, heading),
+    titleLarge = style(40.sp, 52.sp, FontWeight.Bold, heading),
+    display = style(68.sp, 92.sp, FontWeight.Bold, heading),
 )
 
 /** Segoe UI (text) and Segoe Fluent Icons (glyphs) from the Windows font folder */
@@ -144,6 +145,17 @@ object FluentFonts {
             file("segoeuii.ttf")?.let { Font(it, FontWeight.Normal, FontStyle.Italic) },
         )
         if (fonts.isEmpty()) FontFamily.Default else FontFamily(fonts)
+    }
+
+    /** Manrope SemiBold and Bold from the app's resources (SIL Open Font License, fonts/Manrope-OFL.txt); the Segoe UI family when they are not found */
+    val heading: FontFamily by lazy {
+        runCatching {
+            fun font(name: String, weight: FontWeight) = androidx.compose.ui.text.platform.Font(
+                identity = name, weight = weight,
+                data = FluentFonts::class.java.classLoader.getResourceAsStream("fonts/$name.ttf")!!.use { it.readBytes() },
+            )
+            FontFamily(font("Manrope-SemiBold", FontWeight.SemiBold), font("Manrope-Bold", FontWeight.Bold), font("Manrope-Bold", FontWeight.ExtraBold), font("Manrope-Bold", FontWeight.Black))
+        }.getOrDefault(text)
     }
 
     val icons: FontFamily by lazy {

@@ -310,6 +310,22 @@ object DevServer {
                 val canvas = com.lagradost.desktop.ui.screens.player.NativeVideo.canvasHwnd.takeIf { it != 0L }?.let { WinDef.HWND(com.sun.jna.Pointer(it)) }
                 ok(ex, "main ${rect(main)} | overlay ${rect(overlay)} | canvas ${rect(canvas)}")
             }
+            "/skiainfo" -> {
+                // dev: the sizes behind the picture: the Java-side bounds of the window tree (AWT user space units), the scale and the Compose scene (px)
+                val out = StringBuilder()
+                onEdt {
+                    val w = window()
+                    out.append("scale=${scale()} window=${w.bounds} insets=${w.insets}\n")
+                    fun walk(c: Component, depth: Int) {
+                        out.append("  ".repeat(depth)).append(c.javaClass.name).append(' ').append(c.bounds).append(if (c.isLightweight) " light" else " heavy").append('\n')
+                        if (c is java.awt.Container) c.components.forEach { walk(it, depth + 1) }
+                    }
+                    walk(w, 0)
+                    val dm = com.lagradost.desktop.runtime.AndroidRuntime.displayMetrics
+                    out.append("scene(px)=${dm.widthPixels}x${dm.heightPixels} density=${dm.density}\n")
+                }
+                ok(ex, out.toString())
+            }
             "/burst" -> {
                 // dev: frames of the window right after Play, as numbers: /burst?play=<url>&n=40&gap=30 (mean brightness of the area under the title bar, 0 = black, 255 = white); &save=1 keeps the brightest frame
                 val n = q["n"]?.toInt() ?: 30

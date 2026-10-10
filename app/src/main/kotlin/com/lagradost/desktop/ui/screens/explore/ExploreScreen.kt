@@ -54,6 +54,7 @@ import com.lagradost.desktop.ui.fluent.PosterCard
 import com.lagradost.desktop.ui.fluent.PosterSkeleton
 import com.lagradost.desktop.ui.fluent.RankedPoster
 import com.lagradost.desktop.ui.fluent.RichSectionHeader
+import com.lagradost.desktop.ui.fluent.scrollEdgeFade
 import com.lagradost.desktop.ui.fluent.Shelf
 import com.lagradost.desktop.ui.fluent.typeLabel
 import kotlinx.coroutines.delay
@@ -79,14 +80,16 @@ fun LazyListScope.exploreSections(f: ExploreFilters, rows: List<ExploreRow>, car
             PillTabs(ExploreKind.values().map { it.label }, f.kind.ordinal, { f.kind = ExploreKind.values()[it]; f.genre = null; f.service = null })
             if (ExploreClient.hasServices(f.kind)) {
                 Box(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val servicesScroll = rememberScrollState()
+                Row(Modifier.fillMaxWidth().scrollEdgeFade(servicesScroll).horizontalScroll(servicesScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FText("Streaming on", color = Fluent.colors.textSecondary, modifier = Modifier.padding(end = 4.dp))
                     Chip("Any", f.service == null, { f.service = null })
                     Tmdb.services.keys.forEach { s -> Chip(s, f.service == s, { f.service = if (f.service == s) null else s }) }
                 }
             }
             Box(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val genreScroll = rememberScrollState()
+            Row(Modifier.fillMaxWidth().scrollEdgeFade(genreScroll).horizontalScroll(genreScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FText("Genre", color = Fluent.colors.textSecondary, modifier = Modifier.padding(end = 4.dp))
                 Chip("All", f.genre == null, { f.genre = null })
                 ExploreClient.genres(f.kind).forEach { g -> Chip(g, f.genre == g, { f.genre = if (f.genre == g) null else g }) }

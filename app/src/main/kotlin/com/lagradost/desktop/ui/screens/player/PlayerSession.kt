@@ -330,10 +330,36 @@ class PlayerSession(
     // a source the viewer chose in the list gets longer to start: a huge file (a 48 GB MP4 reads its index for ~20 s) is still loading
     private var pickedByHand = false
 
+    // ---- a jump that never lands: a server that takes the new range request and answers nothing leaves the picture loading until you jump again
+    private var seekTarget = -1L
+    private var seekAt = 0L
+    private var seekKicks = 0
+
+    private fun markSeek(target: Long) {
+        seekTarget = target
+        seekAt = System.currentTimeMillis()
+        seekKicks = 0
+    }
+
+    /** Still loading 6 s (then 12 s) after a jump: the jump is asked for again, which is what jumping again by hand did */
+    private fun kickStuckSeek(now: Long) {
+        if (seekTarget < 0) return
+        if (!playerActive || loadingText != null || failure != null || status != CSPlayerLoading.IsBuffering) {
+            // it landed (playing, or paused by the viewer), or the source changed
+            if (status == CSPlayerLoading.IsPlaying || status == CSPlayerLoading.IsPaused || !playerActive || loadingText != null) seekTarget = -1L
+            return
+        }
+        if (seekKicks >= 2 || now - seekAt < 6_000L * (seekKicks + 1)) return
+        seekKicks++
+        android.util.Log.i("PlayerSession", "jump to $seekTarget ms still loading after ${now - seekAt} ms: asking again (#$seekKicks)")
+        player.seekTo(seekTarget)
+    }
+
     private fun watchStalls() {
         scope.launch {
             while (true) {
                 delay(2000)
+                kickStuckSeek(System.currentTimeMillis())
                 val waiting = playerActive && failure == null && !waitingForMore && !torrentBusy && (startingSource || status == CSPlayerLoading.IsBuffering)
                 val now = System.currentTimeMillis()
                 if (!waiting || positionMs != stallPosition || bufferedMs != stallBuffered) {
@@ -343,7 +369,8 @@ class PlayerSession(
                     continue
                 }
                 // a source that has not shown a picture after 20 s is not worth waiting for (it used to be 35 s); one that stops half way gets 25 s
-                val limit = if (startingSource) (if (pickedByHand) 45_000 else 20_000) else 25_000
+                // (with another source to go to, 14 s: VegaMovies lists several mirrors and a dead first one cost 20 s each time)
+                val limit = if (startingSource) (if (pickedByHand) 45_000 else if (nextLink() != null) 14_000 else 20_000) else 20_000
                 if (now - stallSince > limit) {
                     stallSince = now
                     onStalled()
@@ -1278,6 +1305,7 @@ class PlayerSession(
         val d = durationMs
         val target = (positionMs + ms).coerceIn(0L, if (d > 0) d else Long.MAX_VALUE)
         player.seekTo(target)
+        markSeek(target)
         positionMs = target
         val secs = kotlin.math.abs(ms) / 1000
         showHud(if (ms < 0) Icons.Rewind else Icons.FastForward, (if (ms < 0) "−" else "+") + secs + " s")
@@ -1286,6 +1314,7 @@ class PlayerSession(
     fun seekTo(ms: Long) {
         if (refuseSeek()) return
         player.seekTo(ms)
+        markSeek(ms)
         positionMs = ms
     }
 
@@ -1310,6 +1339,7 @@ class PlayerSession(
         val stamp = activeStamp ?: return
         if (stamp.skipToNextEpisode) nextEpisode() else {
             player.seekTo(stamp.timestamp.endMs)
+            markSeek(stamp.timestamp.endMs)
             activeStamp = null
         }
     }

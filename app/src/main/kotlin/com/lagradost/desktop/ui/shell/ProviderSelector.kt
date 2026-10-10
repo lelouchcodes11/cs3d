@@ -26,7 +26,7 @@ fun ProviderSelector(modifier: Modifier = Modifier) {
     val apiName by vm.apiName.observeAsState()
     val names = remember(page, apiName) {
         val ctx = DesktopBootstrap.activityOrNull()
-        val providers = runCatching { ctx?.filterProviderByPreferredMedia()?.map { it.name }?.sorted() }.getOrNull().orEmpty()
+        val providers = runCatching { ctx?.filterProviderByPreferredMedia()?.map { it.name }?.distinct()?.sorted() }.getOrNull().orEmpty()
         listOf(APIRepository.randomApi.name) + providers
     }
     ComboBox(

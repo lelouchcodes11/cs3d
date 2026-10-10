@@ -117,6 +117,13 @@ fun main(args: Array<String>) {
     // Skia keeps up to 256 MB of textures by default; on a PC with integrated graphics that is the app's own RAM. 64 MB holds every poster
     // of a screen (measured: about 100 MB less memory after browsing a few pages)
     System.setProperty("skiko.gpu.resourceCacheLimit", System.getProperty("skiko.gpu.resourceCacheLimit") ?: "67108864")
+    // Coil keeps the decoded pictures up to a quarter of the JVM's largest heap (a gigabyte on a 16 GB PC) and the heap grows to hold them; on a PC with little
+    // free memory that is paging, which looks like the window hanging. 160 MB holds the pictures of several screens.
+    runCatching {
+        coil3.SingletonImageLoader.setSafe { context ->
+            coil3.ImageLoader.Builder(context).memoryCache { coil3.memory.MemoryCache.Builder().maxSizeBytes(160L * 1024 * 1024).build() }.build()
+        }
+    }
     // a native video window (see NativeVideo) is a window of its own: Compose must not copy the Swing paint of it
     System.setProperty("compose.interop.blending", System.getProperty("compose.interop.blending") ?: "false")
     // Android dimensions (dp) must match the Compose density of the screen before anything resolves them

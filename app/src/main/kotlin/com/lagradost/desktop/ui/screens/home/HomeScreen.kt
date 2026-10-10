@@ -1,5 +1,8 @@
 package com.lagradost.desktop.ui.screens.home
 
+import com.lagradost.desktop.ui.fluent.fadeIntoPage
+import com.lagradost.desktop.ui.fluent.reveal
+import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
@@ -97,7 +100,9 @@ import com.lagradost.desktop.ui.fluent.typeLabel
 import com.lagradost.desktop.ui.shell.TopBarOverlay
 import kotlinx.coroutines.delay
 
-private val gutter = 36.dp
+/** Where the text of the page starts: 36 dp, and after the floating dock when that floats over the artwork */
+private val gutter: Dp
+    @Composable get() = 36.dp + com.lagradost.desktop.ui.shell.LocalDockStart.current
 
 /** Opens a card: a continue-watching entry resumes its episode, anything else opens the title page */
 fun openCard(card: SearchResponse) {
@@ -133,35 +138,47 @@ fun HomeScreen() {
     val statusTypes by vm.availableWatchStatusTypes.observeAsState()
     val apiName by vm.apiName.observeAsState()
 
+    // customise and reload live in the top bar of the floating-dock look (no "Browse" header on Home)
+    val rowNames = (page as? Resource.Success)?.value?.entries?.filter { it.value.list.list.isNotEmpty() }?.map { it.key }.orEmpty()
+    androidx.compose.runtime.DisposableEffect(apiName, rowNames) {
+        val name = apiName
+        com.lagradost.desktop.ui.shell.ShellState.homeActions = com.lagradost.desktop.ui.shell.HomeActions(
+            customise = if (rowNames.isNotEmpty() && !name.isNullOrBlank()) ({ HomeLayout.showDialog(name, rowNames) }) else null,
+            reload = { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true, fromUI = false) },
+        )
+        onDispose { com.lagradost.desktop.ui.shell.ShellState.homeActions = null }
+    }
+
     val listState = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val heroHeight = (maxHeight * 0.68f).coerceIn(380.dp, 720.dp)
+        val heroHeight = (maxHeight * 0.8f).coerceIn(440.dp, 840.dp)
         val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 160 } }
         TopBarOverlay(scrolled)
         val cardWidth = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width * (if (maxWidth >= 1008.dp) 1.05f else 0.92f)
-        val space = com.lagradost.desktop.ui.fluent.Appearance.space(30.dp)
+        val space = com.lagradost.desktop.ui.fluent.Appearance.space(38.dp)
 
         FluentScrollbar(listState, com.lagradost.desktop.ui.shell.TopBarHeight)
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().smoothWheel(listState), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "hero") {
                 val res = preview
                 val items = (res as? Resource.Success)?.value?.second.orEmpty()
                 if (!com.lagradost.desktop.ui.fluent.Appearance.homeBanner) {
                     Box(Modifier.height(com.lagradost.desktop.ui.shell.TopBarHeight + 8.dp))
                 } else if (items.isNotEmpty()) {
-                    HomeHero(items, heroHeight, compact = maxWidth < 900.dp)
+                    HomeHero(items, heroHeight, compact = maxWidth < 900.dp, scroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE })
                 } else if (res == null || res is Resource.Loading) {
                     HeroSkeleton(heroHeight)
                 } else Box(Modifier.height(72.dp))
             }
-            item(key = "header") {
-                HomeHeader(vm, apiName, (page as? Resource.Success)?.value?.entries?.filter { it.value.list.list.isNotEmpty() }?.map { it.key }.orEmpty())
+            // the other looks keep their "Browse" header with the customise and reload buttons
+            if (com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }) item(key = "header") {
+                HomeHeader(vm, apiName, rowNames)
             }
             val resumeList = resume.orEmpty()
             if (resumeList.isNotEmpty() && com.lagradost.desktop.ui.fluent.Appearance.homeContinue) {
                 item(key = "resume") {
-                    Column(Modifier.padding(bottom = space)) {
-                        com.lagradost.desktop.ui.fluent.RichSectionHeader("Continue watching", Modifier.padding(horizontal = gutter), subtitle = "Pick up where you left off", onSeeAll = { Navigator.go(Route.History) })
+                    Column(Modifier.reveal("home/$apiName/resume", 60).padding(bottom = space)) {
+                        com.lagradost.desktop.ui.fluent.RichSectionHeader("Continue watching", Modifier.padding(horizontal = gutter), onSeeAll = { Navigator.go(Route.History) })
                         Box(Modifier.height(12.dp))
                         // plain posters like every other row: the bar along the bottom is how far you got, the line below what is next
                         Shelf(resumeList, cardWidth, gutter = gutter, spacing = 14.dp, key = { (it.id ?: it.url.hashCode()).toString() + it.name }) { card ->
@@ -189,7 +206,7 @@ fun HomeScreen() {
             val bm = bookmarks
             if (bm != null && bm.second.isNotEmpty()) {
                 item(key = "bookmarks") {
-                    Column(Modifier.padding(bottom = space)) {
+                    Column(Modifier.reveal("home/$apiName/bookmarks", 120).padding(bottom = space)) {
                         BookmarksHeader(vm, statusTypes)
                         Box(Modifier.height(12.dp))
                         Shelf(bm.second, cardWidth, gutter = gutter, spacing = 14.dp, key = { it.url }) { card ->
@@ -204,9 +221,9 @@ fun HomeScreen() {
                 is Resource.Success -> {
                     val rows = HomeLayout.rowsFor(apiName.orEmpty(), res.value.entries.filter { it.value.list.list.isNotEmpty() }.map { it.key to it.value })
                     if (rows.isEmpty()) item(key = "empty") { EmptyHome() }
-                    rows.forEach { (name, row) ->
+                    rows.forEachIndexed { rowIndex, (name, row) ->
                         item(key = "row-$name") {
-                            Column(Modifier.padding(bottom = space)) {
+                            Column(Modifier.reveal("home/$apiName/row-$name", 60 + rowIndex.coerceAtMost(4) * 70).padding(bottom = space)) {
                                 val chart = chartSize(name)
                                 val ranked = chart != null && !row.list.isHorizontalImages
                                 com.lagradost.desktop.ui.fluent.RichSectionHeader(
@@ -241,7 +258,14 @@ fun HomeScreen() {
                     }
                 }
             }
-            item(key = "end") { Box(Modifier.height(40.dp)) }
+            item(key = "end") {
+                // choosing and ordering the rows: at the foot of the page, not in the top bar (the other looks have it in their Browse header)
+                val customise = com.lagradost.desktop.ui.shell.ShellState.homeActions?.customise
+                val inHeader = com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }
+                Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 40.dp), contentAlignment = Alignment.Center) {
+                    if (customise != null && !inHeader) Button("Customise Home rows", customise, kind = ButtonKind.Subtle, icon = Icons.Edit, height = 34.dp)
+                }
+            }
         }
     }
 }
@@ -356,18 +380,23 @@ private fun HeroSkeleton(height: Dp) {
 }
 
 @Composable
-private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean) {
+private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean, scroll: () -> Float) {
     var index by remember(items.size) { mutableStateOf(0) }
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     // the shown item's thumbnail fills while it is on screen; hovering the hero pauses the rotation
-    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
+    // in steps of a few frames a second, not one per frame: an animation that runs all the time makes the whole window redraw 60 times a second
+    // (a third of a core and the GPU for a thin line), and the pages are redrawn as a whole
+    val progress = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(index, hovered, items.size) {
         if (items.size <= 1) return@LaunchedEffect
         if (hovered) return@LaunchedEffect
-        progress.animateTo(1f, tween(((1f - progress.value) * HERO_MS).toInt().coerceAtLeast(1), easing = androidx.compose.animation.core.LinearEasing))
-        progress.snapTo(0f)
+        while (progress.floatValue < 1f) {
+            kotlinx.coroutines.delay(HERO_TICK_MS.toLong())
+            progress.floatValue = (progress.floatValue + HERO_TICK_MS / HERO_MS.toFloat()).coerceAtMost(1f)
+        }
+        progress.floatValue = 0f
         index = (index + 1) % items.size
     }
     val current = items[index.coerceIn(0, items.lastIndex)]
@@ -381,35 +410,46 @@ private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean) {
     }
     com.lagradost.desktop.ui.shell.AmbientArtwork(current.backgroundPosterUrl ?: current.posterUrl, current.posterHeaders)
     Box(Modifier.fillMaxWidth().height(height).hoverable(source)) {
-        Crossfade(current, animationSpec = com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(900), label = "heroBackdrop") { item -> HeroBackdrop(item, art[item.url]?.backdrop) }
+        Crossfade(current, animationSpec = com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(900), label = "heroBackdrop") { item -> HeroBackdrop(item, art[item.url]?.backdrop, scroll) }
         AnimatedContent(
             current,
+            // the text leaves a little slower than the page and fades as it goes under the bar
+            modifier = Modifier.graphicsLayer { val s = scroll().coerceAtMost(height.toPx()); translationY = s * 0.18f; alpha = (1f - s / (height.toPx() * 0.5f)).coerceIn(0f, 1f) },
             transitionSpec = {
                 (fadeIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(420)) + androidx.compose.animation.slideInHorizontally(com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(520)) { -it / 14 }) togetherWith
                     fadeOut(com.lagradost.desktop.ui.fluent.FluentMotion.tweenOut(160))
             },
             label = "heroText",
         ) { item -> HeroText(item, compact, height, art[item.url]?.logo) }
-        if (items.size > 1 && !compact) {
-            com.lagradost.desktop.ui.fluent.FeaturedStrip(
-                count = items.size.coerceAtMost(6), selected = index.coerceAtMost(5),
-                progress = { if (hovered) 1f else progress.value },
-                image = { i -> (items[i].backgroundPosterUrl ?: items[i].posterUrl) to items[i].posterHeaders },
-                onSelect = { i -> if (i != index) { scope.launch { progress.snapTo(0f) }; index = i } },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = gutter, bottom = 34.dp),
-            )
-        } else if (items.size > 1) {
-            Row(Modifier.align(Alignment.BottomStart).padding(start = gutter, bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items.forEachIndexed { i, _ ->
-                    val w by androidx.compose.animation.core.animateDpAsState(if (i == index) 26.dp else 8.dp, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(320), label = "dot")
-                    Box(Modifier.size(w, 4.dp).clip(RoundedCornerShape(2.dp)).background(if (i == index) Fluent.colors.accent else Color(0x55FFFFFF)).clickableNoRipple { index = i })
+        if (items.size > 1) {
+            if (compact) {
+                // slim segments at the right: the shown one fills while it is on screen (hovering the banner holds it)
+                Row(Modifier.align(Alignment.BottomEnd).padding(end = 36.dp, bottom = 30.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    items.take(8).forEachIndexed { i, _ ->
+                        val w by androidx.compose.animation.core.animateDpAsState(if (i == index) 34.dp else 18.dp, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(320), label = "seg")
+                        Box(Modifier.size(w, 14.dp).clickableNoRipple { progress.floatValue = 0f; index = i }, contentAlignment = Alignment.Center) {
+                            Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x4DFFFFFF))) {
+                                if (i == index) Box(Modifier.fillMaxHeight().fillMaxWidth(if (hovered) 1f else progress.floatValue).background(Color.White))
+                            }
+                        }
+                    }
                 }
+            } else {
+                // the next titles as a strip: the shown one is open, the rest are slices of their artwork
+                com.lagradost.desktop.ui.fluent.FeaturedStrip(
+                    count = items.size.coerceAtMost(7), selected = index, progress = { if (hovered) 1f else progress.floatValue },
+                    image = { i -> val it = items[i]; (it.backgroundPosterUrl ?: art[it.url]?.backdrop ?: it.posterUrl) to it.posterHeaders },
+                    onSelect = { i -> progress.floatValue = 0f; index = i },
+                    label = { i -> items[i].name },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = gutter, bottom = 34.dp).graphicsLayer { alpha = (1f - scroll() / (height.toPx() * 0.4f)).coerceIn(0f, 1f) },
+                )
             }
         }
     }
 }
 
 private const val HERO_MS = 9000
+private const val HERO_TICK_MS = 120
 
 @Composable
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
@@ -417,18 +457,14 @@ private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
 
 /** Backdrop of the hero: still artwork, text scrims, and a fade into the page at the bottom (any backdrop style) */
 @Composable
-private fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null) {
+private fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null, scroll: () -> Float = { 0f }) {
     val zoom: androidx.compose.runtime.State<Float>? = null
     Box(
-        Modifier.fillMaxSize()
-            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                drawRect(Brush.verticalGradient(0.6f to Color.Black, 1f to Color.Transparent), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
-            },
+        Modifier.fillMaxSize().fadeIntoPage(),
     ) {
         val backdrop = item.backgroundPosterUrl ?: tmdbBackdrop
-        Box(Modifier.fillMaxSize().graphicsLayer { val s = zoom?.value ?: 1f; scaleX = s; scaleY = s; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.7f, 0.4f) }) {
+        // the picture trails the page a little (parallax): it is shifted down by a part of the scroll, under the fade at the bottom
+        Box(Modifier.fillMaxSize().graphicsLayer { val s = zoom?.value ?: 1f; scaleX = s; scaleY = s; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.7f, 0.4f); translationY = scroll().coerceAtMost(size.height) * 0.3f }) {
             if (backdrop != null) {
                 RemoteImage(backdrop, item.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop)
             } else {
@@ -450,41 +486,44 @@ private fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null) {
 
 @Composable
 private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp, tmdbLogo: String? = null) {
-    // the thumbnail strip is at the right: on a wide window the text can go lower, beside it
-    val wide = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width / androidx.compose.ui.platform.LocalDensity.current.density >= 1150f
-    val bottomPad = if (compact) 52.dp else if (wide) 64.dp else 132.dp
-    // what is left below the top bar: the block never reaches under it (full 346 dp, without the synopsis 254, short 214)
+    val c = Fluent.colors
+    val bottomPad = if (compact) 56.dp else 84.dp
+    // what is left below the top bar: the block never reaches under it
     val room = height - com.lagradost.desktop.ui.shell.TopBarHeight - bottomPad - 8.dp
-    val showPlot = room >= 346.dp
-    val showMeta = room >= 230.dp
+    val showPlot = room >= 300.dp
     val tight = room < 230.dp
     Box(Modifier.fillMaxSize()) {
         Column(
-            Modifier.align(Alignment.BottomStart).padding(start = gutter, bottom = bottomPad).widthIn(max = 640.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            Modifier.align(Alignment.BottomStart).padding(start = gutter, bottom = bottomPad).widthIn(max = 620.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                typeLabel(item.type)?.let { com.lagradost.desktop.ui.fluent.ArtChip(it, accent = true) }
-                item.contentRating?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
-                item.year?.let { com.lagradost.desktop.ui.fluent.ArtChip(it.toString()) }
-                item.score?.let { com.lagradost.desktop.ui.fluent.ArtChip("★ " + it.toString(10, 1)) }
-            }
             val logo = item.logoUrl ?: tmdbLogo
             if (logo != null) {
-                RemoteImage(logo, item.posterHeaders, item.name, Modifier.height(if (tight) 64.dp else if (compact) 80.dp else 110.dp).widthIn(max = 460.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
+                RemoteImage(logo, item.posterHeaders, item.name, Modifier.height(if (tight) 72.dp else if (compact) 92.dp else 128.dp).widthIn(max = 520.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
             } else {
-                FText(item.name, style = (if (compact) Fluent.type.title else Fluent.type.titleLarge).copy(fontSize = if (compact) 34.sp else 52.sp, lineHeight = if (compact) 40.sp else 60.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = if (tight || !showPlot) 1 else 2)
+                FText(item.name, style = (if (compact) Fluent.type.title else Fluent.type.titleLarge).copy(fontSize = if (compact) 36.sp else 56.sp, lineHeight = if (compact) 42.sp else 62.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = if (tight || !showPlot) 1 else 2)
             }
-            val meta = buildList {
+            // one line: score, age rating, what it is
+            val tags = buildList {
+                item.year?.let { add(it.toString()) }
                 item.duration?.takeIf { it > 0 }?.let { add(if (it >= 60) "${it / 60} h ${it % 60} min" else "$it min") }
-                item.tags?.take(4)?.forEach { add(it) }
+                item.tags?.take(3)?.forEach { add(it) }
             }
-            if (showMeta && meta.isNotEmpty()) FText(meta.joinToString("   •   "), style = Fluent.type.bodyStrong, color = Color(0xD9FFFFFF), maxLines = 1)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                item.score?.let { s ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        com.lagradost.desktop.ui.fluent.Icon(Icons.StarFilled, size = 15.dp, tint = Color(0xFFFFC53D))
+                        FText(s.toString(10, 1), style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
+                    }
+                }
+                item.contentRating?.takeIf { it.isNotBlank() }?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
+                if (tags.isNotEmpty()) FText(tags.joinToString("  •  "), style = Fluent.type.bodyStrong, color = Color(0xE6FFFFFF), maxLines = 1)
+            }
             if (showPlot) item.plot?.takeIf { it.isNotBlank() }?.let { FText(stripHtml(it), style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xCCFFFFFF), maxLines = if (compact) 2 else 3) }
             Box(Modifier.height(2.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                com.lagradost.desktop.ui.fluent.PillButton("Play", Icons.Play, primary = true, onClick = { Navigator.go(Route.Details(item.url, item.apiName, item.name, item.posterUrl, START_ACTION_RESUME_LATEST)) }, height = 48.dp)
-                com.lagradost.desktop.ui.fluent.PillButton("More info", Icons.Info, primary = false, onClick = { Navigator.go(Route.Details(item.url, item.apiName, item.name, item.posterUrl)) }, height = 48.dp)
+                com.lagradost.desktop.ui.fluent.PillButton("Watch now", Icons.Play, primary = true, onClick = { Navigator.go(Route.Details(item.url, item.apiName, item.name, item.posterUrl, START_ACTION_RESUME_LATEST)) }, height = 50.dp)
+                com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Info, "More info", { Navigator.go(Route.Details(item.url, item.apiName, item.name, item.posterUrl)) }, size = 50.dp)
             }
         }
     }

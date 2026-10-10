@@ -91,10 +91,19 @@ fun ApplicationScope.NativeWindow() {
         // a few seconds after the app is on screen: tells about a newer version on GitHub (nothing is installed by the app)
         remember { com.lagradost.desktop.update.UpdateCheck.startAutoCheck() }
         remember { window.minimumSize = Dimension(760, 520) }
+        // a content area of a whole number of pixels: no stretched (smeared) 1 px borders at 125 / 150 / 175 % display scaling
+        remember { com.lagradost.desktop.platform.EvenPixels.install(window) }
         remember { com.lagradost.desktop.platform.AppIcon.install(window) }
         remember { FluentSettings.load(); com.lagradost.desktop.ui.fluent.Appearance.load() }
         FluentTheme {
             val c = Fluent.colors
+            // what is not painted (yet, or any more) shows the page colour and not the white of an AWT window: a canvas that did not follow a resize, the
+            // first paint of a new window
+            LaunchedEffect(window, c.bg) { runCatching { paintBackground(window, c.bg.toArgb()) } }
+            // the Compose scene must be as big as the window; when it is not for a second (the white area to the right and below the page of a bug report)
+            // the frame messages are sent again and the window is laid out again
+            val sceneInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+            LaunchedEffect(window) { watchSceneSize(window) { sceneInfo.containerSize } }
             val fullscreenNow = com.lagradost.desktop.platform.WinChrome.fullscreen
             SideEffect { WinTheme.styleWindow(window, c.dark, c.bg, c.text, fullscreenNow) }
             // integrated title bar (falls back to the native one if the window procedure can not be hooked)
@@ -194,12 +203,15 @@ object NativeKeys {
         }
         return when {
             // Esc closes the top dialog, else leaves full screen (whatever has the keyboard focus)
+            e.key == Key.Escape && ShellState.homeSearchOpen -> { ShellState.homeSearchOpen = false; true }
             e.key == Key.Escape -> Overlays.onEscape() || com.lagradost.desktop.ui.DesktopUiHost.closeTopAndroidDialog() || run {
                 val host = com.lagradost.desktop.runtime.AndroidRuntime.host
                 if (host.isFullscreen()) { host.setFullscreen(false); true } else false
             } || playerKey(e)
             e.isAltPressed && e.key == Key.DirectionLeft -> Navigator.back()
             e.isCtrlPressed && (e.key == Key.K || e.key == Key.E) -> {
+                // the floating bar look has no search box in its bar: on Home the one of the extension shown there opens
+                if (Navigator.current.route is com.lagradost.desktop.core.Route.Home && com.lagradost.desktop.ui.fluent.Appearance.navPosition == com.lagradost.desktop.ui.fluent.NavPosition.Floating) ShellState.homeSearchOpen = true
                 runCatching { ShellState.searchFocus.requestFocus() }
                 true
             }
@@ -224,6 +236,45 @@ object NativeLinks {
             MainActivity.handleAppIntentUrl(activity, link, false, null)
         } catch (t: Throwable) {
             android.util.Log.e("NativeLinks", "link $link", t)
+        }
+    }
+}
+
+private fun paintBackground(window: java.awt.Window, argb: Int) {
+    val color = java.awt.Color(argb)
+    // the window itself and its content pane only: what shows through where the picture does not reach
+    window.background = color
+    (window as? javax.swing.RootPaneContainer)?.contentPane?.background = color
+}
+
+/**
+ * Looks at the picture of the window against the window every half second. The picture is always a little smaller than the client area of the frame
+ * (the invisible resize frame: 21 x 10 px measured at 150 %), so only a big difference counts: a stale canvas, as in a bug report of the page drawn at
+ * its old size in the top left of a window that had grown (a third smaller each way). It has to last 2 s; then the window is laid out again, the next
+ * time its frame messages are sent again, the third time the window is made one pixel wider and back. Never while it is maximized (no resize),
+ * in full screen or the small window.
+ */
+private suspend fun watchSceneSize(window: java.awt.Window, scene: () -> androidx.compose.ui.unit.IntSize) {
+    val chrome = com.lagradost.desktop.platform.WinChrome
+    var badPolls = 0
+    var heals = 0
+    while (true) {
+        delay(500)
+        val native = chrome.clientSize()
+        val size = scene()
+        val off = native != null && size.width > 0 && size.height > 0 && !chrome.fullscreen && !chrome.pip &&
+            (kotlin.math.abs(native[0] - size.width) > maxOf(160, native[0] / 8) || kotlin.math.abs(native[1] - size.height) > maxOf(120, native[1] / 8))
+        if (!off) { badPolls = 0; heals = 0; continue }
+        if (++badPolls < 4) continue
+        badPolls = 0
+        heals++
+        android.util.Log.w("NativeApp", "the picture is ${size.width}x${size.height} but the window is ${native!![0]}x${native[1]}: laying it out again (#$heals)")
+        java.awt.EventQueue.invokeLater {
+            runCatching {
+                if (heals >= 2) chrome.resendFrame()
+                window.invalidate(); window.validate(); window.repaint()
+                if (heals >= 3 && !chrome.maximized) { val w = window.width; val h = window.height; window.setSize(w + 1, h); window.setSize(w, h) }
+            }
         }
     }
 }

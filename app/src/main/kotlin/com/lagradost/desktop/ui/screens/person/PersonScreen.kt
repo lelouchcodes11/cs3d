@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.person
 
+import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -72,7 +73,7 @@ fun PersonScreen(route: Route.Person) {
         FluentScrollbar(listState, TopBarHeight)
         val cardWidth = Appearance.posterSize.width * (if (maxWidth >= 1008.dp) 1.05f else 0.92f)
         val perRow = ((maxWidth - gutter * 2 + 16.dp) / (cardWidth + 16.dp)).toInt().coerceAtLeast(2)
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = TopBarHeight + 20.dp, bottom = 40.dp + LocalDockInset.current)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().smoothWheel(listState), contentPadding = PaddingValues(top = TopBarHeight + 20.dp, bottom = 40.dp + LocalDockInset.current)) {
             item(key = "header") { Header(route, info) }
             when {
                 !loaded.first -> item(key = "loading") { Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { ProgressRing() } }

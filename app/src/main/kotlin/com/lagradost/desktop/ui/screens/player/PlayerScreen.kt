@@ -718,11 +718,12 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVideoImage(imag
 private fun LoadingOverlay(s: PlayerSession) {
     var listOpen by remember { mutableStateOf(false) }
     Box(
-        Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF191D26), Color(0xFF08090B)), radius = 1500f)).pointerInput(Unit) { detectTapGestures { } },
+        // the page colour of the theme, as every other page (a blue-grey gradient used to show here)
+        Modifier.fillMaxSize().background(Fluent.colors.bg).pointerInput(Unit) { detectTapGestures { } },
         contentAlignment = Alignment.Center,
     ) {
         // the episode's own picture, dark and blurred, behind the words
-        s.episodePoster?.let { RemoteImage(it, null, null, Modifier.fillMaxSize().blur(40.dp).graphicsLayer { alpha = 0.3f }, ContentScale.Crop) }
+        s.episodePoster?.let { com.lagradost.desktop.ui.components.SoftImage(it, null, Modifier.fillMaxSize(), alpha = 0.22f) }
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x66000000), 0.5f to Color.Transparent, 1f to Color(0x99000000))))
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
@@ -797,7 +798,7 @@ private fun PausedBadge(s: PlayerSession, modifier: Modifier) {
 @Composable
 private fun FailureOverlay(s: PlayerSession) {
     var listOpen by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxSize().background(Color(0xE6101010)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Fluent.colors.bg.copy(alpha = 0.94f)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.widthIn(max = 520.dp).padding(24.dp)) {
@@ -831,6 +832,7 @@ internal fun SourcesPanel(s: PlayerSession, onClose: () -> Unit, modifier: Modif
                 FText("Sources", style = Fluent.type.subtitle, color = Color.White, maxLines = 1)
                 FText("${items.size} found" + if (s.loadingMore) "  ·  still looking" else "", style = Fluent.type.caption, color = Color(0x99FFFFFF), maxLines = 1)
             }
+            IconButton(Icons.Refresh, { onClose(); s.reloadSources() }, tooltip = "Reload sources: look for them again", tint = Color.White)
             IconButton(Icons.Close, onClose, tooltip = "Close", tint = Color.White)
         }
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).padding(bottom = 8.dp)) {

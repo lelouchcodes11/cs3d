@@ -686,6 +686,27 @@ object PluginManager {
                 return true
             }
 
+            // desktop: two repositories can offer the same extension (VegaMovies is in two of them). Both would register an API of the same name: the Home
+            // list shows it twice and a title page may be loaded by one and its links by the other. One is kept, the one with the higher version.
+            val twinKey = data.internalName.lowercase()
+            var twinToUnload: String? = null
+            val skip = synchronized(loadedMeta) {
+                val twin = loadedMeta.entries.firstOrNull { it.key != filePath && it.value.first == twinKey }
+                if (twin != null && twin.value.second >= version) {
+                    true
+                } else {
+                    if (twin != null) { twinToUnload = twin.key; loadedMeta.remove(twin.key) }
+                    loadedMeta[filePath] = twinKey to version
+                    false
+                }
+            }
+            if (skip) {
+                Log.w(TAG, "Plugin ${data.internalName} from ${data.url} is not loaded: another repository's copy of it is (same name, same or newer version)")
+                currentlyLoading = null
+                return true
+            }
+            twinToUnload?.let { unloadPlugin(it) }
+
             pluginInstance.filename = file.absolutePath
             if (manifest.requiresResources) {
                 Log.d(TAG, "Loading resources for ${data.internalName}")
@@ -731,8 +752,12 @@ object PluginManager {
         }
     }
 
+    /** desktop: file path -> (lower case internal name, version) of the loaded online and local plugins, to keep two copies of one extension from both loading */
+    private val loadedMeta = LinkedHashMap<String, Pair<String, Int>>()
+
     fun unloadPlugin(absolutePath: String) {
         Log.i(TAG, "Unloading plugin: $absolutePath")
+        synchronized(loadedMeta) { loadedMeta.remove(absolutePath) }
         val plugin = plugins[absolutePath]
         if (plugin == null) {
             Log.w(TAG, "Couldn't find plugin $absolutePath")

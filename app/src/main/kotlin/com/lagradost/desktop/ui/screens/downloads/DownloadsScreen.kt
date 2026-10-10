@@ -97,7 +97,8 @@ fun DownloadsScreen() {
             val total = (used ?: 0L) + (free ?: 0L)
             if (total > 0) {
                 Column(Modifier.fillMaxWidth().glass(com.lagradost.desktop.ui.fluent.FluentShapes.card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ProgressBar(((downloaded ?: 0L).toFloat() / total).coerceIn(0.01f, 1f), height = 8.dp)
+                    // nothing downloaded: an empty track, not a dot that looks like progress
+                    ProgressBar(if ((downloaded ?: 0L) <= 0L) 0f else ((downloaded ?: 0L).toFloat() / total).coerceIn(0.01f, 1f), height = 8.dp)
                     FText("${size(downloaded ?: 0L)} downloaded  ·  ${size(free ?: 0L)} free on this drive", style = Fluent.type.caption, color = c.textSecondary)
                 }
             }

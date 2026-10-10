@@ -41,9 +41,9 @@ open class MpvPlayer : IPlayer {
         private const val LIVE_STALL_MS = 12_000L
 
         /** How long the picture may stand still after another embedded subtitle track was chosen before the file is opened again with it */
-        private const val SWITCH_PATIENCE_MS = 12_000L
+        private const val SWITCH_PATIENCE_MS = 9_000L
         /** The picture has not moved this long after a subtitle switch: pause and play once, what the viewer did by hand */
-        private const val NUDGE_MS = 2_500L
+        private const val NUDGE_MS = 2_000L
 
         /** Client errors that bounded ranges, headers and the app's HTTP client can cure; 404/410 and rate limits (429) they cannot */
         private val RANGE_RETRY_STATUS = setOf(400, 403, 405, 406, 416)
@@ -1351,7 +1351,7 @@ open class MpvPlayer : IPlayer {
         val began = System.currentTimeMillis()
         Thread({
             try {
-                var nudged = false
+                var nudges = 0
                 while (true) {
                     Thread.sleep(400)
                     if (handle == null || isReleased || generation != fileGeneration || preferredSubtitle != sub) return@Thread
@@ -1361,13 +1361,14 @@ open class MpvPlayer : IPlayer {
                         return@Thread
                     }
                     val waited = System.currentTimeMillis() - began
-                    // still: pause and play once, which is what the viewer had to do to get the picture going again
-                    if (!nudged && waited > NUDGE_MS) {
-                        nudged = true
-                        Log.i(TAG, "subtitle switch: the picture stood still for ${NUDGE_MS / 1000.0} s, pause and play")
-                        setMpvProperty("pause", "yes")
-                        Thread.sleep(250)
-                        if (!userPaused) setMpvProperty("pause", "no")
+                    // still: jump on a little, which is what the viewer had to do to get the picture going again (pausing and playing did nothing: the
+                    // stream waits for a range request that never answers, and a jump sends a new one); once more a little further if that was not enough
+                    if ((nudges == 0 && waited > NUDGE_MS) || (nudges == 1 && waited > NUDGE_MS * 2.4)) {
+                        nudges++
+                        val at = currentPositionMs.takeIf { it > 0 } ?: positionBefore
+                        val target = at + if (nudges == 1) 400L else 1500L
+                        Log.i(TAG, "subtitle switch: the picture stood still for ${waited / 1000.0} s, jumping on to $target ms (#$nudges)")
+                        mpvCommand("seek", String.format(java.util.Locale.ROOT, "%.3f", target / 1000.0), "absolute")
                     }
                     if (waited > SWITCH_PATIENCE_MS) break
                 }

@@ -114,7 +114,8 @@ private fun Route.tab(): Tab? = when (this) {
     is Route.Search -> Tab.Search
     Route.Library -> Tab.Library
     Route.Downloads -> Tab.Downloads
-    Route.Extensions -> Tab.Extensions
+    // Extensions live inside Settings now: the Settings item of the navigation stays lit on that page
+    Route.Extensions -> Tab.Settings
     is Route.Settings -> Tab.Settings
     else -> null
 }

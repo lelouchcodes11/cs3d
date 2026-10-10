@@ -2,6 +2,7 @@ package com.lagradost.desktop.ui.fluent
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -134,7 +135,10 @@ fun PosterCard(
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val zoomOn = Appearance.hoverZoom
-    val lift by animateFloatAsState(if (hovered && zoomOn) 1.03f else 1f, FluentMotion.tweenIn(220))
+    val pressed by source.collectIsPressedAsState()
+    // the card rises on a spring when the pointer comes (a little overshoot) and gives way under a press
+    val liftSpec = if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap<Float>() else androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 520f)
+    val lift by animateFloatAsState(if (pressed) 0.975f else if (hovered && zoomOn) 1.035f else 1f, liftSpec, label = "lift")
     val glow by animateFloatAsState(if (hovered) 1f else 0f, FluentMotion.tweenIn(220))
     val shape = RoundedCornerShape(FluentShapes.card)
     val body = @Composable {
@@ -150,8 +154,7 @@ fun PosterCard(
                     .fillMaxWidth()
                     .aspectRatio(if (landscape) 16f / 9f else 2f / 3f)
                     .graphicsLayer { scaleX = lift; scaleY = lift }
-                    .clip(shape)
-                    .border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, shape),
+                    .clip(shape),
             ) {
                 PosterImage(item, Modifier.fillMaxSize())
                 // hover: a flat dim and a quiet play button (no gradient, shadow or accent)
@@ -179,7 +182,8 @@ fun PosterCard(
                 }
             }
             Box(Modifier.height(8.dp))
-            if (item.name.isNotBlank()) FText(item.name, style = Fluent.type.bodyStrong, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
+            // the title is quiet until the pointer is on the card
+            if (item.name.isNotBlank()) FText(item.name, style = Fluent.type.body, color = if (hovered) c.text else c.textSecondary, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
             val sub = subtitle ?: if (showType) typeLabel(item.type) else null
             if (sub != null) FText(sub, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
         }
@@ -189,7 +193,7 @@ fun PosterCard(
 
 @Composable
 private fun Overlay(text: String) {
-    Box(Modifier.background(Color(0xA6000000), RoundedCornerShape(50)).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x26FFFFFF), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
+    Box(Modifier.background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) {
         FText(text, style = Fluent.type.caption, color = Color.White, maxLines = 1, softWrap = false)
     }
 }
@@ -235,9 +239,20 @@ fun <T> Shelf(
     val shown = androidx.compose.runtime.remember(items, key) {
         if (key == null) items else HashSet<Any>().let { seen -> items.filter { seen.add(key(it)) } }
     }
+    // a list keeps the item it is showing in place: a title that comes in at the front (the film you have just watched in Continue watching) would
+    // wait out of sight at the left of a row that was scrolled. When the first item changes the row goes back to its start.
+    val firstKey = shown.firstOrNull()?.let { if (key != null) key(it) else it }
+    val lastFirst = androidx.compose.runtime.remember { arrayOf(firstKey) }
+    androidx.compose.runtime.LaunchedEffect(firstKey) {
+        if (lastFirst[0] == firstKey) return@LaunchedEffect
+        lastFirst[0] = firstKey
+        if (state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 0) state.animateScrollToItem(0)
+    }
     var width by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0) }
     Box(modifier.fillMaxWidth().hoverable(source).onSizeChanged { width = it.width }) {
         LazyRow(
+            // a row with no gutter (chips) is cut at its own edge: the cut end fades into the page instead of showing half a chip
+            modifier = if (gutter == 0.dp) Modifier.scrollEdgeFade(state) else Modifier,
             state = state,
             contentPadding = PaddingValues(horizontal = gutter),
             horizontalArrangement = Arrangement.spacedBy(spacing),

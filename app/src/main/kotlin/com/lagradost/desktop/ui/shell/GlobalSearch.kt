@@ -41,11 +41,12 @@ import com.lagradost.desktop.ui.fluent.rememberInteraction
 
 /** The search box of the title bar: type-ahead suggestions and recent searches in a flyout */
 @Composable
-fun GlobalSearchBox(modifier: Modifier = Modifier, only: String? = null) {
+fun GlobalSearchBox(modifier: Modifier = Modifier, only: String? = null, onBlur: () -> Unit = {}, onDone: () -> Unit = {}) {
     val vm = appVm<SearchViewModel>()
     val suggestions by vm.searchSuggestions.observeAsState()
     val history by vm.currentHistory.observeAsState()
     var focused by remember { mutableStateOf(false) }
+    val hadFocus = remember { booleanArrayOf(false) }
     val text = ShellState.searchText
 
     LaunchedEffect(text) { vm.fetchSuggestions(text) }
@@ -57,6 +58,7 @@ fun GlobalSearchBox(modifier: Modifier = Modifier, only: String? = null) {
         ShellState.searchText = query
         vm.clearSuggestions()
         Navigator.search(query, only)
+        onDone()
     }
 
     val rows: List<Pair<String, Boolean>> = when {
@@ -73,7 +75,8 @@ fun GlobalSearchBox(modifier: Modifier = Modifier, only: String? = null) {
             leadingIcon = Icons.Search,
             focusRequester = ShellState.searchFocus,
             onSubmit = { submit(text) },
-            onFocusChange = { focused = it },
+            // the first report of a box that was never focused is "not focused": that is not a loss of focus
+            onFocusChange = { focused = it; if (it) hadFocus[0] = true else if (hadFocus[0]) { hadFocus[0] = false; onBlur() } },
             modifier = Modifier.fillMaxWidth(),
             pill = true,
             height = 38.dp,

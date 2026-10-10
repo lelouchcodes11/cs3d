@@ -217,22 +217,19 @@ fun Modifier.handCursor(): Modifier = pointerHoverIcon(PointerIcon.Hand)
 
 enum class ButtonKind { Standard, Accent, Subtle }
 
-/** The accent as a fill: a gradient from the accent into the theme's second colour, lighter under the pointer, darker when pressed */
+/** The accent as a fill: one flat colour, lighter under the pointer, darker when pressed (it used to be a gradient into the theme's second colour) */
 fun FluentColors.accentBrush(hovered: Boolean = false, pressed: Boolean = false): Brush {
     fun tune(c: Color) = when {
         pressed -> androidx.compose.ui.graphics.lerp(c, Color.Black, 0.18f)
         hovered -> androidx.compose.ui.graphics.lerp(c, Color.White, 0.16f)
         else -> c
     }
-    return Brush.linearGradient(listOf(tune(accent), tune(accent2)), Offset.Zero, Offset(400f, 200f))
+    return SolidColor(tune(accent))
 }
 
-/** The soft coloured glow under a main button (a shadow tinted with the accent) */
+/** Kept for the callers that asked for a glow under the main button: there is none any more (a coloured shadow was part of the "made by AI" look) */
 @Composable
-fun Modifier.accentGlow(shape: Shape, strength: Float = 1f): Modifier {
-    val a = Fluent.colors.accent
-    return this.shadow(14.dp * strength, shape, clip = false, ambientColor = a.copy(alpha = 0.45f), spotColor = a.copy(alpha = 0.75f))
-}
+fun Modifier.accentGlow(shape: Shape, strength: Float = 1f): Modifier = this
 
 /** A frosted button on artwork, tinted with the accent (white tinted toward the accent colour) */
 fun FluentColors.tintedGlass(hovered: Boolean): Color =
@@ -280,7 +277,8 @@ fun ButtonBase(
             hovered -> c.controlHover
             else -> c.control
         })
-        ButtonKind.Accent -> if (!enabled) SolidColor(c.controlDisabled) else c.accentBrush(hovered, pressed)
+        // the main button of a dialog or a page: flat white with dark text (Settings > Look > Play button gives it the accent colour back)
+        ButtonKind.Accent -> if (!enabled) SolidColor(c.controlDisabled) else if (Appearance.whitePrimary) SolidColor(c.text.copy(alpha = if (pressed) 0.78f else if (hovered) 0.9f else 1f)) else c.accentBrush(hovered, pressed)
         ButtonKind.Subtle -> SolidColor(when {
             !enabled -> Color.Transparent
             pressed -> c.subtlePressed
@@ -290,13 +288,13 @@ fun ButtonBase(
     }
     val content0 = when {
         !enabled -> c.textDisabled
-        kind == ButtonKind.Accent -> c.onAccent
+        kind == ButtonKind.Accent -> if (Appearance.whitePrimary) c.bg else c.onAccent
         pressed && kind != ButtonKind.Accent -> c.textSecondary
         else -> c.text
     }
     val stroke = when (kind) {
-        ButtonKind.Standard -> if (hovered && enabled) c.accent.copy(alpha = 0.55f) else c.stroke
-        ButtonKind.Accent -> if (enabled) Color.White.copy(alpha = 0.22f) else Color.Transparent
+        ButtonKind.Standard -> if (hovered && enabled) c.strokeStrong else c.stroke
+        ButtonKind.Accent -> if (enabled && !Appearance.whitePrimary) Color.White.copy(alpha = 0.22f) else Color.Transparent
         ButtonKind.Subtle -> Color.Transparent
     }
     Row(
@@ -335,7 +333,7 @@ fun IconButton(
 }
 
 @Composable
-fun Tooltip(text: String, content: @Composable () -> Unit) {
+fun Tooltip(text: String, side: Boolean = false, content: @Composable () -> Unit) {
     val c = Fluent.colors
     TooltipArea(
         tooltip = {
@@ -347,7 +345,8 @@ fun Tooltip(text: String, content: @Composable () -> Unit) {
             ) { FText(text, style = Fluent.type.caption, color = c.text, maxLines = 4) }
         },
         delayMillis = 500,
-        tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(0.dp, 24.dp)),
+        // side: beside the control, centred on it (the dock's icons: the tip under the pointer covered the next icon)
+        tooltipPlacement = if (side) TooltipPlacement.ComponentRect(anchor = Alignment.CenterEnd, alignment = Alignment.CenterEnd, offset = DpOffset(10.dp, 0.dp)) else TooltipPlacement.CursorPoint(offset = DpOffset(0.dp, 24.dp)),
         content = content,
     )
 }
@@ -723,14 +722,14 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
         modifier
             .height(32.dp)
             .clip(shape)
-            // chosen = the accent gradient with dark/light text on it; the others are plainly visible buttons
-            .background(if (selected) c.accentBrush(hovered) else SolidColor(if (hovered) c.controlHover else c.control), shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) Color.White.copy(alpha = 0.22f) else if (hovered) c.accent.copy(alpha = 0.55f) else c.strokeStrong.copy(alpha = 0.45f), shape)
+            // chosen = a flat light fill with dark text (the same as the main button); the others are quiet outlined buttons
+            .background(if (selected) SolidColor(c.text.copy(alpha = if (hovered) 0.9f else 1f)) else SolidColor(if (hovered) c.controlHover else Color.Transparent), shape)
+            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) Color.Transparent else if (hovered) c.strokeStrong else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val fg = if (selected) c.onAccent else c.text
+        val fg = if (selected) c.bg else c.textSecondary.let { if (hovered) c.text else it }
         if (icon != null) {
             Icon(icon, size = 14.dp, tint = fg)
             Box(Modifier.width(6.dp))

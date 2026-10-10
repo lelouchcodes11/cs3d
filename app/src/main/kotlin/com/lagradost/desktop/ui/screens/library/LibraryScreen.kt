@@ -56,8 +56,8 @@ import com.lagradost.desktop.ui.screens.common.PosterGrid
 import com.lagradost.desktop.ui.screens.home.openCard
 import com.lagradost.desktop.ui.shell.TopBarHeight
 
-/** What the library shows: everything, only anime, or only films and series */
-private enum class Kind(val label: String) { All("All"), Anime("Anime"), Other("Movies & TV") }
+/** What the library shows: everything, or only films, only series, or only anime (the filter button in the toolbar) */
+private enum class Kind(val label: String, val glyph: String) { All("All titles", Icons.Library), Movies("Movies", Icons.Video), Shows("TV shows", Icons.List), Anime("Anime", Icons.Star) }
 
 private const val KIND_KEY = "desktop_library_kind"
 
@@ -71,11 +71,19 @@ private fun saveKind(kind: Kind) {
 
 private fun SearchResponse.isAnimeTitle() = type == TvType.Anime || type == TvType.AnimeMovie || type == TvType.OVA
 
-private fun List<SearchResponse>.ofKind(kind: Kind) = when (kind) {
-    Kind.All -> this
-    Kind.Anime -> filter { it.isAnimeTitle() }
-    Kind.Other -> filter { !it.isAnimeTitle() }
+// a film is a film of any kind but anime; whatever is neither a film nor anime (series, cartoons, dramas, documentaries, live) is a TV show
+private fun SearchResponse.isMovieTitle() = !isAnimeTitle() && type == TvType.Movie
+
+private fun SearchResponse.isShowTitle() = !isAnimeTitle() && type != TvType.Movie
+
+private fun SearchResponse.isOfKind(kind: Kind) = when (kind) {
+    Kind.All -> true
+    Kind.Movies -> isMovieTitle()
+    Kind.Shows -> isShowTitle()
+    Kind.Anime -> isAnimeTitle()
 }
+
+private fun List<SearchResponse>.ofKind(kind: Kind) = if (kind == Kind.All) this else filter { it.isOfKind(kind) }
 
 /**
  * A title of an AniList / MyAnimeList / Simkl list is no extension's page. It used to open only when some installed extension happened to claim
@@ -86,11 +94,9 @@ private fun openLibraryItem(card: SearchResponse) {
     if (card is SyncAPI.LibraryItem && !opensDirectly(card)) Navigator.search(card.name) else openCard(card)
 }
 
-private fun opensDirectly(card: SyncAPI.LibraryItem): Boolean {
-    if (APIHolder.getApiFromNameNull(card.apiName) != null) return true
-    // an extension without an address of its own would "claim" every address
-    return APIHolder.getApiFromUrlNull(card.url)?.mainUrl?.isNotBlank() == true
-}
+// only when the list's own name is an extension (its items are that extension's pages). An AniList, MAL or Simkl item is a title of that site: an extension that
+// claims the address (StreamPlay-Anime does for anilist.co) opened it as its own page, and StreamPlay is not the one the viewer is using; the extensions are searched instead
+private fun opensDirectly(card: SyncAPI.LibraryItem): Boolean = APIHolder.getApiFromNameNull(card.apiName) != null
 
 @Composable
 fun LibraryScreen() {
@@ -139,10 +145,10 @@ fun LibraryScreen() {
                 },
                 header = {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        Column(Modifier.padding(bottom = 10.dp)) {
-                            com.lagradost.desktop.ui.fluent.PageHeader("Library", subtitle = "${allTitles.size} titles${if (animeCount > 0 && animeCount < allTitles.size) " · $animeCount anime" else ""}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}")
+                        Column(Modifier.padding(bottom = 0.dp)) {
+                            com.lagradost.desktop.ui.fluent.PageHeader("Library", subtitle = "${if (kind == Kind.All) "${allTitles.size} titles" else "${items.size} of ${allTitles.size} titles · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}")
                             Box(Modifier.height(18.dp))
-                            Row(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)
                                 Box(Modifier.weight(0.01f))
                                 if (vm.sortingMethods.size > 1) ComboBox(
@@ -150,27 +156,28 @@ fun LibraryScreen() {
                                     { vm.sort(it, query.ifBlank { null }) }, icon = Icons.Sort, minWidth = 150.dp,
                                 )
                                 if (apis.size > 1) ComboBox(apis, apiName?.takeIf { it in apis } ?: apis.firstOrNull(), { it }, { vm.switchList(it) }, icon = Icons.Cloud, minWidth = 140.dp)
+                                // movies / TV shows / anime: one button with a menu (it is lit while a filter is on); the counts are those of the whole list
+                                var filterOpen by remember { mutableStateOf(false) }
+                                Box {
+                                    IconButton(Icons.Filter, { filterOpen = true }, tooltip = "Show: ${kind.label}", kind = if (kind == Kind.All) ButtonKind.Standard else ButtonKind.Accent)
+                                    if (filterOpen) com.lagradost.desktop.ui.fluent.MenuFlyout(
+                                        Kind.entries.map { k -> MenuItem(k.label + "   " + allTitles.count { it.isOfKind(k) }, k.glyph, checked = k == kind) { kind = k; saveKind(k) } },
+                                        onDismiss = { filterOpen = false },
+                                    )
+                                }
                                 IconButton(Icons.Refresh, { vm.reloadPages(true) }, tooltip = "Refresh", kind = ButtonKind.Standard)
                             }
                             Box(Modifier.height(18.dp))
-                            // anime only / films and series only (shown when the list has both kinds), then the statuses (Watching, Completed ...)
-                            val mixed = animeCount > 0 && animeCount < allTitles.size
-                            if (mixed || kind != Kind.All) {
-                                com.lagradost.desktop.ui.fluent.PillTabs(
-                                    Kind.entries.map { it.label }, kind.ordinal, { kind = Kind.entries[it]; saveKind(kind) },
-                                    counts = listOf(allTitles.size, animeCount, allTitles.size - animeCount),
-                                )
-                                Box(Modifier.height(10.dp))
-                            }
+                            // the statuses (Watching, Completed ...)
                             if (titles != null && titles.isNotEmpty()) {
-                                Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                                    com.lagradost.desktop.ui.fluent.PillTabs(titles.map { it.title.asStringNull(ctx) ?: "" }, index, { vm.switchPage(it) }, counts = titles.map { it.items.ofKind(kind).size })
+                                Box(Modifier.fillMaxWidth()) {
+                                    com.lagradost.desktop.ui.fluent.UnderlineTabs(titles.map { it.title.asStringNull(ctx) ?: "" }, index, { vm.switchPage(it) }, counts = titles.map { it.items.ofKind(kind).size })
                                 }
                                 Box(Modifier.height(8.dp))
                             }
                             if (items.isEmpty()) {
                                 if (everything.isNotEmpty()) {
-                                    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Library, if (kind == Kind.Anime) "No anime in this list" else "No films or series in this list", "The other titles of this list are under “All”.") {
+                                    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Library, when (kind) { Kind.Anime -> "No anime in this list"; Kind.Movies -> "No movies in this list"; else -> "No TV shows in this list" }, "The other titles of this list are under “All”.") {
                                         Button("Show all", { kind = Kind.All; saveKind(kind) }, kind = ButtonKind.Accent, height = 36.dp)
                                     }
                                 } else com.lagradost.desktop.ui.fluent.EmptyState(Icons.Library, "Nothing here yet", "Use “Add to library” on a title to collect it in this list.") {

@@ -107,6 +107,9 @@ object ShellState {
 
     val searchFocus = FocusRequester()
 
+    /** Home (floating bar look): the search of the extension shown there is open as a box instead of a button */
+    var homeSearchOpen by mutableStateOf(false)
+
     /** The bottom dock slides away while a page is scrolled down and comes back when it is scrolled up (or the pointer goes to the bottom edge) */
     var dockHidden by mutableStateOf(false)
 
@@ -117,14 +120,29 @@ object ShellState {
     /** Artwork whose colours tint the window behind the pages (Appearance > Backdrop > Ambient) */
     var ambientUrl by mutableStateOf<String?>(null)
     var ambientHeaders by mutableStateOf<Map<String, String>?>(null)
+
+    /** What the Home page offers the top bar (the floating-dock look has no header of its own on Home) */
+    var homeActions by mutableStateOf<HomeActions?>(null)
 }
+
+class HomeActions(val customise: (() -> Unit)?, val reload: () -> Unit)
+
+/** The floating dock's width plus its margins: pages without artwork under the dock start after it, full-bleed pages use [LocalDockStart] for their text */
+val DockRoom = 92.dp
+
+/** How far from the window's left edge a full-bleed page (Home, a title page) starts its content: 0 unless the floating dock floats over the artwork */
+val LocalDockStart = androidx.compose.runtime.staticCompositionLocalOf { 0.dp }
 
 /** Pages with a full-bleed header call this: the top bar becomes solid once [scrolled] */
 @Composable
 fun TopBarOverlay(scrolled: Boolean) {
-    LaunchedEffect(scrolled) { ShellState.topBarSolid = scrolled }
-    DisposableEffect(Unit) { onDispose { ShellState.topBarSolid = true } }
+    // two pages are composed while one replaces the other: the one that goes must not hand the bar back to "solid" after the new one made it see-through
+    val token = remember { Any() }
+    LaunchedEffect(scrolled) { overlayOwner = token; ShellState.topBarSolid = scrolled }
+    DisposableEffect(Unit) { onDispose { if (overlayOwner === token) { overlayOwner = null; ShellState.topBarSolid = true } } }
 }
+
+private var overlayOwner: Any? = null
 
 /** A page names the artwork it shows; the ambient backdrop takes its colours */
 @Composable
@@ -136,18 +154,17 @@ fun AmbientArtwork(url: String?, headers: Map<String, String>? = null) {
     }
 }
 
-private val navItems = listOf(
+internal val navItems = listOf(
     NavItem("home", "Home", Icons.Home),
     NavItem("search", "Search", Icons.Search),
     NavItem("library", "Library", Icons.Library),
     NavItem("downloads", "Downloads", Icons.Download),
 )
-private val footerItems = listOf(
-    NavItem("extensions", "Extensions", Icons.Extensions),
+internal val footerItems = listOf(
     NavItem("settings", "Settings", Icons.Settings),
 )
 
-private fun tabOf(id: String): Tab = when (id) {
+internal fun tabOf(id: String): Tab = when (id) {
     "home" -> Tab.Home
     "search" -> Tab.Search
     "library" -> Tab.Library
@@ -156,7 +173,7 @@ private fun tabOf(id: String): Tab = when (id) {
     else -> Tab.Settings
 }
 
-private fun Tab.id(): String = when (this) {
+internal fun Tab.id(): String = when (this) {
     Tab.Home -> "home"
     Tab.Search -> "search"
     Tab.Library -> "library"
@@ -189,6 +206,12 @@ fun AppShell() {
             val style = Appearance.navStyle
             val railRoom = if (style == NavStyle.Labels) NavPaneOpen.dp else NavPaneCompact.dp
             when (position) {
+                // edge to edge: the page runs under the floating bar (a capsule at the top) or the floating dock (a pill at the left)
+                NavPosition.Floating -> ContentArea(RoundedCornerShape(0.dp), edge = true)
+                NavPosition.Dock -> {
+                    ContentArea(RoundedCornerShape(0.dp), edge = true)
+                    FloatingDock(Modifier.align(Alignment.CenterStart).padding(start = 16.dp))
+                }
                 NavPosition.Left -> {
                     Row(Modifier.fillMaxSize()) {
                         // the rail keeps its room all the time; the hover pane opens over the page, so the page never jumps
@@ -239,11 +262,11 @@ private fun AmbientBackdrop() {
 
 /** The page layer: rounded where it meets the navigation, see-through to the ambient backdrop */
 @Composable
-private fun ContentArea(shape: Shape, topNav: Boolean = false) {
+private fun ContentArea(shape: Shape, topNav: Boolean = false, edge: Boolean = false) {
     val c = Fluent.colors
-    val layer = if (Appearance.backdrop == Backdrop.Ambient) c.layer.copy(alpha = if (c.dark) 0.62f else 0.7f) else c.layer
+    val layer = if (Appearance.backdrop == Backdrop.Ambient) c.layer.copy(alpha = if (c.dark) 0.62f else 0.7f) else if (edge) c.bg else c.layer
     val preset = Themes.byId(Appearance.theme)
-    val glowA = preset.glowA?.takeIf { Appearance.themeGlow && c.dark && Appearance.backdrop != Backdrop.Black }
+    val glowA = preset.glowA?.takeIf { Appearance.themeGlow && c.dark && Appearance.backdrop != Backdrop.Black && !edge }
     Box(
         Modifier
             .fillMaxSize()
@@ -256,7 +279,7 @@ private fun ContentArea(shape: Shape, topNav: Boolean = false) {
                     preset.glowB?.let { b -> drawRect(Brush.radialGradient(listOf(b.copy(alpha = 0.15f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.95f, size.height * 0.95f), radius = size.width * 0.5f)) }
                 }
             }
-            .border(Dp.Hairline, c.stroke, shape),
+            .let { if (edge) it else it.border(Dp.Hairline, c.stroke, shape) },
     ) {
         // the user's own picture, dimmed with the page colour so the text stays readable
         if (Appearance.wallpaper.isNotBlank()) {
@@ -274,7 +297,7 @@ private fun ContentArea(shape: Shape, topNav: Boolean = false) {
         ) {
             androidx.compose.runtime.CompositionLocalProvider(LocalDockInset provides (if (dock) DockInset else 0.dp)) { PageHost() }
         }
-        TopBar(topNav)
+        if (Appearance.navPosition == NavPosition.Floating) FloatingTopBar() else TopBar(topNav)
     }
 }
 
@@ -337,8 +360,14 @@ private fun PageHost() {
     AnimatedContent(
         targetState = entry,
         transitionSpec = {
-            if (Navigator.lastWasBack) (fadeIn(FluentMotion.tweenIn(220)) + scaleIn(FluentMotion.tweenIn(260), initialScale = 1.015f)) togetherWith fadeOut(FluentMotion.tweenOut(110))
-            else (fadeIn(FluentMotion.tweenIn(260)) + slideInVertically(FluentMotion.tweenIn(340)) { 36 } + scaleIn(FluentMotion.tweenIn(340), initialScale = 0.992f)) togetherWith fadeOut(FluentMotion.tweenOut(110))
+            when {
+                // the video page has a window of its own (a heavyweight canvas) that no fade or slide reaches: it stood there, grey or white, while the page faded
+                // in around it. Into and out of the video there is no motion at all.
+                targetState.route is Route.Player || initialState.route is Route.Player -> androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
+                // only what moves cheaply: a fade and a short rise (a scale of the whole page redrew it at another size on every frame), a moment late
+                Navigator.lastWasBack -> fadeIn(FluentMotion.tweenInAfter(220, 30)) togetherWith fadeOut(FluentMotion.tweenOut(90))
+                else -> (fadeIn(FluentMotion.tweenInAfter(240, 30)) + slideInVertically(FluentMotion.tweenInAfter(320, 30)) { 24 }) togetherWith fadeOut(FluentMotion.tweenOut(90))
+            }
         },
         label = "page",
     ) { e ->
@@ -376,6 +405,11 @@ private val dockScroll = object : androidx.compose.ui.input.nestedscroll.NestedS
  * measured with /framestats). A few seconds after the start, once, each of those pages is composed and laid out off screen (never drawn, not
  * reachable by the pointer), one every 1.4 s, so the first real visit finds it warm. Stops when a video starts. -Dcloudstream.warmup=false turns it off.
  */
+/** Less than 1.5 GB of the PC's memory is free: the app should not take more for work nobody asked for */
+private fun lowOnMemory(): Boolean = runCatching {
+    (java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean).freeMemorySize < 1_500L * 1024 * 1024
+}.getOrDefault(false)
+
 /** Returns once 60 frames in a row came within 22 ms of each other (gives up after 20 s) */
 private suspend fun awaitCalmFrames() {
     val give = System.currentTimeMillis() + 20_000
@@ -394,13 +428,15 @@ private fun ScreenWarmup() {
     var step by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
     LaunchedEffect(Unit) {
         com.lagradost.desktop.ui.Startup.revealed.await()
+        // the pages are composed off screen to warm them: with little free memory that work is what makes the window stall, so it is left out
+        if (lowOnMemory()) return@LaunchedEffect
         // not while the extensions are still loading and updating (several seconds of heavy work in parallel, the pages would only add to it)
         val pm = com.lagradost.cloudstream3.plugins.PluginManager
         val giveUp = System.currentTimeMillis() + 60_000
         while (!(pm.loadedLocalPlugins && pm.loadedOnlinePlugins) && System.currentTimeMillis() < giveUp) delay(500)
         delay(3000)
         for (i in 0 until 5) {
-            if (Navigator.current.route is Route.Player) break
+            if (Navigator.current.route is Route.Player || lowOnMemory()) break
             // only while the window is calm: a page composed while the extensions are loading (or Chromium is starting) would add its own freeze
             awaitCalmFrames()
             step = i
@@ -422,6 +458,17 @@ private fun ScreenWarmup() {
 
 @Composable
 private fun Page(entry: Entry) {
+    val r = entry.route
+    // floating dock: pages with artwork (Home, a title) run under it and keep their text clear of it; the others start after it
+    val floating = Appearance.navPosition == NavPosition.Dock && r !is Route.Player && r !is Route.Setup
+    val bleed = r is Route.Home || r is Route.Details
+    if (floating && bleed) androidx.compose.runtime.CompositionLocalProvider(LocalDockStart provides DockRoom) { PageBody(entry) }
+    else if (floating) Box(Modifier.fillMaxSize().padding(start = DockRoom)) { PageBody(entry) }
+    else PageBody(entry)
+}
+
+@Composable
+private fun PageBody(entry: Entry) {
     when (val r = entry.route) {
         Route.Home -> HomeScreen()
         is Route.Search -> SearchScreen(r)
@@ -466,10 +513,11 @@ private fun TopBar(topNav: Boolean) {
     val solid = ShellState.topBarSolid
     val glass = Appearance.glass
     val bg by androidx.compose.animation.animateColorAsState(
-        if (solid) (if (glass) c.layer.copy(alpha = 0.86f) else c.layer) else Color.Transparent,
+        if (solid) (if (glass && Appearance.navPosition != NavPosition.Floating) c.layer.copy(alpha = 0.86f) else (if (Appearance.navPosition == NavPosition.Floating) c.bg else c.layer).copy(alpha = 0.96f)) else Color.Transparent,
         FluentMotion.tweenStd(220), label = "topbar",
     )
     val dock = Appearance.navPosition == NavPosition.Bottom
+    val floating = Appearance.navPosition == NavPosition.Dock
     Box(
         Modifier
             .fillMaxWidth()
@@ -482,7 +530,7 @@ private fun TopBar(topNav: Boolean) {
         val searchLanding = (Navigator.current.route as? Route.Search)?.let { it.query.isNullOrBlank() } == true
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             // the title bar above the app has Back while the window is not maximized
-            if ((topNav || dock) && !com.lagradost.desktop.platform.WinChrome.windowedBar) {
+            if ((topNav || dock || floating) && !com.lagradost.desktop.platform.WinChrome.windowedBar) {
                 IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("topBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)")
                 Box(Modifier.width(6.dp))
             }
@@ -496,19 +544,26 @@ private fun TopBar(topNav: Boolean) {
                 if (title != null) FText(title, style = Fluent.type.subtitle, maxLines = 1, modifier = Modifier.widthIn(max = 320.dp))
             }
             Box(Modifier.weight(1f))
-            // on the Home page the box searches the extension chosen at the right; everywhere else all of them
-            Box(Modifier.weight(3f).widthIn(min = 180.dp, max = 520.dp)) {
-                if (!searchLanding) GlobalSearchBox(Modifier.fillMaxWidth().noWindowDrag("search"), only = if (onHome) selectedHomeProvider() else (Navigator.current.route as? Route.Search)?.only)
+            // the floating-dock look has no search box up here (Search is in the dock, Ctrl+K reaches it); every other look keeps it:
+            // on the Home page the box searches the extension chosen at the right, everywhere else all of them
+            if (!floating) {
+                Box(Modifier.weight(3f).widthIn(min = 180.dp, max = 520.dp)) {
+                    if (!searchLanding) GlobalSearchBox(Modifier.fillMaxWidth().noWindowDrag("search"), only = if (onHome) selectedHomeProvider() else (Navigator.current.route as? Route.Search)?.only)
+                }
+                Box(Modifier.weight(1f))
             }
-            Box(Modifier.weight(1f))
             if (onHome) {
+                if (floating) ShellState.homeActions?.let { a ->
+                    IconButton(Icons.Refresh, a.reload, Modifier.noWindowDrag("reload"), tooltip = "Reload the home page", kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, size = 36.dp)
+                    Box(Modifier.width(6.dp))
+                }
                 ProviderSelector(Modifier.widthIn(max = 230.dp).noWindowDrag("provider"))
             }
             if (topNav) {
                 Box(Modifier.width(6.dp))
                 for (item in footerItems) TopTab(item, iconOnly = true)
             }
-            if (topNav || dock) {
+            if (topNav || dock || floating) {
                 Box(Modifier.width(6.dp))
                 AccountAvatar()
             }
@@ -549,6 +604,51 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
         }
     }
     if (iconOnly) Tooltip(item.label) { body() } else body()
+}
+
+/**
+ * The floating dock: one tall dark pill at the left, icons only (the name shows beside the icon on hover), vertically centred over the page. The page
+ * runs under it; the selected page has a thin accent bar at the pill's edge and a white icon.
+ */
+@Composable
+private fun FloatingDock(modifier: Modifier) {
+    val c = Fluent.colors
+    val shape = RoundedCornerShape(28.dp)
+    Column(
+        modifier
+            .width(56.dp)
+            .shadow(18.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .clip(shape)
+            .background(if (Appearance.glass) Color(0xE60A0A0E) else c.flyout, shape)
+            .border(Dp.Hairline, Color(0x24FFFFFF), shape)
+            .padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        for (item in navItems + footerItems) FloatingDockItem(item)
+    }
+}
+
+@Composable
+private fun FloatingDockItem(item: NavItem) {
+    val c = Fluent.colors
+    val selected = Navigator.selectedTab.id() == item.id
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val bar by animateDpAsState(if (selected) 20.dp else 0.dp, FluentMotion.tweenIn(220), label = "dockBar")
+    val shape = RoundedCornerShape(14.dp)
+    Tooltip(item.label, side = true) {
+        Box(Modifier.width(56.dp).height(46.dp), contentAlignment = Alignment.Center) {
+            // the mark of the page you are on, at the pill's edge
+            Box(Modifier.align(Alignment.CenterStart).padding(start = 4.dp).size(3.dp, bar).clip(RoundedCornerShape(2.dp)).background(c.accent))
+            Box(
+                Modifier.size(40.dp).clip(shape)
+                    .background(if (hovered && !selected) Color(0x14FFFFFF) else Color.Transparent, shape)
+                    .fluentClickable(source, true, shape, Role.Tab) { Navigator.goTab(tabOf(item.id)) },
+                contentAlignment = Alignment.Center,
+            ) { Icon(item.glyph, size = 20.dp, tint = if (selected) Color.White else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF)) }
+        }
+    }
 }
 
 /** The floating dock at the bottom: a glass pill with every page, the selected one on a quiet neutral pill */
@@ -612,7 +712,7 @@ private fun DockItem(item: NavItem) {
 }
 
 @Composable
-private fun AccountAvatar() {
+internal fun AccountAvatar() {
     val c = Fluent.colors
     val vm = appVm<HomeViewModel>()
     val account by vm.currentAccount.observeAsState()
@@ -686,7 +786,7 @@ private fun ToastLayer() {
     }
 }
 
-private val brandLogo by lazy {
+internal val brandLogo by lazy {
     runCatching { androidx.compose.ui.graphics.painter.BitmapPainter(Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")!!.use { androidx.compose.ui.res.loadImageBitmap(it) }) }.getOrNull()
 }
 

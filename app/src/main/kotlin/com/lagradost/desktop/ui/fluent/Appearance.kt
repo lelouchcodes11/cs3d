@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** Where the main navigation sits */
-enum class NavPosition(val label: String) { Left("Left"), Right("Right"), Top("Top"), Bottom("Bottom dock") }
+enum class NavPosition(val label: String) { Floating("Floating bar"), Dock("Floating dock"), Left("Left"), Right("Right"), Top("Top"), Bottom("Bottom dock") }
 
 /** How the side rail shows its names */
 enum class NavStyle(val label: String) { Hover("Expand on hover"), Icons("Icons only"), Labels("Always expanded") }
@@ -46,14 +46,14 @@ enum class AudioDecoder(val label: String, val detail: String, val spdif: String
  * follows a change at once, and is saved in the app preferences.
  */
 object Appearance {
-    var navPosition by mutableStateOf(NavPosition.Top)
+    var navPosition by mutableStateOf(NavPosition.Floating)
     var navStyle by mutableStateOf(NavStyle.Hover)
 
     /** Corner radius of cards, posters and dialogs (dp); controls use half of it */
     var cornerRadius by mutableIntStateOf(12)
     var density by mutableStateOf(Density.Standard)
-    var posterSize by mutableStateOf(PosterSize.Medium)
-    var backdrop by mutableStateOf(Backdrop.Solid)
+    var posterSize by mutableStateOf(PosterSize.Large)
+    var backdrop by mutableStateOf(Backdrop.Black)
 
     /** See-through bars and panels over artwork */
     var glass by mutableStateOf(true)
@@ -66,6 +66,9 @@ object Appearance {
     /** The animated logo while the app starts */
     var startupAnimation by mutableStateOf(true)
 
+    /** The main action on artwork (Play, Watch now) is a flat white button; off: filled with the theme's accent colour */
+    var whitePrimary by mutableStateOf(true)
+
     /** Shelves zoom the poster under the pointer */
     var hoverZoom by mutableStateOf(true)
 
@@ -74,6 +77,9 @@ object Appearance {
 
     /** The automatic choice of a source puts 4K, REMUX and very large files behind the lighter ones: they stall on slow hosts and weak graphics cards (the Sources list still has them) */
     var smoothSources by mutableStateOf(true)
+
+    /** A maximized window hides its title bar; it slides in when the pointer touches the top edge (full screen always does this) */
+    var hideTitleBar by mutableStateOf(true)
 
     /** Native player only: the Anime4K neural filters sharpen and enlarge low resolution anime (needs a fairly strong graphics card) */
     var anime4k by mutableStateOf(false)
@@ -136,22 +142,30 @@ object Appearance {
     fun load() {
         runCatching {
             val p = prefs()
-            navPosition = enumOf(p.getString(PREFIX + "nav", null), NavPosition.Top)
+            // the cinema look (2026-10-09): floating icon dock, flat black page, larger posters. Once, a user who still has the old defaults gets it;
+            // whoever chose something else keeps it
+            val cinema = p.getBoolean(PREFIX + "cinema_v1", false)
+            val savedNav = p.getString(PREFIX + "nav", null)
+            navPosition = if (!cinema && (savedNav == null || savedNav == "Top")) NavPosition.Floating else enumOf(savedNav, NavPosition.Floating)
             navStyle = enumOf(p.getString(PREFIX + "nav_style", null), NavStyle.Hover)
             cornerRadius = p.getInt(PREFIX + "radius", 12).coerceIn(0, 28)
             density = enumOf(p.getString(PREFIX + "density", null), Density.Standard)
-            posterSize = enumOf(p.getString(PREFIX + "poster", null), PosterSize.Medium)
+            val savedPoster = p.getString(PREFIX + "poster", null)
+            posterSize = if (!cinema && (savedPoster == null || savedPoster == "Medium")) PosterSize.Large else enumOf(savedPoster, PosterSize.Large)
             // the minimal look (2026-10-07): a flat page by default; once, an older saved "Ambient" becomes "Solid" too (it can be picked again)
-            backdrop = if (!p.getBoolean(PREFIX + "minimal_v1", false)) Backdrop.Solid else enumOf(p.getString(PREFIX + "backdrop", null), Backdrop.Solid)
+            val savedBackdrop = if (!p.getBoolean(PREFIX + "minimal_v1", false)) null else p.getString(PREFIX + "backdrop", null)
+            backdrop = if (!cinema && (savedBackdrop == null || savedBackdrop == "Solid")) Backdrop.Black else enumOf(savedBackdrop, Backdrop.Black)
             glass = p.getBoolean(PREFIX + "glass", true)
             motion = enumOf(p.getString(PREFIX + "motion", null), Motion.Full)
             uiScale = p.getFloat(PREFIX + "scale", 1f).coerceIn(0.8f, 1.4f)
             playerStyle = enumOf(p.getString(PREFIX + "player", null), PlayerStyle.Modern)
             startupAnimation = p.getBoolean(PREFIX + "startup", true)
             hoverZoom = p.getBoolean(PREFIX + "hover_zoom", true)
+            whitePrimary = p.getBoolean(PREFIX + "white_primary", true)
             smoothMotion = p.getBoolean(PREFIX + "smooth_motion", true)
             nativePlayer = p.getBoolean(PREFIX + "native_player", false)
             smoothSources = p.getBoolean(PREFIX + "smooth_sources", true)
+            hideTitleBar = p.getBoolean(PREFIX + "hide_title_bar", true)
             anime4k = p.getBoolean(PREFIX + "anime4k", false)
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
@@ -171,6 +185,7 @@ object Appearance {
             autoSkipStamps = p.getBoolean(PREFIX + "auto_skip_stamps", false)
             autoSkipDelay5s = p.getBoolean(PREFIX + "auto_skip_delay_5s", false)
             showRemainingTime = p.getBoolean(PREFIX + "show_remaining_time", false)
+            if (!cinema) save()
         }
     }
 
@@ -185,6 +200,8 @@ object Appearance {
                 .putString(PREFIX + "poster", posterSize.name)
                 .putString(PREFIX + "backdrop", backdrop.name)
                 .putBoolean(PREFIX + "minimal_v1", true)
+                .putBoolean(PREFIX + "cinema_v1", true)
+                .putBoolean(PREFIX + "white_primary", whitePrimary)
                 .putBoolean(PREFIX + "glass", glass)
                 .putString(PREFIX + "motion", motion.name)
                 .putFloat(PREFIX + "scale", uiScale)
@@ -194,6 +211,7 @@ object Appearance {
                 .putBoolean(PREFIX + "smooth_motion", smoothMotion)
                 .putBoolean(PREFIX + "native_player", nativePlayer)
                 .putBoolean(PREFIX + "smooth_sources", smoothSources)
+                .putBoolean(PREFIX + "hide_title_bar", hideTitleBar)
                 .putBoolean(PREFIX + "anime4k", anime4k)
                 .putBoolean(PREFIX + "auto_skip_stamps", autoSkipStamps)
                 .putBoolean(PREFIX + "auto_skip_delay_5s", autoSkipDelay5s)
@@ -217,9 +235,9 @@ object Appearance {
     }
 
     fun reset() {
-        navPosition = NavPosition.Top; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
-        posterSize = PosterSize.Medium; backdrop = Backdrop.Solid; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; anime4k = false; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true; hideSpoilers = true; hideSpoilerTitles = false
+        navPosition = NavPosition.Floating; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
+        posterSize = PosterSize.Large; backdrop = Backdrop.Black; whitePrimary = true; glass = true; motion = Motion.Full; uiScale = 1f
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; anime4k = false; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true; hideSpoilers = true; hideSpoilerTitles = false
         save()
     }
 
@@ -241,6 +259,8 @@ object FluentMotion {
     fun ms(base: Int): Int = (base * Appearance.motion.factor).toInt()
 
     fun <T> tweenIn(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = enter)
+    /** like [tweenIn] but starting [delayMs] late: the first frames of a new page are spent composing it, and an animation that has already begun looks like a pop */
+    fun <T> tweenInAfter(base: Int, delayMs: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), delayMillis = delayMs, easing = enter)
     fun <T> tweenOut(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = exit)
     fun <T> tweenStd(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = standard)
 }

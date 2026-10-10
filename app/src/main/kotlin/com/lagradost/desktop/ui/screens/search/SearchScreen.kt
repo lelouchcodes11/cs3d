@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.search
 
+import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -187,7 +188,11 @@ fun SearchScreen(route: Route.Search) {
             return@BoxWithConstraints
         }
         // every extension shows up as soon as it answers; the ones without results are left out
-        val results = current.orEmpty().filterValues { it.list.isNotEmpty() }
+        val results = current.orEmpty().filterValues { it.list.isNotEmpty() }.let { all ->
+            // the extension chosen on Home comes first when it has something (the others keep the order they answered in)
+            val first = com.lagradost.desktop.ui.shell.selectedHomeProvider()?.takeIf { route.only == null && it in all }
+            if (first == null) all else all.entries.sortedBy { if (it.key == first) 0 else 1 }.associate { it.key to it.value }
+        }
         val searched = (total - pending.size).coerceAtLeast(0)
         val header: @Composable () -> Unit = {
             ResultsHeader(query, loading, searched, total, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } })
@@ -199,7 +204,7 @@ fun SearchScreen(route: Route.Search) {
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
             })
         } else {
-            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
+            LazyColumn(Modifier.fillMaxSize().smoothWheel(listState), state = listState, contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
                 item(key = "header") { header() }
                 results.entries.forEach { (name, list) ->
                     item(key = "p-$name") {

@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.settings
 
+import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -143,14 +144,16 @@ fun SettingsScreen(route: Route.Settings) {
                 Box(Modifier.height(12.dp))
                 TextBox(query, { query = it }, Modifier.fillMaxWidth(), placeholder = "Find a setting", leadingIcon = Icons.Search)
                 Box(Modifier.height(12.dp))
-                Page.entries.filter { !it.hidden }.forEach { p -> CategoryRow(p.title, p.glyph, Color(p.tint), selected = query.isEmpty() && (p == page || (page == Page.Subtitles && p == Page.Player))) { query = ""; page = p } }
+                Page.entries.filter { !it.hidden }.forEach { p ->
+                    // Extensions are managed from here now: the row sits just above About
+                    if (p == Page.About) CategoryRow("Extensions", Icons.Extensions, Color(0xFF8E4EC6), selected = false) { Navigator.goTab(Tab.Extensions) }
+                    CategoryRow(p.title, p.glyph, Color(p.tint), selected = query.isEmpty() && (p == page || (page == Page.Subtitles && p == Page.Player))) { query = ""; page = p } }
                 Box(Modifier.weight(1f))
-                CategoryRow("Extensions", Icons.Extensions, Color(0xFF8E4EC6), selected = false) { Navigator.goTab(Tab.Extensions) }
             }
             val scroll = rememberScrollState()
             Box(Modifier.weight(1f).fillMaxHeight()) {
             FluentScrollbar(scroll)
-            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.fillMaxSize().smoothWheel(scroll).verticalScroll(scroll).padding(bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current), horizontalAlignment = Alignment.CenterHorizontally) {
                 Column(Modifier.widthIn(max = 940.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
                     LegacyContent {
                         Column(Modifier.fillMaxWidth()) {

@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.extensions
 
+import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
@@ -198,7 +199,7 @@ fun ExtensionsScreen() {
                             val rows = items.chunked(columns)
                             Box(Modifier.fillMaxSize()) {
                                 FluentScrollbar(listState)
-                                LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current, end = 12.dp)) {
+                                LazyColumn(Modifier.fillMaxSize().smoothWheel(listState), state = listState, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current, end = 12.dp)) {
                                     items(rows.size, key = { i -> rows[i].joinToString("|") { it.pluginWrapper.plugin.url + "|" + it.pluginWrapper.plugin.internalName } }) { i ->
                                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                             rows[i].forEach { item -> Box(Modifier.weight(1f)) { PluginCard(item, plugins, repo?.let { listOf(it) } ?: emptyList(), sel == INSTALLED) } }
@@ -299,7 +300,7 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     Column(
-        Modifier.fillMaxWidth().height(196.dp).hoverable(source)
+        Modifier.fillMaxWidth().height(168.dp).hoverable(source)
             .clip(shape).background(if (hovered) c.cardHover else c.card, shape)
             .border(if (hovered) 1.dp else androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.accent.copy(alpha = 0.55f) else if (item.isDownloaded) c.accent.copy(alpha = 0.4f) else c.stroke, shape)
             .padding(16.dp),

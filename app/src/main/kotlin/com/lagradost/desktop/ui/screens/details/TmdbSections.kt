@@ -47,7 +47,8 @@ import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 import kotlinx.coroutines.launch
 
-private val gutter = 36.dp
+private val gutter: Dp
+    @Composable get() = 36.dp + com.lagradost.desktop.ui.shell.LocalDockStart.current
 
 @Composable
 private fun InfoPill(text: String, accent: Boolean = false) {
@@ -79,14 +80,15 @@ fun TmdbStrip(info: TmdbInfo) {
     val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 6.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         info.tagline?.let { FText("“$it”", style = Fluent.type.bodyLarge, color = c.textSecondary, maxLines = 2, modifier = Modifier.widthIn(max = 900.dp)) }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            info.rating?.let { InfoPill("★ " + "%.1f".format(it) + (if (info.votes > 0) "  ·  ${compactCount(info.votes)} votes" else "") + "  ·  TMDB", accent = true) }
-            info.certification?.let { InfoPill(it) }
-            info.runtime?.let { InfoPill(runtimeText(it) + if (!info.isMovie) " per episode" else "") }
-            if (!info.isMovie && info.seasons != null) InfoPill(buildString { append(info.seasons).append(if (info.seasons == 1) " season" else " seasons"); info.episodes?.let { append(" · $it episodes") } })
-            info.status?.takeIf { it != "Released" }?.let { InfoPill(it) }
-            info.date?.let { InfoPill(it) }
+        // the facts as one quiet line (the score, age rating and length are in the page's header)
+        val facts = buildList {
+            if (info.votes > 0) add("${compactCount(info.votes)} votes on TMDB")
+            info.runtime?.let { add(runtimeText(it) + if (!info.isMovie) " per episode" else "") }
+            if (!info.isMovie && info.seasons != null) add(buildString { append(info.seasons).append(if (info.seasons == 1) " season" else " seasons"); info.episodes?.let { append(" · $it episodes") } })
+            info.status?.takeIf { it != "Released" }?.let { add(it) }
+            info.date?.let { add(it) }
         }
+        if (facts.isNotEmpty()) FText(facts.joinToString("   •   "), style = Fluent.type.body, color = c.textSecondary, maxLines = 2)
         // the people behind it: a name opens their page
         val crew = buildList {
             if (info.directors.isNotEmpty()) add((if (info.isMovie) "Directed by" else "Created by") to info.directors)

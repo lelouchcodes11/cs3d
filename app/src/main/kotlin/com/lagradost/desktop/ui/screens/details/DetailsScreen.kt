@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.details
 
+import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -71,6 +72,8 @@ import com.lagradost.cloudstream3.ui.result.AutoResume
 import com.lagradost.cloudstream3.ui.result.EpisodeClickEvent
 import com.lagradost.cloudstream3.ui.result.ResultData
 import com.lagradost.cloudstream3.ui.result.ResultEpisode
+import com.lagradost.desktop.ui.fluent.fadeIntoPage
+import com.lagradost.cloudstream3.ui.result.getWatchProgress
 import com.lagradost.cloudstream3.ui.result.ResultViewModel2
 import com.lagradost.cloudstream3.ui.result.SelectPopup
 import com.lagradost.cloudstream3.ui.result.SyncViewModel
@@ -118,7 +121,9 @@ import com.lagradost.desktop.ui.screens.home.openCard
 import com.lagradost.desktop.ui.screens.home.stripHtml
 import com.lagradost.desktop.ui.shell.TopBarOverlay
 
-private val gutter = 36.dp
+/** Where the text of the page starts: 36 dp, and after the floating dock when that floats over the artwork */
+private val gutter: androidx.compose.ui.unit.Dp
+    @Composable get() = 36.dp + com.lagradost.desktop.ui.shell.LocalDockStart.current
 
 private fun UiText?.str(): String? = this?.let { runCatching { it.asStringNull(DesktopBootstrap.activity) }.getOrNull() }
 
@@ -260,7 +265,7 @@ private fun LinkLoadingCard(links: Int, subs: Int, skip: () -> Unit, cancel: () 
 
 // -------------------------------------------------------------------------------------------
 
-private enum class DetailsTab(val label: String) { Episodes("Episodes"), Related("Related"), More("More like this"), Cast("Cast & crew"), Gallery("Gallery"), Reviews("Reviews") }
+private enum class DetailsTab(val label: String) { Episodes("Episodes"), Related("Related"), More("More like this"), Cast("Cast & crew"), Gallery("Gallery"), Reviews("Reviews"), About("Details") }
 
 /**
  * A related title from AniList or TMDB belongs to no extension. Opening one searches the extension this page came from (the sources the
@@ -327,7 +332,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
     val listState = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 900.dp
-        val headerHeight = (maxHeight * 0.66f).coerceIn(460.dp, 700.dp)
+        val headerHeight = (maxHeight * 0.8f).coerceIn(520.dp, 840.dp)
         val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 200 } }
         TopBarOverlay(scrolled)
         FluentScrollbar(listState, com.lagradost.desktop.ui.shell.TopBarHeight)
@@ -342,6 +347,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
             if (cast.isNotEmpty() || tmdbCast.isNotEmpty() || d.actorsText.str() != null) add(DetailsTab.Cast)
             if ((tmdb?.backdrops?.size ?: 0) > 1) add(DetailsTab.Gallery)
             if (tmdb?.reviews?.isNotEmpty() == true) add(DetailsTab.Reviews)
+            if (tmdb != null) add(DetailsTab.About)
         }
         var tab by remember(route.url) { mutableStateOf<DetailsTab?>(null) }
         val shown = tab?.takeIf { it in tabs } ?: tabs.firstOrNull()
@@ -349,19 +355,15 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
         val columns = ((maxWidth - gutter * 2 + 18.dp) / (250.dp + 18.dp)).toInt().coerceIn(1, 6)
         val pageWidth = maxWidth
 
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().smoothWheel(listState), contentPadding = PaddingValues(bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "header") {
-                Header(vm, shownData, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty() || tmdbTrailer != null, trailers?.firstOrNull()?.mirros?.firstOrNull()?.second ?: tmdbTrailer, tmdbLinks)
+                Header(vm, shownData, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty() || tmdbTrailer != null, trailers?.firstOrNull()?.mirros?.firstOrNull()?.second ?: tmdbTrailer, tmdbLinks, tmdb,
+                    scroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE })
             }
-            tmdb?.let { t -> item(key = "tmdb") { TmdbStrip(t) } }
             item(key = "trackers") { TrackerCard(sync) }
             if (tabs.isNotEmpty()) item(key = "tabs") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    com.lagradost.desktop.ui.fluent.PillTabs(
-                        tabs.map { it.label }, tabs.indexOf(shown).coerceAtLeast(0), { tab = tabs[it] },
-                        counts = tabs.map { t -> when (t) { DetailsTab.Related -> related.size; DetailsTab.More -> recs.size; DetailsTab.Cast -> (tmdbCast.size.takeIf { it > 0 } ?: cast.size).takeIf { it > 0 }; DetailsTab.Gallery -> tmdb?.backdrops?.size; DetailsTab.Reviews -> tmdb?.reviews?.size; else -> null } },
-                    )
-                    Box(Modifier.weight(1f))
+                    com.lagradost.desktop.ui.fluent.UnderlineTabs(tabs.map { it.label }, tabs.indexOf(shown).coerceAtLeast(0), { tab = tabs[it] }, Modifier.weight(1f))
                     if (shown == DetailsTab.Episodes) count.str()?.let { FText(it, color = c.textSecondary) }
                 }
             }
@@ -448,6 +450,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                     }
                 }
                 DetailsTab.Gallery -> tmdb?.let { t -> item(key = "gallery") { TmdbGallery(t, pageWidth) } }
+                DetailsTab.About -> tmdb?.let { t -> item(key = "about") { TmdbStrip(t) } }
                 DetailsTab.Reviews -> tmdb?.let { t -> item(key = "reviews") { TmdbReviews(t.reviews) } }
                 DetailsTab.Cast -> item(key = "cast") {
                     Column(Modifier.padding(horizontal = gutter)) {
@@ -510,59 +513,125 @@ private fun Header(
     hasTrailer: Boolean,
     trailerUrl: String?,
     links: List<Pair<String, String>>,
+    tmdb: com.lagradost.desktop.tmdb.TmdbInfo?,
+    scroll: () -> Float = { 0f },
 ) {
     val c = Fluent.colors
     val backdrop = d.backgroundPosterUrl ?: d.posterBackgroundImage
     val poster = d.posterImage
     com.lagradost.desktop.ui.shell.AmbientArtwork(backdrop ?: poster, d.posterHeaders)
     Box(Modifier.fillMaxWidth().height(height)) {
-        // the artwork fades out into the page at the bottom, whatever the backdrop style (still: no slow zoom)
-        val zoom: androidx.compose.runtime.State<Float>? = null
+        // the artwork is the page: it runs edge to edge and fades out into the page at the bottom
         Box(
-            Modifier.fillMaxSize()
-                .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    drawRect(Brush.verticalGradient(0.55f to Color.Black, 1f to Color.Transparent), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
-                },
+            Modifier.fillMaxSize().fadeIntoPage(),
         ) {
-            Box(Modifier.fillMaxSize().graphicsLayer { val s = zoom?.value ?: 1f; scaleX = s; scaleY = s }) {
-                if (backdrop != null) RemoteImage(backdrop, d.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop, alignment = Alignment.TopCenter)
-                else com.lagradost.desktop.ui.components.SoftImage(poster, d.posterHeaders, Modifier.fillMaxSize(), alpha = 0.6f)
+            // the picture trails the page a little (parallax), under the fade at the bottom
+            if (backdrop != null) RemoteImage(backdrop, d.posterHeaders, null, Modifier.fillMaxSize().graphicsLayer { translationY = scroll().coerceAtMost(size.height) * 0.3f }, ContentScale.Crop, alignment = Alignment.TopCenter)
+            else com.lagradost.desktop.ui.components.SoftImage(poster, d.posterHeaders, Modifier.fillMaxSize(), alpha = 0.6f)
+            // no backdrop from the extension: the poster stands at the right, sharp, instead of only a blurred tint
+            if (backdrop == null && poster != null && wide) {
+                Box(Modifier.fillMaxSize().padding(end = 96.dp, top = 84.dp, bottom = 120.dp), contentAlignment = Alignment.CenterEnd) {
+                    RemoteImage(poster, d.posterHeaders, d.title, Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(RoundedCornerShape(FluentShapes.card)), ContentScale.Crop)
+                }
             }
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.95f), 0.5f to Fluent.colors.bg.copy(alpha = 0.6f), 1f to Fluent.colors.bg.copy(alpha = 0.08f))))
+            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.94f), 0.45f to Fluent.colors.bg.copy(alpha = 0.55f), 0.8f to Fluent.colors.bg.copy(alpha = 0.1f), 1f to Color.Transparent)))
             Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
         }
 
-        Row(Modifier.align(Alignment.BottomStart).padding(start = gutter, end = gutter, bottom = 28.dp), horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.Bottom) {
-            if (wide && poster != null) {
-                val shape = RoundedCornerShape(FluentShapes.card)
-                Box(Modifier.width(230.dp).aspectRatio(2f / 3f).clip(shape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x33FFFFFF), shape).background(c.card)) {
-                    RemoteImage(poster, d.posterHeaders, d.title, Modifier.fillMaxSize(), ContentScale.Crop)
-                }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    d.typeText.str()?.let { com.lagradost.desktop.ui.fluent.ArtChip(it, accent = true) }
-                    d.apiName.str()?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
-                    d.contentRatingText.str()?.takeIf { it.isNotBlank() }?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
-                    d.onGoingText.str()?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
-                }
-                if (d.logoUrl != null) RemoteImage(d.logoUrl, d.posterHeaders, d.title, Modifier.height(96.dp).widthIn(max = 460.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
-                else FText(d.title, style = Fluent.type.titleLarge.copy(fontSize = 48.sp, lineHeight = 56.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = 3)
-                val meta = listOfNotNull(d.ratingText.str(), d.yearText.str(), d.durationText.str()) + d.tags.take(4)
-                if (meta.isNotEmpty()) FText(meta.joinToString("   •   "), style = Fluent.type.bodyStrong, color = Color(0xD9FFFFFF), maxLines = 2)
-                d.nextAiringEpisode.str()?.let { ep -> FText("$ep ${d.nextAiringDate.str().orEmpty()}", color = c.accentText, maxLines = 1) }
-                var expanded by remember { mutableStateOf(false) }
-                val plot = stripHtml(d.plotText.str().orEmpty())
-                if (plot.isNotBlank()) {
-                    FText(plot, style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xD9FFFFFF), maxLines = if (expanded) 40 else 3, modifier = Modifier.widthIn(max = 780.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(4.dp), Role.Button) { expanded = !expanded })
-                }
-                d.vpnText.str()?.let { FText(it, style = Fluent.type.caption, color = c.caution) }
-                Box(Modifier.height(4.dp))
-                ActionRow(vm, d, watch, favorite, subscribed, playEpisode, resumeText, hasTrailer, trailerUrl, links)
+        // which extension this page comes from (it decides the sources), small, at the right
+        d.apiName.str()?.takeIf { it.isNotBlank() }?.let { api ->
+            Column(Modifier.align(Alignment.TopEnd).padding(top = com.lagradost.desktop.ui.shell.TopBarHeight + 20.dp, end = 36.dp), horizontalAlignment = Alignment.End) {
+                FText("SOURCE", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, letterSpacing = 1.4.sp), color = Color(0x99FFFFFF), maxLines = 1)
+                FText(api, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
             }
         }
+
+        // a series: the episode the Play button opens, as a card (its still, where you are in it)
+        if (wide && playEpisode != null && !playEpisode.tvType.isMovieType()) {
+            UpNextCard(vm, playEpisode, playEpisode.poster ?: backdrop ?: poster, d.posterHeaders, Modifier.align(Alignment.BottomEnd).padding(end = gutter, bottom = 34.dp).graphicsLayer { alpha = (1f - scroll() / (height.toPx() * 0.4f)).coerceIn(0f, 1f) })
+        }
+        Column(
+            Modifier.align(Alignment.BottomStart).padding(start = gutter, end = gutter, bottom = 30.dp).widthIn(max = 820.dp)
+                .graphicsLayer { val s = scroll().coerceAtMost(height.toPx()); translationY = s * 0.18f; alpha = (1f - s / (height.toPx() * 0.55f)).coerceIn(0f, 1f) },
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (d.logoUrl != null) RemoteImage(d.logoUrl, d.posterHeaders, d.title, Modifier.height(132.dp).widthIn(max = 560.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
+            else FText(d.title, style = Fluent.type.titleLarge.copy(fontSize = 54.sp, lineHeight = 60.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = 3)
+            // line one: when, how long, what it is, the age rating
+            val facts = listOfNotNull(d.yearText.str(), d.durationText.str()?.takeIf { it.isNotBlank() } ?: tmdb?.runtime?.let { if (it >= 60) "${it / 60} h ${it % 60} min" else "$it min" }, d.typeText.str())
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (facts.isNotEmpty()) FText(facts.joinToString("  •  "), style = Fluent.type.bodyStrong, color = Color(0xE6FFFFFF), maxLines = 1)
+                (d.contentRatingText.str()?.takeIf { it.isNotBlank() } ?: tmdb?.certification)?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
+                d.onGoingText.str()?.takeIf { it.isNotBlank() }?.let { FText(it, style = Fluent.type.bodyStrong, color = c.accentText, maxLines = 1) }
+            }
+            // line two: the scores (each says whose it is) and the genres
+            val genres = d.tags.take(4)
+            // the extension's own score only when it adds something: TMDB's is the same number most of the time
+            val scoreText = d.ratingText.str()?.takeIf { it.isNotBlank() }?.substringBefore('/')?.removePrefix("★")?.trim()
+                ?.takeIf { shown -> val own = shown.replace(',', '.').toFloatOrNull(); tmdb?.rating == null || own == null || kotlin.math.abs(own - tmdb.rating!!.toFloat()) >= 0.3f }
+            if (tmdb?.rating != null || scoreText != null || genres.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                tmdb?.rating?.let { ScoreMark("%.1f".format(it), "TMDB") }
+                scoreText?.let { ScoreMark(it, d.apiName.str()) }
+                if (genres.isNotEmpty()) FText(genres.joinToString("  •  "), style = Fluent.type.bodyStrong, color = Color(0xCCFFFFFF), maxLines = 1)
+            }
+            d.nextAiringEpisode.str()?.let { ep -> FText("$ep ${d.nextAiringDate.str().orEmpty()}", color = c.accentText, maxLines = 1) }
+            var expanded by remember { mutableStateOf(false) }
+            val plot = stripHtml(d.plotText.str().orEmpty())
+            if (plot.isNotBlank()) {
+                FText(plot, style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xD9FFFFFF), maxLines = if (expanded) 40 else 3, modifier = Modifier.widthIn(max = 780.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(4.dp), Role.Button) { expanded = !expanded })
+            }
+            d.vpnText.str()?.let { FText(it, style = Fluent.type.caption, color = c.caution) }
+            Box(Modifier.height(4.dp))
+            ActionRow(vm, d, watch, favorite, subscribed, playEpisode, resumeText, hasTrailer, trailerUrl, links)
+        }
+    }
+}
+
+/** The episode the Play button opens, as a glass card at the right of the header: its still, "Continue" or "Up next", the number and name, and a line for how far you are */
+@Composable
+private fun UpNextCard(vm: ResultViewModel2, ep: ResultEpisode, image: String?, headers: Map<String, String>?, modifier: Modifier = Modifier) {
+    val c = Fluent.colors
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val started = ep.getRealPosition() > 0
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1.03f else 1f, androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 420f), label = "upNext")
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .width(330.dp)
+            .clip(shape)
+            .background(if (hovered) Color(0xE6141418) else Color(0xCC0B0B10), shape)
+            .border(Dp.Hairline, Color(0x33FFFFFF), shape)
+            .fluentClickable(source, true, shape, Role.Button) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) }
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(128.dp, 72.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF15161A))) {
+            RemoteImage(image, headers, null, Modifier.fillMaxSize(), ContentScale.Crop)
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (hovered) 1f else 0f }.background(Color(0x66000000)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Play, size = 18.dp, tint = Color.White)
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            FText(if (started) "CONTINUE" else "UP NEXT", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, letterSpacing = 1.2.sp), color = Color(0x99FFFFFF), maxLines = 1)
+            FText((if (ep.season != null) "S${ep.season} · " else "") + "E${ep.episode}", style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
+            ep.name?.takeIf { it.isNotBlank() }?.let { FText(it, style = Fluent.type.caption, color = Color(0xCCFFFFFF), maxLines = 1) }
+            if (started) Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x40FFFFFF))) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(ep.getWatchProgress().coerceIn(0f, 1f)).background(Color.White))
+            }
+        }
+    }
+}
+
+/** A score with the name of who gave it: a star, the number, then the source in small letters */
+@Composable
+private fun ScoreMark(value: String, source: String?) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.StarFilled, size = 15.dp, tint = Color(0xFFFFC53D))
+        FText(value, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
+        if (!source.isNullOrBlank()) FText(source, style = Fluent.type.caption, color = Color(0x99FFFFFF), maxLines = 1)
     }
 }
 
@@ -588,20 +657,20 @@ private fun ActionRow(
                 playEpisode.tvType.isMovieType() -> if (playEpisode.getRealPosition() > 0) "Resume" else "Play"
                 else -> (if (playEpisode.getRealPosition() > 0) "Resume " else "Play ") + (if (playEpisode.season != null) "S${playEpisode.season} · " else "") + "E${playEpisode.episode}"
             }
-            Column {
-                com.lagradost.desktop.ui.fluent.PillButton(label, Icons.Play, primary = true, onClick = { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode)) }, height = 48.dp)
-            }
+            com.lagradost.desktop.ui.fluent.PillButton(label, Icons.Play, primary = true, onClick = { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode)) }, height = 50.dp, modifier = Modifier.widthIn(min = 180.dp))
             // a film that was started: from the beginning instead (an episode has this in its ⋯ menu)
             if (playEpisode.tvType.isMovieType() && playEpisode.getRealPosition() > 0) {
                 com.lagradost.desktop.ui.fluent.PillButton("Start over", Icons.Previous, primary = false, onClick = {
                     com.lagradost.desktop.ui.screens.player.StartOver.request(playEpisode.id)
                     vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode))
-                }, height = 48.dp)
+                }, height = 50.dp)
             }
             resumeText?.takeIf { it.isNotBlank() }?.let { FText(it, color = Color(0xCCFFFFFF), style = Fluent.type.caption, maxLines = 2, modifier = Modifier.widthIn(max = 90.dp)) }
         }
+        // the library: one round button, the list it is on is in its tooltip and menu
         Box {
-            com.lagradost.desktop.ui.fluent.PillButton(watchLabel(watch), if (watch != null && watch != WatchType.NONE) Icons.BookmarkFilled else Icons.Bookmark, primary = false, onClick = { bookmarkOpen = true }, height = 48.dp)
+            val saved = watch != null && watch != WatchType.NONE
+            com.lagradost.desktop.ui.fluent.GlassCircleButton(if (saved) Icons.BookmarkFilled else Icons.Bookmark, if (saved) "In your library: ${watchLabel(watch)}" else "Add to library", { bookmarkOpen = true }, active = saved, size = 50.dp)
             if (bookmarkOpen) {
                 MenuFlyout(
                     WatchType.entries.map { t -> MenuItem(ctx.getString(t.stringRes), checked = t == watch) { vm.updateWatchStatus(t, ctx) } },
@@ -609,23 +678,25 @@ private fun ActionRow(
                 )
             }
         }
-        favorite?.let { fav ->
-            com.lagradost.desktop.ui.fluent.GlassCircleButton(if (fav) Icons.FavoriteFilled else Icons.Favorite, if (fav) "Remove from favourites" else "Add to favourites", {
-                vm.toggleFavoriteStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "Added to favourites" else "Removed from favourites", false) }
-            }, active = fav, size = 48.dp)
-        }
-        subscribed?.let { sub ->
-            com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Notification, if (sub) "Unsubscribe from new episodes" else "Get notified about new episodes", {
-                vm.toggleSubscriptionStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "You will be told about new episodes" else "Subscription removed", false) }
-            }, active = sub, size = 48.dp)
-        }
-        if (hasTrailer && trailerUrl != null) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { playTrailer(trailerUrl) }, size = 48.dp)
+        if (hasTrailer && trailerUrl != null) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { playTrailer(trailerUrl) }, size = 50.dp)
         Box {
-            com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.More, "More", { moreOpen = true }, size = 48.dp)
+            com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.More, "More", { moreOpen = true }, size = 50.dp)
             if (moreOpen) {
                 val url = d.url
                 MenuFlyout(
                     buildList {
+                        // the links of what Play opens are fetched again (an episode has this in its right-click / three dots menu too)
+                        playEpisode?.let { ep -> add(MenuItem("Reload sources", Icons.Refresh) { vm.handleAction(EpisodeClickEvent(ACTION_RELOAD_EPISODE, ep)) }) }
+                        favorite?.let { fav ->
+                            add(MenuItem(if (fav) "Remove from favourites" else "Add to favourites", if (fav) Icons.FavoriteFilled else Icons.Favorite, checked = fav) {
+                                vm.toggleFavoriteStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "Added to favourites" else "Removed from favourites", false) }
+                            })
+                        }
+                        subscribed?.let { sub ->
+                            add(MenuItem(if (sub) "Unsubscribe from new episodes" else "Get notified about new episodes", Icons.Notification, checked = sub) {
+                                vm.toggleSubscriptionStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "You will be told about new episodes" else "Subscription removed", false) }
+                            })
+                        }
                         if (url.startsWith("http")) add(MenuItem("Open in browser", Icons.OpenInNewWindow) { DesktopPlatform.openExternalBrowser(url) })
                         add(MenuItem("Copy link", Icons.Copy) { java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(url), null); Toasts.show("Link copied", false) })
                         add(MenuItem("Search for “${d.title}”", Icons.Search) { Navigator.search(d.title) })
@@ -708,7 +779,10 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                     com.lagradost.desktop.ui.components.SoftImage(fallback, fallbackHeaders, Modifier.matchParentSize().graphicsLayer { scaleX = 1.3f; scaleY = 1.3f }, alpha = 0.9f)
                     Box(Modifier.matchParentSize().background(Color(0x59000000)))
                     FText(ep.episode.toString(), Modifier.align(Alignment.Center), style = Fluent.type.display.copy(fontSize = 56.sp, lineHeight = 60.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black), color = Color(0xCCFFFFFF), maxLines = 1)
-                } else RemoteImage(ep.poster, null, ep.name, if (covered) Modifier.fillMaxSize().blur(26.dp) else Modifier.fillMaxSize(), ContentScale.Crop)
+                } else if (covered) {
+                    // the still of an episode you have not reached, as a soft smear (decoded tiny and stretched: a real blur filter on every covered card is redrawn on each frame)
+                    com.lagradost.desktop.ui.components.SoftImage(ep.poster, null, Modifier.fillMaxSize(), tiny = true)
+                } else RemoteImage(ep.poster, null, ep.name, Modifier.fillMaxSize(), ContentScale.Crop)
                 if (covered) {
                     Box(Modifier.matchParentSize().background(Color(0x66000000)))
                     Row(
@@ -795,12 +869,11 @@ private fun TrackerCard(sync: SyncViewModel) {
     val total = status?.maxEpisodes ?: (sync.metadata.value as? Resource.Success)?.value?.totalEpisodes
 
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp).glass(FluentShapes.overlay).padding(horizontal = 18.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 22.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            FText("Tracking", style = Fluent.type.bodyStrong)
-            FText(names.joinToString(" · "), style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+            FText("Tracking on ${names.joinToString(" · ")}", style = Fluent.type.bodyStrong, color = c.textSecondary, maxLines = 1)
         }
         when {
             user is Resource.Loading -> ProgressRing(size = 22.dp, strokeWidth = 2.dp)

@@ -70,11 +70,11 @@ object WinChrome {
      */
     var keepBar by mutableStateOf(false)
 
-    /** The caption bar hides itself while the window is maximized or in full screen (not in pip) */
-    val autoHides: Boolean get() = enabled && (maximized || fullscreen) && !pip && !keepBar
+    /** The caption bar hides itself in full screen and, unless Settings > Look says otherwise, while the window is maximized (not in pip) */
+    val autoHides: Boolean get() = enabled && (fullscreen || (maximized && com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar)) && !pip && !keepBar
 
-    /** The title bar is a row of its own above the app (a window that is not maximized and not full screen) */
-    val windowedBar: Boolean get() = enabled && (!maximized || keepBar) && !fullscreen && !pip
+    /** The title bar is a row of its own above the app (a window that is not full screen; a maximized one only when it is set to keep it) */
+    val windowedBar: Boolean get() = enabled && !fullscreen && !pip && (!maximized || keepBar || !com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar)
 
     /** Dev: a pretend pointer position (window px) used instead of the real pointer by [pollReveal] */
     @Volatile
@@ -143,6 +143,7 @@ object WinChrome {
         fun GetClientRect(hwnd: WinDef.HWND, rect: IntArray): Boolean
         fun ClientToScreen(hwnd: WinDef.HWND, point: IntArray): Boolean
         fun IsZoomed(hwnd: WinDef.HWND): Boolean
+        fun IsIconic(hwnd: WinDef.HWND): Boolean
         fun ShowWindow(hwnd: WinDef.HWND, cmd: Int): Boolean
         fun GetDpiForWindow(hwnd: WinDef.HWND): Int
         fun GetSystemMetricsForDpi(index: Int, dpi: Int): Int
@@ -751,6 +752,23 @@ object WinChrome {
             if (!inControl) return HTCAPTION
         }
         return HTCLIENT
+    }
+
+    /** The size of the window's client area in pixels, which is what the Compose scene should measure; null when unknown or while the window is minimized */
+    fun clientSize(): IntArray? {
+        val api = user ?: return null
+        val hwnd = topHwnd ?: return null
+        if (api.IsIconic(hwnd)) return null
+        val r = IntArray(4)
+        if (!api.GetClientRect(hwnd, r)) return null
+        return intArrayOf(r[2] - r[0], r[3] - r[1]).takeIf { it[0] > 0 && it[1] > 0 }
+    }
+
+    /** Sends the window its frame and size messages again (WM_NCCALCSIZE, WM_SIZE), which is what a canvas that did not follow a resize needs */
+    fun resendFrame() {
+        val api = user ?: return
+        val hwnd = topHwnd ?: return
+        api.SetWindowPos(hwnd, null, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or SWP_FRAMECHANGED or 0x10)
     }
 
     /** Dev: maximize or restore the window */

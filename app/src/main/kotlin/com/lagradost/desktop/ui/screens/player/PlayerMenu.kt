@@ -121,7 +121,11 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
         ) { p ->
             Column(Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(vertical = 6.dp)) {
                 if (p != MenuPage.Root) PageHeader(p.title, { onPage(MenuPage.Root) }) {
-                    if (p == MenuPage.Sources) HeaderAction("Priority") { onPage(null); s.openSourcePriority() }
+                    if (p == MenuPage.Sources) {
+                        // looks for the sources again from scratch (the ones found are thrown away and the video starts again from where it was)
+                        HeaderAction("Reload") { onPage(null); s.reloadSources() }
+                        HeaderAction("Priority") { onPage(null); s.openSourcePriority() }
+                    }
                 }
                 when (p) {
                     MenuPage.Root -> RootPage(s, onPage)

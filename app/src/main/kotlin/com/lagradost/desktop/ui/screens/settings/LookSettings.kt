@@ -68,7 +68,7 @@ fun LayoutAndStyleCards() {
         val shape = RoundedCornerShape(FluentShapes.card)
         Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).border(Dp.Hairline, c.stroke, shape).padding(16.dp)) {
             FText("Navigation position", style = Fluent.type.body)
-            FText("Where the page list sits: a rail at either side, tabs in the title bar, or a floating dock.", style = Fluent.type.caption, color = c.textSecondary)
+            FText("Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.", style = Fluent.type.caption, color = c.textSecondary)
             Box(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 for (p in NavPosition.entries) NavPreview(p, Appearance.navPosition == p) { Appearance.navPosition = p; changed() }
@@ -114,6 +114,9 @@ fun LayoutAndStyleCards() {
         SettingsCard("See-through bars", "Bars, the dock and the open rail let the page show through a little.") {
             ToggleSwitch(Appearance.glass, { Appearance.glass = it; changed() })
         }
+        SettingsCard("Play button", "The main button on artwork (Watch now, Play): a flat white button, or filled with the accent colour.") {
+            ComboBox(listOf(true, false), Appearance.whitePrimary, { if (it) "White" else "Accent colour" }, { Appearance.whitePrimary = it; changed() }, minWidth = 150.dp)
+        }
         SettingsCard("Poster size", "Size of the posters in shelves and grids.") {
             ComboBox(PosterSize.entries.toList(), Appearance.posterSize, { it.label }, { Appearance.posterSize = it; changed() }, minWidth = 150.dp)
         }
@@ -125,6 +128,9 @@ fun LayoutAndStyleCards() {
         }
         SettingsCard("Animations", "Page transitions and hover effects.") {
             ComboBox(Motion.entries.toList(), Appearance.motion, { it.label }, { Appearance.motion = it; changed() }, minWidth = 150.dp)
+        }
+        SettingsCard("Hide the title bar when maximized", "A maximized window shows only the app: the title bar (back, window buttons) slides in when the pointer touches the top edge of the screen and goes away when it leaves. Full screen always works this way.") {
+            ToggleSwitch(Appearance.hideTitleBar, { Appearance.hideTitleBar = it; changed() })
         }
         SettingsCard("Zoom on hover", "Posters and dock items grow a little under the pointer.") {
             ToggleSwitch(Appearance.hoverZoom, { Appearance.hoverZoom = it; changed() })
@@ -174,6 +180,24 @@ private fun NavPreview(p: NavPosition, selected: Boolean, onClick: () -> Unit) {
                     if (p == NavPosition.Left) rail()
                     Box(Modifier.weight(1f).fillMaxHeight().background(page, RoundedCornerShape(3.dp)))
                     if (p == NavPosition.Right) rail()
+                }
+                NavPosition.Floating -> Box(Modifier.fillMaxSize().background(page, RoundedCornerShape(3.dp))) {
+                    Row(
+                        Modifier.align(Alignment.TopCenter).padding(top = 3.dp).background(c.flyout, RoundedCornerShape(5.dp)).border(Dp.Hairline, c.strokeStrong, RoundedCornerShape(5.dp)).padding(horizontal = 4.dp, vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Box(Modifier.size(14.dp, 6.dp).background(accent, RoundedCornerShape(3.dp)))
+                        repeat(3) { Box(Modifier.size(8.dp, 6.dp).background(bar, RoundedCornerShape(3.dp))) }
+                    }
+                }
+                NavPosition.Dock -> Box(Modifier.fillMaxSize().background(page, RoundedCornerShape(3.dp))) {
+                    Column(
+                        Modifier.align(Alignment.CenterStart).padding(start = 4.dp).background(c.flyout, RoundedCornerShape(5.dp)).border(Dp.Hairline, c.strokeStrong, RoundedCornerShape(5.dp)).padding(horizontal = 3.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Box(Modifier.size(6.dp).background(accent, RoundedCornerShape(2.dp)))
+                        repeat(4) { Box(Modifier.size(6.dp).background(bar, RoundedCornerShape(2.dp))) }
+                    }
                 }
                 NavPosition.Top -> Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().height(10.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
