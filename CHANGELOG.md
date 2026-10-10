@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.2
 
 **Discord**
 - The community server is linked next to the Telegram channel: in the README (badges, a *Join the community* section, the bug-report and support lines), in Settings > About (*Join us on Discord*) and in the once-a-day support window (*Telegram channel* and *Discord server* buttons beside Star and Donate).
