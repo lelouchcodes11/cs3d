@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+**Discord**
+- The community server is linked next to the Telegram channel: in the README (badges, a *Join the community* section, the bug-report and support lines), in Settings > About (*Join us on Discord*) and in the once-a-day support window (*Telegram channel* and *Discord server* buttons beside Star and Donate).
+
 **Crisp borders**
 - **Broken, uneven borders (and soft text) on a display scaled 125 %, 150 % or 175 %**: the whole picture was stretched by a pixel or two on its way to the screen, so every 1 px border landed on two pixels (bright and sharp in one place, split in half and faint in another, with gaps at the rounded corners). The window's drawing surface and its content area now have the same whole-pixel size at every window size and on every scale, in the main window and in the player's controls window. Nothing else in the app changed: only a strip of at most 1 to 3 device pixels at the right and bottom edge of the window is left in the page colour.
 - Smaller polish: the Home banner's progress line no longer runs into the edge and corners of its slice; the chip rows of Explore and the recent searches fade out at a cut end instead of showing half a chip; extension cards are shorter; the storage bar in Downloads is empty when nothing is downloaded.

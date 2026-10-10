@@ -70,7 +70,14 @@ object SupportPrompt {
                 onPrimary = { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) },
                 onSecondary = { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) },
             ) {
-                FText("It is free, has no ads and is made in spare time. A star on GitHub helps other people find it, and a donation keeps it growing. Thank you!", color = Fluent.colors.textSecondary)
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    FText("It is free, has no ads and is made in spare time. A star on GitHub helps other people find it, and a donation keeps it growing. Thank you!", color = Fluent.colors.textSecondary)
+                    // news and new versions are on Telegram, chat and help on Discord
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button("Telegram channel", { DesktopPlatform.openExternalBrowser(AppInfo.TELEGRAM_URL) }, icon = Icons.Link, height = 34.dp)
+                        Button("Discord server", { DesktopPlatform.openExternalBrowser(AppInfo.DISCORD_URL) }, icon = Icons.Link, height = 34.dp)
+                    }
+                }
             },
         )
     }

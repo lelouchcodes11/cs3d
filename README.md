@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://t.me/cs3d_official"><img alt="Join the Telegram channel" src="https://img.shields.io/badge/Telegram-Join%20the%20channel-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
+  <a href="https://discord.gg/u82JU5JDM"><img alt="Join the Discord server" src="https://img.shields.io/badge/Discord-Join%20the%20server-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
   <a href="https://razorpay.me/@lelouch11"><img alt="Donate with Razorpay" src="https://img.shields.io/badge/Donate-Razorpay-0C2451?style=for-the-badge&logo=razorpay&logoColor=white"></a>
   <a href="../../releases"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%7C%2011-0078D4?style=for-the-badge&logo=windows11&logoColor=white"></a>
 </p>
@@ -16,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="#-join-the-telegram-channel">Telegram</a> ·
+  <a href="#-join-the-community">Community</a> ·
   <a href="#-download">Download</a> ·
   <a href="#-what-you-get">Features</a> ·
   <a href="#-first-steps">First steps</a> ·
@@ -26,22 +27,26 @@
 
 ---
 
-## 📣 Join the Telegram channel
+## 📣 Join the community
 
 <table>
 <tr>
 <td width="72%">
 
-**[t.me/cs3d_official](https://t.me/cs3d_official) is the home of this app.** Everything happens there first:
+**[Telegram](https://t.me/cs3d_official) is where news comes first.** Everything about a new build happens there:
 
 - 🆕 **New versions are announced there.** The app only tells you at start when a new version is out (and sends you to GitHub, it never installs anything by itself), so the channel is where you read what a new build fixes.
 - 🛠️ **Fixes and workarounds** when a source or a live channel stops working.
 - 💬 **Questions, bug reports and ideas.** Say what you did and what happened; it is read.
 
+**[Discord](https://discord.gg/u82JU5JDM) is the place to talk.** Chat with other users, ask for help with a source or a setting, share what works and suggest what should come next.
+
 </td>
 <td align="center" width="28%">
 
 <a href="https://t.me/cs3d_official"><img alt="Join on Telegram" src="https://img.shields.io/badge/Join-t.me%2Fcs3d__official-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
+
+<a href="https://discord.gg/u82JU5JDM"><img alt="Join on Discord" src="https://img.shields.io/badge/Join-Discord%20server-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
 
 </td>
 </tr>
@@ -59,7 +64,7 @@ Windows 10 or 11, 64-bit. Windows SmartScreen may ask for confirmation because t
 
 **Updating:** download the newest MSI from [Releases](../../releases) and run it over the old one. Your settings, accounts and extensions are kept. (Settings → About → *Get the newest version* opens the same page.) Follow the [Telegram channel](https://t.me/cs3d_official) to know when there is one.
 
-> **Version 1.0.** The app still gets updates often. If something is wrong, tell us on [Telegram](https://t.me/cs3d_official).
+> **Version 1.0.** The app still gets updates often. If something is wrong, tell us on [Telegram](https://t.me/cs3d_official) or [Discord](https://discord.gg/u82JU5JDM).
 
 ---
 
@@ -100,14 +105,14 @@ Windows 10 or 11, 64-bit. Windows SmartScreen may ask for confirmation because t
 - Settings → Appearance → make sure **Smooth motion** is on (it is by default), and try **Native GPU player (beta)**: mpv's own GPU renderer is the smoothest option.
 - Windows: set the power mode to *Balanced* or *Best performance*, and keep your graphics driver current.
 - On a 4K or very large screen the picture is drawn a little smaller than the window and enlarged by the graphics card; that is on purpose, it keeps playback smooth.
-- Still not right? Tell us on [Telegram](https://t.me/cs3d_official): which source, what video, and what PC.
+- Still not right? Tell us on [Telegram](https://t.me/cs3d_official) or [Discord](https://discord.gg/u82JU5JDM): which source, what video, and what PC.
 
 </details>
 
 <details>
 <summary><b>A live channel or a source does not play (works on my phone)</b></summary>
 
-Some sources only answer a normal home connection and refuse VPNs, proxies and Cloudflare WARP (they send back a different page or an error). If a channel works on your phone but not on the PC, **turn the VPN / WARP off and try again.** If it still fails, tell us on [Telegram](https://t.me/cs3d_official) with the channel's name.
+Some sources only answer a normal home connection and refuse VPNs, proxies and Cloudflare WARP (they send back a different page or an error). If a channel works on your phone but not on the PC, **turn the VPN / WARP off and try again.** If it still fails, tell us on [Telegram](https://t.me/cs3d_official) or [Discord](https://discord.gg/u82JU5JDM) with the channel's name.
 
 </details>
 
@@ -132,7 +137,7 @@ In `%APPDATA%\CloudStream` (Settings → About → *App data folder* opens it). 
 
 </details>
 
-**Report a bug:** [Telegram](https://t.me/cs3d_official) or [GitHub issues](../../issues). Say what you did and what happened, and paste **Settings → About → Copy diagnostics** (your PC, screens, player output and the latest errors; passwords and tokens are masked). A crash log, if there is one, is under *Crash log* on the same page.
+**Report a bug:** [Telegram](https://t.me/cs3d_official), [Discord](https://discord.gg/u82JU5JDM) or [GitHub issues](../../issues). Say what you did and what happened, and paste **Settings → About → Copy diagnostics** (your PC, screens, player output and the latest errors; passwords and tokens are masked). A crash log, if there is one, is under *Crash log* on the same page.
 
 ---
 
@@ -144,6 +149,8 @@ CloudStream for Windows is **free** and has no ads. It is made in spare time. If
   <a href="https://razorpay.me/@lelouch11"><img alt="Donate with Razorpay" src="https://img.shields.io/badge/Donate%20with-Razorpay-0C2451?style=for-the-badge&logo=razorpay&logoColor=white"></a>
   &nbsp;
   <a href="https://t.me/cs3d_official"><img alt="Join the Telegram channel" src="https://img.shields.io/badge/Join-Telegram-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
+  &nbsp;
+  <a href="https://discord.gg/u82JU5JDM"><img alt="Join the Discord server" src="https://img.shields.io/badge/Join-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
 </p>
 <p align="center"><sub><a href="https://razorpay.me/@lelouch11">razorpay.me/@lelouch11</a> · every amount counts, and so does telling a friend.</sub></p>
 

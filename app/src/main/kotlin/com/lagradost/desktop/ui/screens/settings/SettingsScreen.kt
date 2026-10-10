@@ -299,6 +299,7 @@ private fun AboutPage() {
         val pre = if (AppInfo.isPreRelease) " (pre-release)" else ""
         SettingsCard("CloudStream for Windows", "Version ${AppInfo.version}$pre  ·  a native Windows app on the CloudStream ${BuildConfig.VERSION_NAME} engine")
         SettingsCard("Join us on Telegram", "News, new versions, help and feedback: t.me/cs3d_official", onClick = { DesktopPlatform.openExternalBrowser(AppInfo.TELEGRAM_URL) })
+        SettingsCard("Join us on Discord", "Chat, help and ideas with other users: discord.gg/u82JU5JDM", onClick = { DesktopPlatform.openExternalBrowser(AppInfo.DISCORD_URL) })
         UpdateCards()
         SettingsCard("Support the project", "CloudStream for Windows is free. If it saves you time, a donation keeps it going: razorpay.me/@lelouch11", onClick = { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) })
         SettingsCard("App data folder", dir.absolutePath, onClick = { DesktopPlatform.openFile(dir) })
