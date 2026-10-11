@@ -5,8 +5,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 
 /**
- * A colour theme: the accent, the tinted dark surfaces and the two soft glows behind the pages. [Classic] is the plain Windows look
- * (neutral greys, the Windows accent); the others are deliberately more colourful.
+ * A colour theme: flat surface palette (bg, layer, flyout, card/border tint) and solid accent colour.
+ * [Classic] is the default untouched look; the others replace the surface palette with clean flat themes.
  */
 @Immutable
 class ThemePreset(
@@ -21,30 +21,115 @@ class ThemePreset(
     val flyout: Color,
     /** the colour the cards, controls and lines are made of (white with little alpha on [Classic]) */
     val tint: Color,
-    val glowA: Color?,
-    val glowB: Color?,
+    val glowA: Color? = null,
+    val glowB: Color? = null,
+    val accent2: Color? = accent,
+    val subtitle: String = "",
 )
 
 object Themes {
-    val classic = ThemePreset("classic", "Classic", null, Color(0xFF0E0F13), Color(0xFF15161B), Color(0xFF1D1F25), Color.White, null, null)
+    val classic = ThemePreset(
+        "classic", "Classic (Default)", null,
+        Color(0xFF0E0F13), Color(0xFF15161B), Color(0xFF1D1F25), Color.White,
+        null, null, null, "Default dark look",
+    )
 
-    // The pages are clearly coloured, not "almost black with a hint": a theme is the first thing a viewer sees of the app, and a hue that
-    // is a few steps off black was lost on a normal screen (the themes looked like they did nothing).
     val all: List<ThemePreset> = listOf(
-        ThemePreset("midnight", "Midnight", Color(0xFF8B7BFF), Color(0xFF0D0D2B), Color(0xFF14143A), Color(0xFF1F1F4F), Color(0xFFC9C2FF), Color(0xFF6D5BFF), Color(0xFFFF4FA3)),
-        ThemePreset("crimson", "Crimson", Color(0xFFFF3B5C), Color(0xFF190A10), Color(0xFF25101A), Color(0xFF341724), Color(0xFFFFC2CC), Color(0xFFE11D48), Color(0xFFFF8A3D)),
-        ThemePreset("ocean", "Ocean", Color(0xFF22D3EE), Color(0xFF071C2A), Color(0xFF0C2A3D), Color(0xFF133A54), Color(0xFFB8ECFF), Color(0xFF0EA5E9), Color(0xFF2DD4BF)),
-        ThemePreset("matcha", "Matcha", Color(0xFFA3E635), Color(0xFF0B1A10), Color(0xFF112619), Color(0xFF1B3826), Color(0xFFD4F5B0), Color(0xFF84CC16), Color(0xFF14B8A6)),
-        ThemePreset("sunset", "Sunset", Color(0xFFFF7A45), Color(0xFF1C0D0C), Color(0xFF2B1514), Color(0xFF3C1E1B), Color(0xFFFFD0B8), Color(0xFFFF6B35), Color(0xFFE11D74)),
-        ThemePreset("gold", "Cinema gold", Color(0xFFFFC53D), Color(0xFF17120A), Color(0xFF221B0E), Color(0xFF312714), Color(0xFFFFE7B0), Color(0xFFF59E0B), Color(0xFFEF4444)),
-        ThemePreset("dracula", "Dracula", Color(0xFFFF79C6), Color(0xFF21222C), Color(0xFF282A36), Color(0xFF343746), Color(0xFFD6C7FF), Color(0xFFBD93F9), Color(0xFFFF79C6)),
-        ThemePreset("nord", "Nord", Color(0xFF88C0D0), Color(0xFF242933), Color(0xFF2E3440), Color(0xFF3B4252), Color(0xFFD8DEE9), Color(0xFF5E81AC), Color(0xFF88C0D0)),
-        ThemePreset("tokyo", "Tokyo Night", Color(0xFF7AA2F7), Color(0xFF13141C), Color(0xFF1A1B26), Color(0xFF24283B), Color(0xFFC0CAF5), Color(0xFF7AA2F7), Color(0xFFBB9AF7)),
-        ThemePreset("mocha", "Mocha", Color(0xFFCBA6F7), Color(0xFF181825), Color(0xFF1E1E2E), Color(0xFF313244), Color(0xFFCDD6F4), Color(0xFFCBA6F7), Color(0xFFF5C2E7)),
-        ThemePreset("rose", "Rosé", Color(0xFFEBBCBA), Color(0xFF191724), Color(0xFF1F1D2E), Color(0xFF26233A), Color(0xFFE0DEF4), Color(0xFFC4A7E7), Color(0xFFEBBCBA)),
-        ThemePreset("synthwave", "Synthwave", Color(0xFFFF2E97), Color(0xFF140A26), Color(0xFF1E1038), Color(0xFF2E1A52), Color(0xFFF5C6FF), Color(0xFFFF2E97), Color(0xFF00E5FF)),
-        ThemePreset("gruvbox", "Gruvbox", Color(0xFFFABD2F), Color(0xFF1D2021), Color(0xFF282828), Color(0xFF3C3836), Color(0xFFEBDBB2), Color(0xFFD79921), Color(0xFFFE8019)),
-        ThemePreset("graphite", "Graphite", Color(0xFF94A3B8), Color(0xFF15171A), Color(0xFF1C1F23), Color(0xFF272B31), Color(0xFFCBD5E1), Color(0xFF64748B), Color(0xFF94A3B8)),
+        ThemePreset(
+            "slate", "Slate", Color(0xFF3B82F6),
+            Color(0xFF111318), Color(0xFF171A21), Color(0xFF1F242D), Color(0xFFCBD5E1),
+            subtitle = "Cool slate & blue",
+        ),
+        ThemePreset(
+            "graphite", "Graphite", Color(0xFFA1A1AA),
+            Color(0xFF141416), Color(0xFF1B1B1E), Color(0xFF242428), Color(0xFFD4D4D8),
+            subtitle = "Neutral carbon & zinc",
+        ),
+        ThemePreset(
+            "onedark", "One Dark", Color(0xFF61AFEF),
+            Color(0xFF1E222A), Color(0xFF232731), Color(0xFF282C34), Color(0xFFABB2BF),
+            subtitle = "Atom dark grey & sky",
+        ),
+        ThemePreset(
+            "tokyo", "Tokyo Night", Color(0xFF7AA2F7),
+            Color(0xFF16161E), Color(0xFF1A1B26), Color(0xFF24283B), Color(0xFFC0CAF5),
+            subtitle = "Deep navy & soft blue",
+        ),
+        ThemePreset(
+            "mocha", "Catppuccin Mocha", Color(0xFFCBA6F7),
+            Color(0xFF11111B), Color(0xFF181825), Color(0xFF1E1E2E), Color(0xFFCDD6F4),
+            subtitle = "Warm charcoal & mauve",
+        ),
+        ThemePreset(
+            "macchiato", "Catppuccin Macchiato", Color(0xFF8AADF4),
+            Color(0xFF181926), Color(0xFF1E2030), Color(0xFF24273A), Color(0xFFCAD3F5),
+            subtitle = "Soft indigo & cornflower",
+        ),
+        ThemePreset(
+            "nord", "Nord", Color(0xFF88C0D0),
+            Color(0xFF242933), Color(0xFF2E3440), Color(0xFF3B4252), Color(0xFFD8DEE9),
+            subtitle = "Arctic slate & frost",
+        ),
+        ThemePreset(
+            "dracula", "Dracula", Color(0xFFBD93F9),
+            Color(0xFF191A21), Color(0xFF21222C), Color(0xFF282A36), Color(0xFFF8F8F2),
+            subtitle = "Dark slate & purple",
+        ),
+        ThemePreset(
+            "gruvbox", "Gruvbox", Color(0xFFD79921),
+            Color(0xFF1D2021), Color(0xFF282828), Color(0xFF32302F), Color(0xFFEBDBB2),
+            subtitle = "Warm retro earth & amber",
+        ),
+        ThemePreset(
+            "rose", "Rosé Pine", Color(0xFFEBBCBA),
+            Color(0xFF191724), Color(0xFF1F1D2E), Color(0xFF26233A), Color(0xFFE0DEF4),
+            subtitle = "Muted pine & soft rose",
+        ),
+        ThemePreset(
+            "everforest", "Everforest", Color(0xFFA7C080),
+            Color(0xFF1E2326), Color(0xFF272E33), Color(0xFF2E383C), Color(0xFFD3C6AA),
+            subtitle = " Woodland green & sage",
+        ),
+        ThemePreset(
+            "kanagawa", "Kanagawa", Color(0xFF7E9CD8),
+            Color(0xFF16161D), Color(0xFF1F1F28), Color(0xFF2A2A37), Color(0xFFDCD7BA),
+            subtitle = "Sumi ink & wave blue",
+        ),
+        ThemePreset(
+            "ayu", "Ayu Dark", Color(0xFFE6B450),
+            Color(0xFF0B0E14), Color(0xFF0F131A), Color(0xFF151A24), Color(0xFFBFBDB6),
+            subtitle = "Deep midnight & warm gold",
+        ),
+        ThemePreset(
+            "monokai", "Monokai", Color(0xFFFFD866),
+            Color(0xFF19181A), Color(0xFF221F22), Color(0xFF2D2A2E), Color(0xFFFCFCFA),
+            subtitle = "Warm charcoal & yellow",
+        ),
+        ThemePreset(
+            "midnight", "Midnight", Color(0xFF6366F1),
+            Color(0xFF0C0D18), Color(0xFF121424), Color(0xFF191C30), Color(0xFFC7D2FE),
+            subtitle = "Dark indigo & violet",
+        ),
+        ThemePreset(
+            "crimson", "Crimson", Color(0xFFE11D48),
+            Color(0xFF140A0D), Color(0xFF1C0E13), Color(0xFF26141A), Color(0xFFFECDD3),
+            subtitle = "Dark burgundy & crimson",
+        ),
+        ThemePreset(
+            "ocean", "Ocean", Color(0xFF0EA5E9),
+            Color(0xFF08131C), Color(0xFF0D1D2A), Color(0xFF13283A), Color(0xFFBAE6FD),
+            subtitle = "Deep navy & ocean blue",
+        ),
+        ThemePreset(
+            "emerald", "Emerald", Color(0xFF10B981),
+            Color(0xFF081410), Color(0xFF0D1F18), Color(0xFF132B22), Color(0xFFA7F3D0),
+            subtitle = "Dark forest & emerald",
+        ),
+        ThemePreset(
+            "espresso", "Espresso", Color(0xFFD97706),
+            Color(0xFF14110F), Color(0xFF1C1714), Color(0xFF26201C), Color(0xFFFDE68A),
+            subtitle = "Dark roast & warm amber",
+        ),
     )
 
     fun byId(id: String?): ThemePreset = if (id == null) classic else all.firstOrNull { it.id == id } ?: classic
@@ -54,25 +139,36 @@ object Themes {
 }
 
 /**
- * The colours of a theme: tinted surfaces, brighter secondary text; the accent stays the one in [FluentColors]. A dark theme replaces the
- * dark surfaces; in the light mode the theme only washes the page with its hue (the dark surfaces would be wrong there).
+ * The colours of a theme: flat surfaces and subtle card/control/border fills scaled by [tintStrength].
+ * [Classic] returns [this] untouched.
  */
-internal fun FluentColors.themed(p: ThemePreset): FluentColors {
+internal fun FluentColors.themed(p: ThemePreset, tintStrength: SurfaceTint = SurfaceTint.Balanced): FluentColors {
     if (p.id == "classic") return this
+    val m = tintStrength.multiplier
     if (!dark) {
-        val hue = p.glowA ?: p.accent ?: return this
-        return withSurfaces(lerp(bg, hue, 0.10f), lerp(bgPane, hue, 0.12f), lerp(layer, hue, 0.06f), lerp(flyout, hue, 0.05f))
+        val hue = p.accent ?: return this
+        return withSurfaces(lerp(bg, hue, 0.08f * m), lerp(bgPane, hue, 0.10f * m), lerp(layer, hue, 0.05f * m), lerp(flyout, hue, 0.04f * m))
     }
     val t = p.tint
     return FluentColors(
         dark = true, accent = accent, accentHover = accentHover, accentPressed = accentPressed, onAccent = onAccent, accentText = accentText,
         bg = p.bg, bgPane = p.bg, layer = p.layer,
-        card = t.copy(alpha = 0.085f), cardHover = t.copy(alpha = 0.14f), cardPressed = t.copy(alpha = 0.055f),
-        control = t.copy(alpha = 0.11f), controlHover = t.copy(alpha = 0.17f), controlPressed = t.copy(alpha = 0.07f), controlDisabled = t.copy(alpha = 0.05f),
-        subtleHover = t.copy(alpha = 0.10f), subtlePressed = t.copy(alpha = 0.06f),
-        flyout = p.flyout, stroke = t.copy(alpha = 0.16f), strokeStrong = t.copy(alpha = 0.34f), divider = t.copy(alpha = 0.12f),
-        text = Color.White, textSecondary = Color(0xE0FFFFFF), textTertiary = Color(0xA3FFFFFF), textDisabled = Color(0x66FFFFFF),
-        success = success, caution = caution, critical = critical, scrim = scrim, accent2 = accent2,
+        card = t.copy(alpha = (0.075f * m).coerceIn(0.04f, 0.18f)),
+        cardHover = t.copy(alpha = (0.125f * m).coerceIn(0.08f, 0.24f)),
+        cardPressed = t.copy(alpha = (0.05f * m).coerceIn(0.03f, 0.12f)),
+        control = t.copy(alpha = (0.10f * m).coerceIn(0.06f, 0.20f)),
+        controlHover = t.copy(alpha = (0.155f * m).coerceIn(0.10f, 0.26f)),
+        controlPressed = t.copy(alpha = (0.065f * m).coerceIn(0.04f, 0.14f)),
+        controlDisabled = t.copy(alpha = 0.045f),
+        subtleHover = t.copy(alpha = (0.09f * m).coerceIn(0.05f, 0.18f)),
+        subtlePressed = t.copy(alpha = (0.055f * m).coerceIn(0.03f, 0.12f)),
+        flyout = p.flyout,
+        stroke = t.copy(alpha = (0.14f * m).coerceIn(0.08f, 0.28f)),
+        strokeStrong = t.copy(alpha = (0.28f * m).coerceIn(0.18f, 0.45f)),
+        divider = t.copy(alpha = (0.11f * m).coerceIn(0.06f, 0.22f)),
+        text = Color.White, textSecondary = Color(0xCCFFFFFF), textTertiary = Color(0x8FFFFFFF), textDisabled = Color(0x5DFFFFFF),
+        success = success, caution = caution, critical = critical, scrim = scrim,
+        accent2 = accent2, button = button, button2 = button2, onButton = onButton,
     )
 }
 
@@ -82,5 +178,6 @@ private fun FluentColors.withSurfaces(bg: Color, bgPane: Color, layer: Color, fl
     control = control, controlHover = controlHover, controlPressed = controlPressed, controlDisabled = controlDisabled,
     subtleHover = subtleHover, subtlePressed = subtlePressed, flyout = flyout, stroke = stroke, strokeStrong = strokeStrong, divider = divider,
     text = text, textSecondary = textSecondary, textTertiary = textTertiary, textDisabled = textDisabled,
-    success = success, caution = caution, critical = critical, scrim = scrim, accent2 = accent2,
+    success = success, caution = caution, critical = critical, scrim = scrim,
+    accent2 = accent2, button = button, button2 = button2, onButton = onButton,
 )

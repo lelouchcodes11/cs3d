@@ -228,15 +228,13 @@ private fun CategoryRow(title: String, glyph: String, tint: Color, selected: Boo
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(FluentShapes.card)
-    // neutral rows: a monochrome icon, a quiet fill and a short accent bar on the selected one (the Windows Settings look)
-    val bg by androidx.compose.animation.animateColorAsState(if (selected) c.subtleHover else if (hovered) c.subtleHover.copy(alpha = c.subtleHover.alpha * 0.6f) else Color.Transparent, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(160))
     Row(
         Modifier.padding(vertical = 1.dp).fillMaxWidth().height(40.dp).clip(shape)
-            .background(bg, shape)
+            .background(if (selected || hovered) c.subtleHover else Color.Transparent, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick).padding(end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(3.dp, 16.dp).background(if (selected) c.accent else Color.Transparent, RoundedCornerShape(2.dp)))
+        Box(Modifier.size(3.dp, 18.dp).background(if (selected) c.accent else Color.Transparent, RoundedCornerShape(2.dp)))
         Box(Modifier.width(13.dp))
         Icon(glyph, size = 16.dp, tint = if (selected) c.text else c.textSecondary)
         Box(Modifier.width(14.dp))
@@ -246,49 +244,12 @@ private fun CategoryRow(title: String, glyph: String, tint: Color, selected: Boo
 
 // ----------------------------------------------------------------------------------------------
 
-private val accentChoices = listOf(
-    "Blue" to 0xFF0078D4, "Purple" to 0xFF8764B8, "Pink" to 0xFFE3008C, "Red" to 0xFFE81123,
-    "Orange" to 0xFFF7630C, "Green" to 0xFF107C10, "Teal" to 0xFF00B7C3, "Gray" to 0xFF7A7574,
-)
-
 @Composable
 private fun AppearanceCards() {
-    val c = Fluent.colors
-    FText("Windows look", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        SettingsCard("App theme", "Follow Windows, or always use light or dark.") {
-            ComboBox(ThemeMode.entries.toList(), FluentSettings.themeMode, { when (it) { ThemeMode.System -> "Use system setting"; ThemeMode.Light -> "Light"; ThemeMode.Dark -> "Dark" } }, { FluentSettings.chooseMode(it) }, minWidth = 190.dp)
-        }
-        SettingsCard("Accent colour", "Use your Windows accent colour, or pick one for CloudStream.") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                val system = FluentSettings.accentOverride == null
-                Swatch(null, system, "Windows accent")
-                accentChoices.forEach { (name, argb) -> Swatch(Color(argb), FluentSettings.accentOverride?.value == Color(argb).value, name) }
-            }
-        }
-    }
     ThemeCards()
     LayoutAndStyleCards()
     TitleInfoCards()
     SpoilerCards()
-}
-
-@Composable
-private fun Swatch(color: Color?, selected: Boolean, label: String) {
-    val c = Fluent.colors
-    val shape = CircleShape
-    val fill = color ?: Color(0xFF0078D4)
-    com.lagradost.desktop.ui.fluent.Tooltip(label) {
-        Box(
-            Modifier.size(26.dp).clip(shape).background(fill, shape)
-                .border(if (selected) 2.dp else 1.dp, if (selected) c.text else c.strokeStrong, shape)
-                .fluentClickable(rememberInteraction(), true, shape, Role.RadioButton) { FluentSettings.chooseAccent(color) },
-            contentAlignment = Alignment.Center,
-        ) {
-            if (color == null) Icon(Icons.Theme, size = 12.dp, tint = Color.White)
-            else if (selected) Icon(Icons.Check, size = 12.dp, tint = Color.White)
-        }
-    }
 }
 
 @Composable

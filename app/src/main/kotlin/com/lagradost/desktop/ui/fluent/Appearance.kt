@@ -30,6 +30,20 @@ enum class Motion(val label: String, val factor: Float) { Full("Full", 1f), Redu
 
 enum class PlayerStyle(val label: String) { Modern("Modern (floating bar)"), Classic("Classic (full width)") }
 
+/** How primary buttons (Play, Watch now), selected filter chips and pill tabs are filled */
+enum class ButtonStyle(val label: String) {
+    White("White (default)"),
+    Solid("Solid colour"),
+    Glass("Tinted glass"),
+}
+
+/** How strongly cards, controls and borders take on the theme or accent hue */
+enum class SurfaceTint(val label: String, val multiplier: Float) {
+    Subtle("Subtle", 0.65f),
+    Balanced("Balanced", 1.0f),
+    Rich("Rich", 1.5f),
+}
+
 /**
  * Who decodes the sound. SW: the app, for speakers and headphones. HW: Dolby Digital and DTS go undecoded to an AV receiver or TV,
  * which decodes them (HDMI or optical). HW+: also Dolby Digital Plus, TrueHD and DTS-HD (HDMI receivers). [spdif] is mpv's audio-spdif
@@ -85,8 +99,19 @@ object Appearance {
     /** The animated logo while the app starts */
     var startupAnimation by mutableStateOf(true)
 
-    /** The main action on artwork (Play, Watch now) is a flat white button; off: filled with the theme's accent colour */
-    var whitePrimary by mutableStateOf(true)
+    /** How primary buttons, active chips and pill tabs are filled (White by default so the default look is untouched) */
+    var buttonStyle by mutableStateOf(ButtonStyle.White)
+
+    /** How strongly cards, controls and borders are tinted when a colour theme is active */
+    var surfaceTint by mutableStateOf(SurfaceTint.Balanced)
+
+    /** Whether the active pill in the navigation bar / dock uses the button/accent colour (off by default so default nav bar is untouched) */
+    var navAccentPill by mutableStateOf(false)
+
+    /** Backwards-compatible alias for whether primary buttons use contrast white */
+    var whitePrimary: Boolean
+        get() = buttonStyle == ButtonStyle.White
+        set(value) { buttonStyle = if (value) ButtonStyle.White else ButtonStyle.Solid }
 
     /** Shelves zoom the poster under the pointer */
     var hoverZoom by mutableStateOf(true)
@@ -134,8 +159,8 @@ object Appearance {
     /** Colour theme (see Themes): tinted surfaces and accent */
     var theme by mutableStateOf("classic")
 
-    /** Two soft colour glows behind the pages (the theme names the colours; Classic has none) */
-    var themeGlow by mutableStateOf(true)
+    /** Two soft colour glows behind the pages (off by default) */
+    var themeGlow by mutableStateOf(false)
 
     /** A picture of the user's own behind every page (a copy in the data folder; empty = none) and how much of the page colour covers it */
     var wallpaper by mutableStateOf("")
@@ -180,7 +205,9 @@ object Appearance {
             playerStyle = enumOf(p.getString(PREFIX + "player", null), PlayerStyle.Modern)
             startupAnimation = p.getBoolean(PREFIX + "startup", true)
             hoverZoom = p.getBoolean(PREFIX + "hover_zoom", true)
-            whitePrimary = p.getBoolean(PREFIX + "white_primary", true)
+            buttonStyle = enumOf(p.getString(PREFIX + "btn_style", null), ButtonStyle.White)
+            surfaceTint = enumOf(p.getString(PREFIX + "surface_tint", null), SurfaceTint.Balanced)
+            navAccentPill = p.getBoolean(PREFIX + "nav_colored_pill", false)
             smoothMotion = p.getBoolean(PREFIX + "smooth_motion", true)
             nativePlayer = p.getBoolean(PREFIX + "native_player", false)
             smoothSources = p.getBoolean(PREFIX + "smooth_sources", true)
@@ -192,9 +219,8 @@ object Appearance {
             subtitleUniversal = p.getBoolean(PREFIX + "sub_universal", false)
             tmdbEnabled = p.getBoolean(PREFIX + "tmdb", true)
             tmdbRegion = p.getString(PREFIX + "tmdb_region", "") ?: ""
-            // nothing saved yet: the colourful Midnight theme, unless the user had chosen an accent colour (then the Windows look stays)
-            theme = p.getString(PREFIX + "theme", null) ?: if (p.contains("desktop_accent_color")) "classic" else Themes.DEFAULT_ID
-            themeGlow = p.getBoolean(PREFIX + "theme_glow", true)
+            theme = p.getString(PREFIX + "theme", null) ?: Themes.DEFAULT_ID
+            themeGlow = p.getBoolean(PREFIX + "theme_glow_v2", false)
             wallpaper = (p.getString(PREFIX + "wallpaper", "") ?: "").takeIf { java.io.File(it).isFile } ?: ""
             wallpaperDim = p.getFloat(PREFIX + "wallpaper_dim", 0.8f).coerceIn(0.3f, 0.95f)
             animatedProfiles = p.getBoolean(PREFIX + "animated_profiles", true)
@@ -222,6 +248,9 @@ object Appearance {
                 .putBoolean(PREFIX + "minimal_v1", true)
                 .putBoolean(PREFIX + "cinema_v1", true)
                 .putBoolean(PREFIX + "white_primary", whitePrimary)
+                .putString(PREFIX + "btn_style", buttonStyle.name)
+                .putString(PREFIX + "surface_tint", surfaceTint.name)
+                .putBoolean(PREFIX + "nav_colored_pill", navAccentPill)
                 .putBoolean(PREFIX + "glass", glass)
                 .putString(PREFIX + "motion", motion.name)
                 .putFloat(PREFIX + "scale", uiScale)
@@ -242,7 +271,7 @@ object Appearance {
                 .putBoolean(PREFIX + "tmdb", tmdbEnabled)
                 .putString(PREFIX + "tmdb_region", tmdbRegion)
                 .putString(PREFIX + "theme", theme)
-                .putBoolean(PREFIX + "theme_glow", themeGlow)
+                .putBoolean(PREFIX + "theme_glow_v2", themeGlow)
                 .putString(PREFIX + "wallpaper", wallpaper)
                 .putFloat(PREFIX + "wallpaper_dim", wallpaperDim)
                 .putBoolean(PREFIX + "animated_profiles", animatedProfiles)
@@ -256,8 +285,10 @@ object Appearance {
 
     fun reset() {
         navPosition = NavPosition.Floating; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
-        posterSize = PosterSize.Large; backdrop = Backdrop.Black; whitePrimary = true; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true; hideSpoilers = true; hideSpoilerTitles = false
+        posterSize = PosterSize.Large; backdrop = Backdrop.Black; buttonStyle = ButtonStyle.White; surfaceTint = SurfaceTint.Balanced; navAccentPill = false; glass = true; motion = Motion.Full; uiScale = 1f
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = false; hideSpoilers = true; hideSpoilerTitles = false
+        FluentSettings.chooseAccent(null)
+        FluentSettings.chooseButtonColor(null)
         save()
     }
 

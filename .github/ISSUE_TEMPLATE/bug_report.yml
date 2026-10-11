@@ -13,8 +13,8 @@ body:
     id: version
     attributes:
       label: App Version & Install Type
-      description: Found in **Settings → About** (e.g., `1.0.2 (MSI)`, `1.0.2 (Setup)`, or `1.0.2 (Portable)`).
-      placeholder: "1.0.2 (MSI)"
+      description: Found in **Settings → About** (e.g., `1.0.3 (MSI)`, `1.0.3 (Setup)`, or `1.0.3 (Portable)`).
+      placeholder: "1.0.3 (MSI)"
     validations:
       required: true
 

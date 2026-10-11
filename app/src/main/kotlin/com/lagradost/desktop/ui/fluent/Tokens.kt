@@ -66,34 +66,46 @@ class FluentColors(
     val caution: Color,
     val critical: Color,
     val scrim: Color,
-    /** the second colour of the accent gradient (buttons, selected tabs): the theme's other colour blended into [accent] */
+    /** the second colour of the accent (kept equal to accent: no gradients) */
     val accent2: Color = accent,
+    /** primary button, chip, and pill colour (follows [accent] unless overridden in Settings) */
+    val button: Color = accent,
+    /** secondary stop (kept equal to button: flat solid fill) */
+    val button2: Color = button,
+    /** foreground text/icon colour on top of [button] */
+    val onButton: Color = onAccent,
 )
 
-/** The same colour turned [degrees] around the colour wheel: the second stop of the accent gradient when the theme names none */
-private fun Color.hueShift(degrees: Float): Color {
-    val hsb = java.awt.Color.RGBtoHSB((red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt(), null)
-    return Color(java.awt.Color.HSBtoRGB(((hsb[0] + degrees / 360f) % 1f + 1f) % 1f, hsb[1], hsb[2]))
+/** Picks crisp dark or white text depending on the perceived luminance of [bg] */
+fun contrastText(bg: Color): Color {
+    val lum = 0.2126f * bg.red + 0.7152f * bg.green + 0.0722f * bg.blue
+    return if (lum > 0.56f) Color(0xFF090A0F) else Color.White
 }
 
-private fun fluentColors(dark: Boolean, a: AccentPalette, secondary: Color? = null): FluentColors =
-    if (dark) FluentColors(
+private fun fluentColors(dark: Boolean, a: AccentPalette, btnOverride: Color? = null): FluentColors {
+    val primary = if (dark) a.base else a.dark1
+    val btn = btnOverride ?: primary
+    val onAcc = if (dark) contrastText(primary) else Color.White
+    val onBtn = contrastText(btn)
+    return if (dark) FluentColors(
         dark = true,
-        accent = a.light2, accentHover = a.light2.copy(alpha = 0.9f), accentPressed = a.light2.copy(alpha = 0.8f),
-        accent2 = if (secondary != null) androidx.compose.ui.graphics.lerp(a.light2, secondary, 0.55f) else a.light2.hueShift(38f),
-        onAccent = Color.Black, accentText = a.light3,
+        accent = a.base, accentHover = a.base.copy(alpha = 0.9f), accentPressed = a.base.copy(alpha = 0.8f),
+        accent2 = a.base,
+        onAccent = onAcc, accentText = a.light2,
+        button = btn, button2 = btn, onButton = onBtn,
         bg = Color(0xFF0E0F13), bgPane = Color(0xFF0E0F13), layer = Color(0xFF15161B),
-        card = Color(0x0CFFFFFF), cardHover = Color(0x16FFFFFF), cardPressed = Color(0x09FFFFFF),
-        control = Color(0x0FFFFFFF), controlHover = Color(0x15FFFFFF), controlPressed = Color(0x08FFFFFF), controlDisabled = Color(0x0BFFFFFF),
-        subtleHover = Color(0x0FFFFFFF), subtlePressed = Color(0x0AFFFFFF),
-        flyout = Color(0xFF1D1F25), stroke = Color(0x14FFFFFF), strokeStrong = Color(0x33FFFFFF), divider = Color(0x15FFFFFF),
-        text = Color(0xFFFFFFFF), textSecondary = Color(0xC5FFFFFF), textTertiary = Color(0x87FFFFFF), textDisabled = Color(0x5DFFFFFF),
+        card = Color(0x0EFFFFFF), cardHover = Color(0x18FFFFFF), cardPressed = Color(0x0AFFFFFF),
+        control = Color(0x12FFFFFF), controlHover = Color(0x1CFFFFFF), controlPressed = Color(0x0BFFFFFF), controlDisabled = Color(0x0BFFFFFF),
+        subtleHover = Color(0x12FFFFFF), subtlePressed = Color(0x0BFFFFFF),
+        flyout = Color(0xFF1D1F25), stroke = Color(0x18FFFFFF), strokeStrong = Color(0x36FFFFFF), divider = Color(0x15FFFFFF),
+        text = Color(0xFFFFFFFF), textSecondary = Color(0xCCFFFFFF), textTertiary = Color(0x8FFFFFFF), textDisabled = Color(0x5DFFFFFF),
         success = Color(0xFF6CCB5F), caution = Color(0xFFFCE100), critical = Color(0xFFFF99A4), scrim = Color(0x99000000),
     ) else FluentColors(
         dark = false,
         accent = a.dark1, accentHover = a.dark1.copy(alpha = 0.9f), accentPressed = a.dark1.copy(alpha = 0.8f),
-        accent2 = a.dark1.hueShift(38f),
+        accent2 = a.dark1,
         onAccent = Color.White, accentText = a.dark2,
+        button = btn, button2 = btn, onButton = onBtn,
         bg = Color(0xFFF3F3F3), bgPane = Color(0xFFEEEEEE), layer = Color(0xFFFAFAFA),
         card = Color(0xB3FFFFFF), cardHover = Color(0x80F9F9F9), cardPressed = Color(0x4DF9F9F9),
         control = Color(0xB3FFFFFF), controlHover = Color(0x80F9F9F9), controlPressed = Color(0x4DF9F9F9), controlDisabled = Color(0x4DF9F9F9),
@@ -102,6 +114,7 @@ private fun fluentColors(dark: Boolean, a: AccentPalette, secondary: Color? = nu
         text = Color(0xE4000000), textSecondary = Color(0x9E000000), textTertiary = Color(0x72000000), textDisabled = Color(0x5C000000),
         success = Color(0xFF0F7B0F), caution = Color(0xFF9D5D00), critical = Color(0xFFC42B1C), scrim = Color(0x4D000000),
     )
+}
 
 @Immutable
 class FluentType(
@@ -186,11 +199,15 @@ enum class ThemeMode { System, Light, Dark }
 object FluentSettings {
     var themeMode by mutableStateOf(ThemeMode.Dark)
 
-    /** null = Windows accent */
+    /** null = theme default / Windows accent */
     var accentOverride by mutableStateOf<Color?>(null)
+
+    /** null = match accent / theme button colour */
+    var buttonColorOverride by mutableStateOf<Color?>(null)
 
     private const val MODE_KEY = "desktop_theme_mode"
     private const val ACCENT_KEY = "desktop_accent_color"
+    private const val BUTTON_COLOR_KEY = "desktop_button_color"
 
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
 
@@ -200,6 +217,7 @@ object FluentSettings {
             val p = prefs()
             themeMode = ThemeMode.entries.getOrNull(p.getInt(MODE_KEY, ThemeMode.Dark.ordinal)) ?: ThemeMode.Dark
             accentOverride = if (p.contains(ACCENT_KEY)) Color(p.getInt(ACCENT_KEY, 0)) else null
+            buttonColorOverride = if (p.contains(BUTTON_COLOR_KEY)) Color(p.getInt(BUTTON_COLOR_KEY, 0)) else null
         }
     }
 
@@ -211,6 +229,11 @@ object FluentSettings {
     fun chooseAccent(color: Color?) {
         accentOverride = color
         runCatching { prefs().edit().also { if (color == null) it.remove(ACCENT_KEY) else it.putInt(ACCENT_KEY, color.toArgb()) }.apply() }
+    }
+
+    fun chooseButtonColor(color: Color?) {
+        buttonColorOverride = color
+        runCatching { prefs().edit().also { if (color == null) it.remove(BUTTON_COLOR_KEY) else it.putInt(BUTTON_COLOR_KEY, color.toArgb()) }.apply() }
     }
 }
 
@@ -242,9 +265,11 @@ fun FluentTheme(content: @Composable () -> Unit) {
     // "Pure black" is a look of the Classic theme: a colour theme brings its own page colour (with pure black under it the theme was nothing
     // but a different accent, and Black is the default look)
     val black = Appearance.backdrop == Backdrop.Black && preset.id == "classic"
-    // the gradient of the buttons runs from the accent into the theme's other colour (an accent the user picked gets a plain tint instead)
-    val second = if (FluentSettings.accentOverride == null) preset.glowB else null
-    val colors = remember(dark, accent, black, preset, second) { fluentColors(dark, accent, second).themed(preset).let { if (dark && black) it.oled() else it } }
+    val btnOverride = FluentSettings.buttonColorOverride
+    val tintStrength = Appearance.surfaceTint
+    val colors = remember(dark, accent, black, preset, btnOverride, tintStrength) {
+        fluentColors(dark, accent, btnOverride).themed(preset, tintStrength).let { if (dark && black) it.oled() else it }
+    }
     val type = remember { fluentType(FluentFonts.text) }
     CompositionLocalProvider(LocalFluentColors provides colors, LocalFluentType provides type, content = content)
 }
@@ -258,12 +283,14 @@ fun ScaledContent(content: @Composable () -> Unit) {
     CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides density, content = content)
 }
 
-/** Pure black surfaces (OLED) with the same text and accent colours */
+/** Pure black surfaces (OLED) with the same text, button and accent colours */
 private fun FluentColors.oled() = FluentColors(
     dark = dark, accent = accent, accentHover = accentHover, accentPressed = accentPressed, onAccent = onAccent, accentText = accentText,
     bg = Color.Black, bgPane = Color.Black, layer = Color(0xFF080808), card = Color(0x0AFFFFFF), cardHover = Color(0x12FFFFFF), cardPressed = Color(0x08FFFFFF),
     control = control, controlHover = controlHover, controlPressed = controlPressed, controlDisabled = controlDisabled,
     subtleHover = subtleHover, subtlePressed = subtlePressed, flyout = Color(0xFF151515), stroke = stroke, strokeStrong = strokeStrong, divider = divider,
     text = text, textSecondary = textSecondary, textTertiary = textTertiary, textDisabled = textDisabled,
-    success = success, caution = caution, critical = critical, scrim = scrim, accent2 = accent2,
+    success = success, caution = caution, critical = critical, scrim = scrim,
+    accent2 = accent2, button = button, button2 = button2, onButton = onButton,
 )
+

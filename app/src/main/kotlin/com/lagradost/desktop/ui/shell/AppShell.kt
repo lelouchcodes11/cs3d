@@ -84,8 +84,12 @@ import com.lagradost.desktop.ui.fluent.NavPaneOpen
 import com.lagradost.desktop.ui.fluent.NavPosition
 import com.lagradost.desktop.ui.fluent.NavStyle
 import com.lagradost.desktop.ui.fluent.NavigationPane
+import com.lagradost.desktop.ui.fluent.FluentSettings
 import com.lagradost.desktop.ui.fluent.Tooltip
 import com.lagradost.desktop.ui.fluent.fluentClickable
+import com.lagradost.desktop.ui.fluent.primaryBorder
+import com.lagradost.desktop.ui.fluent.primaryContent
+import com.lagradost.desktop.ui.fluent.primaryFill
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 import com.lagradost.desktop.ui.screens.details.DetailsScreen
 import com.lagradost.desktop.ui.screens.downloads.DownloadsScreen
@@ -265,21 +269,11 @@ private fun AmbientBackdrop() {
 private fun ContentArea(shape: Shape, topNav: Boolean = false, edge: Boolean = false) {
     val c = Fluent.colors
     val layer = if (Appearance.backdrop == Backdrop.Ambient) c.layer.copy(alpha = if (c.dark) 0.62f else 0.7f) else if (edge) c.bg else c.layer
-    val preset = Themes.byId(Appearance.theme)
-    // the glows are drawn in the edge to edge looks too (the floating bar and dock, the default): they were left out there, and so was the theme
-    val glowA = preset.glowA?.takeIf { Appearance.themeGlow && c.dark }
     Box(
         Modifier
             .fillMaxSize()
             .clip(shape)
             .background(layer, shape)
-            // two soft colour glows of the theme, in the corners of the page
-            .drawBehind {
-                if (glowA != null) {
-                    drawRect(Brush.radialGradient(listOf(glowA.copy(alpha = 0.34f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.10f, size.height * 0.04f), radius = size.width * 0.62f))
-                    preset.glowB?.let { b -> drawRect(Brush.radialGradient(listOf(b.copy(alpha = 0.22f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.96f, size.height * 0.96f), radius = size.width * 0.58f)) }
-                }
-            }
             .let { if (edge) it else it.border(Dp.Hairline, c.stroke, shape) },
     ) {
         // the user's own picture, dimmed with the page colour so the text stays readable
@@ -583,24 +577,29 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(50)
-    val bg by androidx.compose.animation.animateColorAsState(
+    val colored = Appearance.navAccentPill
+    val hoverBg by androidx.compose.animation.animateColorAsState(
         when {
-            selected -> if (c.dark) Color(0x1FFFFFFF) else Color(0x14000000)
+            selected && colored -> c.button
+            selected -> if (c.dark) Color(0x24FFFFFF) else Color(0x14000000)
             hovered -> c.subtleHover
             else -> Color.Transparent
         }, FluentMotion.tweenStd(160), label = "tab",
     )
+    val fg = if (selected && colored) c.onButton else if (selected) c.text else c.textSecondary
     val body = @Composable {
         Row(
-            Modifier.height(34.dp).clip(shape).background(bg, shape).noWindowDrag("tab-" + item.id)
+            Modifier.height(34.dp).clip(shape)
+                .background(hoverBg, shape)
+                .noWindowDrag("tab-" + item.id)
                 .fluentClickable(source, true, shape, Role.Tab) { Navigator.goTab(tabOf(item.id)) }
                 .padding(horizontal = if (iconOnly) 9.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(item.glyph, size = 16.dp, tint = if (selected) c.text else c.textSecondary)
+            Icon(item.glyph, size = 16.dp, tint = fg)
             if (!iconOnly) {
                 Box(Modifier.width(8.dp))
-                FText(item.label, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (selected) c.text else c.textSecondary, maxLines = 1, softWrap = false)
+                FText(item.label, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = fg, maxLines = 1, softWrap = false)
             }
         }
     }
@@ -614,14 +613,15 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
 @Composable
 private fun FloatingDock(modifier: Modifier) {
     val c = Fluent.colors
+    val isClassic = Appearance.theme == "classic"
     val shape = RoundedCornerShape(28.dp)
     Column(
         modifier
             .width(56.dp)
             .shadow(18.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
-            .background(if (Appearance.glass) Color(0xE60A0A0E) else c.flyout, shape)
-            .border(Dp.Hairline, Color(0x24FFFFFF), shape)
+            .background(if (isClassic) Color(0xD90B0B10) else if (Appearance.glass) c.flyout.copy(alpha = 0.90f) else c.flyout, shape)
+            .border(Dp.Hairline, if (isClassic) Color(0x2BFFFFFF) else c.strokeStrong.copy(alpha = 0.5f), shape)
             .padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -638,16 +638,17 @@ private fun FloatingDockItem(item: NavItem) {
     val hovered by source.collectIsHoveredAsState()
     val bar by animateDpAsState(if (selected) 20.dp else 0.dp, FluentMotion.tweenIn(220), label = "dockBar")
     val shape = RoundedCornerShape(14.dp)
+    val colored = Appearance.navAccentPill
     Tooltip(item.label, side = true) {
         Box(Modifier.width(56.dp).height(46.dp), contentAlignment = Alignment.Center) {
             // the mark of the page you are on, at the pill's edge
-            Box(Modifier.align(Alignment.CenterStart).padding(start = 4.dp).size(3.dp, bar).clip(RoundedCornerShape(2.dp)).background(c.accent))
+            Box(Modifier.align(Alignment.CenterStart).padding(start = 4.dp).size(3.dp, bar).clip(RoundedCornerShape(2.dp)).background(if (colored) c.button else c.accent))
             Box(
                 Modifier.size(40.dp).clip(shape)
-                    .background(if (hovered && !selected) Color(0x14FFFFFF) else Color.Transparent, shape)
+                    .background(if (selected && colored) c.button.copy(alpha = 0.22f) else if (hovered) Color(0x18FFFFFF) else Color.Transparent, shape)
                     .fluentClickable(source, true, shape, Role.Tab) { Navigator.goTab(tabOf(item.id)) },
                 contentAlignment = Alignment.Center,
-            ) { Icon(item.glyph, size = 20.dp, tint = if (selected) Color.White else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF)) }
+            ) { Icon(item.glyph, size = 20.dp, tint = if (selected) (if (colored) c.accentText else Color.White) else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF)) }
         }
     }
 }
@@ -695,6 +696,8 @@ private fun DockItem(item: NavItem) {
     val lift by animateFloatAsState(if (hovered && Appearance.hoverZoom) 1.12f else 1f, FluentMotion.tweenIn(180), label = "dock")
     val pill by animateDpAsState(if (selected) 26.dp else 0.dp, FluentMotion.tweenIn(260), label = "pill")
     val shape = RoundedCornerShape(FluentShapes.card.coerceAtLeast(10.dp))
+    val colored = Appearance.navAccentPill
+    val activeFg = if (colored) c.onButton else c.text
     Tooltip(item.label) {
         Column(
             Modifier.width(64.dp).clip(shape)
@@ -704,8 +707,16 @@ private fun DockItem(item: NavItem) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(Modifier.height(30.dp).graphicsLayer { scaleX = lift; scaleY = lift }, contentAlignment = Alignment.Center) {
-                Box(Modifier.width(pill + 18.dp).height(30.dp).background(if (selected) (if (c.dark) Color(0x24FFFFFF) else Color(0x14000000)) else Color.Transparent, RoundedCornerShape(50)))
-                Icon(item.glyph, size = 18.dp, tint = if (selected) c.text else c.textSecondary)
+                Box(
+                    Modifier.width(pill + 18.dp).height(30.dp).background(
+                        if (selected) {
+                            if (colored) c.button
+                            else if (c.dark) Color(0x24FFFFFF) else Color(0x14000000)
+                        } else Color.Transparent,
+                        RoundedCornerShape(50),
+                    ),
+                )
+                Icon(item.glyph, size = 18.dp, tint = if (selected) activeFg else c.textSecondary)
             }
             FText(item.label, style = Fluent.type.caption, color = if (selected) c.text else c.textTertiary, maxLines = 1, softWrap = false)
         }

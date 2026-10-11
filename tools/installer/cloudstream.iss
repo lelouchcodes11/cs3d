@@ -1,10 +1,10 @@
 ; Inno Setup script: a per-user installer that does not use Windows Installer (msiexec).
-; Build: ISCC.exe /DAppVersion=1.0.2 /DPayload="<dir of the app image>" /DOutDir="<out dir>" tools\installer\cloudstream.iss
+; Build: ISCC.exe /DAppVersion=1.0.3 /DPayload="<dir of the app image>" /DOutDir="<out dir>" tools\installer\cloudstream.iss
 ; The payload is the same image the MSI is made from (app\build\installer\CloudStream after ./gradlew :app:installerMsi).
 ; Data stays in %APPDATA%\CloudStream: it is never part of the payload and never removed by the uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "1.0.2"
+  #define AppVersion "1.0.3"
 #endif
 #ifndef Payload
   #define Payload "..\..\app\build\installer\CloudStream"

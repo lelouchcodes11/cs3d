@@ -55,6 +55,9 @@ import com.lagradost.desktop.ui.fluent.Icons
 import com.lagradost.desktop.ui.fluent.NavItem
 import com.lagradost.desktop.ui.fluent.Tooltip
 import com.lagradost.desktop.ui.fluent.fluentClickable
+import com.lagradost.desktop.ui.fluent.primaryBorder
+import com.lagradost.desktop.ui.fluent.primaryContent
+import com.lagradost.desktop.ui.fluent.primaryFill
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 import kotlin.math.roundToInt
 
@@ -133,7 +136,7 @@ private fun ExtensionSearch(provider: String) {
     Box(Modifier.width(6.dp))
 }
 
-/** The pages in one capsule: a light pill glides (spring) from the page you leave to the one you open; names show beside the icons while there is room */
+/** The pages in one capsule: a pill glides (spring) from the page you leave to the one you open; names show beside the icons while there is room */
 @Composable
 private fun NavCapsule(compact: Boolean, modifier: Modifier) {
     val c = Fluent.colors
@@ -147,14 +150,17 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
     val pillW by animateFloatAsState(target?.second ?: 0f, spec, label = "pillW")
     val density = LocalDensity.current
     val shape = RoundedCornerShape(26.dp)
+    val coloredPill = Appearance.navAccentPill
+    val isClassic = Appearance.theme == "classic"
+    val pillShape = RoundedCornerShape(19.dp)
     Box(
         // a maximized window has no title bar of its own: the top band answers Windows as a caption (drag, double click) unless a control says otherwise
         modifier
             .noWindowDrag("capsule")
             .shadow(24.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
-            .background(Color(0xD90B0B10), shape)
-            .border(Dp.Hairline, Color(0x2BFFFFFF), shape)
+            .background(if (isClassic) Color(0xD90B0B10) else c.flyout.copy(alpha = if (Appearance.glass) 0.88f else 0.98f), shape)
+            .border(Dp.Hairline, if (isClassic) Color(0x2BFFFFFF) else c.strokeStrong.copy(alpha = 0.55f), shape)
             .padding(4.dp),
     ) {
         if (target != null && selected >= 0) {
@@ -163,7 +169,7 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
                     .offset { IntOffset(pillX.roundToInt(), 0) }
                     .width(with(density) { pillW.toDp() })
                     .height(38.dp)
-                    .background(Color(0x2EFFFFFF), RoundedCornerShape(19.dp)),
+                    .background(if (coloredPill) c.button else Color(0x2EFFFFFF), pillShape),
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -177,11 +183,13 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
 
 @Composable
 private fun CapsuleItem(item: NavItem, selected: Boolean, showName: Boolean, onPlace: (Float, Float) -> Unit) {
+    val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(19.dp)
+    val activeFg = if (Appearance.navAccentPill) c.onButton else Color.White
     val tint by androidx.compose.animation.animateColorAsState(
-        if (selected) Color.White else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF),
+        if (selected) activeFg else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF),
         FluentMotion.tweenStd(160), label = "tint",
     )
     val body = @Composable {

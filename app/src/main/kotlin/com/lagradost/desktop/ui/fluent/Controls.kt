@@ -217,23 +217,45 @@ fun Modifier.handCursor(): Modifier = pointerHoverIcon(PointerIcon.Hand)
 
 enum class ButtonKind { Standard, Accent, Subtle }
 
-/** The accent as a fill: one flat colour, lighter under the pointer, darker when pressed (it used to be a gradient into the theme's second colour) */
+/** Solid fill brush for accent buttons, following [FluentColors.button] (no gradients) */
 fun FluentColors.accentBrush(hovered: Boolean = false, pressed: Boolean = false): Brush {
-    fun tune(c: Color) = when {
-        pressed -> androidx.compose.ui.graphics.lerp(c, Color.Black, 0.18f)
-        hovered -> androidx.compose.ui.graphics.lerp(c, Color.White, 0.16f)
-        else -> c
+    val tuned = when {
+        pressed -> androidx.compose.ui.graphics.lerp(button, Color.Black, 0.16f)
+        hovered -> androidx.compose.ui.graphics.lerp(button, Color.White, 0.12f)
+        else -> button
     }
-    return SolidColor(tune(accent))
+    return SolidColor(tuned)
 }
 
-/** Kept for the callers that asked for a glow under the main button: there is none any more (a coloured shadow was part of the "made by AI" look) */
+private fun useDefaultWhitePrimary(): Boolean =
+    FluentSettings.buttonColorOverride == null && Appearance.buttonStyle == ButtonStyle.White
+
+/** Primary fill brush for main action buttons (Watch now, Play), selected chips and active pills */
+fun FluentColors.primaryFill(hovered: Boolean = false, pressed: Boolean = false): Brush = when {
+    useDefaultWhitePrimary() -> SolidColor(text.copy(alpha = if (pressed) 0.82f else if (hovered) 0.92f else 1f))
+    Appearance.buttonStyle == ButtonStyle.Glass -> SolidColor(button.copy(alpha = if (pressed) 0.22f else if (hovered) 0.36f else 0.26f))
+    else -> accentBrush(hovered, pressed)
+}
+
+fun FluentColors.primaryContent(): Color = when {
+    useDefaultWhitePrimary() -> if (dark) Color(0xFF0B0B0F) else Color.White
+    Appearance.buttonStyle == ButtonStyle.Glass -> if (dark) Color.White else accentText
+    else -> onButton
+}
+
+fun FluentColors.primaryBorder(hovered: Boolean = false): Color = when {
+    useDefaultWhitePrimary() -> Color.Transparent
+    Appearance.buttonStyle == ButtonStyle.Glass -> button.copy(alpha = if (hovered) 0.85f else 0.65f)
+    else -> Color.Transparent
+}
+
+/** Kept for the callers that asked for a glow under the main button */
 @Composable
 fun Modifier.accentGlow(shape: Shape, strength: Float = 1f): Modifier = this
 
-/** A frosted button on artwork, tinted with the accent (white tinted toward the accent colour) */
+/** A frosted button on artwork, tinted with the button colour */
 fun FluentColors.tintedGlass(hovered: Boolean): Color =
-    androidx.compose.ui.graphics.lerp(Color.White, accent, 0.45f).copy(alpha = if (hovered) 0.34f else 0.22f)
+    androidx.compose.ui.graphics.lerp(Color.White, button, 0.45f).copy(alpha = if (hovered) 0.34f else 0.22f)
 
 @Composable
 fun Button(
@@ -277,8 +299,7 @@ fun ButtonBase(
             hovered -> c.controlHover
             else -> c.control
         })
-        // the main button of a dialog or a page: flat white with dark text (Settings > Look > Play button gives it the accent colour back)
-        ButtonKind.Accent -> if (!enabled) SolidColor(c.controlDisabled) else if (Appearance.whitePrimary) SolidColor(c.text.copy(alpha = if (pressed) 0.78f else if (hovered) 0.9f else 1f)) else c.accentBrush(hovered, pressed)
+        ButtonKind.Accent -> if (!enabled) SolidColor(c.controlDisabled) else c.accentBrush(hovered, pressed)
         ButtonKind.Subtle -> SolidColor(when {
             !enabled -> Color.Transparent
             pressed -> c.subtlePressed
@@ -288,14 +309,13 @@ fun ButtonBase(
     }
     val content0 = when {
         !enabled -> c.textDisabled
-        kind == ButtonKind.Accent -> if (Appearance.whitePrimary) c.bg else c.onAccent
+        kind == ButtonKind.Accent -> c.onButton
         pressed && kind != ButtonKind.Accent -> c.textSecondary
         else -> c.text
     }
     val stroke = when (kind) {
-        ButtonKind.Standard -> if (hovered && enabled) c.strokeStrong else c.stroke
-        ButtonKind.Accent -> if (enabled && !Appearance.whitePrimary) Color.White.copy(alpha = 0.22f) else Color.Transparent
-        ButtonKind.Subtle -> Color.Transparent
+        ButtonKind.Standard -> c.stroke
+        ButtonKind.Accent, ButtonKind.Subtle -> Color.Transparent
     }
     Row(
         modifier
@@ -656,10 +676,10 @@ fun Badge(text: String, modifier: Modifier = Modifier, accent: Boolean = false) 
     val shape = RoundedCornerShape(4.dp)
     Box(
         modifier
-            .background(if (accent) c.accent else c.control, shape)
+            .background(if (accent) c.button else c.control, shape)
             .border(androidx.compose.ui.unit.Dp.Hairline, if (accent) Color.Transparent else c.stroke, shape)
             .padding(horizontal = 6.dp, vertical = 1.dp),
-    ) { FText(text, style = Fluent.type.caption, color = if (accent) c.onAccent else c.textSecondary, maxLines = 1) }
+    ) { FText(text, style = Fluent.type.caption, color = if (accent) c.onButton else c.textSecondary, maxLines = 1) }
 }
 
 /** Stremio logo icon: purple rounded disc with white forward-pointing play triangle */
@@ -717,19 +737,19 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
+    val pressed by source.collectIsPressedAsState()
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier
             .height(32.dp)
             .clip(shape)
-            // chosen = a flat light fill with dark text (the same as the main button); the others are quiet outlined buttons
-            .background(if (selected) SolidColor(c.text.copy(alpha = if (hovered) 0.9f else 1f)) else SolidColor(if (hovered) c.controlHover else Color.Transparent), shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) Color.Transparent else if (hovered) c.strokeStrong else c.stroke, shape)
+            .background(if (selected) c.primaryFill(hovered, pressed) else SolidColor(if (hovered) c.controlHover else Color.Transparent), shape)
+            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) c.primaryBorder(hovered) else if (hovered) c.strokeStrong else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val fg = if (selected) c.bg else c.textSecondary.let { if (hovered) c.text else it }
+        val fg = if (selected) c.primaryContent() else c.textSecondary.let { if (hovered) c.text else it }
         if (icon != null) {
             Icon(icon, size = 14.dp, tint = fg)
             Box(Modifier.width(6.dp))
