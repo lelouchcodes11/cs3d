@@ -37,27 +37,21 @@
 ## 🖥️ Preview
 
 <p align="center">
-  <img src="docs/screenshots/home.png" width="100%" alt="CloudStream for Windows — Home screen with rotating hero banner and floating navigation">
+  <img src="docs/screenshots/home-ui.png" width="100%" alt="CloudStream for Windows — Home screen">
 </p>
 
 <table>
   <tr>
     <td width="50%">
-      <img src="docs/screenshots/details.png" width="100%" alt="Title page with TMDB artwork, scores, Up Next card and episodes">
+      <img src="docs/screenshots/details-ui.png" width="100%" alt="Title page with TMDB artwork, scores, Up Next card and episodes">
       <p align="center"><sub><b>Rich Title Pages</b> — Full-bleed artwork, TMDB scores, Up Next card, episode stills, trailers & cast</sub></p>
     </td>
     <td width="50%">
-      <img src="docs/screenshots/explore.png" width="100%" alt="Explore page with Global and Local discovery, streaming service filters and Trending Top 10">
+      <img src="docs/screenshots/explore-ui.png" width="100%" alt="Explore page with Global and Local discovery, streaming service filters and Trending Top 10">
       <p align="center"><sub><b>Explore (Global & Local)</b> — Browse by streaming service, genre, language, and daily Top 10</sub></p>
     </td>
   </tr>
 </table>
-
-<p align="center">
-  <img src="docs/screenshots/themes.png" width="100%" alt="Appearance settings with 14 colour themes and layout customization">
-  <br>
-  <sub><b>14 Built-in Themes & Layout Controls</b> — Midnight, Crimson, Ocean, Matcha, Sunset, Cinema Gold, Dracula, Nord, Tokyo Night, Mocha, Rosé, Synthwave, Gruvbox & Graphite</sub>
-</p>
 
 ---
 
