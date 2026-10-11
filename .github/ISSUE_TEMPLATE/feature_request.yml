@@ -1,0 +1,31 @@
+name: ✨ Feature Request
+description: Suggest an improvement or feature for CloudStream for Windows
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What would you like to see?
+      description: Describe the feature or improvement clearly.
+      placeholder: "When watching a series, I would like to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Why is this useful?
+      description: Explain the use case or problem this solves.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: This suggestion is for the desktop application itself, **not** a request for a new content provider/extension.
+          required: true
+        - label: I have searched existing issues to make sure this hasn't already been requested.
+          required: true

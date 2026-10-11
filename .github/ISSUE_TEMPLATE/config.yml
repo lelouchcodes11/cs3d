@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📣 Telegram Channel (Release Notes, Updates & Announcements)
+    url: https://t.me/cs3d_official
+    about: Follow official releases, hotfixes, and important announcements.
+  - name: 💬 Discord Server (Community Support, Sources & General Help)
+    url: https://discord.gg/u82JU5JDM
+    about: Ask questions, troubleshoot sources/extensions, and chat with the community.
+  - name: 🧩 Extension or Source Issues
+    url: https://discord.gg/u82JU5JDM
+    about: Do NOT open GitHub issues for broken third-party extensions or dead streams. This repository contains only the desktop app, not extensions.

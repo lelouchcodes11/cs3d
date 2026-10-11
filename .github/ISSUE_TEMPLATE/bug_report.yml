@@ -1,0 +1,71 @@
+name: 🐞 Bug Report
+description: Report a bug or crash in CloudStream for Windows
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+        > **Note:** This repository only maintains the **CloudStream for Windows desktop client**—it does **not** maintain third-party extensions or Stremio add-ons. If a specific website/source stopped working on both Android and PC, report it to that extension's repository instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: App Version & Install Type
+      description: Found in **Settings → About** (e.g., `1.0.2 (MSI)`, `1.0.2 (Setup)`, or `1.0.2 (Portable)`).
+      placeholder: "1.0.2 (MSI)"
+    validations:
+      required: true
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows Version & Display Scale
+      description: Which Windows version and display scaling percentage are you using?
+      placeholder: "Windows 11 23H2, 1920x1080 @ 125%"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: What did you click or do right before the problem happened?
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What Happened?
+      description: Describe what went wrong (and what you expected instead). Attach a screenshot if helpful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (Settings → About → Copy diagnostics)
+      description: |
+        Open **Settings → About → Copy diagnostics** and paste the output here. Passwords and tokens are automatically masked.
+        If the app crashed, also check **Settings → About → Crash log**.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I am running the latest release from [Releases](https://github.com/lelouchcodes11/cs3d/releases).
+          required: true
+        - label: This issue is with the Windows desktop app itself (or an extension that works on Android CloudStream but fails on Windows), **not** a dead third-party website.
+          required: true
+        - label: I have searched existing issues to avoid duplicates.
+          required: true
