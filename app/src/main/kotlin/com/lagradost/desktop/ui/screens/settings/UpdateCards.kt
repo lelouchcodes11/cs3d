@@ -41,15 +41,26 @@ fun UpdateCards() {
         when (status) {
             is UpdateCheck.Status.Available -> {
                 val canInstall = UpdateCheck.canInstall(status.release)
-                Button(if (canInstall) "Update now" else "View update", { UpdateCheck.showUpdateDialog(status.release) }, kind = ButtonKind.Accent)
-                Box(Modifier.width(8.dp))
+                if (canInstall) {
+                    Button("Update now", { UpdateCheck.showUpdateDialog(status.release) }, kind = ButtonKind.Accent)
+                    Box(Modifier.width(8.dp))
+                    Button("Download in browser", { UpdateCheck.downloadInBrowser(status.release) })
+                    Box(Modifier.width(8.dp))
+                } else {
+                    Button("Download in browser", { UpdateCheck.downloadInBrowser(status.release) }, kind = ButtonKind.Accent)
+                    Box(Modifier.width(8.dp))
+                }
             }
             is UpdateCheck.Status.Ready -> {
                 Button("Restart and update", { UpdateCheck.showReadyDialog(status.release, status.file) }, kind = ButtonKind.Accent)
                 Box(Modifier.width(8.dp))
+                Button("Download in browser", { UpdateCheck.downloadInBrowser(status.release) })
+                Box(Modifier.width(8.dp))
             }
             is UpdateCheck.Status.Downloading -> {
                 Button("Show", { UpdateCheck.showUpdateDialog(status.release) })
+                Box(Modifier.width(8.dp))
+                Button("Download in browser", { UpdateCheck.cancelDownload(); UpdateCheck.downloadInBrowser(status.release) })
                 Box(Modifier.width(8.dp))
                 Button("Cancel", { UpdateCheck.cancelDownload() })
                 Box(Modifier.width(8.dp))

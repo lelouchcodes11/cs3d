@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
@@ -344,6 +345,12 @@ object UpdateCheck {
     // Dialogs
     // ---------------------------------------------------------------------------------------------
 
+    /** Opens the matching installer/portable asset URL directly in the user's browser, or the GitHub release page if no matching asset exists */
+    fun downloadInBrowser(release: Release) {
+        val asset = release.installerFor(installKind)?.takeIf { trusted(it.url) }
+        DesktopPlatform.openExternalBrowser(asset?.url ?: release.pageUrl)
+    }
+
     fun showUpdateDialog(release: Release) {
         // a download that runs shows its progress instead; a finished one asks for the restart
         when (val s = status) {
@@ -355,10 +362,10 @@ object UpdateCheck {
         Overlays.show(
             Overlays.Dialog(
                 title = "Update available",
-                primary = if (canInstall) "Update now" else "Open download page",
-                onPrimary = { if (canInstall) startUpdate(release) else DesktopPlatform.openExternalBrowser(release.pageUrl) },
-                secondary = if (canInstall) "Release notes" else null,
-                onSecondary = { DesktopPlatform.openExternalBrowser(release.pageUrl) },
+                primary = if (canInstall) "Update now" else "Download in browser",
+                onPrimary = { if (canInstall) startUpdate(release) else downloadInBrowser(release) },
+                secondary = if (canInstall) "Download in browser" else "Release page",
+                onSecondary = { if (canInstall) downloadInBrowser(release) else DesktopPlatform.openExternalBrowser(release.pageUrl) },
                 close = "Later",
                 width = 520.dp,
             ) { dismiss -> UpdateBody(release, canInstall, dismiss) },
@@ -378,20 +385,28 @@ object UpdateCheck {
             val size = release.installerFor(installKind)?.size?.takeIf { it > 0 }
             FText(
                 when {
-                    canInstall -> "It is downloaded and checked first${size?.let { " (%.0f MB)".format(it / 1_048_576.0) } ?: ""}; then the app closes, updates and opens again. Your settings, accounts and extensions stay."
+                    canInstall -> "Update now downloads and verifies the update in the app${size?.let { " (%.0f MB)".format(it / 1_048_576.0) } ?: ""}, or choose Download in browser to get the installer directly in your browser. Your settings, accounts and extensions stay."
                     installKind == InstallKind.Other -> "This is a development run: open the release page to get the new version."
                     installKind == InstallKind.Portable -> "This is a portable copy and the release has no portable file for it: download it from the release page and replace the folder, the data folder stays."
                     else -> "The release has no installer for this copy: download it from the release page."
                 },
                 style = Fluent.type.caption, color = c.textSecondary,
             )
-            Button("Skip this version", { prefs.edit().putString(KEY_SKIPPED, release.tag).apply(); dismiss() }, kind = ButtonKind.Subtle)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button("Release page on GitHub", { DesktopPlatform.openExternalBrowser(release.pageUrl) }, kind = ButtonKind.Subtle)
+                Button("Skip this version", { prefs.edit().putString(KEY_SKIPPED, release.tag).apply(); dismiss() }, kind = ButtonKind.Subtle)
+            }
         }
     }
 
     private fun showProgressDialog(release: Release): Overlays.Dialog {
         val dialog = Overlays.Dialog(
-            title = "Downloading update", primary = "Hide", close = "Cancel", width = 460.dp,
+            title = "Downloading update",
+            primary = "Hide",
+            secondary = "Download in browser",
+            onSecondary = { cancelDownload(); downloadInBrowser(release) },
+            close = "Cancel",
+            width = 480.dp,
             onClose = { cancelDownload() },
         ) {
             val s = status as? Status.Downloading
@@ -417,6 +432,7 @@ object UpdateCheck {
             Overlays.Dialog(
                 title = "Update ready",
                 primary = "Restart and update", onPrimary = { install(release, file) },
+                secondary = "Download in browser", onSecondary = { downloadInBrowser(release) },
                 close = "Later", width = 480.dp,
             ) {
                 FText(
