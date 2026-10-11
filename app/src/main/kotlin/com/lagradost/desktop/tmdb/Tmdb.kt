@@ -248,6 +248,28 @@ object Tmdb {
         )
     }
 
+    // ------------------------------------------------------------------ episodes
+
+    /** One episode of a season as TMDB knows it: its own still, title, synopsis, rating and length */
+    class TmdbEpisode(val number: Int, val name: String?, val overview: String?, val still: String?, val rating: Double?, val runtime: Int?)
+
+    /** The episodes of season [season] of series [tvId] by episode number; null when TMDB has no such season */
+    suspend fun season(tvId: Int, season: Int): Map<Int, TmdbEpisode>? {
+        val arr = json("/tv/$tvId/season/$season")?.optJSONArray("episodes") ?: return null
+        val out = LinkedHashMap<Int, TmdbEpisode>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val n = o.optInt("episode_number", -1).takeIf { it > 0 } ?: continue
+            out[n] = TmdbEpisode(
+                n, o.optString("name").takeIf { it.isNotBlank() }, o.optString("overview").takeIf { it.isNotBlank() },
+                // the largest still size (TMDB stills come as w92, w185, w300 and original): the cards are ~250 dp wide, 375 px at 150 %
+                poster(o.optString("still_path"), "original"),
+                o.optDouble("vote_average").takeIf { !it.isNaN() && it > 0 }, o.optInt("runtime").takeIf { it > 0 },
+            )
+        }
+        return out.takeIf { it.isNotEmpty() }
+    }
+
     // ------------------------------------------------------------------ people
 
     suspend fun person(id: Int): TmdbPersonInfo? {

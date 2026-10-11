@@ -81,7 +81,7 @@ Windows 10 or 11, 64-bit. Windows SmartScreen may ask for confirmation because t
 | 🧲 **Stremio add-ons and torrents** | Add any Stremio add-on by its address (Settings → Stremio & torrents): catalogs, search, episodes and sources appear like any other provider; add-ons and extensions stay apart (an extension's titles show only its own sources). Torrent sources play while they download, through a small open-source engine (TorrServer) that the app downloads once, only after you agree, and stops when nothing plays. Off until you turn it on. |
 | 🧭 **Explore** | A tab with what is trending, in cinemas, coming soon and top rated, for films, series and anime, filtered by genre and by streaming service (Netflix, Prime Video, Disney+, Hotstar and more). Pick a title and your extensions look for it. |
 | 🎞️ **Title pages with the details** | Logo and backdrop, TMDB score, age rating, who made it, where it streams, cast with photos (a click opens the person's page), a gallery, reviews, studios and collections, and a **trailer that plays inside the app**. Switch it off any time in Settings → Appearance. |
-| 🎨 **Make it yours** | Eight colour themes (Midnight, Crimson, Ocean, Matcha, Sunset, Dracula, Nord, Cinema gold) with soft colour glows, your own wallpaper, menu on the top, left, right or bottom; corner roundness, poster size, spacing, interface size, animations; choose and order the rows of Home. |
+| 🎨 **Make it yours** | Fourteen colour themes (Midnight, Crimson, Ocean, Matcha, Sunset, Cinema gold, Dracula, Nord, Tokyo Night, Mocha, Rosé, Synthwave, Gruvbox, Graphite) with soft colour glows, your own wallpaper, menu on the top, left, right or bottom; corner roundness, poster size, spacing, interface size, animations; choose and order the rows of Home. |
 | 🕘 **History** | Everything you started, with resume and remove. |
 | 🔗 **Your lists, synced** | AniList, MyAnimeList and Simkl: progress and lists follow you (you register a free API client of your own, the app explains the three steps). |
 | 🪟 **Looks like Windows 11** | Fluent design, one calm start-up screen, one title bar that hides when maximized. |
@@ -126,7 +126,7 @@ The installer is not code-signed yet. Choose *More info → Run anyway*. The sou
 <details>
 <summary><b>How do I update?</b></summary>
 
-A few seconds after start the app tells you when a newer version is on GitHub (Settings → About → *Check for updates at start*, on by default; *Check now* asks on demand). It does not install anything itself: download the newest installer from [Releases](../../releases) and run it. The channel at [t.me/cs3d_official](https://t.me/cs3d_official) announces every new version.
+The app updates itself. A few seconds after start (and every few hours while it stays open, never during a video) it asks GitHub for the list of releases; when a newer one is there, a window shows its notes and **Update now** downloads it with a progress bar, checks it against the checksum GitHub states, then closes the app, installs it and opens it again. Your settings, accounts and extensions are outside the program folder and stay. *Settings → About → Check now* asks on demand, *Check for updates automatically* turns the check off. A copy installed with the setup program or the MSI is updated with that same kind of installer; a portable folder is updated from the portable zip (its `data` folder is never touched). The channel at [t.me/cs3d_official](https://t.me/cs3d_official) announces every new version.
 
 </details>
 

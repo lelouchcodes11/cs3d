@@ -17,6 +17,7 @@ import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.amap
+import com.lagradost.cloudstream3.isMovieType
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.mvvm.debugAssert
 import com.lagradost.cloudstream3.mvvm.debugWarning
@@ -53,12 +54,24 @@ import com.lagradost.cloudstream3.utils.DataStoreHelper.getViewPos
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.EnumSet
 import java.util.concurrent.CopyOnWriteArrayList
 
 class HomeViewModel : ViewModel() {
     companion object {
+        /** desktop: how many titles the banner of Home rotates through (the Android app has three) */
+        const val BANNER_TITLES = 8
+
+        /** the banner is posted after this long with what is loaded, if at least [BANNER_MIN] titles are; never later than [BANNER_HARD_MS] */
+        private const val BANNER_SOFT_MS = 5_000L
+        private const val BANNER_HARD_MS = 15_000L
+        private const val BANNER_MIN = 3
+
+        /** how long the first slides' TMDB artwork is waited for before the banner is posted */
+        private const val BANNER_ART_MS = 1_500L
+
         suspend fun getResumeWatching(): List<DataStoreHelper.ResumeWatchingResult>? {
             val resumeWatching = withContext(Dispatchers.IO) {
                 getAllResumeStateIds()?.mapNotNull { id ->
@@ -312,7 +325,60 @@ class HomeViewModel : ViewModel() {
     fun loadMoreHomeScrollResponses() {
         addJob = ioSafe {
             updatePreviewResponses(previewResponses, previewResponsesAdded, currentShuffledList, 1)
-            _preview.postValue(Resource.Success((previewResponsesAdded.size < currentShuffledList.size) to previewResponses))
+            _preview.postValue(Resource.Success((previewResponsesAdded.size < currentShuffledList.size) to ArrayList(previewResponses)))
+        }
+    }
+
+    /**
+     * desktop: the banner of Home is given all its titles ([BANNER_TITLES]) in one go and is shown once. It used to come up with the
+     * Android app's three and grow a moment later, which made the strip of thumbnails jump. The titles load in parallel; a title that
+     * is slow is left out rather than waited for: after [BANNER_SOFT_MS] the banner is posted with what is there (at least
+     * [BANNER_MIN] titles), and never later than [BANNER_HARD_MS].
+     */
+    private suspend fun loadBanner(shuffled: List<SearchResponse>) {
+        val t0 = System.currentTimeMillis()
+        val pick = shuffled.asSequence().filter { it.url !in previewResponsesAdded }.take(BANNER_TITLES).toList()
+        pick.forEach { previewResponsesAdded.add(it.url) }
+        val slots = java.util.concurrent.atomic.AtomicReferenceArray<LoadResponse?>(pick.size)
+        val finished = java.util.concurrent.atomic.AtomicInteger(0)
+        kotlinx.coroutines.coroutineScope {
+            val jobs = pick.mapIndexed { i, searchResponse ->
+                launch(Dispatchers.IO) {
+                    try {
+                        slots.set(i, (repo?.load(searchResponse.url) as? Resource.Success)?.value)
+                    } finally {
+                        finished.incrementAndGet()
+                    }
+                }
+            }
+            val start = System.currentTimeMillis()
+            while (finished.get() < pick.size) {
+                val waited = System.currentTimeMillis() - start
+                val got = (0 until pick.size).count { slots.get(it) != null }
+                if (waited >= BANNER_HARD_MS || (waited >= BANNER_SOFT_MS && got >= BANNER_MIN)) break
+                kotlinx.coroutines.delay(40)
+            }
+            jobs.forEach { it.cancel() }
+        }
+        previewResponses.addAll((0 until pick.size).mapNotNull { slots.get(it) })
+        // the artwork TMDB has for the first two slides (logo, backdrop the extension did not send) is fetched before the banner is shown, so its
+        // first picture is complete (the banner asks for the same answers, from the cache); a slow TMDB is not waited for
+        runCatching {
+            kotlinx.coroutines.withTimeoutOrNull(BANNER_ART_MS) {
+                kotlinx.coroutines.coroutineScope {
+                    previewResponses.take(2).filter { it.backgroundPosterUrl == null || it.logoUrl == null }.map { r ->
+                        launch(Dispatchers.IO) {
+                            runCatching { com.lagradost.desktop.tmdb.Tmdb.info(r.name, r.year, r.type?.isMovieType() == true, r.syncData.values) }
+                        }
+                    }.forEach { it.join() }
+                }
+            }
+        }
+        android.util.Log.i("HomeVM", "banner: ${previewResponses.size} of ${pick.size} titles, posted once after ${System.currentTimeMillis() - t0} ms")
+        if (previewResponses.isEmpty()) {
+            _preview.postValue(Resource.Failure(false, "No homepage responses"))
+        } else {
+            _preview.postValue(Resource.Success((previewResponsesAdded.size < shuffled.size) to ArrayList(previewResponses)))
         }
     }
 
@@ -373,6 +439,7 @@ class HomeViewModel : ViewModel() {
                     previewResponses.clear()
                     previewResponsesAdded.clear()
 
+                    var bannerCandidates: List<SearchResponse> = emptyList()
                     //val home = data.value
                     if (items.isNotEmpty()) {
                         val currentList =
@@ -385,28 +452,15 @@ class HomeViewModel : ViewModel() {
                                 context?.filterSearchResultByFilmQuality(currentList.shuffled())
                                     ?: currentList.shuffled()
 
-                            updatePreviewResponses(
-                                previewResponses,
-                                previewResponsesAdded,
-                                randomItems,
-                                3
-                            )
-
                             _randomItems.postValue(randomItems)
                             currentShuffledList = randomItems
+                            bannerCandidates = randomItems
                         }
                     }
-                    if (previewResponses.isEmpty()) {
-                        _preview.postValue(
-                            Resource.Failure(
-                                false,
-                                "No homepage responses"
-                            )
-                        )
-                    } else {
-                        _preview.postValue(Resource.Success((previewResponsesAdded.size < currentShuffledList.size) to previewResponses))
-                    }
+                    // desktop: the rows are shown at once (the banner is a skeleton of its own size meanwhile); the banner follows
+                    // with all its titles together instead of the rows waiting for the titles
                     _page.postValue(Resource.Success(expandable))
+                    loadBanner(bannerCandidates)
                 } catch (e: Exception) {
                     _randomItems.postValue(emptyList())
                     logError(e)

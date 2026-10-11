@@ -947,6 +947,18 @@ tasks.register<Copy>("portableDist") {
     }
 }
 
+// Portable zip of a release: ./gradlew :app:portableZip -> dist/release/CloudStream-<version>-windows-x64-portable.zip
+// The folder of portableDist without a data folder. The in-app updater of a portable copy downloads this file (`*portable*.zip`) and unpacks
+// it over `app` and `runtime`; a release should carry it next to the MSI and the setup program (tools/installer/cloudstream.iss).
+tasks.register<Zip>("portableZip") {
+    group = "distribution"
+    description = "Portable zip of a release in dist/release (no data folder)"
+    dependsOn("portableDist")
+    from(rootProject.layout.projectDirectory.dir("dist/CloudStream-Portable")) { exclude("data", "data/**") }
+    archiveFileName.set("CloudStream-$desktopVersion-windows-x64-portable.zip")
+    destinationDirectory.set(rootProject.layout.projectDirectory.dir("dist/release"))
+}
+
 // Installer: ./gradlew :app:installerMsi -> dist/release/CloudStream-<version>-windows-x64.msi
 // One MSI for the current user (no administrator rights; start menu entry, desktop shortcut, folder of choice, default %LOCALAPPDATA%\CloudStream).
 // A newer MSI of the same product (same upgrade UUID) replaces the installed version, which is how the app's update checker installs a release.

@@ -23,7 +23,7 @@ import com.lagradost.desktop.ui.fluent.Overlays
 object Shortcuts {
     val player: List<Pair<String, String>> = listOf(
         "Space  ·  K" to "Play or pause",
-        "←  /  →" to "Back or forward 5 s (Shift: 30 s)",
+        "←  /  →" to "Back or forward 10 s (Shift: 30 s); keep it pressed or press again and again: the bubble counts +10 s, +20 s ...",
         "J  /  L" to "Back or forward 10 s",
         "Ctrl + ←  /  →" to "Previous or next episode (also P  /  N)",
         "↑  /  ↓  ·  mouse wheel" to "Volume",

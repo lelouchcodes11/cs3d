@@ -422,7 +422,7 @@ private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel, v
     val focus = ShellState.searchFocus
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val filters = remember { com.lagradost.desktop.ui.screens.explore.ExploreFilters() }
-    val rows = remember(filters.kind, filters.genre, filters.service, com.lagradost.desktop.tmdb.Tmdb.region, com.lagradost.desktop.tmdb.Tmdb.enabled) { com.lagradost.desktop.ui.screens.explore.ExploreClient.rows(filters.kind, filters.genre, filters.service) }
+    val rows = remember(filters.kind, filters.genre, filters.service, filters.local, filters.activeLanguage, com.lagradost.desktop.tmdb.Tmdb.region, com.lagradost.desktop.tmdb.Tmdb.enabled) { com.lagradost.desktop.ui.screens.explore.ExploreClient.rows(filters.kind, filters.genre, filters.service, filters.local, filters.activeLanguage) }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = TopBarHeight + 28.dp, bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current),

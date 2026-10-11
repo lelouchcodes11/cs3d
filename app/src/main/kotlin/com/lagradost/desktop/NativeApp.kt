@@ -248,32 +248,47 @@ private fun paintBackground(window: java.awt.Window, argb: Int) {
 }
 
 /**
- * Looks at the picture of the window against the window every half second. The picture is always a little smaller than the client area of the frame
- * (the invisible resize frame: 21 x 10 px measured at 150 %), so only a big difference counts: a stale canvas, as in a bug report of the page drawn at
- * its old size in the top left of a window that had grown (a third smaller each way). It has to last 2 s; then the window is laid out again, the next
- * time its frame messages are sent again, the third time the window is made one pixel wider and back. Never while it is maximized (no resize),
- * in full screen or the small window.
+ * Looks at the picture of the window against the window. The picture is always a little smaller than the client area of the frame (the invisible
+ * resize frame: 21 x 10 px measured at 150 %), so only a clear difference counts: a stale canvas, as in a bug report of the page drawn at the size
+ * the window had when it opened, in the top left of a window that was then made bigger (the saved window was small and maximized: the rest of the
+ * screen stayed white). In the first 20 s, while the window opens and is made big, it looks every 150 ms and needs 0.6 s of difference; later every
+ * half second and 2 s. Then the window is laid out again; if that does not help its frame messages are sent again; then a maximized window is made
+ * normal and maximized again (a window that is not maximized is made a pixel wider and back). Never in full screen or the small window.
  */
 private suspend fun watchSceneSize(window: java.awt.Window, scene: () -> androidx.compose.ui.unit.IntSize) {
     val chrome = com.lagradost.desktop.platform.WinChrome
+    val opened = System.currentTimeMillis()
     var badPolls = 0
     var heals = 0
     while (true) {
-        delay(500)
+        val early = System.currentTimeMillis() - opened < 20_000
+        delay(if (early) 150 else 500)
         val native = chrome.clientSize()
         val size = scene()
         val off = native != null && size.width > 0 && size.height > 0 && !chrome.fullscreen && !chrome.pip &&
-            (kotlin.math.abs(native[0] - size.width) > maxOf(160, native[0] / 8) || kotlin.math.abs(native[1] - size.height) > maxOf(120, native[1] / 8))
+            (kotlin.math.abs(native[0] - size.width) > maxOf(48, native[0] / 25) || kotlin.math.abs(native[1] - size.height) > maxOf(48, native[1] / 25))
         if (!off) { badPolls = 0; heals = 0; continue }
         if (++badPolls < 4) continue
         badPolls = 0
         heals++
-        android.util.Log.w("NativeApp", "the picture is ${size.width}x${size.height} but the window is ${native!![0]}x${native[1]}: laying it out again (#$heals)")
+        android.util.Log.w("NativeApp", "the picture is ${size.width}x${size.height} but the window is ${native!![0]}x${native[1]}: laying it out again (#$heals, maximized=${chrome.maximized})")
         java.awt.EventQueue.invokeLater {
             runCatching {
                 if (heals >= 2) chrome.resendFrame()
                 window.invalidate(); window.validate(); window.repaint()
-                if (heals >= 3 && !chrome.maximized) { val w = window.width; val h = window.height; window.setSize(w + 1, h); window.setSize(w, h) }
+            }
+        }
+        if (heals >= 3) {
+            val state = com.lagradost.desktop.ui.DesktopUiHost.windowState
+            if (state != null && state.placement == androidx.compose.ui.window.WindowPlacement.Maximized) {
+                // the window is maximized and its picture is not: made normal and maximized again, which lays everything out as a new maximize does
+                state.placement = androidx.compose.ui.window.WindowPlacement.Floating
+                delay(250)
+                state.placement = androidx.compose.ui.window.WindowPlacement.Maximized
+            } else if (!chrome.maximized) {
+                java.awt.EventQueue.invokeLater {
+                    runCatching { val w = window.width; val h = window.height; window.setSize(w + 1, h); window.setSize(w, h) }
+                }
             }
         }
     }

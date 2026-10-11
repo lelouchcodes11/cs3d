@@ -3,8 +3,8 @@ package com.lagradost.desktop
 import com.lagradost.cloudstream3.BuildConfig
 
 /**
- * What the app says about itself and where its people are. There is no updater inside the app: a new version is
- * downloaded from the GitHub releases page, which is where every "update" link of the app goes.
+ * What the app says about itself and where its people are. New versions come from the GitHub releases of [REPO]; the updater
+ * (update/UpdateCheck.kt) downloads and installs them from there.
  */
 object AppInfo {
     const val REPO = "lelouchcodes11/cs3d"

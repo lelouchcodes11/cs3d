@@ -941,6 +941,22 @@ object DevServer {
                 val now = androidx.preference.PreferenceManager.getDefaultSharedPreferences(act).getString(q["key"]!!, null)
                 ok(ex, "value=$now action=${com.lagradost.cloudstream3.ui.result.EpisodeAdapter.getPlayerAction(act)} ids=${com.lagradost.cloudstream3.actions.VideoClickActionHolder.allVideoClickActions.map { it.uniqueId() }}")
             }
+            "/update" -> {
+                // dev: /update?do=now starts the update of the release the last check found; /update?do=restart installs the downloaded one; state in the answer
+                val uc = com.lagradost.desktop.update.UpdateCheck
+                when (q["do"]) {
+                    "now" -> (uc.status as? com.lagradost.desktop.update.UpdateCheck.Status.Available)?.let { uc.startUpdate(it.release) }
+                    "restart" -> (uc.status as? com.lagradost.desktop.update.UpdateCheck.Status.Ready)?.let { uc.showReadyDialog(it.release, it.file) }
+                }
+                val st = uc.status
+                ok(ex, "kind=${uc.installKind} status=${st.javaClass.simpleName}" + when (st) {
+                    is com.lagradost.desktop.update.UpdateCheck.Status.Downloading -> " ${st.done}/${st.total}"
+                    is com.lagradost.desktop.update.UpdateCheck.Status.Available -> " ${st.release.tag} installer=${st.release.installerFor(uc.installKind)?.name}"
+                    is com.lagradost.desktop.update.UpdateCheck.Status.Ready -> " ${st.file}"
+                    is com.lagradost.desktop.update.UpdateCheck.Status.Failed -> " ${st.reason}"
+                    else -> ""
+                })
+            }
             "/updatecheck" -> {
                 // dev: Settings > About > Check now: /updatecheck ; /updatecheck?reset=1 forgets the last check and the skipped version first
                 if (q["reset"] != null) androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.DesktopBootstrap.activity).edit()
@@ -1080,10 +1096,25 @@ object DevServer {
                     q["poster"]?.let { v -> a.posterSize = com.lagradost.desktop.ui.fluent.PosterSize.valueOf(v) }
                     q["smooth"]?.let { v -> a.smoothMotion = v == "true" }
                     q["native"]?.let { v -> a.nativePlayer = v == "true" }
-                    q["anime4k"]?.let { v -> a.anime4k = v == "true" }
+                    q["anime4k"]?.let { v -> a.upscaler = if (v == "true") com.lagradost.desktop.ui.fluent.Upscaler.Anime4kA else com.lagradost.desktop.ui.fluent.Upscaler.Off }
+                    q["upscaler"]?.let { v -> a.upscaler = com.lagradost.desktop.ui.fluent.Upscaler.entries.firstOrNull { it.name.equals(v, true) } ?: com.lagradost.desktop.ui.fluent.Upscaler.Off }
                     q["blend"]?.let { v -> com.lagradost.desktop.ui.screens.player.blendDebug = v }
+                    // &theme=midnight (a theme id), &glow=false, &mode=Light|Dark|System
+                    q["theme"]?.let { v -> a.theme = v }
+                    q["glow"]?.let { v -> a.themeGlow = v == "true" }
+                    q["mode"]?.let { v -> com.lagradost.desktop.ui.fluent.FluentSettings.themeMode = com.lagradost.desktop.ui.fluent.ThemeMode.valueOf(v) }
                 }
                 ok(ex, "nav=${a.navPosition} style=${a.navStyle} radius=${a.cornerRadius} backdrop=${a.backdrop} player=${a.playerStyle} scale=${a.uiScale}")
+            }
+            "/upscaler" -> {
+                // dev: the player's Upscaling menu: /upscaler?mode=Fsr (Off, Sharp, Quality, Fsr, Anime4kA, Anime4kB, Anime4kC, Anime4kAHq); the same as a click there
+                val mode = com.lagradost.desktop.ui.fluent.Upscaler.entries.firstOrNull { it.name.equals(q["mode"], true) } ?: return ok(ex, "modes: " + com.lagradost.desktop.ui.fluent.Upscaler.entries.joinToString())
+                onEdt {
+                    com.lagradost.desktop.ui.fluent.Appearance.upscaler = mode
+                    com.lagradost.desktop.player.MpvPlayer.active?.applyUpscaler()
+                }
+                val p = com.lagradost.desktop.player.MpvPlayer.active
+                ok(ex, "mode=$mode " + listOf("scale", "cscale", "dscale", "glsl-shaders").joinToString(" ") { "$it=" + (p?.getMpvPropertyString(it) ?: "-").take(300) })
             }
             "/playlive" -> {
                 // dev: open a live channel in the player: /playlive?provider=livxow&link=WILLOW (first main-page item with such a link)
@@ -1210,12 +1241,19 @@ object DevServer {
                     onEdt { session?.selectSubtitle(if (n == "off") null else session.subtitles().firstOrNull { it.originalName == n }) }
                 }
                 q["hold"]?.let { v -> com.lagradost.desktop.ui.screens.player.PlayerDev.hold = v == "1" }
+                // dev: artwork and story for the pause screen of a plain link (it has no title page): /player?logo=<url>&plot=<text>
+                q["logo"]?.let { com.lagradost.desktop.ui.screens.player.PlayerDev.pauseLogo = it.takeIf { v -> v.isNotBlank() } }
+                q["plot"]?.let { com.lagradost.desktop.ui.screens.player.PlayerDev.pausePlot = it.takeIf { v -> v.isNotBlank() } }
+                q["pausenow"]?.let { com.lagradost.desktop.ui.screens.player.PlayerDev.pauseNow = it == "1" }
+                // dev: /player?perf=0..3 sets the step of the performance governor by hand; the answer line has its last note
+                q["perf"]?.toIntOrNull()?.let { com.lagradost.desktop.player.PlaybackGovernor.force(it) }
                 q["stamp"]?.let { type -> com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugStamp(com.lagradost.cloudstream3.utils.videoskip.SkipType.valueOf(type), q["from"]?.toLong() ?: 0L, q["to"]?.toLong() ?: 60_000L) }
                 if (q["fail"] != null) com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugFail()
                 if (q["end"] != null) com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugEnd()
                 val dev = com.lagradost.desktop.ui.screens.player.PlayerDev
                 ok(ex, (com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugLine() ?: "no player page") +
-                    " controls=${dev.controlsShown} pokes=${dev.pokes} overControls=${dev.overControls} pip=${com.lagradost.desktop.platform.WinChrome.pip}")
+                    " controls=${dev.controlsShown} pokes=${dev.pokes} overControls=${dev.overControls} pip=${com.lagradost.desktop.platform.WinChrome.pip}" +
+                    " governor=${com.lagradost.desktop.player.PlaybackGovernor.level}/${com.lagradost.desktop.ui.screens.player.PlayerSession.active?.governor?.lastNote}")
             }
             "/tlsinfo" -> {
                 // dev: which TLS stack and HTTP version the app's client and a plain OkHttp client get

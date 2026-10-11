@@ -239,7 +239,9 @@ fun FluentTheme(content: @Composable () -> Unit) {
         androidx.compose.ui.graphics.lerp(override, Color.White, 0.15f), override, androidx.compose.ui.graphics.lerp(override, Color.Black, 0.15f),
         androidx.compose.ui.graphics.lerp(override, Color.Black, 0.3f), androidx.compose.ui.graphics.lerp(override, Color.Black, 0.45f),
     )
-    val black = Appearance.backdrop == Backdrop.Black
+    // "Pure black" is a look of the Classic theme: a colour theme brings its own page colour (with pure black under it the theme was nothing
+    // but a different accent, and Black is the default look)
+    val black = Appearance.backdrop == Backdrop.Black && preset.id == "classic"
     // the gradient of the buttons runs from the accent into the theme's other colour (an accent the user picked gets a plain tint instead)
     val second = if (FluentSettings.accentOverride == null) preset.glowB else null
     val colors = remember(dark, accent, black, preset, second) { fluentColors(dark, accent, second).themed(preset).let { if (dark && black) it.oled() else it } }

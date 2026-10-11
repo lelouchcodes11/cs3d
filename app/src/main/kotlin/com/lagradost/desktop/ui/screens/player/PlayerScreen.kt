@@ -189,6 +189,13 @@ object PlayerKeys {
 object PlayerDev {
     var hold by mutableStateOf(false)
 
+    /** Dev: artwork and story shown on the pause screen when the video has no title page behind it (a plain link) */
+    @Volatile var pauseLogo: String? = null
+    @Volatile var pausePlot: String? = null
+
+    /** Dev: the pause screen is shown as soon as the video is paused (the controls are not waited for) */
+    var pauseNow by mutableStateOf(false)
+
     /** Dev: how many pointer moves made the controls show, and whether they are shown now (a resting pointer must not count up) */
     @Volatile var pokes = 0
     @Volatile var controlsShown = true
@@ -270,6 +277,15 @@ private fun PlayerContent(s: PlayerSession) {
 
     fun toggleFullscreen() = AndroidRuntime.host.setFullscreen(!AndroidRuntime.host.isFullscreen())
 
+    // a key held down repeats about 30 times a second: a jump is taken at most every 140 ms (7 a second, 70 s of film a second at 10 s a step)
+    val lastSeekKey = remember { LongArray(1) }
+    fun seekKeyReady(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastSeekKey[0] < 140) return false
+        lastSeekKey[0] = now
+        return true
+    }
+
     fun onKey(e: KeyEvent): Boolean {
         if (e.type != KeyEventType.KeyDown) return false
         // a dialog (subtitle style, search) has the keys while it is open
@@ -282,10 +298,10 @@ private fun PlayerContent(s: PlayerSession) {
                 s.showHud(if (s.status == CSPlayerLoading.IsPlaying) Icons.Pause else Icons.Play, if (s.status == CSPlayerLoading.IsPlaying) "Paused" else "Playing")
                 s.togglePlay()
             }
-            Key.DirectionLeft -> if (e.isCtrlPressed) s.prevEpisode() else s.seekBy(if (big) -30_000 else -5_000)
-            Key.DirectionRight -> if (e.isCtrlPressed) s.nextEpisode() else s.seekBy(if (big) 30_000 else 5_000)
-            Key.J -> s.seekBy(-10_000)
-            Key.L -> s.seekBy(10_000)
+            Key.DirectionLeft -> if (e.isCtrlPressed) s.prevEpisode() else if (seekKeyReady()) s.seekBy(if (big) -30_000 else -10_000)
+            Key.DirectionRight -> if (e.isCtrlPressed) s.nextEpisode() else if (seekKeyReady()) s.seekBy(if (big) 30_000 else 10_000)
+            Key.J -> if (seekKeyReady()) s.seekBy(-10_000)
+            Key.L -> if (seekKeyReady()) s.seekBy(10_000)
             Key.DirectionUp -> s.stepVolume(1)
             Key.DirectionDown -> s.stepVolume(-1)
             Key.M -> s.toggleMute()
@@ -383,8 +399,9 @@ private fun PlayerContent(s: PlayerSession) {
                             PointerEventType.Exit -> if (ownsHover) { hoveringControls = false; shownAt = null }
                             PointerEventType.Scroll -> {
                                 val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-                                // the wheel scrolls an open menu, the episode list or a dialog, never the volume under it
-                                if (dy != 0f && !showEpisodes && menuPage == null && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()) s.stepVolume(if (dy < 0) 1 else -1)
+                                // the wheel scrolls an open menu, the episode list, a dialog or the source list of the loading / failure screen, never the volume under it
+                                val screenUp = s.loadingText != null || s.failure != null || s.closing
+                                if (dy != 0f && !showEpisodes && menuPage == null && !screenUp && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()) s.stepVolume(if (dy < 0) 1 else -1)
                             }
                         }
                     }
@@ -406,7 +423,7 @@ private fun PlayerContent(s: PlayerSession) {
         // a pause that lasts, with nobody on the controls: the picture says what it is
         var pauseInfo by remember { mutableStateOf(false) }
         LaunchedEffect(s.status, visible, s.loadingText, s.failure, pip) {
-            if (s.status == CSPlayerLoading.IsPaused && !visible && s.loadingText == null && s.failure == null && !pip) { delay(1100); pauseInfo = true } else pauseInfo = false
+            if (s.status == CSPlayerLoading.IsPaused && (!visible || PlayerDev.pauseNow) && s.loadingText == null && s.failure == null && !pip) { delay(if (PlayerDev.pauseNow) 100 else 1100); pauseInfo = true } else pauseInfo = false
         }
         if (!pip) PauseInfo(s, pauseInfo)
         if (!pip) ResumePulse(s, Modifier.align(Alignment.Center))
@@ -647,7 +664,8 @@ private fun VideoSurface(s: PlayerSession, modifier: Modifier) {
     val surface = s.surface
     // a very large window is rendered smaller than it is and enlarged here (see MpvSurfaceView.scaledDrawing)
     surface.scaledDrawing = true
-    val smooth = com.lagradost.desktop.ui.fluent.Appearance.smoothMotion
+    // (the governor switches it off for a PC that can not keep up, see PlaybackGovernor)
+    val smooth = com.lagradost.desktop.ui.fluent.Appearance.smoothMotion && surface.smoothAllowed
     surface.smoothMotion = smooth
     // smooth motion: while a video whose frame rate does not divide the screen's plays, the picture is drawn on every refresh (a mix of the two frames
     // around it, see MpvSurfaceView.pick); otherwise it is drawn when a frame arrives

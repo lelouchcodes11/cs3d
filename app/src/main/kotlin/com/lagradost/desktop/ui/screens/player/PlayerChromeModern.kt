@@ -45,7 +45,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.ContentScale
+import com.lagradost.cloudstream3.isMovieType
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -501,27 +504,115 @@ internal fun SkipPill(label: String, progress: Float?, onClick: () -> Unit, modi
     }
 }
 
-/** A paused picture says what it is (Ayu's "now playing"): a soft shade at the left and the title, episode and story, once the controls are away */
+/**
+ * A pause that lasts, once the controls are away: the picture settles (it dims, the edges darken) and says what it is, the way a streaming
+ * app does: the title's logo (its own artwork, TMDB's when the extension sent none, the name when neither exists), what is paused (episode),
+ * one line about the title and its story. The parts come in one after the other and leave together, fast, the moment the video plays again.
+ * The video itself is not touched (a native video window can not be blurred or scaled from here): the dim and the vignette are drawn above it.
+ */
 @Composable
 internal fun PauseInfo(s: PlayerSession, show: Boolean) {
-    val a by animateFloatAsState(if (show) 1f else 0f, glide(if (show) 700 else 260))
-    if (a < 0.01f && !show) return
     s.episodeVersion
-    val description = remember(s.title, s.episodeLabel, s.episodeVersion) { s.episodeDescription }
-    Box(
-        Modifier.fillMaxSize().graphicsLayer { alpha = a }
-            .background(Brush.horizontalGradient(0f to Color(0xCC000000), 0.5f to Color(0x66000000), 0.85f to Color.Transparent)),
-    ) {
+    val response = remember(s.title, s.episodeVersion, s.loadingText == null) { s.titleResponse }
+    // the logo is looked up while the video plays, so it is there when the pause comes
+    // (the first value is only the start: a state made by produceState is not made again when its keys change, the producer sets it)
+    val logo by produceState<String?>(PlayerDev.pauseLogo ?: response?.logoUrl, response?.url, PlayerDev.pauseLogo) {
+        value = PlayerDev.pauseLogo ?: response?.logoUrl
+        if (value == null && response != null && com.lagradost.desktop.tmdb.Tmdb.enabled) {
+            value = runCatching {
+                com.lagradost.desktop.tmdb.Tmdb.info(response.name, response.year, response.type?.isMovieType() == true, response.syncData.values)
+            }.getOrNull()?.logo
+        }
+    }
+    val headers = response?.posterHeaders
+    val p = animateFloatAsState(if (show) 1f else 0f, if (show) tween(FluentMotion.ms(1100), easing = LinearEasing) else tween(FluentMotion.ms(220), easing = LinearEasing))
+    val hidden by remember { androidx.compose.runtime.derivedStateOf { p.value < 0.005f } }
+    if (hidden && !show) {
+        // out of sight, but its picture is fetched now: the logo does not pop in when the pause comes
+        logo?.let { com.lagradost.desktop.ui.components.RemoteImage(it, headers, null, Modifier.size(1.dp).graphicsLayer { alpha = 0f }, ContentScale.Fit) }
+        return
+    }
+    val description = remember(s.title, s.episodeLabel, s.episodeVersion, response, PlayerDev.pausePlot) {
+        s.episodeDescription ?: PlayerDev.pausePlot ?: response?.plot?.let { com.lagradost.desktop.ui.screens.home.stripHtml(it) }?.trim()?.takeIf { it.isNotBlank() }
+    }
+    // one line: year, age rating, what it is
+    val facts = remember(response) {
+        listOfNotNull(
+            response?.year?.toString(), response?.contentRating?.takeIf { it.isNotBlank() },
+            response?.tags?.take(3)?.joinToString(" / ")?.takeIf { it.isNotBlank() },
+        ).joinToString("   ·   ")
+    }
+    // the parts of the group: 0 = how far the whole pause screen is in; each part starts a little later and takes the rest of the time
+    fun part(start: Float): Float = ((p.value - start) / (1f - start)).coerceIn(0f, 1f)
+    val eased = remember { androidx.compose.animation.core.CubicBezierEasing(0.16f, 1f, 0.3f, 1f) }
+    Box(Modifier.fillMaxSize()) {
+        // the dim, the vignette and the shade behind the text
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer { alpha = (p.value * 1.6f).coerceIn(0f, 1f) }
+                .drawBehind {
+                    drawRect(Color(0x52000000))
+                    drawRect(
+                        Brush.radialGradient(
+                            0.55f to Color.Transparent, 1f to Color(0xB3000000),
+                            center = Offset(size.width / 2f, size.height / 2f), radius = maxOf(size.width, size.height) * 0.75f,
+                        ),
+                    )
+                    drawRect(Brush.horizontalGradient(0f to Color(0xCC000000), 0.55f to Color(0x66000000), 0.9f to Color.Transparent))
+                },
+        )
         Column(
-            Modifier.align(Alignment.BottomStart).padding(start = 64.dp, bottom = 110.dp).widthIn(max = 560.dp)
-                .graphicsLayer { translationY = (1f - a) * 18.dp.toPx() },
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.align(Alignment.BottomStart).padding(start = 64.dp, bottom = 118.dp, end = 64.dp).widthIn(max = 640.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            FText("NOW PLAYING", style = Fluent.type.caption.copy(letterSpacing = 2.4.sp, fontWeight = FontWeight.SemiBold), color = Fluent.colors.accentText, maxLines = 1)
-            FText(s.title, style = Fluent.type.titleLarge.copy(fontWeight = FontWeight.SemiBold), color = Color.White, maxLines = 2)
-            s.episodeLabel?.let { FText(it, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), color = Color(0xE6FFFFFF), maxLines = 2) }
-            description?.let { FText(it, style = Fluent.type.body.copy(fontSize = 14.5.sp, lineHeight = 22.sp), color = Color(0xB3FFFFFF), maxLines = 4) }
-            if (s.durationMs > 0 && !s.live) FText("Paused at ${fmt(s.positionMs)}  ·  ${fmt((s.durationMs - s.positionMs).coerceAtLeast(0))} left", style = Fluent.type.caption, color = Color(0x99FFFFFF), maxLines = 1)
+            // PAUSED, with the mark of it
+            Row(
+                Modifier.graphicsLayer { val k = eased.transform(part(0f)); alpha = k; translationX = (1f - k) * -14.dp.toPx() },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Pause, size = 13.dp, tint = Color(0xCCFFFFFF))
+                FText("PAUSED", style = Fluent.type.caption.copy(letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold), color = Color(0xCCFFFFFF), maxLines = 1)
+            }
+            // the logo, or the name
+            Box(Modifier.graphicsLayer { val k = eased.transform(part(0.08f)); alpha = k; translationY = (1f - k) * 20.dp.toPx(); scaleX = 0.96f + 0.04f * k; scaleY = 0.96f + 0.04f * k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f) }) {
+                val mark = logo
+                if (mark != null) {
+                    com.lagradost.desktop.ui.components.RemoteImage(mark, headers, s.title, Modifier.height(104.dp).widthIn(max = 440.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
+                } else {
+                    FText(s.title, style = Fluent.type.titleLarge.copy(fontWeight = FontWeight.Black, fontSize = 40.sp, lineHeight = 46.sp, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), Offset(0f, 2f), 16f)), color = Color.White, maxLines = 2)
+                }
+            }
+            Column(
+                Modifier.graphicsLayer { val k = eased.transform(part(0.2f)); alpha = k; translationY = (1f - k) * 16.dp.toPx() },
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                s.episodeLabel?.let { FText(it, style = Fluent.type.bodyStrong.copy(fontSize = 17.sp), color = Color.White, maxLines = 2) }
+                if (facts.isNotBlank()) FText(facts, style = Fluent.type.bodyStrong.copy(fontSize = 13.sp), color = Color(0xCCFFFFFF), maxLines = 1)
+            }
+            description?.let {
+                FText(
+                    it, Modifier.graphicsLayer { val k = eased.transform(part(0.34f)); alpha = k; translationY = (1f - k) * 14.dp.toPx() },
+                    style = Fluent.type.body.copy(fontSize = 15.sp, lineHeight = 23.sp), color = Color(0xD9FFFFFF), maxLines = 4,
+                )
+            }
+            if (s.durationMs > 0 && !s.live) {
+                FText(
+                    "${fmt(s.positionMs)} of ${fmt(s.durationMs)}   ·   ${fmt((s.durationMs - s.positionMs).coerceAtLeast(0))} left",
+                    Modifier.graphicsLayer { alpha = eased.transform(part(0.5f)) },
+                    style = Fluent.type.caption, color = Color(0x99FFFFFF), maxLines = 1,
+                )
+            }
+        }
+        // how far into the film: a thin line along the bottom edge, drawn only here (the controls have the seek bar)
+        if (s.durationMs > 0 && !s.live) {
+            val fraction = (s.positionMs.toFloat() / s.durationMs).coerceIn(0f, 1f)
+            Box(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).graphicsLayer { alpha = part(0.4f) }
+                    .drawBehind {
+                        drawRect(Color(0x33FFFFFF))
+                        drawRect(Color.White, size = androidx.compose.ui.geometry.Size(size.width * fraction, size.height))
+                    },
+            )
         }
     }
 }

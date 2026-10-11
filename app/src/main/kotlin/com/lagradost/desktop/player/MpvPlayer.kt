@@ -319,7 +319,9 @@ open class MpvPlayer : IPlayer {
             for ((k, v) in listOf("wid" to wid.toString(), "vo" to "gpu", "gpu-api" to "d3d11", "hwdec" to "auto-safe",
                 "osc" to "no", "osd-level" to "0", "input-default-bindings" to "no", "input-vo-keyboard" to "no", "input-cursor" to "no", "cursor-autohide" to "no", "keepaspect" to "yes", "background-color" to "#000000"))
                 mpv.mpv_set_option_string(ctx, k, v)
-            if (com.lagradost.desktop.ui.fluent.Appearance.anime4k) Anime4K.option()?.let { mpv.mpv_set_option_string(ctx, "glsl-shaders", it) }
+            // the upscaling mode of the settings (Off leaves mpv's own defaults alone)
+            com.lagradost.desktop.ui.fluent.Appearance.upscaler.takeIf { it != com.lagradost.desktop.ui.fluent.Upscaler.Off }
+                ?.let { for ((k, v) in Upscaling.settings(it)) mpv.mpv_set_option_string(ctx, k, v) }
         } else {
             mpv.mpv_set_option_string(ctx, "vo", if (headless) "null" else "libmpv")
             // decoded frames are read back for the software renderer
@@ -683,10 +685,9 @@ open class MpvPlayer : IPlayer {
     /** A new audio decoder choice (SW / HW / HW+) while a video plays: mpv reopens the sound in place, the position stays */
     fun applyAudioDecoder() = setMpvProperty("audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
 
-    /** Dynamically applies or removes Anime4K shaders at runtime */
-    fun applyAnime4k() {
-        val shaders = if (com.lagradost.desktop.ui.fluent.Appearance.anime4k) Anime4K.option().orEmpty() else ""
-        setMpvProperty("glsl-shaders", shaders)
+    /** A new upscaling mode (scaling filters and shader chain) while a video plays: the picture is redrawn with it at once, the position stays */
+    fun applyUpscaler() {
+        for ((k, v) in Upscaling.settings(com.lagradost.desktop.ui.fluent.Appearance.upscaler)) setMpvProperty(k, v)
     }
 
     /** How the sound of the playing track is decoded: its codec, and whether it goes undecoded to the receiver ("spdif-ac3") */

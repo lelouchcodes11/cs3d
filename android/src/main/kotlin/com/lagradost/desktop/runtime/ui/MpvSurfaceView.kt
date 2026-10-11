@@ -93,6 +93,17 @@ open class MpvSurfaceView @JvmOverloads constructor(
     @Volatile
     var scaledDrawing = false
 
+    /**
+     * Set by the performance governor (PlaybackGovernor) when the PC can not keep up with the video: the most pixels a frame is rendered with, on top of
+     * [maxRenderPixels] (0 = no extra limit). The picture is then enlarged by the graphics card.
+     */
+    @Volatile
+    var qualityCapPixels = 0L
+
+    /** False when the governor has switched smooth motion off for this PC (mixing frames makes the window draw on every refresh) */
+    @Volatile
+    var smoothAllowed = true
+
     @Volatile
     private var targetWidth = 0
 
@@ -150,7 +161,9 @@ open class MpvSurfaceView @JvmOverloads constructor(
 
     /** The size frames are rendered at for a view of [w] x [h] pixels: the view's own size, or less when it is very large and the host scales */
     private fun renderSize(w: Int, h: Int): Pair<Int, Int> {
-        val cap = maxRenderPixels
+        val limit = maxRenderPixels
+        val quality = qualityCapPixels
+        val cap = if (limit > 0 && quality > 0) minOf(limit, quality) else if (quality > 0) quality else limit
         if (!scaledDrawing || cap <= 0 || w.toLong() * h <= cap) return w to h
         val k = Math.sqrt(cap.toDouble() / (w.toDouble() * h))
         return (Math.round(w * k).toInt().coerceAtLeast(2) and 1.inv()) to (Math.round(h * k).toInt().coerceAtLeast(2) and 1.inv())
@@ -249,6 +262,16 @@ class VideoFrameStats {
     var last: String = "no frames"
         private set
 
+    /** The last finished window of about 5 s in numbers (the governor reads them): [windowSerial] counts the windows */
+    @Volatile var windowSerial = 0
+        private set
+    @Volatile var windowFps = 0.0
+        private set
+    @Volatile var windowCpuMs = 0.0
+        private set
+    @Volatile var windowSeconds = 0.0
+        private set
+
     @Synchronized
     fun frame(wall: Long, cpu: Long, w: Int, h: Int) {
         run {
@@ -269,6 +292,10 @@ class VideoFrameStats {
             val secs = (now - since) / 1e9
             last = "%dx%d %.1f fps, render %.1f ms avg (cpu %.1f ms), max %.1f ms".format(w, h, frames / secs, wallNs / 1e6 / frames, cpuNs / 1e6 / frames, maxNs / 1e6)
             last += ", gaps: late(>56 ms)=$late max=${maxGapMs} ms ${lateAt}"
+            windowFps = frames / secs
+            windowCpuMs = cpuNs / 1e6 / frames
+            windowSeconds = secs
+            windowSerial++
             late = 0; maxGapMs = 0; lateAt.setLength(0)
             if (System.getProperty("cloudstream.videostats") != null) android.util.Log.i("VideoSurface", last)
             frames = 0; wallNs = 0; cpuNs = 0; maxNs = 0; since = now

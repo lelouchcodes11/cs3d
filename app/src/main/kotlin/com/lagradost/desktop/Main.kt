@@ -181,6 +181,11 @@ fun main(args: Array<String>) {
     EventQueue.invokeAndWait {
         com.lagradost.desktop.ui.Startup.stage
         com.lagradost.desktop.ui.fluent.Appearance.navPosition
+        // the video window's object was first touched by its warm-up thread 2.5 s after the start, and, on a busy PC, by the composition at the same
+        // moment: the composition then read a state another thread had made after its snapshot and the whole window stayed blank (measured 2026-10-11,
+        // only 1.1 GB of memory free). The update state is read by the coroutines of the updater in the same way.
+        com.lagradost.desktop.ui.screens.player.NativeVideo.overlayActive
+        com.lagradost.desktop.update.UpdateCheck.status
     }
 
     application(exitProcessOnExit = false) {

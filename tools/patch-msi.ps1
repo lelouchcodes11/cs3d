@@ -1,17 +1,18 @@
 # Patches the MSI that jpackage made so that an upgrade (and an uninstall) never deletes the user's data.
 #
 # Why: jpackage's installer deletes the whole install folder when a product is removed (WixRemoveFolderEx on INSTALLDIR). A major upgrade first
-# removes the older version, with the OLDER version's own installer logic, so the folder is wiped including the data folder next to the exe where an
-# installed copy keeps its settings, accounts and extensions when it has one (observed: an upgrade from 0.1.3 deleted 826 MB of data). The older
-# versions cannot be changed, so this new installer protects the data itself:
-#   1. before the older version is removed (sequence 797) the data folder of the older install is moved to %LOCALAPPDATA%\CloudStream-data-keep,
-#      and Chromium helper processes that an earlier run left behind (parent gone) are stopped: they hold files of the data folder open;
-#   2. after InstallFinalize the folder is moved back into the new install folder;
-#   3. the new product no longer deletes the install folder as a whole when it is removed or replaced later: its WixRemoveFolderEx rows now point at
-#      the app and runtime folders only (CS_RM_APP, CS_RM_RUNTIME), which is what removes the program files (every component is keyed on a registry value,
-#      jpackage's installer deletes the files through that folder wipe).
+# removes the older version, with the OLDER version's own installer logic, so the folder is wiped including a data folder next to the exe (an
+# installed copy keeps its settings, accounts and extensions in %APPDATA%\CloudStream, unless a `data` folder sits next to the exe: that was the
+# case of the 0.1.3 / 0.1.4 portable-like installs, an upgrade from 0.1.3 deleted 826 MB of data). This installer no longer deletes the install
+# folder as a whole when it is removed or replaced later: its WixRemoveFolderEx rows point at the app and runtime folders only (CS_RM_APP,
+# CS_RM_RUNTIME), which is what removes the program files (every component is keyed on a registry value, jpackage's installer deletes the files
+# through that folder wipe).
 #
-# Usage: powershell -NoProfile -ExecutionPolicy Bypass -File tools\patch-msi.ps1 <file.msi>
+# Since 1.0.3 nothing in the MSI runs a script. Earlier versions of this patch added three PowerShell custom actions (move the data folder of an
+# older install aside and back, with -ExecutionPolicy Bypass -WindowStyle Hidden): a console window flashed during the installation and users
+# found it, rightly, shady. They only protected the `data` folder of 0.1.3 / 0.1.4 installs, which the 0.1.5+ installers never create.
+#
+# Usage: powershell -NoProfile -ExecutionPolicy Bypass -File tools\patch-msi.ps1 <file.msi>   (build time only; the MSI itself runs no script)
 param([Parameter(Mandatory = $true)][string]$Msi)
 $ErrorActionPreference = 'Stop'
 $Msi = (Resolve-Path $Msi).Path
@@ -45,37 +46,14 @@ function Select-Rows($sql, $columns) {
     Call $view 'Close' 'InvokeMethod' $null | Out-Null
 }
 
-# no square brackets in the scripts except the two Windows Installer properties (they are formatted by the installer), and no double quotes
-$keepScript = @'
-$code = ('[JP_UPGRADABLE_FOUND]' -split ';' | Select-Object -First 1); if (-not $code) { exit 0 }; $d = $null; foreach ($prefix in 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\', 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\') { $k = Get-ItemProperty -Path ($prefix + $code) -ErrorAction SilentlyContinue; if ($k -and $k.InstallLocation) { $d = $k.InstallLocation; break } }; if (-not $d) { $d = $env:LOCALAPPDATA + '\CloudStream\' }; $data = Join-Path $d 'data'; $keep = Join-Path $env:LOCALAPPDATA 'CloudStream-data-keep'; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'jcef_helper.exe' -and $_.ExecutablePath -like ($d + '*') -and -not (Get-Process -Id $_.ParentProcessId -ErrorAction SilentlyContinue) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; if ((Test-Path -LiteralPath $data) -and -not (Test-Path -LiteralPath $keep)) { Move-Item -LiteralPath $data -Destination $keep -ErrorAction SilentlyContinue }
-'@
-$restoreScript = @'
-$data = '[INSTALLDIR]' + 'data'; $keep = $env:LOCALAPPDATA + '\CloudStream-data-keep'; if ((Test-Path -LiteralPath $keep) -and -not (Test-Path -LiteralPath $data)) { Move-Item -LiteralPath $keep -Destination $data }
-'@
-function As-Command($script) { '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "' + ($script.Trim() -replace '\s*\r?\n\s*', ' ') + '"' }
+# an MSI of an earlier patch (or one patched twice) must not keep the script actions
+foreach ($old in @('CsSetPowerShell', 'CsKeepData', 'CsRestoreData')) {
+    Run-Sql ('DELETE FROM `InstallExecuteSequence` WHERE `Action` = ''' + $old + '''')
+    Run-Sql ('DELETE FROM `CustomAction` WHERE `Action` = ''' + $old + '''')
+}
 
-# (action, type, source, target); 51 = set a property, 114 = run an exe whose path is in a property (50) and go on if it fails (64)
-$actions = @(
-    @('CsSetPowerShell', 51, 'CS_POWERSHELL', '[SystemFolder]WindowsPowerShell\v1.0\powershell.exe'),
-    @('CsKeepData', 114, 'CS_POWERSHELL', (As-Command $keepScript)),
-    @('CsRestoreData', 114, 'CS_POWERSHELL', (As-Command $restoreScript))
-)
-foreach ($a in $actions) {
-    Run-Sql ('DELETE FROM `CustomAction` WHERE `Action` = ''' + $a[0] + '''')
-    Run-Sql 'INSERT INTO `CustomAction` (`Action`, `Type`, `Source`, `Target`) VALUES (?, ?, ?, ?)' (New-Record $a)
-}
-# (action, condition, sequence): the older version is removed at 798; the data goes aside just before that and comes back after InstallFinalize (6600)
-$sequence = @(
-    @('CsSetPowerShell', 'NOT Installed', 796),
-    @('CsKeepData', 'NOT Installed', 797),
-    @('CsRestoreData', 'NOT Installed AND NOT REMOVE', 6650)
-)
-foreach ($s in $sequence) {
-    Run-Sql ('DELETE FROM `InstallExecuteSequence` WHERE `Action` = ''' + $s[0] + '''')
-    Run-Sql 'INSERT INTO `InstallExecuteSequence` (`Action`, `Condition`, `Sequence`) VALUES (?, ?, ?)' (New-Record $s)
-}
 # This product keeps removing its program folders (app, runtime) when it is removed or replaced: with every component keyed on a registry value
-# that wipe is how jpackage's installer deletes the files. But no longer the install folder as a whole, which holds the user's data.
+# that wipe is how jpackage's installer deletes the files. But no longer the install folder as a whole, which may hold the user's data.
 # The folder to wipe is a property: the install folder that AppSearch read from the registry (RM_RF...), then \app and \runtime added.
 $rmProperty = (Select-Rows 'SELECT `Property` FROM `AppSearch`' 1 | Where-Object { $_ -like 'RM_RF*' } | Select-Object -First 1)
 $component = (Select-Rows 'SELECT `Component` FROM `Component`' 1 | Where-Object { $_ -like 'crm_rf*' } | Select-Object -First 1)
@@ -100,9 +78,13 @@ Run-Sql 'INSERT INTO `WixRemoveFolderEx` (`WixRemoveFolderEx`, `Component_`, `Pr
 Call $db 'Commit' 'InvokeMethod' $null | Out-Null
 
 # read back what the file contains now
-$check = Select-Rows 'SELECT `Sequence`, `Action`, `Condition` FROM `InstallExecuteSequence`' 3 | Where-Object { $_ -match 'Cs(SetPowerShell|KeepData|RestoreData)|RemoveExistingProducts' }
 $wipes = @(Select-Rows 'SELECT `WixRemoveFolderEx`, `Property` FROM `WixRemoveFolderEx`' 2)
-$check | ForEach-Object { "patched: $_" }
+$actions = @(Select-Rows 'SELECT `Action`, `Type`, `Source` FROM `CustomAction`' 3)
 $wipes | ForEach-Object { "patched: folder wipe row $_" }
 $onlyPrograms = ($wipes.Count -eq 2) -and (($wipes | Where-Object { $_ -match 'CS_RM_APP|CS_RM_RUNTIME' }).Count -eq 2)
-if (($check | Where-Object { $_ -match 'CsKeepData' }).Count -ne 1 -or ($check | Where-Object { $_ -match 'CsRestoreData' }).Count -ne 1 -or -not $onlyPrograms) { throw 'MSI patch did not apply' }
+# nothing in the installer may start a script interpreter or a shell
+$scripts = @($actions | Where-Object { $_ -match 'powershell|cmd\.exe|wscript|cscript|\.vbs|\.ps1' -or ($_ -split ' \| ')[2] -match 'POWERSHELL' })
+$targets = @(Select-Rows 'SELECT `Target` FROM `CustomAction`' 1 | Where-Object { $_ -match 'powershell|cmd\.exe|wscript|cscript|-ExecutionPolicy' })
+if (-not $onlyPrograms) { throw 'MSI patch did not apply (folder wipe rows)' }
+if ($scripts.Count -gt 0 -or $targets.Count -gt 0) { throw ('the MSI still runs a script: ' + (($scripts + $targets) -join '; ')) }
+'patched: no custom action runs a script or a shell'

@@ -266,7 +266,8 @@ private fun ContentArea(shape: Shape, topNav: Boolean = false, edge: Boolean = f
     val c = Fluent.colors
     val layer = if (Appearance.backdrop == Backdrop.Ambient) c.layer.copy(alpha = if (c.dark) 0.62f else 0.7f) else if (edge) c.bg else c.layer
     val preset = Themes.byId(Appearance.theme)
-    val glowA = preset.glowA?.takeIf { Appearance.themeGlow && c.dark && Appearance.backdrop != Backdrop.Black && !edge }
+    // the glows are drawn in the edge to edge looks too (the floating bar and dock, the default): they were left out there, and so was the theme
+    val glowA = preset.glowA?.takeIf { Appearance.themeGlow && c.dark }
     Box(
         Modifier
             .fillMaxSize()
@@ -275,8 +276,8 @@ private fun ContentArea(shape: Shape, topNav: Boolean = false, edge: Boolean = f
             // two soft colour glows of the theme, in the corners of the page
             .drawBehind {
                 if (glowA != null) {
-                    drawRect(Brush.radialGradient(listOf(glowA.copy(alpha = 0.22f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.05f), radius = size.width * 0.55f))
-                    preset.glowB?.let { b -> drawRect(Brush.radialGradient(listOf(b.copy(alpha = 0.15f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.95f, size.height * 0.95f), radius = size.width * 0.5f)) }
+                    drawRect(Brush.radialGradient(listOf(glowA.copy(alpha = 0.34f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.10f, size.height * 0.04f), radius = size.width * 0.62f))
+                    preset.glowB?.let { b -> drawRect(Brush.radialGradient(listOf(b.copy(alpha = 0.22f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * 0.96f, size.height * 0.96f), radius = size.width * 0.58f)) }
                 }
             }
             .let { if (edge) it else it.border(Dp.Hairline, c.stroke, shape) },

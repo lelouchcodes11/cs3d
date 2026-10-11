@@ -34,7 +34,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.preference.PreferenceManager
 import com.lagradost.desktop.core.Navigator
+import com.lagradost.desktop.runtime.AndroidRuntime
 import com.lagradost.desktop.tmdb.Tmdb
 import com.lagradost.desktop.tmdb.TmdbCard
 import com.lagradost.desktop.ui.components.RemoteImage
@@ -66,6 +68,33 @@ class ExploreFilters {
     var kind by mutableStateOf(ExploreKind.Movies)
     var genre by mutableStateOf<String?>(null)
     var service by mutableStateOf<String?>(null)
+
+    private val prefs get() = runCatching { PreferenceManager.getDefaultSharedPreferences(AndroidRuntime.context) }.getOrNull()
+
+    /** What the world watches, or what is made in the viewer's country; remembered between runs */
+    var scope by mutableStateOf(
+        runCatching { ExploreScope.valueOf(prefs?.getString("desktop_explore_scope", null) ?: "") }.getOrDefault(ExploreScope.Global),
+    )
+        private set
+
+    /** The language of local titles (null: any), remembered between runs */
+    var language by mutableStateOf<String?>(runCatching { prefs?.getString("desktop_explore_language", null)?.takeIf { it.isNotBlank() } }.getOrNull())
+        private set
+
+    fun chooseScope(value: ExploreScope) {
+        scope = value
+        runCatching { prefs?.edit()?.putString("desktop_explore_scope", value.name)?.apply() }
+    }
+
+    fun chooseLanguage(code: String?) {
+        language = code
+        runCatching { prefs?.edit()?.putString("desktop_explore_language", code ?: "")?.apply() }
+    }
+
+    val local: Boolean get() = scope == ExploreScope.Local && kind != ExploreKind.Anime
+
+    /** The language the lists use: only one of the viewer's country counts */
+    val activeLanguage: String? get() = if (local) language?.takeIf { it in ExploreClient.languages(Tmdb.region) } else null
 }
 
 /**
@@ -77,7 +106,24 @@ fun LazyListScope.exploreSections(f: ExploreFilters, rows: List<ExploreRow>, car
         Column(Modifier.padding(horizontal = gutter).padding(top = 8.dp, bottom = 14.dp)) {
             RichSectionHeader("Explore", subtitle = if (Tmdb.enabled) "Find something to watch; pick a title and your extensions look for it" else "TMDB is switched off (Settings > Appearance > Title information): most film and series lists are empty")
             Box(Modifier.height(14.dp))
-            PillTabs(ExploreKind.values().map { it.label }, f.kind.ordinal, { f.kind = ExploreKind.values()[it]; f.genre = null; f.service = null })
+            // films, series or anime; and, for the first two, what the world watches or what is made in the viewer's own country
+            val kindsScroll = rememberScrollState()
+            Row(Modifier.fillMaxWidth().scrollEdgeFade(kindsScroll).horizontalScroll(kindsScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                PillTabs(ExploreKind.values().map { it.label }, f.kind.ordinal, { f.kind = ExploreKind.values()[it]; f.genre = null; f.service = null })
+                if (f.kind != ExploreKind.Anime) {
+                    PillTabs(listOf("Global", "Local · " + ExploreClient.countryName(Tmdb.region)), f.scope.ordinal, { f.chooseScope(ExploreScope.values()[it]) })
+                }
+            }
+            val languages = if (f.local) ExploreClient.languages(Tmdb.region) else emptyMap()
+            if (languages.isNotEmpty()) {
+                Box(Modifier.height(12.dp))
+                val languageScroll = rememberScrollState()
+                Row(Modifier.fillMaxWidth().scrollEdgeFade(languageScroll).horizontalScroll(languageScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FText("Language", color = Fluent.colors.textSecondary, modifier = Modifier.padding(end = 4.dp))
+                    Chip("Any", f.activeLanguage == null, { f.chooseLanguage(null) })
+                    languages.forEach { (code, name) -> Chip(name, f.activeLanguage == code, { f.chooseLanguage(if (f.activeLanguage == code) null else code) }) }
+                }
+            }
             if (ExploreClient.hasServices(f.kind)) {
                 Box(Modifier.height(12.dp))
                 val servicesScroll = rememberScrollState()
@@ -96,9 +142,9 @@ fun LazyListScope.exploreSections(f: ExploreFilters, rows: List<ExploreRow>, car
             }
         }
     }
-    if (f.kind != ExploreKind.Anime && f.genre == null && f.service == null) item(key = "hero-${f.kind}") { ExploreHero(rows.first()) }
+    if (f.kind != ExploreKind.Anime && f.genre == null && f.service == null) item(key = "hero-${f.kind}/${f.local}/${f.activeLanguage}") { ExploreHero(rows.first()) }
     rows.forEach { row ->
-        item(key = "${f.kind.name}/${f.genre}/${f.service}/${row.title}") { ExploreShelf(row, cardWidth) }
+        item(key = "${f.kind.name}/${f.local}/${f.activeLanguage}/${f.genre}/${f.service}/${row.title}") { ExploreShelf(row, cardWidth) }
     }
     item(key = "credit") {
         FText(

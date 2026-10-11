@@ -1,0 +1,4 @@
+vulkan-1.dll next to mpv-2.dll is the Khronos Vulkan loader ("Vulkan Runtime" 1.4.309.0, Apache License 2.0,
+https://github.com/KhronosGroup/Vulkan-Loader). The full build of libmpv (mpv-2.dll) is linked against it; it is not a driver and
+installs nothing. The graphics driver of the PC supplies the Vulkan drivers the loader finds. It is kept here so that the player
+library also loads on a PC whose graphics driver package has not put a Vulkan loader into the system folder.

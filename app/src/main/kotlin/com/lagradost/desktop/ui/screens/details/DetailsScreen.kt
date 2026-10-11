@@ -291,6 +291,63 @@ private fun isWatched(ep: ResultEpisode): Boolean {
     return ep.videoWatchState == com.lagradost.cloudstream3.ui.result.VideoWatchState.Watched || progress > 0.95f
 }
 
+// ---- season packs and episode data -------------------------------------------------------------
+
+private val packNameRegex = Regex("""(?i)\.(zip|rar|7z)\b|\b(season|complete)[ ._-]*pack\b""")
+
+/** An entry that is a whole season in one archive ("S01 – Show.S01.1080p.WEB-DL.H.265-Group.Com.zip [1080p, 36 GB]"), not an episode */
+internal fun isSeasonPack(ep: ResultEpisode): Boolean = ep.name?.let { packNameRegex.containsMatchIn(it) } == true
+
+/** "Episode 7", "Ep 7", "E7" and nothing: a name that says no more than the number */
+internal fun isGenericEpisodeName(name: String?): Boolean =
+    name.isNullOrBlank() || Regex("""(?i)^\s*(episode|ep|e)[ .]*\d+\s*$""").matches(name)
+
+private fun normalName(s: String?): String = s.orEmpty().lowercase().filter { it.isLetterOrDigit() }
+
+/**
+ * The still, title, synopsis, rating and length TMDB has for the episodes an extension sent without them. The extension's own data always
+ * wins. A season is only taken when the extension's list really is that season: where it names its episodes at least half of the names must
+ * be TMDB's too; where it names none (just "Episode 3") the numbers must fit and the title must not be an anime (anime are split into
+ * seasons differently by every site, a wrong match would put another season's synopsis under an episode).
+ */
+internal fun withTmdbEpisodes(eps: List<ResultEpisode>, bySeason: Map<Int, Map<Int, com.lagradost.desktop.tmdb.Tmdb.TmdbEpisode>>, anime: Boolean): List<ResultEpisode> {
+    if (bySeason.isEmpty()) return eps
+    val accepted = HashMap<Int, Map<Int, com.lagradost.desktop.tmdb.Tmdb.TmdbEpisode>>()
+    for ((season, tm) in bySeason) {
+        val mine = eps.filter { it.season == season && !isSeasonPack(it) }
+        if (mine.isEmpty()) continue
+        val fits = mine.count { it.episode in tm }
+        if (fits < mine.size * 0.8) continue
+        val named = mine.filter { !isGenericEpisodeName(it.name) && it.episode in tm }
+        val ok = if (named.isNotEmpty()) named.count { normalName(it.name) == normalName(tm[it.episode]?.name) } * 2 >= named.size else !anime
+        if (ok) accepted[season] = tm
+    }
+    if (accepted.isEmpty()) return eps
+    return eps.map { e ->
+        if (isSeasonPack(e)) return@map e
+        val t = e.season?.let { accepted[it] }?.get(e.episode) ?: return@map e
+        e.copy(
+            poster = e.poster?.takeIf { it.isNotBlank() } ?: t.still,
+            description = e.description?.takeIf { it.isNotBlank() } ?: t.overview,
+            name = if (isGenericEpisodeName(e.name)) t.name ?: e.name else e.name,
+            score = e.score ?: com.lagradost.cloudstream3.Score.from10(t.rating),
+            runTime = e.runTime ?: t.runtime,
+        )
+    }
+}
+
+/** The release part of a pack's file name and what its brackets say: "1080p NF WEB-DL Multi DDP5.1 HDR-DV H.265" to ["1080p", "36.56 GB"] */
+internal fun packParts(name: String): Pair<String, List<String>> {
+    val bracket = Regex("""\[([^\]]*)]\s*$""").find(name)
+    val meta = bracket?.groupValues?.get(1)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+    var t = (if (bracket != null) name.substring(0, bracket.range.first) else name).trim()
+    t = t.replace(Regex("""(?i)\.(zip|rar|7z)\s*$"""), "").replace(Regex("""(?i)[-_ ]*[a-z0-9]+\.(com|net|org|in|co|me|to)\s*$"""), "")
+    // the part after the show's name and its season tag: "Show.Name.S01.<release>"
+    val release = Regex("""(?i)[. ]S\d{1,2}(?:E\d{1,3})?[. ](.+)$""").find(t)?.groupValues?.get(1) ?: t
+    val spaced = release.replace(Regex("""(?i)\bH\.(26[45])\b"""), "H\u0001$1").replace(Regex("""(?<!\d)\.|\.(?!\d)"""), " ").replace('\u0001', '.').replace(Regex("""\s+"""), " ").trim()
+    return spaced.ifBlank { name } to meta
+}
+
 @Composable
 private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Route.Details, d: ResultData) {
     val c = Fluent.colors
@@ -329,6 +386,17 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
     }
     val hideSpoilers = com.lagradost.desktop.ui.fluent.Appearance.hideSpoilers
 
+    // an extension often sends an episode without its still, title or synopsis: TMDB's own are filled in (see withTmdbEpisodes for when)
+    val sentEpisodes = (episodes as? Resource.Success)?.value.orEmpty()
+    val missingSeasons = sentEpisodes.filter { !isSeasonPack(it) && (it.poster.isNullOrBlank() || it.description.isNullOrBlank() || isGenericEpisodeName(it.name)) }
+        .mapNotNull { it.season }.distinct().sorted().take(12)
+    val tmdbEpisodes by androidx.compose.runtime.produceState<Map<Int, Map<Int, com.lagradost.desktop.tmdb.Tmdb.TmdbEpisode>>>(emptyMap(), tmdb?.id, missingSeasons) {
+        val t = tmdb
+        value = if (t == null || t.isMovie || missingSeasons.isEmpty()) emptyMap()
+        else missingSeasons.mapNotNull { s -> runCatching { com.lagradost.desktop.tmdb.Tmdb.season(t.id, s) }.getOrNull()?.let { s to it } }.toMap()
+    }
+    val shownEpisodes = remember(sentEpisodes, tmdbEpisodes) { withTmdbEpisodes(sentEpisodes, tmdbEpisodes, isAnime) }
+
     val listState = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 900.dp
@@ -364,7 +432,12 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
             if (tabs.isNotEmpty()) item(key = "tabs") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     com.lagradost.desktop.ui.fluent.UnderlineTabs(tabs.map { it.label }, tabs.indexOf(shown).coerceAtLeast(0), { tab = tabs[it] }, Modifier.weight(1f))
-                    if (shown == DetailsTab.Episodes) count.str()?.let { FText(it, color = c.textSecondary) }
+                    if (shown == DetailsTab.Episodes) {
+                        // the season packs an extension lists among the episodes are not counted as episodes
+                        val packCount = shownEpisodes.count { isSeasonPack(it) }
+                        val text = if (packCount > 0 && shownEpisodes.size > packCount) "${shownEpisodes.size - packCount} episodes · $packCount season pack${if (packCount == 1) "" else "s"}" else count.str()
+                        text?.let { FText(it, color = c.textSecondary) }
+                    }
                 }
             }
             when (shown) {
@@ -413,14 +486,33 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                             if (res.value.isEmpty()) item(key = "ep-empty") {
                                 com.lagradost.desktop.ui.fluent.EmptyState(Icons.Video, d.noEpisodesFoundText.str() ?: "No episodes found")
                             }
-                            val rows = res.value.chunked(columns)
+                            // some extensions (4KHDHub) end the list with the whole season as one archive: those are no episodes, they have
+                            // no still or synopsis and nothing to spoil, so they are shown apart, under the episodes
+                            val real = shownEpisodes.filter { !isSeasonPack(it) }
+                            val packs = shownEpisodes.filter { isSeasonPack(it) }
+                            val rows = real.chunked(columns)
                             // spoilers: episodes up to current episode stay open; unviewed episodes after current episode are covered
-                            val currentEpIdx = res.value.indexOfLast { isWatched(it) || it.position > 0 }.coerceAtLeast(0)
-                            val openIds = if (!hideSpoilers) null else res.value.filterIndexed { i, ep -> i <= currentEpIdx || isWatched(ep) || ep.position > 0 }.map { it.id }.toSet()
+                            val currentEpIdx = real.indexOfLast { isWatched(it) || it.position > 0 }.coerceAtLeast(0)
+                            val openIds = if (!hideSpoilers) null else real.filterIndexed { i, ep -> i <= currentEpIdx || isWatched(ep) || ep.position > 0 }.map { it.id }.toSet()
                             items(rows.size, key = { i -> "eprow-" + (rows[i].firstOrNull()?.id ?: i) + "-" + i }) { i ->
                                 Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                                     rows[i].forEach { ep -> Box(Modifier.weight(1f)) { EpisodeCard(vm, ep, d.backgroundPosterUrl ?: d.posterImage, d.posterHeaders, spoiler = openIds != null && ep.id !in openIds) } }
                                     repeat(columns - rows[i].size) { Box(Modifier.weight(1f)) }
+                                }
+                            }
+                            if (packs.isNotEmpty()) {
+                                item(key = "pack-head") {
+                                    Column(Modifier.padding(horizontal = gutter).padding(top = 6.dp, bottom = 14.dp)) {
+                                        FText("Season packs", style = Fluent.type.bodyStrong)
+                                        FText("The whole season as one download (an archive), not single episodes. Open one to see its links.", style = Fluent.type.caption, color = c.textTertiary)
+                                    }
+                                }
+                                val packRows = packs.chunked(columns)
+                                items(packRows.size, key = { i -> "packrow-" + (packRows[i].firstOrNull()?.id ?: i) + "-" + i }) { i ->
+                                    Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                                        packRows[i].forEach { ep -> Box(Modifier.weight(1f)) { EpisodeCard(vm, ep, null, null, pack = true) } }
+                                        repeat(columns - packRows[i].size) { Box(Modifier.weight(1f)) }
+                                    }
                                 }
                             }
                         }
@@ -730,11 +822,13 @@ private fun watchLabel(w: WatchType?): String =
 
 /** One episode: a 16:9 still with its number, progress and a play disc on hover; title, length and synopsis under it */
 @Composable
-private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: String?, fallbackHeaders: Map<String, String>?, spoiler: Boolean = false) {
+private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: String?, fallbackHeaders: Map<String, String>?, spoiler: Boolean = false, pack: Boolean = false) {
     val c = Fluent.colors
     // an episode ahead of the viewer is covered until the eye on it is clicked
     var uncovered by remember(ep.id) { mutableStateOf(false) }
-    val covered = spoiler && !uncovered
+    val covered = spoiler && !uncovered && !pack
+    // a season pack (see isSeasonPack): its file name, quality and size instead of a still; a click shows its links, it is no film to play
+    val packInfo = if (pack) packParts(ep.name.orEmpty()) else null
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val lift by androidx.compose.animation.core.animateFloatAsState(if (hovered && com.lagradost.desktop.ui.fluent.Appearance.hoverZoom) 1.03f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(220))
@@ -742,7 +836,14 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
     val shape = RoundedCornerShape(FluentShapes.card)
     val progress = if (ep.duration > 0) (ep.position.toFloat() / ep.duration).coerceIn(0f, 1f) else 0f
     val watched = ep.videoWatchState == com.lagradost.cloudstream3.ui.result.VideoWatchState.Watched || progress > 0.95f
-    val baseMenu: () -> List<MenuEntry> = {
+    val baseMenu: () -> List<MenuEntry> = if (pack) ({
+        listOf(
+            MenuItem("Show links…", Icons.Link) { vm.handleAction(EpisodeClickEvent(ACTION_SHOW_OPTIONS, ep)) },
+            MenuItem("Reload sources", Icons.Refresh) { vm.handleAction(EpisodeClickEvent(ACTION_RELOAD_EPISODE, ep)) },
+            MenuSeparator,
+            MenuItem("Download", Icons.Download) { vm.handleAction(EpisodeClickEvent(ACTION_DOWNLOAD_EPISODE, ep)) },
+        )
+    }) else ({
         listOf(
             MenuItem("Play", Icons.Play) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) },
             MenuItem("Start from beginning", Icons.Previous) {
@@ -757,7 +858,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
             MenuSeparator,
             MenuItem("Download", Icons.Download) { vm.handleAction(EpisodeClickEvent(ACTION_DOWNLOAD_EPISODE, ep)) },
         )
-    }
+    })
     // an episode ahead of the viewer can be shown and hidden again from its menu (right click or the three dots)
     val menu: () -> List<MenuEntry> = {
         val items = baseMenu()
@@ -768,13 +869,19 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
         }
     }
     ContextMenuArea(menu) {
-        Column(Modifier.fillMaxWidth().hoverable(source).fluentClickable(source, true, shape, Role.Button) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) }) {
+        Column(Modifier.fillMaxWidth().hoverable(source).fluentClickable(source, true, shape, Role.Button) { vm.handleAction(EpisodeClickEvent(if (pack) ACTION_SHOW_OPTIONS else ACTION_CLICK_DEFAULT, ep)) }) {
             Box(
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                     .graphicsLayer { scaleX = lift; scaleY = lift }
                     .clip(shape).background(c.card).border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, shape),
             ) {
-                if (ep.poster.isNullOrBlank()) {
+                if (pack) {
+                    // an archive, not a picture: the folder, and what it is (quality, size) in big letters
+                    Column(Modifier.align(Alignment.Center).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Folder, size = 36.dp, tint = c.accentText)
+                        FText(packInfo?.second.orEmpty().joinToString("  ·  "), style = Fluent.type.bodyStrong, color = c.text, maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                } else if (ep.poster.isNullOrBlank()) {
                     // no still: the show's artwork, soft, under a big episode number
                     com.lagradost.desktop.ui.components.SoftImage(fallback, fallbackHeaders, Modifier.matchParentSize().graphicsLayer { scaleX = 1.3f; scaleY = 1.3f }, alpha = 0.9f)
                     Box(Modifier.matchParentSize().background(Color(0x59000000)))
@@ -796,13 +903,14 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                     }
                 }
                 Box(Modifier.align(Alignment.TopStart).padding(10.dp).background(Color(0xB3000000), RoundedCornerShape(50)).padding(horizontal = 9.dp, vertical = 2.dp)) {
-                    FText(if (ep.season != null) "S${ep.season} · E${ep.episode}" else "E${ep.episode}", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color.White, maxLines = 1, softWrap = false)
+                    val badge = if (pack) (if (ep.season != null) "S${ep.season} · pack" else "Pack") else if (ep.season != null) "S${ep.season} · E${ep.episode}" else "E${ep.episode}"
+                    FText(badge, style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color.White, maxLines = 1, softWrap = false)
                 }
                 if (watched) Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(24.dp).background(c.success, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Check, size = 12.dp, tint = Color.Black) }
                 if (glow > 0.01f && !covered) Box(Modifier.matchParentSize().graphicsLayer { alpha = glow }.background(Color(0x4D000000)), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(48.dp).background(Color(0x33FFFFFF), CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x66FFFFFF), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Play, size = 18.dp, tint = Color.White) }
+                    Box(Modifier.size(48.dp).background(Color(0x33FFFFFF), CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x66FFFFFF), CircleShape), contentAlignment = Alignment.Center) { Icon(if (pack) Icons.Link else Icons.Play, size = 18.dp, tint = Color.White) }
                 }
-                ep.runTime?.takeIf { it > 0 }?.let { rt ->
+                ep.runTime?.takeIf { it > 0 && !pack }?.let { rt ->
                     Box(Modifier.align(Alignment.BottomEnd).padding(10.dp).background(Color(0xB3000000), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp)) {
                         FText("$rt min", style = Fluent.type.caption, color = Color.White, maxLines = 1, softWrap = false)
                     }
@@ -813,7 +921,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
             }
             Box(Modifier.height(10.dp))
             // the whole title (up to three lines, the rest in a tooltip), with the rating and filler mark under it and the menu beside it
-            val title = if (covered) "Episode ${ep.episode}" else ep.name?.takeIf { it.isNotBlank() } ?: "Episode ${ep.episode}"
+            val title = if (packInfo != null) packInfo.first else if (covered) "Episode ${ep.episode}" else ep.name?.takeIf { it.isNotBlank() } ?: "Episode ${ep.episode}"
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Column(Modifier.weight(1f)) {
                     com.lagradost.desktop.ui.fluent.Tooltip(title) {

@@ -24,6 +24,8 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import com.lagradost.desktop.platform.WinChrome
 import com.lagradost.desktop.ui.fluent.Fluent
 import com.lagradost.desktop.ui.fluent.Icon
@@ -48,6 +50,32 @@ fun Modifier.noWindowDrag(key: Any): Modifier {
     }
 }
 
+/**
+ * A press on the empty part of the bar takes the window with it, two presses in a row maximize or restore it. In the window of the app the frame
+ * does this by itself (the hit test answers "caption" and the press never reaches Compose); the bar that is drawn in the controls window of the
+ * native video player is a separate window the frame never sees, and there the press arrives here.
+ */
+private fun Modifier.moveWindowByPress(): Modifier = this.pointerInput(Unit) {
+    awaitPointerEventScope {
+        var lastPress = 0L
+        while (true) {
+            val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Main)
+            val change = e.changes.firstOrNull() ?: continue
+            // the buttons of the bar consume their presses before this sees them
+            if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isPrimaryPressed && !change.isConsumed) {
+                val now = System.currentTimeMillis()
+                if (now - lastPress < 400) {
+                    lastPress = 0L
+                    WinChrome.performCaptionCommand(2)
+                } else {
+                    lastPress = now
+                    WinChrome.windowMoveBegin()
+                }
+            }
+        }
+    }
+}
+
 /** Height of the title bar; the caption buttons are as high (the hit test of [WinChrome] knows the same number) */
 val TitleBarHeight = 36.dp
 
@@ -64,7 +92,7 @@ val TitleBarHeight = 36.dp
 private fun TitleBarRow(modifier: Modifier = Modifier) {
     val c = Fluent.colors
     Row(
-        modifier.fillMaxWidth().background(c.bg).drawBehind { drawLine(c.stroke, androidx.compose.ui.geometry.Offset(0f, size.height - 0.5f), androidx.compose.ui.geometry.Offset(size.width, size.height - 0.5f), 1f) },
+        modifier.fillMaxWidth().moveWindowByPress().background(c.bg).drawBehind { drawLine(c.stroke, androidx.compose.ui.geometry.Offset(0f, size.height - 0.5f), androidx.compose.ui.geometry.Offset(size.width, size.height - 0.5f), 1f) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(6.dp))

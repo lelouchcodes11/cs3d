@@ -42,6 +42,25 @@ enum class AudioDecoder(val label: String, val detail: String, val spdif: String
 }
 
 /**
+ * How the video is enlarged when it is shown larger than it is, and for the Anime4K modes cleaned up too (native GPU player only).
+ * [scaler] is mpv's own filter for the picture; the shader chains behind the Anime4K and FSR modes are in player/Upscaling.kt.
+ * [load] is a rough price on the graphics card (0 = none, 3 = a strong card).
+ */
+enum class Upscaler(val label: String, val detail: String, val scaler: String, val load: Int) {
+    Off("Off", "mpv's plain bilinear scaling. The lightest on the graphics card.", "bilinear", 0),
+    Sharp("Sharp (Spline36)", "A sharper filter than the default. Any graphics card.", "spline36", 0),
+    Quality("High quality (EWA Lanczos)", "The best of mpv's own filters, with the least ringing. A mid-range graphics card.", "ewa_lanczossharp", 1),
+    Fsr("FSR + CAS (AMD)", "FidelityFX Super Resolution enlarges any picture, CAS sharpens one shown at its own size. Light, for films and series too.", "spline36", 1),
+    Anime4kA("Anime4K · Mode A", "Anime in good quality (clean 1080p or 720p): restores the lines and enlarges them with neural filters.", "spline36", 2),
+    Anime4kB("Anime4K · Mode B", "Anime that is soft, blurry or slightly compressed: a gentler restore, then the same enlarging.", "spline36", 2),
+    Anime4kC("Anime4K · Mode C", "Low resolution or noisy anime (480p, old DVD rips): removes the noise while enlarging.", "spline36", 2),
+    Anime4kAHq("Anime4K · Mode A, high quality", "Mode A with the largest networks. Needs a strong graphics card; it drops frames on a weak one.", "spline36", 3),
+    ;
+
+    val isAnime4k: Boolean get() = name.startsWith("Anime4k")
+}
+
+/**
  * User customisation of the look (Settings > Appearance > Layout and style). Every value is Compose state, so the whole UI
  * follows a change at once, and is saved in the app preferences.
  */
@@ -81,8 +100,8 @@ object Appearance {
     /** A maximized window hides its title bar; it slides in when the pointer touches the top edge (full screen always does this) */
     var hideTitleBar by mutableStateOf(true)
 
-    /** Native player only: the Anime4K neural filters sharpen and enlarge low resolution anime (needs a fairly strong graphics card) */
-    var anime4k by mutableStateOf(false)
+    /** Native player only: how the picture is enlarged (mpv's own filters, FSR, or the Anime4K neural filters for anime); applies at once in the player */
+    var upscaler by mutableStateOf(Upscaler.Off)
 
     /** Automatically skip intro/outro skip stamps */
     var autoSkipStamps by mutableStateOf(false)
@@ -166,7 +185,8 @@ object Appearance {
             nativePlayer = p.getBoolean(PREFIX + "native_player", false)
             smoothSources = p.getBoolean(PREFIX + "smooth_sources", true)
             hideTitleBar = p.getBoolean(PREFIX + "hide_title_bar", true)
-            anime4k = p.getBoolean(PREFIX + "anime4k", false)
+            // before the modes there was one switch, Anime4K on or off: it becomes Mode A
+            upscaler = enumOf(p.getString(PREFIX + "upscaler", null), if (p.getBoolean(PREFIX + "anime4k", false)) Upscaler.Anime4kA else Upscaler.Off)
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
             subtitleUniversal = p.getBoolean(PREFIX + "sub_universal", false)
@@ -212,7 +232,7 @@ object Appearance {
                 .putBoolean(PREFIX + "native_player", nativePlayer)
                 .putBoolean(PREFIX + "smooth_sources", smoothSources)
                 .putBoolean(PREFIX + "hide_title_bar", hideTitleBar)
-                .putBoolean(PREFIX + "anime4k", anime4k)
+                .putString(PREFIX + "upscaler", upscaler.name)
                 .putBoolean(PREFIX + "auto_skip_stamps", autoSkipStamps)
                 .putBoolean(PREFIX + "auto_skip_delay_5s", autoSkipDelay5s)
                 .putBoolean(PREFIX + "show_remaining_time", showRemainingTime)
@@ -237,7 +257,7 @@ object Appearance {
     fun reset() {
         navPosition = NavPosition.Floating; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Large; backdrop = Backdrop.Black; whitePrimary = true; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; anime4k = false; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true; hideSpoilers = true; hideSpoilerTitles = false
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = true; hideSpoilers = true; hideSpoilerTitles = false
         save()
     }
 

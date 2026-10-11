@@ -105,9 +105,37 @@ class PlayerSession(
     private val ctx = DesktopBootstrap.activity
     private val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var governorTicks = 0
 
     val player = CS3IPlayer()
     val surface = MpvSurfaceView(ctx)
+
+    /** Lowers the cost of the picture, step by step, on a PC that can not keep up (standard player only) */
+    val governor = com.lagradost.desktop.player.PlaybackGovernor(
+        surface,
+        isPlaying = { status == CSPlayerLoading.IsPlaying && loadingText == null },
+        onStep = { step ->
+            showHud(Icons.Warning, if (step == 1) "This PC finds the video heavy: smooth motion off" else "This PC finds the video heavy: a lighter picture")
+        },
+        onStillSlow = {
+            com.lagradost.desktop.ui.fluent.Overlays.show(
+                com.lagradost.desktop.ui.fluent.Overlays.Dialog(
+                    title = "This video is heavy for this PC",
+                    primary = "Use the GPU player", close = "Not now", width = androidx.compose.ui.unit.Dp(480f),
+                    onPrimary = {
+                        com.lagradost.desktop.ui.fluent.Appearance.nativePlayer = true
+                        com.lagradost.desktop.ui.fluent.Appearance.save()
+                        com.lagradost.desktop.ui.Toasts.show("The GPU player is on: open the video again to use it", false)
+                    },
+                ) {
+                    com.lagradost.desktop.ui.fluent.FText(
+                        "The picture was made lighter and still does not keep up. The GPU player (Settings > Look > Native GPU player) lets the graphics card do the work and is much lighter on the processor. It takes effect from the next time a video is opened.",
+                        color = com.lagradost.desktop.ui.fluent.Fluent.colors.textSecondary,
+                    )
+                },
+            )
+        },
+    )
 
     // ---- state read by the UI ----
     var status by mutableStateOf(CSPlayerLoading.IsBuffering); private set
@@ -311,6 +339,8 @@ class PlayerSession(
                     bufferedMs = runCatching { (player.exoPlayer.bufferedPosition) }.getOrDefault(0L)
                     if (player.liveStream != live) live = player.liveStream
                     if (live && ++liveTicks % 4 == 0) liveBehindS = withContext(Dispatchers.IO) { player.liveLatency() }
+                    // every 5 s: does this PC keep up with the picture (see PlaybackGovernor)
+                    if (++governorTicks % 20 == 0) withContext(Dispatchers.IO) { runCatching { governor.check() } }
                     val pos = positionMs
                     val stamp = vm.state.stamps.firstOrNull { pos >= it.timestamp.startMs && pos < it.timestamp.endMs }
                     if (stamp != activeStamp) activeStamp = stamp
@@ -981,6 +1011,9 @@ class PlayerSession(
 
     val defaultSubtitleQuery: String get() = (currentMeta as? ResultEpisode)?.headerName ?: title
 
+    /** The title the video belongs to (its logo, story and artwork), for the pause screen; null for a plain link */
+    val titleResponse: com.lagradost.cloudstream3.LoadResponse? get() = vm.state.generatorState?.response
+
     /** The story of the episode that plays, for the pause screen (null when the extension gave none) */
     val episodeDescription: String? get() = (currentMeta as? ResultEpisode)?.description?.trim()?.takeIf { it.isNotBlank() }
 
@@ -1307,9 +1340,17 @@ class PlayerSession(
         player.seekTo(target)
         markSeek(target)
         positionMs = target
-        val secs = kotlin.math.abs(ms) / 1000
-        showHud(if (ms < 0) Icons.Rewind else Icons.FastForward, (if (ms < 0) "−" else "+") + secs + " s")
+        // jumps in a row (presses, or a key held down) add up in the bubble: +10 s, +20 s, +30 s ...; the other direction or a pause starts again
+        val now = System.currentTimeMillis()
+        seekBubbleMs = if (now - seekBubbleAt < SEEK_BUBBLE_MS && (seekBubbleMs > 0) == (ms > 0)) seekBubbleMs + ms else ms
+        seekBubbleAt = now
+        val secs = kotlin.math.abs(seekBubbleMs) / 1000
+        val amount = if (secs >= 60) "${secs / 60} min" + (if (secs % 60 != 0L) " ${secs % 60} s" else "") else "$secs s"
+        showHud(if (ms < 0) Icons.Rewind else Icons.FastForward, (if (ms < 0) "−" else "+") + amount)
     }
+
+    private var seekBubbleMs = 0L
+    private var seekBubbleAt = 0L
 
     fun seekTo(ms: Long) {
         if (refuseSeek()) return
@@ -1462,13 +1503,16 @@ class PlayerSession(
         vm.addSubtitles(subs.toSet())
     }
 
-    fun debugLine(): String = "loading=${loadingText} status=$status failure=${failure?.take(60)} source=${sourceName?.lineSequence()?.firstOrNull()} links=$linksFound more=$loadingMore pos=$positionMs dur=$durationMs mpv[${player.debugState()}]"
+    fun debugLine(): String = "loading=${loadingText} status=$status failure=${failure?.take(60)} source=${sourceName?.lineSequence()?.firstOrNull()} links=$linksFound more=$loadingMore pos=$positionMs dur=$durationMs volume=$volume mpv[${player.debugState()}]"
 
     companion object {
         @Volatile
         var active: PlayerSession? = null
         const val VOLUME_KEY = "desktop_player_volume"
         const val AUDIO_LANG_KEY = "desktop_player_audio_lang"
+
+        /** Jumps that come within this time of each other are one run in the seek bubble (it also stays up that long) */
+        const val SEEK_BUBBLE_MS = 1_000L
     }
 }
 

@@ -165,7 +165,7 @@ fun HomeScreen() {
                 if (!com.lagradost.desktop.ui.fluent.Appearance.homeBanner) {
                     Box(Modifier.height(com.lagradost.desktop.ui.shell.TopBarHeight + 8.dp))
                 } else if (items.isNotEmpty()) {
-                    HomeHero(items, heroHeight, compact = maxWidth < 900.dp, scroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE })
+                    HomeHero(items, heroHeight, compact = maxWidth < 900.dp, width = maxWidth, scroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE })
                 } else if (res == null || res is Resource.Loading) {
                     HeroSkeleton(heroHeight)
                 } else Box(Modifier.height(72.dp))
@@ -380,8 +380,11 @@ private fun HeroSkeleton(height: Dp) {
 }
 
 @Composable
-private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean, scroll: () -> Float) {
-    var index by remember(items.size) { mutableStateOf(0) }
+private fun HomeHero(all: List<LoadResponse>, height: Dp, compact: Boolean, width: Dp, scroll: () -> Float) {
+    // as many titles as the strip has room for (the slices stay clear of the buttons at the left), at most the eight the page loads
+    val cap = if (compact) 8 else (((width - gutter * 2 - 300.dp - 168.dp) / 62.dp).toInt() + 1).coerceIn(3, 8)
+    val items = remember(all, all.size, cap) { all.take(cap) }
+    var index by remember { mutableStateOf(0) }
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     // the shown item's thumbnail fills while it is on screen; hovering the hero pauses the rotation
@@ -425,7 +428,7 @@ private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean, sc
             if (compact) {
                 // slim segments at the right: the shown one fills while it is on screen (hovering the banner holds it)
                 Row(Modifier.align(Alignment.BottomEnd).padding(end = 36.dp, bottom = 30.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    items.take(8).forEachIndexed { i, _ ->
+                    items.forEachIndexed { i, _ ->
                         val w by androidx.compose.animation.core.animateDpAsState(if (i == index) 34.dp else 18.dp, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(320), label = "seg")
                         Box(Modifier.size(w, 14.dp).clickableNoRipple { progress.floatValue = 0f; index = i }, contentAlignment = Alignment.Center) {
                             Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x4DFFFFFF))) {
@@ -437,7 +440,7 @@ private fun HomeHero(items: List<LoadResponse>, height: Dp, compact: Boolean, sc
             } else {
                 // the next titles as a strip: the shown one is open, the rest are slices of their artwork
                 com.lagradost.desktop.ui.fluent.FeaturedStrip(
-                    count = items.size.coerceAtMost(7), selected = index, progress = { if (hovered) 1f else progress.floatValue },
+                    count = items.size, selected = index, progress = { if (hovered) 1f else progress.floatValue },
                     image = { i -> val it = items[i]; (it.backgroundPosterUrl ?: art[it.url]?.backdrop ?: it.posterUrl) to it.posterHeaders },
                     onSelect = { i -> progress.floatValue = 0f; index = i },
                     label = { i -> items[i].name },

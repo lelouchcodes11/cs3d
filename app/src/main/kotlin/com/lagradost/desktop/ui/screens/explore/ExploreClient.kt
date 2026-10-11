@@ -11,6 +11,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 enum class ExploreKind(val label: String) { Movies("Movies"), Series("TV series"), Anime("Anime") }
 
+/** Global: what the world watches. Local: titles made in the viewer's own country (and, when one is chosen, in one of its languages) */
+enum class ExploreScope { Global, Local }
+
 /** [ranked]: the list is an order (a top 10), so its posters get big numbers */
 class ExploreRow(val title: String, val subtitle: String?, val ranked: Boolean = false, val load: suspend () -> List<TmdbCard>)
 
@@ -35,7 +38,70 @@ object ExploreClient {
 
     fun hasServices(kind: ExploreKind) = kind != ExploreKind.Anime
 
-    fun rows(kind: ExploreKind, genre: String?, service: String?): List<ExploreRow> {
+    /** The languages offered next to "Local" for a country: ISO 639-1 code to name */
+    fun languages(region: String): Map<String, String> = when (region) {
+        "IN" -> linkedMapOf("hi" to "Hindi", "ta" to "Tamil", "te" to "Telugu", "ml" to "Malayalam", "kn" to "Kannada", "bn" to "Bengali", "mr" to "Marathi", "pa" to "Punjabi", "en" to "English")
+        "JP" -> linkedMapOf("ja" to "Japanese")
+        "KR" -> linkedMapOf("ko" to "Korean")
+        "FR" -> linkedMapOf("fr" to "French")
+        "DE" -> linkedMapOf("de" to "German")
+        "ES", "MX" -> linkedMapOf("es" to "Spanish")
+        "IT" -> linkedMapOf("it" to "Italian")
+        "BR" -> linkedMapOf("pt" to "Portuguese")
+        "TR" -> linkedMapOf("tr" to "Turkish")
+        "NL" -> linkedMapOf("nl" to "Dutch")
+        "PH" -> linkedMapOf("tl" to "Filipino", "en" to "English")
+        "SA", "AE" -> linkedMapOf("ar" to "Arabic")
+        else -> linkedMapOf()
+    }
+
+    /** The name of a country, for the "Local" tab */
+    fun countryName(region: String): String = Tmdb.regions[region] ?: java.util.Locale("", region).getDisplayCountry(java.util.Locale.ENGLISH).ifBlank { region }
+
+    /**
+     * "Local": titles of the viewer's country. A language that is chosen (Hindi, Tamil ...) is the language the title was made in and replaces the
+     * country (a Tamil film from Sri Lanka or Singapore is local to a Tamil viewer); English keeps the country (an English-language film of India,
+     * not Hollywood).
+     */
+    private fun localRows(movie: Boolean, genre: String?, service: String?, language: String?): List<ExploreRow> {
+        val region = Tmdb.region
+        val country = countryName(region)
+        val path = if (movie) "movie" else "tv"
+        val genreId = genre?.let { (if (movie) Tmdb.movieGenres else Tmdb.tvGenres)[it] }
+        val serviceId = service?.let { Tmdb.services[it] }
+        val lang = language?.takeIf { it in languages(region) }
+        val label = listOfNotNull(lang?.let { languages(region)[it] }, genre, service?.let { "on $it" }).joinToString(" ").let { if (it.isBlank()) "" else "$it " }
+        val today = LocalDate.now()
+        val dateGte = if (movie) "primary_release_date.gte" else "first_air_date.gte"
+        val dateLte = if (movie) "primary_release_date.lte" else "first_air_date.lte"
+        val dateSort = if (movie) "primary_release_date.desc" else "first_air_date.desc"
+        fun local(sort: String, vararg extra: Pair<String, String>): suspend () -> List<TmdbCard> = {
+            val params = buildList {
+                add("sort_by" to sort)
+                if (lang != null && lang != "en") add("with_original_language" to lang)
+                else { add("with_origin_country" to region); if (lang != null) add("with_original_language" to lang) }
+                if (genreId != null) add("with_genres" to genreId.toString())
+                if (serviceId != null) { add("with_watch_providers" to serviceId.toString()); add("watch_region" to region); add("with_watch_monetization_types" to "flatrate|free|ads") }
+                addAll(extra)
+            }
+            tmdb("local/$path/" + params.joinToString("&") { it.first + "=" + it.second }, movie) { Tmdb.list("/discover/$path", movie, *params.toTypedArray()) }
+        }
+        val rows = ArrayList<ExploreRow>()
+        rows += ExploreRow(
+            "Trending ${label}in $country", "New and popular right now", ranked = genreId == null && serviceId == null,
+            load = local("popularity.desc", dateGte to today.minusMonths(if (movie) 6L else 12L).toString(), dateLte to today.toString(), "vote_count.gte" to "3"),
+        )
+        // in the cinemas of the country (TMDB answers for the region itself); it has no language filter, so it is left out when one is chosen
+        if (movie && genreId == null && serviceId == null && lang == null) {
+            rows += ExploreRow("In cinemas in $country", "Playing now") { tmdb("local/$region/nowplaying", true) { Tmdb.list("/movie/now_playing", true, "region" to region) } }
+        }
+        rows += ExploreRow("Most watched ${label}in $country", "All time, by number of votes", load = local("vote_count.desc"))
+        rows += ExploreRow("Top rated ${label}in $country", "Best scores, with enough votes", load = local("vote_average.desc", "vote_count.gte" to (if (lang != null) "150" else "300")))
+        rows += ExploreRow("New ${label}in $country", null, load = local(dateSort, dateLte to today.toString(), "vote_count.gte" to "2"))
+        return rows
+    }
+
+    fun rows(kind: ExploreKind, genre: String?, service: String?, local: Boolean = false, language: String? = null): List<ExploreRow> {
         if (kind == ExploreKind.Anime) return listOf(
             ExploreRow("Trending", "Rising this week", ranked = genre == null) { anilist("TRENDING_DESC", null, genre) },
             ExploreRow("Airing now", "Episodes coming out") { anilist("POPULARITY_DESC", "RELEASING", genre) },
@@ -43,6 +109,7 @@ object ExploreClient {
             ExploreRow("Upcoming", "Not out yet") { anilist("POPULARITY_DESC", "NOT_YET_RELEASED", genre) },
         )
         val movie = kind == ExploreKind.Movies
+        if (local) return localRows(movie, genre, service, language)
         val path = if (movie) "movie" else "tv"
         val genreId = genre?.let { (if (movie) Tmdb.movieGenres else Tmdb.tvGenres)[it] }
         val serviceId = service?.let { Tmdb.services[it] }

@@ -38,6 +38,12 @@ fun buildDefaultClient(context: Context, ignoreSSL: Boolean = false): OkHttpClie
     
     val settingsManager = PreferenceManager.getDefaultSharedPreferences(context)
     val dns = settingsManager.getInt(context.getString(R.string.dns_key), 0)
+    // desktop: what earlier versions kept in the cache folder (web pages among it) is removed once, see net/NoPageCache.kt
+    com.lagradost.desktop.net.NoPageCache.purgeOldPages(
+        File(context.cacheDir, "http_cache"),
+        done = { settingsManager.getBoolean("desktop_http_cache_pages_purged", false) },
+        markDone = { settingsManager.edit().putBoolean("desktop_http_cache_pages_purged", true).apply() },
+    )
     val baseClient = OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)
@@ -68,6 +74,8 @@ fun buildDefaultClient(context: Context, ignoreSSL: Boolean = false): OkHttpClie
                 8 -> addCanadianShieldDns()
             }
         }
+        // desktop: web pages are not written to the disk cache (see net/NoPageCache.kt)
+        .addNetworkInterceptor(com.lagradost.desktop.net.NoPageCache)
         // Needs to be build as otherwise the other builders will change this object
         .build()
         // desktop: no IPv6 on this network -> do not try IPv6 addresses first ("Network is unreachable" on every other request);

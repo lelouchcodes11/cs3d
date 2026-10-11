@@ -94,6 +94,8 @@ object WinChrome {
             captionHidden = false
             return
         }
+        // the bar stays while it is being dragged (the window moves under the pointer)
+        if (moveArmed && revealed) return
         val p = IntArray(2)
         val inside = runCatching { api.GetCursorPos(p) }.getOrDefault(false)
         val origin = intArrayOf(0, 0)
@@ -156,6 +158,7 @@ object WinChrome {
         fun GetMonitorInfoW(monitor: Pointer, info: Pointer): Boolean
         fun TrackMouseEvent(event: Pointer): Boolean
         fun PostMessageW(hwnd: WinDef.HWND, msg: Int, wParam: Long, lParam: Long): Boolean
+        fun GetAsyncKeyState(vKey: Int): Short
     }
 
     interface WndProc : Callback {
@@ -719,6 +722,89 @@ object WinChrome {
         pipDragging = false
         val now = IntArray(4)
         if (api.GetWindowRect(hwnd, now)) pipRect = now
+    }
+
+    // Moving the window by its title bar when the bar is drawn by another window: over the native video the revealed bar belongs to the controls
+    // window, the frame window never sees the pointer there and so can not start the system's move. The press arrives here ([windowMoveBegin]),
+    // and the window follows the pointer for as long as the left button is down (read from Windows, not from the events of a bar that may go away
+    // under the pointer when a maximized window comes back to its normal size).
+    private val moveCursor = IntArray(2)
+    private val moveWindow = IntArray(4)
+    @Volatile private var moveArmed = false
+    @Volatile private var moveBegun = false
+    private const val VK_LBUTTON = 0x01
+
+    /** A window move by the title bar is under way (the bar is held up meanwhile) */
+    val moving: Boolean get() = moveArmed
+
+    fun windowMoveBegin() {
+        val api = user ?: return
+        android.util.Log.i("WinChrome", "title bar pressed: pip=$pip fullscreen=$fullscreen armed=$moveArmed")
+        if (pip || fullscreen || topHwnd == null || moveArmed) return
+        if (!cursorPos(api, moveCursor)) return
+        moveArmed = true
+        moveBegun = false
+        Thread({
+            try {
+                while ((api.GetAsyncKeyState(VK_LBUTTON).toInt() and 0x8000) != 0) {
+                    runCatching { windowMoveStep(api) }
+                    Thread.sleep(8)
+                }
+                runCatching { windowMoveFinish(api) }
+            } finally {
+                moveArmed = false
+            }
+        }, "window-move").apply { isDaemon = true; start() }
+    }
+
+    private fun windowMoveStep(api: User32Ex) {
+        val hwnd = topHwnd ?: return
+        val cursor = IntArray(2)
+        if (!api.GetCursorPos(cursor)) return
+        if (!moveBegun) {
+            // a press without movement is a click, not a move
+            if (Math.abs(cursor[0] - moveCursor[0]) < 3 && Math.abs(cursor[1] - moveCursor[1]) < 3) return
+            moveBegun = true
+            android.util.Log.i("WinChrome", "title bar move begins at ${moveCursor.toList()}, zoomed=${api.IsZoomed(hwnd)}")
+            if (api.IsZoomed(hwnd)) {
+                // as the system does: the window comes back to its normal size under the pointer, at the same part of its width
+                val full = IntArray(4)
+                api.GetWindowRect(hwnd, full)
+                val ratio = ((moveCursor[0] - full[0]).toDouble() / (full[2] - full[0]).coerceAtLeast(1)).coerceIn(0.0, 1.0)
+                api.ShowWindow(hwnd, SW_RESTORE)
+                maximized = false
+                val normal = IntArray(4)
+                api.GetWindowRect(hwnd, normal)
+                val scale = (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0
+                val x = moveCursor[0] - (ratio * (normal[2] - normal[0])).toInt()
+                val y = moveCursor[1] - (BUTTON_HEIGHT_DP / 2 * scale).toInt()
+                api.SetWindowPos(hwnd, null, x, y, 0, 0, SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE)
+                moveWindow[0] = x
+                moveWindow[1] = y
+                moveWindow[2] = x + (normal[2] - normal[0])
+                moveWindow[3] = y + (normal[3] - normal[1])
+            } else {
+                api.GetWindowRect(hwnd, moveWindow)
+            }
+        }
+        api.SetWindowPos(hwnd, null, moveWindow[0] + cursor[0] - moveCursor[0], moveWindow[1] + cursor[1] - moveCursor[1], 0, 0, SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE)
+    }
+
+    /** The button was let go: at the top edge of the screen the window is maximized, as the system does for a title bar dragged there */
+    private fun windowMoveFinish(api: User32Ex) {
+        val hwnd = topHwnd ?: return
+        if (!moveBegun) return
+        val cursor = IntArray(2)
+        if (!api.GetCursorPos(cursor)) return
+        val monitor = api.MonitorFromPoint((cursor[0].toLong() and 0xFFFFFFFFL) or (cursor[1].toLong() shl 32), MONITOR_DEFAULTTONEAREST) ?: return
+        val info = Memory(40)
+        info.setInt(0, 40)
+        if (!api.GetMonitorInfoW(monitor, info)) return
+        // the monitor's rectangle (the work area stops under the taskbar, the top edge is the same)
+        if (cursor[1] <= info.getInt(24) + 1) {
+            api.ShowWindow(hwnd, SW_MAXIMIZE)
+            maximized = api.IsZoomed(hwnd)
+        }
     }
 
     /** What the pointer is over (window pixels): top resize edge, caption buttons, the drag band or the app */

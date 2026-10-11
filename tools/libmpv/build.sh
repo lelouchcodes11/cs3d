@@ -1,5 +1,5 @@
 #!/bin/bash
-# Playback-only libmpv for CloudStream desktop: everything static in one mpv-2.dll, no Vulkan / encoders / scripts / disc formats.
+# (Not what ships since 2026-10-11: the full libmpv is back, see docs/PLAN.md 49f.) Playback-only libmpv for CloudStream desktop: everything static in one mpv-2.dll, no Vulkan / encoders / scripts / disc formats.
 # Same mpv (a1bf4b655) and FFmpeg (7e1f63d5d) as the full build it replaces; the other libraries are taken as of that date.
 # Needs MSYS2 (https://www.msys2.org) with: pacman -S git make diffutils patch autoconf automake libtool mingw-w64-ucrt-x86_64-{gcc,meson,ninja,pkgconf,nasm,cmake,python-jinja,shaderc,spirv-cross,zlib,uchardet}
 # Usage (UCRT64 shell): bash tools/libmpv/build.sh [stage...]   stages: fetch deps ffmpeg mpv (default: all); work folder ~/mpvbuild

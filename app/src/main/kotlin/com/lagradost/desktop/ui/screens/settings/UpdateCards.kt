@@ -21,36 +21,52 @@ import com.lagradost.desktop.update.UpdateCheck
 import java.text.DateFormat
 import java.util.Date
 
-/** "Check for updates" and "Check at start" of the About page: the app only looks and points to GitHub, it does not update itself */
+/** The updater of the About page: check, download with progress, restart and update; and the automatic check at start */
 @Composable
 fun UpdateCards() {
     val c = Fluent.colors
     val status = UpdateCheck.status
-    val busy = status is UpdateCheck.Status.Checking
+    val busy = status is UpdateCheck.Status.Checking || status is UpdateCheck.Status.Downloading || status is UpdateCheck.Status.Installing
     val summary = when (status) {
         is UpdateCheck.Status.Checking -> "Checking…"
-        is UpdateCheck.Status.Available -> "Version ${status.release.label} is available"
+        is UpdateCheck.Status.Available -> "Version ${status.release.label} is available (you have ${UpdateCheck.currentVersion})"
+        is UpdateCheck.Status.Downloading -> "Downloading version ${status.release.label}: " + (if (status.total > 0) "${(100L * status.done / status.total).coerceIn(0L, 100L)} %" else "%.1f MB".format(status.done / 1_048_576.0))
+        is UpdateCheck.Status.Ready -> "Version ${status.release.label} is downloaded and checked: restart to finish updating"
+        is UpdateCheck.Status.Installing -> "Updating: the app closes and opens again in a moment"
         is UpdateCheck.Status.UpToDate -> "You have the latest version (${UpdateCheck.currentVersion})"
         is UpdateCheck.Status.Failed -> "Could not check: ${status.reason}"
-        else -> UpdateCheck.lastChecked.takeIf { it > 0 }?.let { "Last checked ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))}" } ?: "Looks for a newer release on GitHub"
+        else -> UpdateCheck.lastChecked.takeIf { it > 0 }?.let { "Version ${UpdateCheck.currentVersion}. Last checked ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))}" } ?: "Version ${UpdateCheck.currentVersion}. Looks for a newer release on GitHub"
     }
     SettingsCard("Check for updates", summary) {
-        val available = status as? UpdateCheck.Status.Available
-        if (available != null) {
-            Button("View update", { UpdateCheck.showUpdateDialog(available.release) }, kind = ButtonKind.Accent)
-            Box(Modifier.width(8.dp))
+        when (status) {
+            is UpdateCheck.Status.Available -> {
+                val canInstall = UpdateCheck.canInstall(status.release)
+                Button(if (canInstall) "Update now" else "View update", { UpdateCheck.showUpdateDialog(status.release) }, kind = ButtonKind.Accent)
+                Box(Modifier.width(8.dp))
+            }
+            is UpdateCheck.Status.Ready -> {
+                Button("Restart and update", { UpdateCheck.showReadyDialog(status.release, status.file) }, kind = ButtonKind.Accent)
+                Box(Modifier.width(8.dp))
+            }
+            is UpdateCheck.Status.Downloading -> {
+                Button("Show", { UpdateCheck.showUpdateDialog(status.release) })
+                Box(Modifier.width(8.dp))
+                Button("Cancel", { UpdateCheck.cancelDownload() })
+                Box(Modifier.width(8.dp))
+            }
+            else -> {}
         }
         Button("Check now", { UpdateCheck.checkNow() }, enabled = !busy)
     }
-    SettingsCard("Check for updates at start", "A few seconds after the app is up (at most every few hours) it asks GitHub (${AppInfo.REPO}) for the list of releases and tells you when there is a newer one, with a button to its page. Nothing is downloaded or installed by the app, and nothing else is sent.") {
+    SettingsCard("Check for updates automatically", "A few seconds after the app is up, and again every few hours while it stays open (never during a video), it asks GitHub (${AppInfo.REPO}) for the list of releases and tells you when there is a newer one. Nothing is installed without your click, and nothing else is sent.") {
         FText(if (UpdateCheck.autoCheckEnabled) "On" else "Off", color = c.textSecondary, style = Fluent.type.caption)
         Box(Modifier.width(8.dp))
         ToggleSwitch(UpdateCheck.autoCheckEnabled, { UpdateCheck.setAutoCheck(it) })
     }
     SettingsCard(
-        "Get the newest version",
-        "New versions are published on GitHub. This opens the releases page in your browser, download the newest installer there and run it.",
-        onClick = { DesktopPlatform.openExternalBrowser(AppInfo.LATEST_RELEASE_URL) },
+        "All releases",
+        "The releases page on GitHub: every version with its notes and files, for a manual download.",
+        onClick = { DesktopPlatform.openExternalBrowser(AppInfo.RELEASES_URL) },
     )
 }
 

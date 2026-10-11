@@ -59,6 +59,7 @@ import com.lagradost.desktop.ui.fluent.Fluent
 import com.lagradost.desktop.ui.fluent.Icon
 import com.lagradost.desktop.ui.fluent.Icons
 import com.lagradost.desktop.ui.fluent.Slider
+import com.lagradost.desktop.ui.fluent.Upscaler
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 
@@ -70,7 +71,7 @@ import com.lagradost.desktop.ui.fluent.rememberInteraction
 enum class MenuPage(val title: String) {
     Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Tracks("Video & Audio"), Subtitles("Subtitles"), SubtitleTiming("Subtitle delay and size"),
     Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"),
-    Anime4K("Anime upscaling (Anime4K)"), Skip("Skip intro & credits"),
+    Upscaling("Upscaling"), Skip("Skip intro & credits"),
 }
 
 /** Every panel and bubble over the video (menu, episodes, volume and seek bubbles, subtitle pill): one surface */
@@ -138,7 +139,7 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                     MenuPage.Speed -> ChoicePage(speeds.map { speedLabel(it) }, speeds.indexOf(s.speed)) { s.changeSpeed(speeds[it]) }
                     MenuPage.Picture -> ChoicePage(Resize.entries.map { it.label }, Resize.entries.indexOf(s.resize)) { s.changeResize(Resize.entries[it]) }
                     MenuPage.Decoder -> DecoderPage()
-                    MenuPage.Anime4K -> Anime4KPage()
+                    MenuPage.Upscaling -> UpscalingPage()
                     MenuPage.Skip -> SkipPage()
                 }
             }
@@ -162,7 +163,7 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         NavRow(Icons.Speed, "Playback speed", speedLabel(s.speed)) { onPage(MenuPage.Speed) }
         NavRow(Icons.Aspect, "Picture size", s.resize.label) { onPage(MenuPage.Picture) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
-        NavRow(Icons.Anime, "Anime upscaling (Anime4K)", if (Appearance.anime4k) "On" else "Off") { onPage(MenuPage.Anime4K) }
+        NavRow(Icons.Anime, "Upscaling", Appearance.upscaler.label.substringBefore(" (").substringBefore(", ")) { onPage(MenuPage.Upscaling) }
         NavRow(Icons.Skip, "Skip intro & credits", if (Appearance.autoSkipStamps) (if (Appearance.autoSkipDelay5s) "Auto (5s)" else "Auto") else "Manual") { onPage(MenuPage.Skip) }
         Divider()
         ActionRow(Icons.Help, "Keyboard shortcuts") { onPage(null); Shortcuts.show() }
@@ -268,27 +269,24 @@ private fun DecoderPage() {
     }
 }
 
+/** How the picture is enlarged: mpv's own filters, FSR, or Anime4K's neural filters (modes A, B, C). A click applies at once to the playing video */
 @Composable
-private fun Anime4KPage() {
-    var pick by remember { mutableStateOf(Appearance.anime4k) }
-    Column {
-        CheckRow("Off", !pick, detail = "Standard video playback") {
-            if (pick) {
-                pick = false
-                Appearance.anime4k = false
-                Appearance.save()
-                ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyAnime4k() }
+private fun UpscalingPage() {
+    var pick by remember { mutableStateOf(Appearance.upscaler) }
+    Column(Modifier.verticalScrollIfNeeded()) {
+        Upscaler.entries.forEach { mode ->
+            CheckRow(mode.label, mode == pick, detail = mode.detail) {
+                if (mode != pick) {
+                    pick = mode
+                    Appearance.upscaler = mode
+                    // the scaling filters and shaders are the GPU player's: any mode but Off needs it (the next video when this one is not)
+                    if (mode != Upscaler.Off) Appearance.nativePlayer = true
+                    Appearance.save()
+                    ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyUpscaler() }
+                }
             }
         }
-        CheckRow("Anime4K (bloc97)", pick, detail = "Neural filters that clean up and sharpen anime in real time (GPU player)") {
-            if (!pick) {
-                pick = true
-                Appearance.anime4k = true
-                Appearance.nativePlayer = true
-                Appearance.save()
-                ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyAnime4k() }
-            }
-        }
+        Note("Needs the native GPU player (Settings > Appearance). Anime4K by bloc97, FSR and CAS by AMD, ported by agyild (MIT).")
     }
 }
 

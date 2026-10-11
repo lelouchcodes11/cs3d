@@ -69,6 +69,7 @@ object ExtensionHarness {
             testProviders(APIHolder.apis.toList())
         }
         if (mode == "live") liveScan(APIHolder.apis.toList())
+        if (mode == "episodes") episodeDump(APIHolder.apis.toList())
 
         File(dataDir, "harness-log.txt").writeText(LogBuffer.snapshot().joinToString("\n"))
         println("Log written to ${File(dataDir, "harness-log.txt").absolutePath}")
@@ -116,6 +117,29 @@ object ExtensionHarness {
         }
 
         pluginResults
+    }
+
+    /**
+     * What an extension sends per episode of one title: JAVA_TOOL_OPTIONS=-Dharness.q=When+Life+Gives+You+Tangerines (+ = space),
+     * mode "episodes", the plugin filter as usual. Prints season/episode, name, poster, description and the episode's data.
+     */
+    private suspend fun episodeDump(apis: List<MainAPI>) {
+        val q = (System.getProperty("harness.q") ?: "love").replace('+', ' ')
+        for (api in apis) {
+            println("== episodes: ${api.name} q=$q")
+            val hit = runCatching { api.search(q, 1)?.items?.firstOrNull() }.getOrNull()
+            if (hit == null) { println("   no search result"); continue }
+            println("   ${hit.name} ${hit.url}")
+            val res = runCatching { api.load(hit.url) }.onFailure { println("   load threw $it") }.getOrNull() ?: continue
+            println("   ${res.javaClass.simpleName} name=${res.name} poster=${res.posterUrl} bg=${res.backgroundPosterUrl}")
+            val eps = when (res) {
+                is TvSeriesLoadResponse -> res.episodes
+                is AnimeLoadResponse -> res.episodes.values.flatten()
+                else -> emptyList()
+            }
+            println("   ${eps.size} episodes")
+            for (e in eps) println("   S${e.season}E${e.episode} name=${e.name} poster=${e.posterUrl} score=${e.score} rt=${e.runTime} date=${e.date} desc=${e.description?.take(60)?.replace('\n', ' ')} data=${e.data.take(90)}")
+        }
     }
 
     /** Every event of the live providers: what kind of link, DRM, and does the address answer */

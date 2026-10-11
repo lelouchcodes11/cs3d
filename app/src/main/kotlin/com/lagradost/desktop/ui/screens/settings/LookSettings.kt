@@ -51,6 +51,7 @@ import com.lagradost.desktop.ui.fluent.PlayerStyle
 import com.lagradost.desktop.ui.fluent.PosterSize
 import com.lagradost.desktop.ui.fluent.Slider
 import com.lagradost.desktop.ui.fluent.ToggleSwitch
+import com.lagradost.desktop.ui.fluent.Upscaler
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 
@@ -108,7 +109,8 @@ fun LayoutAndStyleCards() {
                 }
             }
         }
-        SettingsCard("Backdrop", "Ambient tints the window with the colours of the artwork you look at.") {
+        SettingsCard("Backdrop", "Ambient tints the window with the colours of the artwork you look at." +
+            if (Appearance.theme != "classic" && Appearance.backdrop == Backdrop.Black) " Pure black is the look of the Classic theme: a colour theme brings its own page colour." else "") {
             ComboBox(Backdrop.entries.toList(), Appearance.backdrop, { it.label }, { Appearance.backdrop = it; changed() }, minWidth = 220.dp)
         }
         SettingsCard("See-through bars", "Bars, the dock and the open rail let the page show through a little.") {
@@ -141,8 +143,8 @@ fun LayoutAndStyleCards() {
         SettingsCard("Prefer smooth sources", "When a title is played, 4K, REMUX and very large files are tried after the lighter ones: they are the sources that stall on slow hosts and buffer or drop frames on a weak graphics card. All of them stay in the Sources list. Turn it off to always try the highest quality first.") {
             ToggleSwitch(Appearance.smoothSources, { Appearance.smoothSources = it; changed() })
         }
-        SettingsCard("Anime upscaling (Anime4K)", "Neural filters that clean up and enlarge low resolution anime. Works with the native GPU player only, and asks a lot of the graphics card. Applies to the next video. Anime4K by bloc97 (MIT).") {
-            ToggleSwitch(Appearance.anime4k, { Appearance.anime4k = it; changed() })
+        SettingsCard("Upscaling", "How the picture is enlarged when it is shown larger than it is. mpv's own filters (Sharp, High quality), FSR for anything, or Anime4K's neural filters for anime (modes A, B, C; they ask a lot of the graphics card). Native GPU player only; it can also be changed in the player's menu while a video plays. Anime4K by bloc97, FSR and CAS by AMD, ported by agyild (MIT).") {
+            ComboBox(Upscaler.entries.toList(), Appearance.upscaler, { it.label }, { Appearance.upscaler = it; changed() }, minWidth = 240.dp)
         }
         SettingsCard("Smooth motion", "Blends the frames of 24 and 25 frames per second video so pans and scrolling credits do not judder on a 60 Hz screen. Turn it off if you prefer the pure frames.") {
             ToggleSwitch(Appearance.smoothMotion, { Appearance.smoothMotion = it; changed() })
@@ -280,7 +282,7 @@ fun ThemeCards() {
                     },
                 ) {
                     Box(
-                        Modifier.fillMaxWidth().height(84.dp).clip(tile).background(p.layer)
+                        Modifier.fillMaxWidth().height(84.dp).clip(tile).background(p.bg)
                             .drawBehind {
                                 p.glowA?.let { drawRect(Brush.radialGradient(listOf(it.copy(alpha = 0.55f), Color.Transparent), center = Offset(size.width * 0.15f, size.height * 0.1f), radius = size.width * 0.8f)) }
                                 p.glowB?.let { drawRect(Brush.radialGradient(listOf(it.copy(alpha = 0.40f), Color.Transparent), center = Offset(size.width * 0.95f, size.height * 0.95f), radius = size.width * 0.7f)) }
