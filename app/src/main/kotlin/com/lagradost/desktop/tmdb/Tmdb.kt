@@ -60,8 +60,25 @@ object Tmdb {
     private const val IMG = "https://image.tmdb.org/t/p/"
     private const val TTL_MS = 6 * 3_600_000L
 
-    /** The viewer's country, which decides the streaming services and age ratings shown */
-    val region: String get() = com.lagradost.desktop.ui.fluent.Appearance.tmdbRegion.ifBlank { Locale.getDefault().country.ifBlank { "US" } }
+    /**
+     * The country of the PC (Windows: Settings > Time & language > Region > Country or region; else the JVM's startup country). NOT
+     * `Locale.getDefault()`: the app's own language setting replaces that with a language only ("en"), which has no country, and
+     * the "Local" lists and the streaming services then fell back to the United States on every installed copy that had picked English.
+     */
+    private val systemRegion: String by lazy {
+        fun two(s: String?) = s?.trim()?.uppercase(Locale.ROOT)?.takeIf { it.length == 2 && it.all { c -> c in 'A'..'Z' } }
+        val windows = runCatching {
+            if (!System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT).contains("win")) return@runCatching null
+            val root = com.sun.jna.platform.win32.WinReg.HKEY_CURRENT_USER
+            val key = "Control Panel\\International\\Geo"
+            if (com.sun.jna.platform.win32.Advapi32Util.registryValueExists(root, key, "Name"))
+                two(com.sun.jna.platform.win32.Advapi32Util.registryGetStringValue(root, key, "Name")) else null
+        }.getOrNull()
+        windows ?: two(System.getProperty("user.country.format")) ?: two(System.getProperty("user.country")) ?: two(Locale.getDefault().country) ?: "US"
+    }
+
+    /** The viewer's country, which decides the streaming services, age ratings and the Local lists shown (Settings > Appearance > Title information can name another) */
+    val region: String get() = com.lagradost.desktop.ui.fluent.Appearance.tmdbRegion.ifBlank { systemRegion }
 
     /** Settings > Appearance > Title information: when off no request is made and every call comes back empty */
     val enabled: Boolean get() = com.lagradost.desktop.ui.fluent.Appearance.tmdbEnabled

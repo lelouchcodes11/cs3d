@@ -61,7 +61,7 @@ Open **[Releases](../../releases/latest)** and pick the package that fits how yo
 
 | Package | File | Best For |
 | :--- | :--- | :--- |
-| **Setup Installer** *(Recommended)* | `CloudStream-…-windows-x64-setup.exe` | Standard per-user installation (no admin rights needed), Start menu & desktop shortcuts, and one-click in-app updates. |
+| **Setup Installer** *(Recommended)* | `CloudStream-…-windows-x64-setup.exe` | Standard per-user installation (no admin rights needed), Start menu & desktop shortcuts, and one-click in-app updates. Run over an existing MSI install it replaces it in the same folder and keeps your settings. |
 | **MSI Installer** | `CloudStream-…-windows-x64.msi` | Standard Windows Installer package (per-user, no PowerShell custom actions), upgrades existing MSI installs in place. |
 | **Portable ZIP** | `CloudStream-…-windows-x64-portable.zip` | Unpack anywhere and run `CloudStream.exe`. Keeps all settings, extensions, and caches inside its own `data/` folder. |
 
