@@ -184,6 +184,15 @@ open class WebView : AbsoluteLayout {
     }
 
     open fun loadDataWithBaseURL(baseUrl: String?, data: String, mimeType: String?, encoding: String?, historyUrl: String?) {
+        // The community pop-up of the Desi extensions (Zinkmovies, StreamHubOne ...): a page of its own, answered by the extension's
+        // AndroidPopup.close() after a while or by "Maybe later". Nobody opens a source to read it, so it is dismissed through that very
+        // call as soon as the extension has finished building its dialog (the post lands after the code that is still running).
+        if (baseUrl != null && baseUrl.startsWith("https://desi-extension.local") && bridgeObjects.containsKey("AndroidPopup")) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                runCatching { JsBridge.invoke(bridgeObjects, "AndroidPopup", "close", "[]") }
+            }
+            return
+        }
         if (baseUrl == null || baseUrl.startsWith("data:") || !(baseUrl.startsWith("http://") || baseUrl.startsWith("https://"))) {
             loadData(data, mimeType, null)
             return
@@ -193,8 +202,18 @@ open class WebView : AbsoluteLayout {
 
     open fun evaluateJavascript(script: String, resultCallback: ValueCallback<String>?) = engine.evaluate(script, resultCallback)
 
-    open fun addJavascriptInterface(obj: Any, name: String) = engine.addJavascriptInterface(obj, name)
-    open fun removeJavascriptInterface(name: String) = engine.removeJavascriptInterface(name)
+    // the objects given to addJavascriptInterface (the engine keeps its own copy for the page)
+    private val bridgeObjects = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    open fun addJavascriptInterface(obj: Any, name: String) {
+        bridgeObjects[name] = obj
+        engine.addJavascriptInterface(obj, name)
+    }
+
+    open fun removeJavascriptInterface(name: String) {
+        bridgeObjects.remove(name)
+        engine.removeJavascriptInterface(name)
+    }
 
     open fun reload() = engine.reload()
     open fun stopLoading() = engine.stopLoading()

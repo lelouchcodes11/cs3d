@@ -28,6 +28,7 @@
     <string name="use_system_brightness_key">use_system_brightness_key</string>
     <string name="swipe_enabled_key">swipe_enabled_key</string>
     <string name="playback_speed_enabled_key">playback_speed_enabled_key</string>
+    <string name="compressor_enabled_key">compressor_enabled_key</string>
     <string name="player_resize_enabled_key">player_resize_enabled_key</string>
     <string name="player_source_priority_key">player_source_priority_key</string>
     <string name="pip_enabled_key">pip_enabled_key</string>
@@ -61,6 +62,9 @@
     <string name="prefer_media_type_key">prefer_media_type_key_2</string>
     <string name="app_theme_key">app_theme_key</string>
     <string name="episode_sync_enabled_key">episode_sync_enabled_key</string>
+    <string name="auto_status_sync_key">auto_status_sync_key</string>
+    <string name="auto_status_sync_all_key">auto_status_sync_all_key</string>
+    <string name="cloudflare_solvers_key">cloudflare_solvers_key</string>
     <string name="log_enabled_key">log_enabled_key</string>
     <string name="show_logcat_key">show_logcat_key</string>
     <string name="bottom_title_key">bottom_title_key</string>

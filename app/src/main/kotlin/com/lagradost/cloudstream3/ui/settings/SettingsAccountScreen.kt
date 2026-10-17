@@ -93,12 +93,15 @@ object SettingsAccountScreen : SearchableSettings, BiometricAuthenticator.Biomet
             }
         }
 
+        // read here so that the rows say who is signed in (and redraw after a sign-in or a log out)
+        com.lagradost.cloudstream3.syncproviders.AccountManager.changes
         return persistentListOf(
             Preference.PreferenceGroup(
                 title = stringResource(R.string.pref_category_accounts),
                 preferenceItems = syncApis.map { api ->
                     Preference.PreferenceItem.TextPreference(
                         title = api.name,
+                        subtitle = api.authUser()?.let { "Signed in as " + (it.name ?: "account " + it.id) } ?: "Not signed in",
                         icon = api.icon?.let { painterResource(it) },
                         onClick = {
                             val activity = activity ?: return@TextPreference

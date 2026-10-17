@@ -128,9 +128,17 @@ fun LibraryScreen() {
                 Icon(Icons.Warning, size = 40.dp, tint = c.caution)
                 Box(Modifier.height(12.dp))
                 FText("The library could not be loaded", style = Fluent.type.subtitle)
-                FText(res.errorString, color = c.textSecondary, maxLines = 3)
-                Box(Modifier.height(12.dp))
-                Button("Try again", { vm.reloadPages(true) }, kind = ButtonKind.Accent, icon = Icons.Refresh)
+                FText(
+                    (apiName?.takeIf { it.isNotBlank() }?.let { "$it: " } ?: "") + res.errorString.ifBlank { "Unknown error" },
+                    color = c.textSecondary, maxLines = 4, modifier = Modifier.padding(horizontal = 40.dp).widthIn(max = 640.dp),
+                )
+                Box(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button("Try again", { vm.reloadPages(true) }, kind = ButtonKind.Accent, icon = Icons.Refresh)
+                    // one service that fails (a signed-out account, no connection to it) must not lock the whole library: the others stay one click away
+                    val others = apis.filter { it != apiName }
+                    if (others.isNotEmpty()) ComboBox(others, null, { it }, { vm.switchList(it) }, placeholder = "Open another list", icon = Icons.Cloud, minWidth = 190.dp, height = 36.dp)
+                }
             }
             else -> PosterGrid(
                 items = items,

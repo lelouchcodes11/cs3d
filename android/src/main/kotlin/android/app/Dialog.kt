@@ -34,6 +34,9 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
     private var mOnShowListener: DialogInterface.OnShowListener? = null
     private var mOnKeyListener: DialogInterface.OnKeyListener? = null
     private var mOwnerActivity: Activity? = null
+
+    /** Set by the DialogFragment that owns this dialog: a fragment that is open must show its dialog (its own Cloudflare handling lives in the fragment) */
+    internal var isFragmentDialog = false
     private var mTitle by mutableStateOf<CharSequence?>(null)
     private var mShowing by mutableStateOf(false)
     private val mHandler = Handler(Looper.getMainLooper())
@@ -105,6 +108,8 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
         }
         if (mShowing) return
         dispatchOnCreate(null)
+        // Settings > General > Cloudflare solvers: off, a page in a dialog (an extension's challenge window) is not shown
+        if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseBrowserDialog(mWindow.getDecorView()) { cancel() }) return
         onStart()
         mLifecycle.currentState = Lifecycle.State.RESUMED
         mShowing = true

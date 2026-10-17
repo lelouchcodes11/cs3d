@@ -154,7 +154,14 @@ object WebCookies {
             }
         }
         maxAge?.let { expires = System.currentTimeMillis() + it * 1000 }
-        put(WebCookie(name, v, domain, path, expires, secure, httpOnly))
+        val cookie = WebCookie(name, v, domain, path, expires, secure, httpOnly)
+        if (cookie.expired() && domain == host) {
+            // "name=; Max-Age=0" for a page's address, as extensions write it to wipe a cookie (Nepu's cf_clearance): it names no domain, but a site's clearance
+            // cookie is a domain cookie (".host"), a different key. Every cookie of that name the page would be sent is deleted, from the engine's jar as well,
+            // or the "wiped" clearance stays, the next check "passes" in a second on the old cookie and the request is blocked again.
+            all().filter { it.name == name && domainMatches(host, it.domain) && path.startsWith(it.path) }.forEach { put(it.copy(expires = 0L)) }
+        }
+        put(cookie)
         return true
     }
 

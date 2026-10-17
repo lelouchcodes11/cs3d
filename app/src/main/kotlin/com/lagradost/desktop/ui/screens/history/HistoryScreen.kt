@@ -54,6 +54,7 @@ fun HistoryScreen() {
                     PageHeader(
                         "History", subtitle = if (items.isEmpty()) "Nothing started yet" else "${items.size} ${if (items.size == 1) "title" else "titles"} you started and have not finished",
                         trailing = {
+                            Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart)
                             if (items.isNotEmpty()) Button("Clear history", {
                                 Overlays.message("Clear the history?", "Every title is taken off this list and off Continue watching. Your library and favourites stay.", primary = "Clear", onPrimary = {
                                     DataStoreHelper.deleteAllResumeStateIds()

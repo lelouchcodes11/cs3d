@@ -52,6 +52,21 @@ object WinChrome {
     var pip by mutableStateOf(false)
         private set
 
+    /**
+     * Gives the main window the keyboard. The controls window over a native video does not activate (it must not take the keys), so a
+     * click on the picture left the keys with the program that had them before, a browser next to the player for one, and Space and the
+     * arrows paused ITS video. This process just received the click, so Windows allows it to take the foreground.
+     */
+    fun activateMainWindow() {
+        val hwnd = topHwnd ?: return
+        runCatching {
+            val u = com.sun.jna.platform.win32.User32.INSTANCE
+            val front = u.GetForegroundWindow()
+            if (front != null && front.pointer == hwnd.pointer) return
+            u.SetForegroundWindow(hwnd)
+        }
+    }
+
     private const val REVEAL_DWELL_MS = 140L
     private var hotSince = 0L
 
@@ -150,6 +165,10 @@ object WinChrome {
         fun GetDpiForWindow(hwnd: WinDef.HWND): Int
         fun GetSystemMetricsForDpi(index: Int, dpi: Int): Int
         fun SetWindowPos(hwnd: WinDef.HWND, after: Pointer?, x: Int, y: Int, cx: Int, cy: Int, flags: Int): Boolean
+        /** Several windows are placed in one step (no frame in between where one has moved and the other has not) */
+        fun BeginDeferWindowPos(count: Int): Pointer?
+        fun DeferWindowPos(handle: Pointer, hwnd: WinDef.HWND, after: Pointer?, x: Int, y: Int, cx: Int, cy: Int, flags: Int): Pointer?
+        fun EndDeferWindowPos(handle: Pointer): Boolean
         fun EnumChildWindows(hwnd: WinDef.HWND, cb: WinUser.WNDENUMPROC, data: Pointer?): Boolean
         fun GetClassNameW(hwnd: WinDef.HWND, buf: CharArray, max: Int): Int
         fun MonitorFromWindow(hwnd: WinDef.HWND, flags: Int): Pointer?
@@ -565,13 +584,16 @@ object WinChrome {
      * right and bottom) keeps the shape of the video and is not smaller than the minimum; the edge or corner that is not being dragged stays
      * where it is. [edge] numbers as WMSZ_*: left 1, right 2, top 3, topleft 4, topright 5, bottom 6, bottomleft 7, bottomright 8.
      */
-    private fun fitPip(api: User32Ex, hwnd: WinDef.HWND, edge: Int, r: IntArray) {
+    private fun fitPip(api: User32Ex, hwnd: WinDef.HWND, edge: Int, r: IntArray) =
+        fitPip(frame(api, hwnd), (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0, edge, r)
+
+    /** [frameInsets]: the invisible borders (left and right, bottom) as [frame] measures them; [scale]: the window's dpi / 96 */
+    private fun fitPip(frameInsets: Pair<Int, Int>, scale: Double, edge: Int, r: IntArray) {
         var left = r[0]
         var top = r[1]
         var right = r[2]
         var bottom = r[3]
-        val (fx, fy) = frame(api, hwnd)
-        val scale = (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0
+        val (fx, fy) = frameInsets
         var pictureWidth = right - left - 2 * fx
         var pictureHeight = bottom - top - fy
         // the top and bottom edges change the height: the width follows; every other edge or corner: the height follows the width
@@ -592,6 +614,58 @@ object WinChrome {
     private var resizeEdge = 0
     private val resizeCursor = IntArray(2)
     private val resizeWindow = IntArray(4)
+    /** The widest the small window may become while it is resized: 90 % of the work area of its screen (measured once per resize) */
+    private var resizeMaxWidth = Int.MAX_VALUE
+    private var resizeLastRect: IntArray? = null
+
+    /**
+     * The controls window of the native video player, measured against the small window: where its edges lie relative to the window's own
+     * (left, top, right, bottom). Both are placed in ONE step ([place]); before, the controls window followed through the move events a few
+     * frames later and the glass bars wobbled against the picture while the window was dragged.
+     */
+    private val overlayDelta = IntArray(4)
+    private var overlayHandle: WinDef.HWND? = null
+
+    private fun measureOverlay(api: User32Ex, frameRect: IntArray) {
+        overlayHandle = null
+        val w = com.lagradost.desktop.ui.screens.player.NativeVideo.overlayWindow ?: return
+        runCatching {
+            if (!w.isShowing) return
+            val h = hwndOf(w)
+            val r = IntArray(4)
+            if (!api.GetWindowRect(h, r)) return
+            for (i in 0..3) overlayDelta[i] = r[i] - frameRect[i]
+            overlayHandle = h
+        }
+    }
+
+    /** The small window to [x], [y] (and the size [width] x [height] when given), with the controls window in the same step */
+    private fun place(api: User32Ex, hwnd: WinDef.HWND, x: Int, y: Int, width: Int?, height: Int?): Boolean {
+        lastPlaceBatched = false
+        val flags = SWP_NOZORDER or SWP_NOACTIVATE or (if (width == null) SWP_NOSIZE else 0)
+        val w = width ?: 0
+        val h = height ?: 0
+        val over = overlayHandle
+        if (over != null) {
+            val batch = api.BeginDeferWindowPos(2)
+            if (batch != null) {
+                val first = api.DeferWindowPos(batch, hwnd, null, x, y, w, h, flags)
+                val second = first?.let {
+                    api.DeferWindowPos(
+                        it, over, null, x + overlayDelta[0], y + overlayDelta[1],
+                        if (width == null) 0 else w + overlayDelta[2] - overlayDelta[0], if (height == null) 0 else h + overlayDelta[3] - overlayDelta[1], flags,
+                    )
+                }
+                // a batch that failed half way is gone: place the window alone
+                if (second != null && api.EndDeferWindowPos(second)) { lastPlaceBatched = true; return true }
+            }
+        }
+        return api.SetWindowPos(hwnd, null, x, y, w, h, flags)
+    }
+
+    /** Dev / log: the last [place] put both windows in one step (false: the small window alone, or the batch was refused) */
+    @Volatile
+    private var lastPlaceBatched = false
 
     fun pipResizeBegin(edge: Int) {
         val api = user ?: return
@@ -602,11 +676,24 @@ object WinChrome {
             dragCursor.copyInto(resizeCursor)
             dragWindow.copyInto(resizeWindow)
             resizeEdge = edge
-            return
+        } else {
+            cursorPos(api, resizeCursor)
+            resizeEdge = if (api.GetWindowRect(hwnd, resizeWindow)) edge else 0
         }
-        cursorPos(api, resizeCursor)
-        resizeEdge = if (api.GetWindowRect(hwnd, resizeWindow)) edge else 0
+        if (resizeEdge == 0) return
+        resizeLastRect = null
+        measureOverlay(api, resizeWindow)
+        resizeFrame = frame(api, hwnd)
+        resizeScale = (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0
+        resizeMaxWidth = api.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)?.let { monitor ->
+            val info = Memory(40)
+            info.setInt(0, 40)
+            if (api.GetMonitorInfoW(monitor, info)) ((info.getInt(28) - info.getInt(20)) * 0.9).toInt() else null
+        } ?: Int.MAX_VALUE
     }
+
+    private var resizeFrame = 0 to 0
+    private var resizeScale = 1.0
 
     fun pipResizeMove() {
         val api = user ?: return
@@ -622,15 +709,14 @@ object WinChrome {
         if (edge == 2 || edge == 5 || edge == 8) r[2] += dx
         if (edge == 3 || edge == 4 || edge == 5) r[1] += dy
         if (edge == 6 || edge == 7 || edge == 8) r[3] += dy
-        fitPip(api, hwnd, edge, r)
+        fitPip(resizeFrame, resizeScale, edge, r)
         // not larger than the screen's work area
-        val monitor = api.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
-        if (monitor != null) {
-            val info = Memory(40)
-            info.setInt(0, 40)
-            if (api.GetMonitorInfoW(monitor, info) && r[2] - r[0] > (info.getInt(28) - info.getInt(20)) * 0.9) return
-        }
-        api.SetWindowPos(hwnd, null, r[0], r[1], r[2] - r[0], r[3] - r[1], SWP_NOZORDER or SWP_NOACTIVATE)
+        if (r[2] - r[0] > resizeMaxWidth) return
+        // the same rectangle as the last one: nothing to do (a fast mouse reports many positions a frame)
+        val last = resizeLastRect
+        if (last != null && last.contentEquals(r)) return
+        resizeLastRect = r
+        place(api, hwnd, r[0], r[1], r[2] - r[0], r[3] - r[1])
         pipMoved = true
     }
 
@@ -673,8 +759,31 @@ object WinChrome {
         cursorPos(api, dragCursor)
         pipDragging = api.GetWindowRect(hwnd, dragWindow)
         dragMoves = 0
+        dragLastX = Int.MIN_VALUE
+        dragLastY = Int.MIN_VALUE
+        dragWork = null
         pipMoved = false
-        android.util.Log.i("WinChrome", "picture in picture drag begins: pointer ${dragCursor.toList()}, window ${dragWindow.toList()}, ok $pipDragging")
+        if (pipDragging) measureOverlay(api, dragWindow)
+        android.util.Log.i("WinChrome", "picture in picture drag begins: pointer ${dragCursor.toList()}, window ${dragWindow.toList()}, ok $pipDragging, controls window $overlayHandle")
+    }
+
+    /** What a drag needs to know about the screen the pointer is on, measured once per screen and not at every pointer report */
+    private class Work(val monitor: Long, val left: Int, val top: Int, val right: Int, val bottom: Int, val snap: Int)
+
+    private var dragWork: Work? = null
+    private var dragLastX = Int.MIN_VALUE
+    private var dragLastY = Int.MIN_VALUE
+
+    private fun workOf(api: User32Ex, hwnd: WinDef.HWND, monitor: Pointer): Work? {
+        val id = Pointer.nativeValue(monitor)
+        dragWork?.let { if (it.monitor == id) return it }
+        val info = Memory(40)
+        info.setInt(0, 40)
+        if (!api.GetMonitorInfoW(monitor, info)) return null
+        val scale = (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0
+        val (fx, fy) = frame(api, hwnd)
+        // the work area (not under the taskbar); the invisible borders may reach over its edges
+        return Work(id, info.getInt(20) - fx, info.getInt(24), info.getInt(28) + fx, info.getInt(32) + fy, (PIP_SNAP_DP * scale).toInt()).also { dragWork = it }
     }
 
     /** Puts the small window where the pointer has taken it: it stays on a screen and sticks to the edges of the work area it is near */
@@ -688,31 +797,25 @@ object WinChrome {
         val height = dragWindow[3] - dragWindow[1]
         var x = dragWindow[0] + cursor[0] - dragCursor[0]
         var y = dragWindow[1] + cursor[1] - dragCursor[1]
-        // the work area (not under the taskbar) of the screen the pointer is on
+        // the screen the pointer is on
         val monitor = api.MonitorFromPoint((cursor[0].toLong() and 0xFFFFFFFFL) or (cursor[1].toLong() shl 32), MONITOR_DEFAULTTONEAREST)
-        if (monitor != null) {
-            val info = Memory(40)
-            info.setInt(0, 40)
-            if (api.GetMonitorInfoW(monitor, info)) {
-                val scale = (runCatching { api.GetDpiForWindow(hwnd) }.getOrDefault(96).takeIf { it > 0 } ?: 96) / 96.0
-                val snap = (PIP_SNAP_DP * scale).toInt()
-                val (fx, fy) = frame(api, hwnd)
-                val left = info.getInt(20) - fx
-                val top = info.getInt(24)
-                val right = info.getInt(28) + fx
-                val bottom = info.getInt(32) + fy
-                if (Math.abs(x - left) < snap) x = left
-                if (Math.abs(x + width - right) < snap) x = right - width
-                if (Math.abs(y - top) < snap) y = top
-                if (Math.abs(y + height - bottom) < snap) y = bottom - height
-                // the whole picture stays on the screen the pointer is on
-                x = x.coerceIn(left, maxOf(left, right - width))
-                y = y.coerceIn(top, maxOf(top, bottom - height))
-            }
+        val work = monitor?.let { workOf(api, hwnd, it) }
+        if (work != null) {
+            if (Math.abs(x - work.left) < work.snap) x = work.left
+            if (Math.abs(x + width - work.right) < work.snap) x = work.right - width
+            if (Math.abs(y - work.top) < work.snap) y = work.top
+            if (Math.abs(y + height - work.bottom) < work.snap) y = work.bottom - height
+            // the whole picture stays on the screen the pointer is on
+            x = x.coerceIn(work.left, maxOf(work.left, work.right - width))
+            y = y.coerceIn(work.top, maxOf(work.top, work.bottom - height))
         }
-        val moved = api.SetWindowPos(hwnd, null, x, y, 0, 0, SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE)
+        // the same place as the last report: nothing to do (a fast mouse reports many positions in a frame)
+        if (x == dragLastX && y == dragLastY) return
+        dragLastX = x
+        dragLastY = y
+        val moved = place(api, hwnd, x, y, null, null)
         if (x != dragWindow[0] || y != dragWindow[1]) pipMoved = true
-        if (dragMoves++ < 3) android.util.Log.i("WinChrome", "picture in picture drag: window to $x,$y ok $moved")
+        if (dragMoves++ < 3) android.util.Log.i("WinChrome", "picture in picture drag: window to $x,$y ok $moved, with the controls window in one step: $lastPlaceBatched")
     }
 
     fun pipDragEnd() {

@@ -180,12 +180,12 @@ fun HomeScreen() {
                     Column(Modifier.reveal("home/$apiName/resume", 60).padding(bottom = space)) {
                         com.lagradost.desktop.ui.fluent.RichSectionHeader("Continue watching", Modifier.padding(horizontal = gutter), onSeeAll = { Navigator.go(Route.History) })
                         Box(Modifier.height(12.dp))
-                        // plain posters like every other row: the bar along the bottom is how far you got, the line below what is next
-                        Shelf(resumeList, cardWidth, gutter = gutter, spacing = 14.dp, key = { (it.id ?: it.url.hashCode()).toString() + it.name }) { card ->
+                        // wide cards: the still of the episode, what is next and how long is left, the source it was watched with, the bar along the bottom is how far you got
+                        val resumeWidth = (cardWidth * 1.75f).coerceIn(250.dp, 340.dp)
+                        Shelf(resumeList, resumeWidth, gutter = gutter, spacing = 14.dp, key = { (it.id ?: it.url.hashCode()).toString() + it.name }) { card ->
                             val r = card as? DataStoreHelper.ResumeWatchingResult
-                            PosterCard(
-                                card, { openCard(card) }, cardWidth,
-                                subtitle = resumeSubtitle(card),
+                            ResumeCard(
+                                card, resumeWidth, resumeSubtitle(card),
                                 menu = {
                                     listOf(
                                         MenuItem("Resume", Icons.Play) { openCard(card) },
@@ -535,3 +535,48 @@ private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp, tmdbLogo:
 internal fun stripHtml(html: String): String =
     html.replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n").replace(Regex("<[^>]+>"), "")
         .replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ").trim()
+
+// -------------------------------------------------------------------------------------------
+// Continue watching card
+// -------------------------------------------------------------------------------------------
+
+/**
+ * One entry of Continue watching as a 16:9 card: the still of the episode (the poster of the title when the extension sent none),
+ * the title and what is next at the bottom, the source it was watched with at the top right, how far you got as a bar.
+ */
+@Composable
+private fun ResumeCard(card: SearchResponse, width: Dp, subtitle: String?, menu: () -> List<MenuItem>) {
+    val c = Fluent.colors
+    val r = card as? DataStoreHelper.ResumeWatchingResult
+    val source = com.lagradost.desktop.ui.fluent.rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.card)
+    val lift by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1.03f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(160), label = "resumeLift")
+    val thumb = com.lagradost.desktop.stats.ResumeExtras.thumbOf(r?.id) ?: card.posterUrl
+    val sourceName = com.lagradost.desktop.stats.ResumeExtras.sourceOf(r?.parentId)
+    val fraction = card.watchedFraction()
+    com.lagradost.desktop.ui.fluent.ContextMenuArea(menu) {
+        Column(Modifier.width(width).hoverable(source).fluentClickable(source, true, shape, androidx.compose.ui.semantics.Role.Button) { openCard(card) }) {
+            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).graphicsLayer { scaleX = lift; scaleY = lift }.clip(shape).background(c.card)) {
+                RemoteImage(thumb, card.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop, alignment = Alignment.TopCenter)
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color(0xCC000000))))
+                // a quiet play disc on hover
+                if (hovered) Box(Modifier.align(Alignment.Center).size(46.dp).background(Color(0x66000000), CircleShape), contentAlignment = Alignment.Center) {
+                    com.lagradost.desktop.ui.fluent.Icon(Icons.Play, size = 18.dp, tint = Color.White)
+                }
+                sourceName?.let { name ->
+                    Box(Modifier.align(Alignment.TopEnd).padding(8.dp).widthIn(max = width * 0.6f).background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) {
+                        FText(name, style = Fluent.type.caption, color = Color.White, maxLines = 1, softWrap = false)
+                    }
+                }
+                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = if (fraction != null) 12.dp else 10.dp)) {
+                    FText(card.name, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
+                    if (!subtitle.isNullOrBlank()) FText(subtitle, style = Fluent.type.caption, color = Color(0xCCFFFFFF), maxLines = 1)
+                }
+                fraction?.let { f ->
+                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()) { com.lagradost.desktop.ui.fluent.ProgressBar(f, height = 3.dp, color = c.accent) }
+                }
+            }
+        }
+    }
+}

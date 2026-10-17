@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import android.content.DialogInterface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -130,7 +132,7 @@ private fun AlertBody(
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         if (multi) CheckBox(on, { next -> if (index < checked.size) checked[index] = next; controller.toggleItem(index, next) })
-                        else if (single) Box(Modifier.size(16.dp).border(androidx.compose.ui.unit.Dp.Hairline, if (on) c.accent else c.textSecondary, CircleShape), contentAlignment = Alignment.Center) {
+                        else if (single) Box(Modifier.size(16.dp).hairBorder(if (on) c.accent else c.textSecondary, CircleShape), contentAlignment = Alignment.Center) {
                             if (on) Box(Modifier.size(8.dp).background(c.accent, CircleShape))
                         }
                         FText(text, Modifier.weight(1f), maxLines = 2)

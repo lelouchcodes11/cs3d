@@ -202,6 +202,36 @@ class SyncViewModel : ViewModel() {
         }
     }
 
+    // desktop: the list status follows playback. Watching when a title on a list (Planning, On hold, Dropped) is started, Completed when the last
+    // episode is done. A title that is already Watching / Completed / Re-watching is left alone. A title on no list is only added when
+    // [includeUnlisted] (Settings > Player > Add every title I play): playing something once must not fill the user's lists.
+    fun autoStarted(includeUnlisted: Boolean = false) {
+        modifyData { status ->
+            when (status.status) {
+                SyncWatchType.NONE -> if (includeUnlisted) {
+                    status.status = SyncWatchType.WATCHING
+                    status
+                } else null
+                SyncWatchType.PLANTOWATCH, SyncWatchType.ONHOLD, SyncWatchType.DROPPED -> {
+                    status.status = SyncWatchType.WATCHING
+                    status
+                }
+                else -> null
+            }
+        }
+    }
+
+    fun autoFinished(episode: Int, includeUnlisted: Boolean = false) {
+        modifyData { status ->
+            if (status.status == SyncWatchType.NONE && !includeUnlisted) return@modifyData null
+            val max = status.maxEpisodes ?: (metadata.value as? Resource.Success)?.value?.totalEpisodes ?: return@modifyData null
+            if (max <= 0 || episode < max || status.status == SyncWatchType.COMPLETED) return@modifyData null
+            status.watchedEpisodes = max
+            status.status = SyncWatchType.COMPLETED
+            status
+        }
+    }
+
     /// modifies the current sync data, return null if you don't want to change it
     private fun modifyData(update: ((SyncAPI.AbstractSyncStatus) -> (SyncAPI.AbstractSyncStatus?))) =
         ioSafe {

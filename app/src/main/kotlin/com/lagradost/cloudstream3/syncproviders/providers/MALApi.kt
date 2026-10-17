@@ -425,8 +425,14 @@ class MALApi : SyncAPI() {
     /** MyAnimeList answers a refused token request with {"error": "...", "message": "..."}: say what it said instead of "failed to sign in" */
     private fun tokenError(code: Int, body: String): ErrorLoadingException {
         android.util.Log.e("MALApi", "MAL token request refused: HTTP $code $body")
-        val said = runCatching { org.json.JSONObject(body).let { it.optString("message").ifBlank { it.optString("error") } } }.getOrNull().orEmpty().ifBlank { "HTTP $code" }
-        val hint = if (code == 401) " The client is most likely App Type \"web\": enter its Client Secret under Settings, Accounts & security, Sign-in keys, or create an \"other\" client." else ""
+        val json = runCatching { org.json.JSONObject(body) }.getOrNull()
+        val said = json?.let { it.optString("message").ifBlank { it.optString("error") } }.orEmpty().ifBlank { "HTTP $code" }.trimEnd('.')
+        val error = json?.optString("error").orEmpty()
+        val hint = when {
+            error == "invalid_client" -> " The client is most likely App Type \"web\": enter its Client Secret under Settings, Accounts & security, Sign-in keys, or create an \"other\" client."
+            error == "invalid_request" || error == "invalid_grant" -> " Start the sign-in again from Settings, Accounts & security (each approval can be used once and only for a few minutes)."
+            else -> ""
+        }
         return ErrorLoadingException("MyAnimeList refused the sign-in: $said.$hint")
     }
 

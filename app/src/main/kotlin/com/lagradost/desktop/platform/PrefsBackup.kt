@@ -49,7 +49,11 @@ object PrefsBackup {
             folder.mkdirs()
             for (f in files) f.copyTo(File(folder, f.name), overwrite = true)
             // oldest first (the names sort by time)
-            root.listFiles { f -> f.isDirectory && f.name.startsWith("prefs-") }?.sortedBy { it.name }?.dropLast(KEEP)?.forEach { it.deleteRecursively() }
+            // (the newest copy that still has the extension list is never deleted: a sync that empties the store would otherwise push the
+            // last good copy out within a few starts: 2026-10-14, a profile tombstone from another device wiped the list)
+            val copies = root.listFiles { f -> f.isDirectory && f.name.startsWith("prefs-") }?.sortedBy { it.name }.orEmpty()
+            val lastGood = copies.lastOrNull { c -> runCatching { File(c, "rebuild_preference.xml").readText().let { "PLUGINS_KEY" in it || "REPOSITORIES_KEY" in it } }.getOrDefault(false) }
+            copies.dropLast(KEEP).filter { it != lastGood }.forEach { it.deleteRecursively() }
             Log.i(TAG, "copied ${files.size} preference files to ${folder.name} ($reason)")
             // and the copy outside the data folder that survives an update
             DataKeep.mirror()

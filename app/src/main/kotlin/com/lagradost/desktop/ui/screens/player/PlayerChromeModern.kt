@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.player
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -32,6 +34,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -42,6 +45,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,6 +76,7 @@ import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
@@ -250,7 +256,7 @@ private fun CapsuleDivider() {
 private fun Capsule(height: Dp = 54.dp, content: @Composable RowScope.() -> Unit) {
     val shape = RoundedCornerShape(50)
     Row(
-        Modifier.height(height).clip(shape).background(GlassFill, shape).border(Dp.Hairline, GlassBorder, shape).padding(horizontal = 7.dp),
+        Modifier.height(height).clip(shape).background(GlassFill, shape).hairBorder(GlassBorder, shape).padding(horizontal = 7.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp), content = content,
     )
 }
@@ -268,7 +274,7 @@ internal fun GlassButton(
     Tooltip(tooltip) {
         Box(
             modifier.size(size).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(bg, CircleShape)
-                .let { if (glass) it.border(Dp.Hairline, GlassBorder, CircleShape) else it }
+                .let { if (glass) it.hairBorder(GlassBorder, CircleShape) else it }
                 .fluentClickable(source, true, CircleShape, Role.Button, onClick),
             contentAlignment = Alignment.Center,
         ) { content() }
@@ -292,7 +298,7 @@ private fun SeekButton(back: Boolean, tooltip: String, seconds: Int = 10, onClic
     GlassButton(tooltip, onClick = onClick) { SeekGlyph(back, seconds) }
 
 @Composable
-private fun SeekGlyph(back: Boolean, seconds: Int, glyphSize: Dp = 26.dp) {
+internal fun SeekGlyph(back: Boolean, seconds: Int, glyphSize: Dp = 26.dp) {
     Box(Modifier.size(glyphSize), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = this.size.minDimension * 0.085f
@@ -327,7 +333,7 @@ private fun SeekGlyph(back: Boolean, seconds: Int, glyphSize: Dp = 26.dp) {
 /** The main button: a white disc that swaps its glyph with a little pop */
 @Composable
 private fun PlayButton(s: PlayerSession) {
-    val playing = s.status == CSPlayerLoading.IsPlaying
+    val playing = s.showsPause
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val pressed by source.collectIsPressedAsState()
@@ -338,9 +344,7 @@ private fun PlayButton(s: PlayerSession) {
                 .fluentClickable(source, true, CircleShape, Role.Button) { s.togglePlay() },
             contentAlignment = Alignment.Center,
         ) {
-            AnimatedContent(playing, transitionSpec = {
-                (fadeIn(glide(200)) + scaleIn(glide(260), initialScale = 0.5f)) togetherWith (fadeOut(glide(90)) + scaleOut(glide(90), targetScale = 0.5f))
-            }) { p -> Icon(if (p) Icons.Pause else Icons.Play, size = 20.dp, tint = Ink) }
+            com.lagradost.desktop.ui.fluent.PlayPauseMorph(playing, 20.dp, Ink)
         }
     }
 }
@@ -400,10 +404,20 @@ internal fun ModernSeekBar(s: PlayerSession) {
     var width by remember { mutableStateOf(1f) }
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     var hoverX by remember { mutableStateOf<Float?>(null) }
-    val active = hovered || dragFraction != null
+    val devHover = PlayerDev.seekHover
+    val active = hovered || dragFraction != null || devHover != null
     val trackH by animateDpAsState(if (active) 8.dp else 4.dp, glide(220))
     val knob by animateFloatAsState(if (active) 1f else 0f, spring(0.55f, 520f))
     val accent = c.accent
+    // the played part glides between the four position reports a second instead of stepping (drawn only: nothing recomposes)
+    val glide = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(s) {
+        snapshotFlow { (s.positionMs.toFloat() / s.durationMs.coerceAtLeast(1)).coerceIn(0f, 1f) }.collectLatest { f ->
+            // a seek or a new video jumps; normal playback moves a hair
+            if (kotlin.math.abs(f - glide.value) > 0.02f || Appearance.motion == Motion.Off) glide.snapTo(f)
+            else glide.animateTo(f, tween(300, easing = LinearEasing))
+        }
+    }
 
     Box(
         Modifier
@@ -435,7 +449,7 @@ internal fun ModernSeekBar(s: PlayerSession) {
             // everything is drawn here: the position changes four times a second and must not recompose anything
             .drawBehind {
                 val duration = s.durationMs.coerceAtLeast(1)
-                val shown = dragFraction ?: (s.positionMs.toFloat() / duration).coerceIn(0f, 1f)
+                val shown = dragFraction ?: if (s.live) (s.positionMs.toFloat() / duration).coerceIn(0f, 1f) else glide.value
                 val buffered = (s.bufferedMs.toFloat() / duration).coerceIn(0f, 1f)
                 val h = trackH.toPx()
                 val y = (size.height - h) / 2
@@ -461,16 +475,65 @@ internal fun ModernSeekBar(s: PlayerSession) {
                 }
             },
     ) {
-        hoverX?.let { x ->
+        (hoverX ?: devHover?.let { it * width })?.let { x ->
             val f = (x / width).coerceIn(0f, 1f)
             val at = (f * s.durationMs).toLong()
             val stamp = s.stampLabelAt(at)
             val label = if (s.live) "-" + fmt((s.durationMs - at).coerceAtLeast(0)) else fmt(at)
-            val shape = RoundedCornerShape(10.dp)
+            // the still of the scene (a second headless player makes them, see SeekThumbs); only the time while there is none yet
+            val thumb = if (s.live) null else s.seekThumbs?.frameAt(f)
+            val crop = if (thumb != null) s.seekThumbs?.content() else null
+            SeekBubble(thumb, crop, stamp, label, x, width, Modifier.align(Alignment.TopStart))
+        }
+    }
+}
+
+/**
+ * What shows above the seek bar while the pointer is on it: the still of the scene with the time in a small pill over its lower edge, or
+ * only the time pill. It stands a hand's breadth above the bar, centred on the pointer, and never leaves the bar's width. The black bars of
+ * a letterboxed film are cut off the still so that it is the picture, not a frame with a picture inside.
+ */
+@Composable
+private fun SeekBubble(thumb: androidx.compose.ui.graphics.ImageBitmap?, crop: IntArray?, stamp: String?, label: String, x: Float, barWidth: Float, modifier: Modifier) {
+    val gap = 12.dp
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier.layout { measurable, _ ->
+            // measured without the bar's height as a limit (the bar is 28 dp, the bubble is taller and stands above it)
+            val p = measurable.measure(androidx.compose.ui.unit.Constraints())
+            // no height of its own: a size larger than the bar's would be cut to it and the picture centred in what is left (it sat half its height too high)
+            layout(p.width, 0) {
+                val left = (x - p.width / 2f).coerceIn(0f, (barWidth - p.width).coerceAtLeast(0f)).toInt()
+                p.place(left, -p.height - gap.roundToPx())
+            }
+        },
+    ) {
+        if (thumb != null) {
+            val sw = crop?.let { it[2] - it[0] } ?: thumb.width
+            val sh = crop?.let { it[3] - it[1] } ?: thumb.height
+            val aspect = (sw.toFloat() / sh.coerceAtLeast(1)).coerceIn(1.2f, 2.45f)
+            Box(Modifier.width(176.dp).aspectRatio(aspect).clip(shape).background(Color(0xFF0B0C0E), shape)) {
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    drawImage(
+                        thumb,
+                        srcOffset = androidx.compose.ui.unit.IntOffset(crop?.get(0) ?: 0, crop?.get(1) ?: 0),
+                        srcSize = androidx.compose.ui.unit.IntSize(sw, sh),
+                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1)),
+                        filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+                    )
+                }
+                // a soft shade under the time so that it reads on a bright scene
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(40.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xB3000000)))))
+                Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (stamp != null) FText(stamp, style = Fluent.type.caption, color = Color(0xFFFFD54F), maxLines = 1, softWrap = false)
+                    FText(label, style = Fluent.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = Color.White, maxLines = 1, softWrap = false)
+                }
+                // the border drawn over the picture (not around it): no dark frame between the still and the edge
+                Box(Modifier.fillMaxSize().hairBorder(GlassBorder, shape))
+            }
+        } else {
             Column(
-                Modifier.align(Alignment.TopStart)
-                    .offset { IntOffset((x - 40.dp.toPx()).coerceIn(0f, (width - 80.dp.toPx()).coerceAtLeast(0f)).toInt(), -52.dp.roundToPx()) }
-                    .width(80.dp).background(Color(0xE6121316), shape).border(Dp.Hairline, GlassBorder, shape).padding(horizontal = 8.dp, vertical = 5.dp),
+                Modifier.background(Color(0xE6121316), shape).hairBorder(GlassBorder, shape).padding(horizontal = 12.dp, vertical = 5.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (stamp != null) FText(stamp, style = Fluent.type.caption, color = Color(0xFFFFD54F), maxLines = 1, softWrap = false)

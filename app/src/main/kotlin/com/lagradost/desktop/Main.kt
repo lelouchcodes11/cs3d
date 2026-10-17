@@ -55,7 +55,10 @@ fun main(args: Array<String>) {
     com.lagradost.desktop.platform.AppRestart.awaitPreviousInstance()
 
     // Single instance check: if an instance is already running, forward args and exit
-    if (SingleInstanceIpc.sendArgsToExistingInstance(args)) {
+    // (a plain start while the app runs opens a second window of its own, see MultiInstance; a link always goes to the first one)
+    if (SingleInstanceIpc.isRunning() && com.lagradost.desktop.platform.MultiInstance.becomeSecondWindow(args)) {
+        println("CloudStream is running: starting window ${com.lagradost.desktop.platform.MultiInstance.number}.")
+    } else if (SingleInstanceIpc.sendArgsToExistingInstance(args)) {
         println("Forwarded arguments to running CloudStream instance.")
         exitProcess(0)
     }
@@ -98,7 +101,7 @@ fun main(args: Array<String>) {
     }
     com.lagradost.desktop.platform.HangWatchdog.start()
     // what the app logs is also kept in logs/app.log (the last two runs' worth, 3 MB each at most)
-    runCatching { com.lagradost.desktop.runtime.LogBuffer.startFile(java.io.File(AndroidRuntime.dataDir, "logs")) }
+    runCatching { com.lagradost.desktop.runtime.LogBuffer.startFile(java.io.File(if (AndroidRuntime.isInitialized) AndroidRuntime.dataDir else (System.getProperty("cloudstream.data")?.let { java.io.File(it) } ?: AndroidRuntime.defaultDataDir()), "logs"), if (com.lagradost.desktop.platform.MultiInstance.number > 1) "app-${com.lagradost.desktop.platform.MultiInstance.number}.log" else "app.log") }
     // the text stack (native Skia, the font manager and a first shaped paragraph) loads here, next to the engine start-up on the UI thread,
     // and not in front of the first frame
     Thread({
@@ -155,7 +158,8 @@ fun main(args: Array<String>) {
     WindowsProtocols.registerCurrentExecutable()
 
     // Initialize desktop tray notifications (WP10.1)
-    DesktopTrayNotifications.init { DesktopUiHost.window }
+    // (the first window owns the tray icon and the new-episode checks)
+    if (com.lagradost.desktop.platform.MultiInstance.number == 1) DesktopTrayNotifications.init { DesktopUiHost.window }
 
     // Start single instance IPC listener (WP10.2)
     SingleInstanceIpc.startServer { receivedArgs ->

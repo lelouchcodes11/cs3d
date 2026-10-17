@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import com.lagradost.desktop.ui.fluent.reveal
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,8 +64,11 @@ fun PosterGrid(
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         header?.invoke(this)
-        items(unique, key = { it.url + it.apiName }) { card ->
-            PosterCard(card, { if (onOpen != null) onOpen(card) else openCard(card) }, width = null, showType = showType, menu = menu?.let { m -> { m(card) } })
+        itemsIndexed(unique, key = { _, it -> it.url + it.apiName }) { i, card ->
+            // the first posters of a page arrive one after the other (once per poster and run of the app)
+            Box(Modifier.reveal("grid/" + card.url + card.apiName, (i % 8) * 40 + (i / 8).coerceAtMost(3) * 40, rise = 18.dp)) {
+                PosterCard(card, { if (onOpen != null) onOpen(card) else openCard(card) }, width = null, showType = showType, menu = menu?.let { m -> { m(card) } })
+            }
         }
     }
     }

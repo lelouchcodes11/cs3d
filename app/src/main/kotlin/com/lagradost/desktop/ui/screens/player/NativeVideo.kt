@@ -43,10 +43,15 @@ object NativeVideo {
     /** The controls window is up: dialogs and messages are drawn there then (the main window's own layer is behind the video) */
     var overlayActive by mutableStateOf(false)
 
+    /** The controls window itself, so the small window can be moved together with it (see WinChrome.place) */
+    @Volatile
+    var overlayWindow: java.awt.Window? = null
+
     /** The native renderer could not be used; the compatible player is used for the rest of this run */
     var broken by mutableStateOf(false)
 
     fun available(): Boolean = DesktopPlatform.isWindows && Appearance.nativePlayer && !broken
+
 
     private interface ClassApi : com.sun.jna.win32.StdCallLibrary {
         fun SetClassLongPtrW(h: Pointer, index: Int, value: Pointer?): Pointer?
@@ -98,6 +103,46 @@ object NativeVideo {
             nativeCanvasHwnds.add(value)
         }
         return hwndVal == value
+    }
+
+    private var lastFitLog = 0L
+
+    /**
+     * mpv's own window is a child of the canvas and keeps the size it was given at its start. After the page's window was enlarged, shrunk or
+     * snapped it could stay at the old size: the picture sat too low and was cut at the bottom (a report with a 1246 x 764 window and a video
+     * window of 1246 x 828). Every child of the canvas is put back to the canvas's client size when it differs. Cheap (a few Win32 calls),
+     * looked at from the loop of the controls window.
+     */
+    fun fitChildren() {
+        val parentPtr = canvasHwnd.takeIf { it != 0L } ?: return
+        runCatching {
+            val u = com.sun.jna.platform.win32.User32.INSTANCE
+            val parent = com.sun.jna.platform.win32.WinDef.HWND(Pointer(parentPtr))
+            val client = com.sun.jna.platform.win32.WinDef.RECT()
+            if (!u.GetClientRect(parent, client)) return
+            val w = client.right - client.left
+            val h = client.bottom - client.top
+            if (w <= 0 || h <= 0) return
+            u.EnumChildWindows(parent, { child, _ ->
+                // direct children only (mpv's window), not what it may hold itself
+                if (Pointer.nativeValue(u.GetParent(child)?.pointer ?: Pointer.NULL) == parentPtr) {
+                    val r = com.sun.jna.platform.win32.WinDef.RECT()
+                    if (u.GetClientRect(child, r)) {
+                        val cw = r.right - r.left
+                        val ch = r.bottom - r.top
+                        if (cw != w || ch != h) {
+                            u.SetWindowPos(child, null, 0, 0, w, h, 0x0004 or 0x0010) // SWP_NOZORDER | SWP_NOACTIVATE
+                            val now = System.currentTimeMillis()
+                            if (now - lastFitLog > 5_000) {
+                                lastFitLog = now
+                                android.util.Log.i("NativeVideo", "video window was ${cw}x$ch, canvas is ${w}x$h: resized")
+                            }
+                        }
+                    }
+                }
+                true
+            }, null)
+        }
     }
 
     /** The window handle of [canvas] for mpv; waits up to 3 s for the canvas to have a window (never on the UI thread: 0 then) */
@@ -173,7 +218,10 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
         position = runCatching { videoOrigin(canvas)?.let { WindowPosition(it.x.dp, it.y.dp) } }.getOrNull() ?: WindowPosition(0.dp, 0.dp),
         size = if (canvas.width > 0 && canvas.height > 0) DpSize(canvas.width.dp, canvas.height.dp) else DpSize(400.dp, 300.dp),
     )
+    // the real window of the controls (to put its bounds right by hand when the dialog state and the window disagree)
+    val shown = remember(canvas) { arrayOfNulls<java.awt.Window>(1) }
     DialogWindow(onCloseRequest = {}, state = state, visible = placed, undecorated = true, transparent = true, resizable = false, focusable = focusable) {
+        shown[0] = window
         // a picture of a whole number of pixels at 125 / 150 / 175 %: the 1 px edges of the glass pills and menus are not smeared by a stretch
         remember(window) { com.lagradost.desktop.platform.EvenPixels.install(window) }
         DisposableEffect(Unit) {
@@ -188,7 +236,8 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
                 if (shown) d.isVisible = true
             }
             NativeVideo.overlayActive = true
-            onDispose { NativeVideo.overlayActive = false }
+            NativeVideo.overlayWindow = d
+            onDispose { NativeVideo.overlayActive = false; if (NativeVideo.overlayWindow === d) NativeVideo.overlayWindow = null }
         }
         FluentTheme { ScaledContent { content() } }
     }
@@ -216,6 +265,12 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
                         if (canvas.width != lastW || canvas.height != lastH) { state.size = DpSize(canvas.width.dp, canvas.height.dp); lastW = canvas.width; lastH = canvas.height }
                         // in place: let the window take its bounds, then show it
                         if (!placed && lastW > 0 && lastH > 0) { delay(80); placed = true }
+                        // the window itself must have the bounds of the video: after a maximise, a snap or a move to another display the
+                        // state said the right thing and the window kept its old size (the controls then covered only a part of the picture)
+                        if (placed) shown[0]?.let { w ->
+                            if (lastW > 0 && lastH > 0 && (w.x != at.x || w.y != at.y || w.width != lastW || w.height != lastH)) w.setBounds(at.x, at.y, lastW, lastH)
+                        }
+                        NativeVideo.fitChildren()
                     }
                 }
                 // a drag sends many events: look at most every 8 ms; with none, every quarter of a second (every frame until the window is placed)

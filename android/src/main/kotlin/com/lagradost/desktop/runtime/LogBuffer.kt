@@ -60,15 +60,15 @@ object LogBuffer {
      * (`app.log`, `app.log.1`), so it never grows; lines wait in a bounded queue and are written by one thread, a full queue drops lines.
      */
     @Synchronized
-    fun startFile(dir: File) {
+    fun startFile(dir: File, name: String = "app.log") {
         if (fileWriter != null) return
         runCatching { dir.mkdirs() }
-        val file = File(dir, "app.log")
+        val file = File(dir, name)
         fileWriter = Thread({
             var out: java.io.Writer? = null
             var w: java.io.Writer
             try {
-                if (file.exists() && file.length() > 0) runCatching { file.renameTo(File(dir, "app.log.1").also { it.delete() }) }
+                if (file.exists() && file.length() > 0) runCatching { file.renameTo(File(dir, "$name.1").also { it.delete() }) }
                 w = file.bufferedWriter(Charsets.UTF_8); out = w
                 var written = 0L
                 var lastFlush = System.currentTimeMillis()
@@ -79,7 +79,7 @@ object LogBuffer {
                     if (line == null || now - lastFlush > 1000) { w.flush(); lastFlush = now }
                     if (written > 3_000_000L) {
                         w.close()
-                        File(dir, "app.log.1").delete(); file.renameTo(File(dir, "app.log.1"))
+                        File(dir, "$name.1").delete(); file.renameTo(File(dir, "$name.1"))
                         w = file.bufferedWriter(Charsets.UTF_8); out = w; written = 0
                     }
                 }

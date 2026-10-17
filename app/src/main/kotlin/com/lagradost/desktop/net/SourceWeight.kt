@@ -14,6 +14,14 @@ object SourceWeight {
     /** Larger than this many GB is heavy whatever the picture size says */
     private const val HEAVY_GB = 25.0
 
+    /** The size the name of a source says ("[12.4 GB]", "2.1 GB"), in GB; null when it says none */
+    fun sizeGb(link: ExtractorLink?): Double? {
+        link ?: return null
+        val match = size.find(link.name + " " + link.source) ?: return null
+        val value = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return null
+        return if (match.groupValues[2].equals("MB", true)) value / 1024.0 else value
+    }
+
     fun heavy(link: ExtractorLink?): Boolean {
         link ?: return false
         if (link.quality > 1200) return true

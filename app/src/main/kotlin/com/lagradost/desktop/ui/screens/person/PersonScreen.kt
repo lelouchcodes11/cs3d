@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.person
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -110,7 +112,7 @@ private fun Header(route: Route.Person, info: TmdbPersonInfo?) {
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 26.dp), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
         val shape = RoundedCornerShape(FluentShapes.card)
-        Box(Modifier.width(210.dp).aspectRatio(2f / 3f).clip(shape).background(c.card).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape), contentAlignment = Alignment.Center) {
+        Box(Modifier.width(210.dp).aspectRatio(2f / 3f).clip(shape).background(c.card).hairBorder(c.stroke, shape), contentAlignment = Alignment.Center) {
             FText(route.name.split(' ').mapNotNull { it.firstOrNull()?.uppercase() }.take(2).joinToString(""), style = Fluent.type.titleLarge, color = c.textTertiary)
             RemoteImage(image, null, route.name, Modifier.fillMaxSize(), ContentScale.Crop)
         }

@@ -56,6 +56,26 @@ enum class AudioDecoder(val label: String, val detail: String, val spdif: String
 }
 
 /**
+ * CloudStream's dynamic range compressor (new on the phone in October 2026): loud scenes are turned down and quiet speech up, so the film
+ * can be watched at night without the volume going up and down. The same three presets as the phone (threshold, makeup gain); ratio 8:1, attack
+ * 5 ms, release 400 ms as there. mpv runs ffmpeg's `acompressor` for it (the filter takes linear values, not dB).
+ */
+enum class DynamicRange(val label: String, val detail: String, val thresholdDb: Int, val makeupDb: Int) {
+    Off("Off", "The sound as it is.", 0, 0),
+    Light("Light", "Gently evens out loud and quiet parts.", -18, 4),
+    Dialogue("Dialogue boost", "Loud scenes come down, speech comes up.", -24, 12),
+    Heavy("Heavy", "The strongest: for the night or small speakers.", -30, 16);
+
+    /** mpv's `af` value for this preset ("" = no filter, the sound is not touched) */
+    val filter: String
+        get() {
+            if (this == Off) return ""
+            fun linear(db: Int) = String.format(java.util.Locale.ROOT, "%.5f", Math.pow(10.0, db / 20.0))
+            return "lavfi=[acompressor=threshold=${linear(thresholdDb)}:ratio=8:attack=5:release=400:makeup=${linear(makeupDb)}:detection=peak]"
+        }
+}
+
+/**
  * How the video is enlarged when it is shown larger than it is, and for the Anime4K modes cleaned up too (native GPU player only).
  * [scaler] is mpv's own filter for the picture; the shader chains behind the Anime4K and FSR modes are in player/Upscaling.kt.
  * [load] is a rough price on the graphics card (0 = none, 3 = a strong card).
@@ -141,6 +161,10 @@ object Appearance {
     val audioDecoderState = mutableStateOf(AudioDecoder.Software)
     var audioDecoder by audioDecoderState
 
+    /** The compressor preset (Off, Light, Dialogue boost, Heavy); applies to the playing video at once */
+    val dynamicRangeState = mutableStateOf(DynamicRange.Off)
+    var dynamicRange by dynamicRangeState
+
     /** Video: blends the frames around each screen refresh so 24 or 25 fps film does not judder on a 60 Hz screen */
     var smoothMotion by mutableStateOf(true)
 
@@ -152,6 +176,12 @@ object Appearance {
 
     /** Title information (artwork, cast, ratings, where to watch) from TMDB; off means no request to it is made */
     var tmdbEnabled by mutableStateOf(true)
+
+    /** The still of the scene above the seek bar (a second, light player reads the video for it) */
+    var seekPreviews by mutableStateOf(true)
+
+    /** Seconds after the last mouse movement the player controls go away; 0 keeps them on the picture */
+    var controlsHideSeconds by mutableStateOf(2)
 
     /** Country code for age ratings and streaming services; empty follows the Windows region */
     var tmdbRegion by mutableStateOf("")
@@ -215,9 +245,12 @@ object Appearance {
             // before the modes there was one switch, Anime4K on or off: it becomes Mode A
             upscaler = enumOf(p.getString(PREFIX + "upscaler", null), if (p.getBoolean(PREFIX + "anime4k", false)) Upscaler.Anime4kA else Upscaler.Off)
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
+            dynamicRange = enumOf(p.getString(PREFIX + "dynamic_range", null), DynamicRange.Off)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
             subtitleUniversal = p.getBoolean(PREFIX + "sub_universal", false)
             tmdbEnabled = p.getBoolean(PREFIX + "tmdb", true)
+            seekPreviews = p.getBoolean(PREFIX + "seek_previews", true)
+            controlsHideSeconds = p.getInt(PREFIX + "controls_hide_s", 2).coerceIn(0, 30)
             tmdbRegion = p.getString(PREFIX + "tmdb_region", "") ?: ""
             theme = p.getString(PREFIX + "theme", null) ?: Themes.DEFAULT_ID
             themeGlow = p.getBoolean(PREFIX + "theme_glow_v2", false)
@@ -266,9 +299,12 @@ object Appearance {
                 .putBoolean(PREFIX + "auto_skip_delay_5s", autoSkipDelay5s)
                 .putBoolean(PREFIX + "show_remaining_time", showRemainingTime)
                 .putString(PREFIX + "audio_decoder", audioDecoder.name)
+                .putString(PREFIX + "dynamic_range", dynamicRange.name)
                 .putBoolean(PREFIX + "dock_auto_hide", dockAutoHide)
                 .putBoolean(PREFIX + "sub_universal", subtitleUniversal)
                 .putBoolean(PREFIX + "tmdb", tmdbEnabled)
+                .putBoolean(PREFIX + "seek_previews", seekPreviews)
+                .putInt(PREFIX + "controls_hide_s", controlsHideSeconds)
                 .putString(PREFIX + "tmdb_region", tmdbRegion)
                 .putString(PREFIX + "theme", theme)
                 .putBoolean(PREFIX + "theme_glow_v2", themeGlow)
@@ -286,7 +322,7 @@ object Appearance {
     fun reset() {
         navPosition = NavPosition.Floating; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Large; backdrop = Backdrop.Black; buttonStyle = ButtonStyle.White; surfaceTint = SurfaceTint.Balanced; navAccentPill = false; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = false; hideSpoilers = true; hideSpoilerTitles = false
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = false; hideSpoilers = true; hideSpoilerTitles = false
         FluentSettings.chooseAccent(null)
         FluentSettings.chooseButtonColor(null)
         save()
@@ -312,6 +348,8 @@ object FluentMotion {
     fun <T> tweenIn(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = enter)
     /** like [tweenIn] but starting [delayMs] late: the first frames of a new page are spent composing it, and an animation that has already begun looks like a pop */
     fun <T> tweenInAfter(base: Int, delayMs: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), delayMillis = delayMs, easing = enter)
+    /** a long soft landing (NuvioDesktop's curve for content that arrives): leaves at once, settles slowly; starts [delayMs] late like [tweenInAfter] */
+    fun <T> tweenSoftAfter(base: Int, delayMs: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), delayMillis = delayMs, easing = MotionCurves.easing)
     fun <T> tweenOut(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = exit)
     fun <T> tweenStd(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = standard)
 }

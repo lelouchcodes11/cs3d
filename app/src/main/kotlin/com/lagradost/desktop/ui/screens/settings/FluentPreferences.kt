@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.settings
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -93,7 +95,7 @@ fun SettingsCard(
     val shape = RoundedCornerShape(FluentShapes.card)
     val base = Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(shape)
         .background(if (hovered && onClick != null && enabled) c.cardHover else c.card, shape)
-        .border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape)
+        .hairBorder(c.stroke, shape)
     Row(
         (if (onClick != null && enabled) base.fluentClickable(source, true, shape, Role.Button, onClick) else base).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -111,7 +113,7 @@ fun SettingsCard(
 
 @Composable
 @Suppress("UNCHECKED_CAST")
-private fun PreferenceCard(item: Preference.PreferenceItem<*, *>) {
+internal fun PreferenceCard(item: Preference.PreferenceItem<*, *>) {
     val scope = rememberCoroutineScope()
     val c = Fluent.colors
     if (!item.enabled && item !is Preference.PreferenceItem.CustomPreference) return

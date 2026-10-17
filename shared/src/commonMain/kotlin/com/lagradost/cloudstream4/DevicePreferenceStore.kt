@@ -156,6 +156,10 @@ class ProviderPreferences(preferences: PreferenceStore) {
 
 class PlayerPreferences(preferences: PreferenceStore) {
     val episodeSync = preferences.getBoolean("episode_sync_enabled_key", true)
+    /** desktop: the tracker's list status follows playback (Watching when a title starts, Completed after its last episode) */
+    val autoStatusSync = preferences.getBoolean("auto_status_sync_key", true)
+    /** desktop: also for titles that are on no list yet (off: only titles already on a list move to Watching) */
+    val autoStatusSyncAll = preferences.getBoolean("auto_status_sync_all_key", false)
     val defaultPlayer = preferences.getString("player_default_key", "")
     val limitPlayerTitle = preferences.getInt("prefer_limit_title_key", 0)
     val hidePlayerControlNames = preferences.getBoolean("hide_player_control_names_key", false)
@@ -165,6 +169,7 @@ class PlayerPreferences(preferences: PreferenceStore) {
     val pipEnabled = preferences.getBoolean("pip_enabled_key", true)
     val resizeEnabled = preferences.getBoolean("player_resize_enabled_key", true)
     val speedEnabled = preferences.getBoolean("playback_speed_enabled_key", false)
+    val compressorEnabled = preferences.getBoolean("compressor_enabled_key", false)
     val tiktokEnabled = preferences.getBoolean("speedup_key", false)
     val autoPlayEnabled = preferences.getBoolean("autoplay_next_key", true)
     val startPaused = preferences.getBoolean("start_paused_key", false)
@@ -198,6 +203,9 @@ class GeneralPreferences(preferences: PreferenceStore) {
 
     /** Very weird setKey based usage, just having this setting might not do it */
     val jsdelivrProxy = preferences.getBoolean("jsdelivr_proxy_key", false)
+
+    /** desktop: pages opened to pass a Cloudflare check (off: none is opened, the request just fails) */
+    val cloudflareSolvers = preferences.getBoolean("cloudflare_solvers_key", true)
 
     /** This should honesty be refactored to a single setting */
     val downloadPath = preferences.getString("download_path_key", "")

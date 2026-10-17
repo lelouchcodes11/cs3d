@@ -34,6 +34,7 @@ object Shortcuts {
         "S" to "Next subtitle track (or off)",
         "A" to "Next audio track",
         "Z" to "Picture size: fit, fill, zoom",
+        "T" to "Translate the writing on the picture (signs, game windows) and show it over the video",
         "E" to "Episode list",
         "," to "Slower (0.25x steps)",
         "." to "Faster (0.25x steps)",

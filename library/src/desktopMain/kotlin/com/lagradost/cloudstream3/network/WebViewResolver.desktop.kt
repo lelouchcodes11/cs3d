@@ -68,6 +68,13 @@ actual class WebViewResolver actual constructor(
         )
     }
 
+    private val activeCancels = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    /** Stops every page this resolver has open (the user's Cancel while a Cloudflare check is being passed): the call returns without a request */
+    fun cancel() {
+        activeCancels.toList().forEach { it() }
+    }
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         return runBlocking {
@@ -124,6 +131,13 @@ actual class WebViewResolver actual constructor(
             }
         }
 
+        var cancelled = false
+        val cancelHook: () -> Unit = {
+            cancelled = true
+            Log.i(TAG, "Web-view cancelled")
+            destroyWebView()
+        }
+        activeCancels.add(cancelHook)
         webViewUserAgent = userAgent ?: getWebViewUserAgent()
         try {
             browser = HeadlessBrowser(userAgent, onRequest = { r ->
@@ -163,13 +177,17 @@ actual class WebViewResolver actual constructor(
 
         // A bit sloppy, but couldn't find a better way
         while (loop < totalTime / delayTime && !shouldExit) {
-            if (fixedRequest != null) return fixedRequest to extraRequestList
+            if (fixedRequest != null) {
+                activeCancels.remove(cancelHook)
+                return fixedRequest to extraRequestList
+            }
             delay(delayTime)
             loop += 1
         }
 
-        Log.i(TAG, "Web-view timeout after ${totalTime / 1000}s")
+        if (!cancelled) Log.i(TAG, "Web-view timeout after ${totalTime / 1000}s")
         destroyWebView()
+        activeCancels.remove(cancelHook)
         return fixedRequest to extraRequestList
     }
 

@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.shell
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -53,6 +55,7 @@ import com.lagradost.desktop.ui.fluent.Icon
 import com.lagradost.desktop.ui.fluent.IconButton
 import com.lagradost.desktop.ui.fluent.Icons
 import com.lagradost.desktop.ui.fluent.NavItem
+import com.lagradost.desktop.ui.fluent.NavIcon
 import com.lagradost.desktop.ui.fluent.Tooltip
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.primaryBorder
@@ -160,7 +163,7 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
             .shadow(24.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
             .background(if (isClassic) Color(0xD90B0B10) else c.flyout.copy(alpha = if (Appearance.glass) 0.88f else 0.98f), shape)
-            .border(Dp.Hairline, if (isClassic) Color(0x2BFFFFFF) else c.strokeStrong.copy(alpha = 0.55f), shape)
+            .hairBorder(if (isClassic) Color(0x2BFFFFFF) else c.strokeStrong.copy(alpha = 0.55f), shape)
             .padding(4.dp),
     ) {
         if (target != null && selected >= 0) {
@@ -202,7 +205,7 @@ private fun CapsuleItem(item: NavItem, selected: Boolean, showName: Boolean, onP
                 .padding(horizontal = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(item.glyph, size = 18.dp, tint = tint)
+            NavIcon(item, size = 18.dp, tint = tint)
             AnimatedVisibility(
                 showName,
                 enter = fadeIn(FluentMotion.tweenIn(200)) + expandHorizontally(FluentMotion.tweenIn(260)),

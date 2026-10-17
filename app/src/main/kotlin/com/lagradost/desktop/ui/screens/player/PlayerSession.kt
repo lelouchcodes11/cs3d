@@ -80,6 +80,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 enum class Resize(val label: String, val keepAspect: Boolean, val panscan: Double) {
@@ -211,19 +212,27 @@ class PlayerSession(
             subtitleStatus?.let { return it }
             listsVersion // the list of subtitles changed: look again
             // not over the full-screen "Looking for sources…", which says the same
-            if (!loadingMore || loadingText != null || failure != null || subtitleChosenByUser || selectedSubtitle != null || preferredSubLang.isNullOrEmpty()) return null
+            if (lookingGaveUp || !loadingMore || loadingText != null || failure != null || subtitleChosenByUser || selectedSubtitle != null || preferredSubLang.isNullOrEmpty()) return null
             return lookingStatus
         }
 
     // one object, so that the pill's timer follows the identity of what it shows
     private val lookingStatus = SubtitleStatus(SubtitleLoadState.Loading, "Looking for subtitles…")
 
+    /** The "looking" pill waited long enough for this video (a title that has no subtitles must not carry it for as long as the sources load) */
+    private var lookingGaveUp by mutableStateOf(false)
+
+    /** The pill is over: its time ran out, or what it said is done. "Looking" is not offered again for this video. */
     fun clearSubtitleStatus(status: SubtitleStatus) {
+        if (status === lookingStatus) lookingGaveUp = true
         if (subtitleStatus === status) subtitleStatus = null
     }
 
     /** Bumped when subtitle lists or track lists changed, so menus recompose */
     var listsVersion by mutableStateOf(0); private set
+
+    /** A text box of the player menu has the keyboard: the controls window takes it (else the keys are the player's shortcuts) */
+    var typing by mutableStateOf(false)
     var episodeVersion by mutableStateOf(0); private set
 
     // ---- internal ----
@@ -291,6 +300,7 @@ class PlayerSession(
             if (live == null || live.instance != vm.state.instance) return@watch
             player.setActiveSubtitles(live.value)
             listsVersion++
+            checkNewSubtitles()
             // downloaded subtitles can not be selected before the player loaded them
             if (live.value.lastOrNull()?.origin != SubtitleOrigin.DOWNLOADED_FILE) autoSelectSubtitles()
         }
@@ -313,6 +323,8 @@ class PlayerSession(
         }
         vm.currentLinks.watch { live ->
             if (live == null || live.instance != vm.state.instance) return@watch
+            // the source that played last for this title is the first choice (net/LastSource)
+            vm.state.generatorState?.response?.let { com.lagradost.desktop.net.LastSource.titleKey = it.apiName + "|" + it.url }
             val usable = vm.state.sortLinks(qualityProfile).count { it.shouldUseLink }
             linksFound = usable
             sourcesVersion++
@@ -335,7 +347,14 @@ class PlayerSession(
                 if (playerActive) {
                     player.getPosition()?.let { positionMs = it }
                     if (loadingText == null && positionMs > 0) resumeMs = positionMs
-                    player.getDuration()?.let { if (it > 0) durationMs = it }
+                    player.getDuration()?.let {
+                        if (it > 0) {
+                            val firstTime = durationMs <= 0L
+                            durationMs = it
+                            // the subtitles were waiting for the film's length (a file that fits can only be told from one that does not now)
+                            if (firstTime && !subtitleChosenByUser) afterSubtitleCheck()
+                        }
+                    }
                     bufferedMs = runCatching { (player.exoPlayer.bufferedPosition) }.getOrDefault(0L)
                     if (player.liveStream != live) live = player.liveStream
                     if (live && ++liveTicks % 4 == 0) liveBehindS = withContext(Dispatchers.IO) { player.liveLatency() }
@@ -617,6 +636,7 @@ class PlayerSession(
         subtitleChosenByUser = false
         failedSubtitles.clear()
         subtitleStatus = null
+        lookingGaveUp = false
         announcedSubtitle = null
         fallbackLink = null
         selectedLink = null
@@ -716,6 +736,8 @@ class PlayerSession(
                     picture = true
                     if (loadingText != null || playingSince == 0L) playingSince = System.currentTimeMillis()
                     com.lagradost.desktop.net.HostHealth.worked(selectedLink?.first)
+                    com.lagradost.desktop.net.LastSource.remember(selectedLink?.first)
+                    (currentMeta as? ResultEpisode)?.let { com.lagradost.desktop.stats.ResumeExtras.setSource(it.parentId, selectedLink?.first?.name?.lineSequence()?.firstOrNull()?.trim()) }
                     loadingText = null
                     sourcePosition = null
                     waitingForMore = false
@@ -777,11 +799,93 @@ class PlayerSession(
         }
     }
 
+    // ------------------------------------------------------------------ previews of the seek bar
+
+    /** The stills of the scenes (null while there are none: nothing is shown above the seek bar then) */
+    var seekThumbs by mutableStateOf<com.lagradost.desktop.player.SeekThumbs?>(null); private set
+    private var thumbsFor: String? = null
+
+    private fun maybeStartThumbs(position: Long, duration: Long, meta: ResultEpisode?) {
+        if (!com.lagradost.desktop.ui.fluent.Appearance.seekPreviews || released) return
+        val source = player.thumbSource ?: return
+        if (source.url == thumbsFor) return
+        // the source plays for a few seconds first (what is being watched has the bandwidth), and not a clip or a live channel
+        if (position < 8_000L || duration < 90_000L || meta?.tvType?.isLiveStream() == true || source.url.startsWith("magnet:", true)) return
+        thumbsFor = source.url
+        seekThumbs?.close()
+        seekThumbs = com.lagradost.desktop.player.SeekThumbs(source, duration).also { it.start() }
+    }
+
+    private fun stopThumbs() {
+        seekThumbs?.close()
+        seekThumbs = null
+        thumbsFor = null
+    }
+
     private fun flushProgress() {
-        val save = pendingProgress ?: return
+        val save = pendingProgress
         pendingProgress = null
         progressSavedAt = System.currentTimeMillis()
-        save()
+        save?.invoke()
+        Thread({ com.lagradost.desktop.stats.WatchLog.flush() }, "watchlog-flush").apply { isDaemon = true; start() }
+    }
+
+    // ------------------------------------------------------------------ diary and tracker status
+
+    private var logLastPos = -1L
+    private var logKey: String? = null
+    private var logEpisodeId = -1
+    private var rewatchNoted = false
+    private var statusStartedSent = false
+    private var statusFinishedSent = false
+    private var statusKey: String? = null
+    private var logMetaCache: com.lagradost.desktop.stats.WatchLog.Meta? = null
+
+    private fun logMeta(response: com.lagradost.cloudstream3.LoadResponse, key: String): com.lagradost.desktop.stats.WatchLog.Meta {
+        val sub = runCatching { currentSubtitle()?.languageCode }.getOrNull()?.takeIf { it.isNotBlank() }
+        val audio = runCatching { currentAudio()?.language }.getOrNull()?.takeIf { it.isNotBlank() }
+        logMetaCache?.let { if (it.key == key && it.subLang == sub && it.audioLang == audio) return it }
+        val m = com.lagradost.desktop.stats.WatchLog.Meta(
+            key, response.name, response.type.name, response.apiName, response.posterUrl,
+            genres = response.tags.orEmpty().take(8),
+            people = response.actors.orEmpty().mapNotNull { it.actor.name.takeIf { n -> n.isNotBlank() } }.take(4),
+            subLang = sub, audioLang = audio,
+        )
+        logMetaCache = m
+        return m
+    }
+
+    /** The diary of the Stats page: the content time that played since the last tick, and the end / rewatch of an episode */
+    private fun logWatch(position: Long, duration: Long, meta: ResultEpisode?) {
+        val response = vm.state.generatorState?.response ?: return
+        if (response.type == TvType.NSFW) return
+        val key = response.apiName + "|" + response.url
+        val episodeId = meta?.id ?: vm.state.generatorState?.id ?: 0
+        if (key != logKey || episodeId != logEpisodeId) {
+            if (key != statusKey) { statusKey = key; statusStartedSent = false }
+            statusFinishedSent = false
+            logKey = key; logEpisodeId = episodeId; logLastPos = -1L; rewatchNoted = false
+            val m = logMeta(response, key)
+            com.lagradost.desktop.stats.WatchLog.started(m)
+            // the stills Continue watching shows for this episode and for the one that follows it
+            (currentMeta as? ResultEpisode)?.let { com.lagradost.desktop.stats.ResumeExtras.setThumb(it.id, it.poster) }
+            (nextMeta as? ResultEpisode)?.let { com.lagradost.desktop.stats.ResumeExtras.setThumb(it.id, it.poster) }
+            // the studios of the title (TMDB), looked up once
+            if (com.lagradost.desktop.ui.fluent.Appearance.tmdbEnabled && !com.lagradost.desktop.stats.WatchLog.hasStudios(key)) {
+                val isMovie = response.type.isMovieType()
+                scope.launch(Dispatchers.IO) {
+                    runCatching {
+                        com.lagradost.desktop.tmdb.Tmdb.info(response.name, response.year, isMovie, emptyList())?.let { info ->
+                            com.lagradost.desktop.stats.WatchLog.setStudios(key, info.studios.map { it.second }, info.genres)
+                        }
+                    }
+                }
+            }
+        }
+        val delta = position - logLastPos
+        if (logLastPos >= 0 && delta in 1..2500L) com.lagradost.desktop.stats.WatchLog.add(logMeta(response, key), delta)
+        logLastPos = position
+        rewatchNoted = com.lagradost.desktop.stats.WatchLog.progress(key, episodeId, position.toFloat() / duration, rewatchNoted)
     }
 
     private fun positionChanged(position: Long, duration: Long) {
@@ -794,6 +898,20 @@ class PlayerSession(
         }
         val percentage = position * 100L / duration
         saveProgress(position, duration)
+        logWatch(position, duration, meta)
+        maybeStartThumbs(position, duration, meta)
+        // the tracker's list status: Watching when the title starts, Completed when its last episode is done
+        if (meta != null && prefs.getBoolean(ctx.getString(R.string.auto_status_sync_key), true)) {
+            val everyTitle = prefs.getBoolean(ctx.getString(R.string.auto_status_sync_all_key), false)
+            if (!statusStartedSent && position > 20_000L) {
+                statusStartedSent = true
+                sync.autoStarted(everyTitle)
+            }
+            if (!statusFinishedSent && percentage >= UPDATE_SYNC_PROGRESS_PERCENTAGE) {
+                statusFinishedSent = true
+                sync.autoFinished(meta.totalEpisodeIndex ?: meta.episode, everyTitle)
+            }
+        }
         if (meta != null && percentage >= UPDATE_SYNC_PROGRESS_PERCENTAGE && (maxEpisodeSet ?: -1) < meta.episode) {
             if (prefs.getBoolean(ctx.getString(R.string.episode_sync_enabled_key), true)) {
                 maxEpisodeSet = meta.episode
@@ -825,16 +943,157 @@ class PlayerSession(
 
     // ------------------------------------------------------------------ subtitles
 
+    // ---- the look ahead at online subtitles: StreamPlay-like extensions list dozens per language, many dead or empty, the working ones far down
+    private val subtitleChecks = java.util.concurrent.ConcurrentHashMap<String, com.lagradost.desktop.player.MpvPlayer.SubtitleCheck>()
+    private val subtitleSeen = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val subtitleGate = kotlinx.coroutines.sync.Semaphore(4)
+
+    private fun dead(sub: SubtitleData): Boolean = sub.getId() in failedSubtitles || subtitleChecks[sub.getId()]?.usable == false
+
+    /**
+     * 0 the video's own, 1 looked at and its last line ends where a film's talk ends (80 to 106 % of the length: other frame rates stay inside),
+     * 2 not looked at yet, 3 doubtful (50 to 80 %, 106 to 125 %: another cut), 4 dead, 5 ends far from the film (made for something else: another film,
+     * a trailer; kept at the very end of the list, never chosen by itself)
+     */
+    private fun checkRank(sub: SubtitleData): Int {
+        if (sub.origin != SubtitleOrigin.URL) return 0
+        val c = subtitleChecks[sub.getId()] ?: return 2
+        if (!c.usable) return 4
+        val d = durationMs
+        if (d <= 0 || c.lastCueMs <= 0) return 1
+        val r = c.lastCueMs.toDouble() / d
+        return when { r in 0.80..1.06 -> 1; r in 0.50..1.25 -> 3; else -> 5 }
+    }
+
+    /** Of two files that both fit, the one whose end is nearest to where a film's talk usually ends (97 % of the length) */
+    private fun endFit(sub: SubtitleData): Int {
+        val c = subtitleChecks[sub.getId()] ?: return 0
+        val d = durationMs
+        if (d <= 0 || c.lastCueMs <= 0) return 0
+        return 1000 - (kotlin.math.abs(c.lastCueMs.toDouble() / d - 0.97) * 1000).toInt()
+    }
+
+    private var subtitlesFirstSeenAt = 0L
+
+    /** Online subtitles of the wanted language that are being looked at or wait for it: the automatic choice waits until this is 0 (or a time limit) */
+    private val wantedUnchecked = java.util.concurrent.atomic.AtomicInteger(0)
+    private var choosingTimer: kotlinx.coroutines.Job? = null
+    private var durationTimer: kotlinx.coroutines.Job? = null
+
+    /** Looks at the online subtitles that arrived, a few at a time, those of the wanted language first; the list and the automatic choice use what is found */
+    private fun checkNewSubtitles() {
+        val lang = preferredSubLang?.takeIf { it.isNotEmpty() }
+        val pending = vm.state.subtitles.toList().filter { it.origin == SubtitleOrigin.URL && !subtitleChecks.containsKey(it.getId()) }
+            .sortedBy { if (lang != null && it.matchesLanguageCode(lang)) 0 else 1 }
+        if (pending.isNotEmpty() && subtitlesFirstSeenAt == 0L) subtitlesFirstSeenAt = System.currentTimeMillis()
+        for (sub in pending) {
+            val id = sub.getId()
+            if (!subtitleSeen.add(id)) continue
+            val wantedLanguage = lang != null && sub.matchesLanguageCode(lang)
+            if (wantedLanguage) wantedUnchecked.incrementAndGet()
+            scope.launch(Dispatchers.IO) {
+                try {
+                    // the files of other languages (hundreds from some extensions) only use the line when the wanted language is done
+                    if (!wantedLanguage) while (wantedUnchecked.get() > 0 && !released) kotlinx.coroutines.delay(300)
+                    if (released) return@launch
+                    subtitleGate.withPermit {
+                        val check = runCatching { player.checkSubtitle(sub) }.getOrNull() ?: return@withPermit
+                        kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+                            subtitleChecks[id] = check
+                            listsVersion++
+                        }
+                    }
+                } finally {
+                    if (wantedLanguage) wantedUnchecked.decrementAndGet()
+                    // the files that arrived are looked at: now the choice is made (once); later arrivals change it only for a clear gain
+                    kotlinx.coroutines.withContext(Dispatchers.Main.immediate) { afterSubtitleCheck() }
+                }
+            }
+        }
+    }
+
+    private fun afterSubtitleCheck() {
+        if (released || subtitleChosenByUser) return
+        val sel = selectedSubtitle
+        if (sel == null) {
+            autoSelectSubtitles()
+            // nothing chosen and nothing left to wait for: the "choosing" note goes
+            val timeUp = subtitlesFirstSeenAt > 0 && System.currentTimeMillis() - subtitlesFirstSeenAt >= 15_000
+            if (selectedSubtitle == null && (wantedUnchecked.get() == 0 || timeUp) && subtitleStatus?.text == CHOOSING_NOTE) subtitleStatus = null
+        } else if (sel.origin == SubtitleOrigin.URL && wantedUnchecked.get() == 0) repickSubtitleForSource()
+    }
+
+    // ---- which of the files that fit: the one whose timing most of them share (an offset or another cut is the odd one out)
+
+    private class Typical(val profile: DoubleArray, val first: Long, val last: Long)
+
+    private fun median(values: List<Double>): Double = values.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
+
+    /** The timing the files of the wanted language agree on: the middle of their shapes, first and last cue; null when fewer than three files were looked at */
+    private fun typicalTiming(): Typical? {
+        val lang = preferredSubLang?.takeIf { it.isNotEmpty() } ?: return null
+        val checks = vm.state.subtitles.toList().filter { it.origin == SubtitleOrigin.URL && it.matchesLanguageCode(lang) && checkRank(it) == 1 }
+            .mapNotNull { subtitleChecks[it.getId()] }.filter { it.usable && it.profile.isNotEmpty() && it.firstCueMs >= 0 }
+        if (checks.size < 3) return null
+        val shapes = checks.map { c -> val total = c.profile.sum().toDouble().coerceAtLeast(1.0); DoubleArray(c.profile.size) { c.profile[it] / total } }
+        val mid = DoubleArray(shapes[0].size) { i -> median(shapes.map { it[i] }) }
+        return Typical(mid, median(checks.map { it.firstCueMs.toDouble() }).toLong(), median(checks.map { it.lastCueMs.toDouble() }).toLong())
+    }
+
+    /** How far a file's timing is from the typical one: 0 is the same; about 1 point per 2 s at the start, per 10 s at the end, 100 per whole-film difference of shape */
+    private fun timingPenalty(sub: SubtitleData, typical: Typical?): Double {
+        val c = subtitleChecks[sub.getId()] ?: return 0.0
+        if (typical == null || !c.usable || c.profile.isEmpty() || c.firstCueMs < 0) return 0.0
+        val total = c.profile.sum().toDouble().coerceAtLeast(1.0)
+        var tv = 0.0
+        for (i in c.profile.indices) tv += Math.abs(c.profile[i] / total - typical.profile[i])
+        tv /= 2
+        return tv * 100 + minOf(Math.abs(c.firstCueMs - typical.first), 60_000L) / 2000.0 + minOf(Math.abs(c.lastCueMs - typical.last), 300_000L) / 10_000.0
+    }
+
+    /** The score of an automatic choice: the source's own affinity counts ten per point, the odd timing takes points off */
+    private fun autoScore(sub: SubtitleData, typical: Typical?): Double = sourceAffinity(sub) * 10.0 - timingPenalty(sub, typical)
+
     private fun autoSubtitle(subtitles: Set<SubtitleData>, settings: Boolean, downloads: Boolean): SubtitleData? {
         val lang = preferredSubLang ?: return null
-        val usable = sortSubs(subtitles).filter { it.getId() !in failedSubtitles }
+        val usable = sortSubs(subtitles).filter { !dead(it) }
         if (downloads) {
             usable.firstOrNull { it.origin == SubtitleOrigin.DOWNLOADED_FILE && it.matchesLanguageCode(lang) }?.let { return it }
         }
         if (!settings) return null
         // the video's own subtitles first: they are made for this very file, so always in time; online files are often for another
         // release (another cut or frame rate) and run early or late
-        return usable.firstOrNull { isFullEmbedded(it) && it.matchesLanguageCode(lang) } ?: bestForSource(usable.filter { it.matchesLanguageCode(lang) })
+        usable.firstOrNull { isFullEmbedded(it) && it.matchesLanguageCode(lang) }?.let { return it }
+        val wanted = usable.filter { it.matchesLanguageCode(lang) }
+        val online = wanted.filter { it.origin == SubtitleOrigin.URL }
+        // online files: not one at random. Without the film's length (the subtitles arrive while the sources are still being collected) nothing
+        // can be told about a file, so none is chosen before the video is open (30 s after it started at the latest)
+        if (online.isNotEmpty() && durationMs <= 0L && !(playerActive && sourceStartedAt > 0 && System.currentTimeMillis() - sourceStartedAt > 30_000)) {
+            if (subtitleStatus == null && playerActive) subtitleStatus = SubtitleStatus(SubtitleLoadState.Loading, CHOOSING_NOTE)
+            if (playerActive && durationTimer?.isActive != true) durationTimer = scope.launch { kotlinx.coroutines.delay(31_000); afterSubtitleCheck() }
+            return null
+        }
+        // The look ahead tells which fit the film and which timing most of them share; until the files of the
+        // language are looked at (or 15 s are over; 8 s when three fit already) none is chosen
+        if (online.isNotEmpty() && (wantedUnchecked.get() > 0 || online.any { checkRank(it) == 2 })) {
+            if (subtitlesFirstSeenAt == 0L) subtitlesFirstSeenAt = System.currentTimeMillis()
+            val waited = System.currentTimeMillis() - subtitlesFirstSeenAt
+            val enough = waited >= 8_000 && online.count { checkRank(it) == 1 } >= 3
+            if (waited < 15_000 && !enough) {
+                if (subtitleStatus == null) subtitleStatus = SubtitleStatus(SubtitleLoadState.Loading, CHOOSING_NOTE)
+                // the time limits are looked at even when no check finishes by then
+                if (choosingTimer?.isActive != true) choosingTimer = scope.launch {
+                    kotlinx.coroutines.delay(8_200)
+                    afterSubtitleCheck()
+                    kotlinx.coroutines.delay(7_000)
+                    afterSubtitleCheck()
+                }
+                return null
+            }
+        }
+        // a file that is dead, for another film or for another cut is not chosen while a file that fits exists
+        val fitting = wanted.filter { checkRank(it) <= 2 }
+        return bestForSource(fitting.ifEmpty { wanted.filter { checkRank(it) != 5 } })
     }
 
     /**
@@ -842,7 +1101,10 @@ class PlayerSession(
      * sites (OpenSubtitles, each host's own, each dubbed version's own) and the first by name was usually for another release (out of sync,
      * "random"). Same site as the video link (or its referer) first, then the same "(… Audio)" version tag as the source name, then list order.
      */
-    private fun bestForSource(candidates: List<SubtitleData>): SubtitleData? = candidates.maxByOrNull { sourceAffinity(it) }
+    private fun bestForSource(candidates: List<SubtitleData>): SubtitleData? {
+        val typical = typicalTiming()
+        return candidates.maxWithOrNull(compareBy<SubtitleData>({ autoScore(it, typical) }, { endFit(it) }))
+    }
 
     private fun baseDomain(url: String?): String? = runCatching { java.net.URI(url!!.trim()).host?.lowercase()?.split('.')?.takeLast(2)?.joinToString(".") }.getOrNull()
 
@@ -853,6 +1115,10 @@ class PlayerSession(
         if (subDomain != null && (subDomain == baseDomain(link.url) || subDomain == baseDomain(link.referer))) score += 2
         val tags = Regex("\\(([^)]+)\\)").findAll(sub.name).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toList()
         if (tags.any { link.name.contains(it, ignoreCase = true) }) score += 1
+        // machine translations ("... (translated from Aragonese)", Subtitle Cat) are the last resort
+        if (sub.name.contains("translated", ignoreCase = true) || sub.nameSuffix.contains("translated", ignoreCase = true)) score -= 4
+        // a file looked at and found good beats one that was not looked at, a dead one or one for another cut loses
+        score += when (checkRank(sub)) { 1 -> 3; 2 -> 0; 3 -> -3; 4 -> -6; 5 -> -9; else -> 0 }
         return score
     }
 
@@ -862,9 +1128,11 @@ class PlayerSession(
         val sel = selectedSubtitle ?: return
         if (sel.origin != SubtitleOrigin.URL) return
         val lang = preferredSubLang?.takeIf { it.isNotEmpty() } ?: return
-        val best = bestForSource(sortSubs(vm.state.subtitles).filter { it.getId() !in failedSubtitles && it.origin == SubtitleOrigin.URL && it.matchesLanguageCode(lang) }) ?: return
-        if (best != sel && sourceAffinity(best) > sourceAffinity(sel)) {
-            android.util.Log.i("PlayerSession", "subtitle for source ${sourceName}: ${best.name.trim()} instead of ${sel.name.trim()}")
+        val best = bestForSource(sortSubs(vm.state.subtitles).filter { !dead(it) && it.origin == SubtitleOrigin.URL && it.matchesLanguageCode(lang) }) ?: return
+        // a change only for a clear gain (the dead one, or ten points: one step of the source's affinity), so that the choice does not wander as files arrive
+        val typical = typicalTiming()
+        if (best != sel && (dead(sel) || autoScore(best, typical) > autoScore(sel, typical) + 10.0)) {
+            android.util.Log.i("PlayerSession", "subtitle for source ${sourceName}: ${best.name.trim()} instead of ${sel.name.trim()} (${autoScore(best, typical).toInt()} against ${autoScore(sel, typical).toInt()})")
             applySubtitle(best, false)
         }
     }
@@ -905,6 +1173,7 @@ class PlayerSession(
     }
 
     private fun applySubtitle(sub: SubtitleData?, userInitiated: Boolean): Boolean {
+        if (!userInitiated && sub != null && sub != selectedSubtitle) android.util.Log.i("PlayerSession", "subtitle automatic: ${sub.name.trim()} ${sub.nameSuffix} [rank ${checkRank(sub)}, source ${sourceAffinity(sub)}]")
         if (sub != selectedSubtitle && userInitiated) {
             val tag = if (sub == null) "" else sub.getIETF_tag()
             if (tag != null) {
@@ -923,8 +1192,8 @@ class PlayerSession(
             // the automatic pick stays while it loads or works: more subtitles arriving must not restart it; except that the video's own track of
             // the language, listed once the file is open, replaces an online file (it is always in time with the picture)
             selectedSubtitle?.let { sel ->
-                val ok = sel.getId() !in failedSubtitles && (lang == null || sel.matchesLanguageCode(lang))
-                val better = if (ok && !lang.isNullOrEmpty() && sel.origin == SubtitleOrigin.URL) vm.state.subtitles.firstOrNull { isFullEmbedded(it) && it.getId() !in failedSubtitles && it.matchesLanguageCode(lang) } else null
+                val ok = !dead(sel) && (lang == null || sel.matchesLanguageCode(lang))
+                val better = if (ok && !lang.isNullOrEmpty() && sel.origin == SubtitleOrigin.URL) vm.state.subtitles.firstOrNull { isFullEmbedded(it) && !dead(it) && it.matchesLanguageCode(lang) } else null
                 if (better != null) {
                     android.util.Log.i("PlayerSession", "subtitle: the video's own ${better.name.trim()} instead of ${sel.name.trim()}")
                     applySubtitle(better, false)
@@ -944,8 +1213,29 @@ class PlayerSession(
         }
     }
 
+    /** Dev: every online subtitle of the wanted language with what the look ahead found (for /subtable) */
+    fun debugSubtitleTable(): String {
+        val lang = preferredSubLang ?: "?"
+        val typical = typicalTiming()
+        val sb = StringBuilder("typical first=${typical?.first?.div(1000)}s last=${typical?.last?.div(1000)}s unchecked=${wantedUnchecked.get()}\nlang=$lang duration=${durationMs / 1000}s source=${sourceName} chosen=${selectedSubtitle?.name?.trim()} byUser=$subtitleChosenByUser\n")
+        for (sub in vm.state.subtitles.toList().filter { it.origin == SubtitleOrigin.URL }) {
+            val c = subtitleChecks[sub.getId()]
+            val host = runCatching { java.net.URI(sub.url.trim()).host }.getOrNull()
+            sb.append(if (sub == selectedSubtitle) "* " else "  ").append(sub.name.trim().padEnd(26)).append(' ').append((host ?: "?").take(28).padEnd(28))
+                .append(" rank=").append(checkRank(sub)).append(" src=").append(sourceAffinity(sub))
+            if (c != null) sb.append(" usable=").append(c.usable).append(" cues=").append(c.cues).append(" first=").append(c.firstCueMs / 1000).append("s last=").append(c.lastCueMs / 1000).append("s")
+                .append(" penalty=").append(timingPenalty(sub, typical).toInt()).append(" score=").append(autoScore(sub, typical).toInt())
+            sb.append('\n')
+        }
+        return sb.toString()
+    }
+
     /** All subtitle choices, sorted by name */
-    fun subtitles(): List<SubtitleData> = sortSubs(vm.state.subtitles).filter { it.getId() !in failedSubtitles || it == selectedSubtitle }.distinctBy { if (it.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO) it.getId() else it.url.trim() }
+    fun subtitles(): List<SubtitleData> = sortSubs(vm.state.subtitles).filter { !dead(it) || it == selectedSubtitle }.let { list ->
+        // within a name the files that work come first, and of those the ones with the timing most files share (the sort by name keeps the order of the names)
+        val typical = typicalTiming()
+        list.sortedWith(compareBy<SubtitleData>({ it.originalName }, { checkRank(it) }, { (timingPenalty(it, typical) / 5).toInt() }, { it.nameSuffix }))
+    }.distinctBy { if (it.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO) it.getId() else it.url.trim() }
     /** What mpv really shows (the list and the picture agree) */
     fun currentSubtitle(): SubtitleData? = player.getCurrentPreferredSubtitle()
 
@@ -967,6 +1257,69 @@ class PlayerSession(
         val next = if (current == null) list.first() else list.getOrNull(list.indexOf(current) + 1)
         selectSubtitle(next)
         showHud(Icons.Subtitles, next?.name?.trim() ?: "Subtitles off")
+    }
+
+    // ------------------------------------------------------------------ several subtitles
+
+    /** The subtitle shown beside the main one (second language), or null */
+    fun secondarySubtitle(): SubtitleData? {
+        listsVersion
+        return player.secondarySubtitle
+    }
+
+    /** Whether the second subtitle keeps its own places and looks (signs & songs) or is plain text at the top */
+    fun secondaryKeepsPlaces(): Boolean {
+        listsVersion
+        return player.secondaryKeepsPlaces()
+    }
+
+    fun setSecondaryInPlace(value: Boolean) {
+        player.setSecondaryInPlace(value)
+        listsVersion++
+    }
+
+    fun selectSecondarySubtitle(sub: SubtitleData?) {
+        player.setSecondarySubtitle(sub)
+        listsVersion++
+        showHud(Icons.Subtitles, if (sub == null) "Second subtitle off" else "Second subtitle · " + sub.name.trim().lineSequence().first())
+    }
+
+    /**
+     * Several search results at once: the first is downloaded and shown like a single pick, the second becomes the second subtitle (the two
+     * languages at the same time) and any more are only added to the list of subtitles.
+     */
+    fun downloadOnlineSubtitles(entities: List<SubtitleEntity>) {
+        if (entities.isEmpty()) return
+        scope.launch(Dispatchers.IO) {
+            entities.forEachIndexed { i, e ->
+                val added = fetchOnlineSubtitle(e) ?: return@forEachIndexed
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    when (i) {
+                        0 -> addAndSelectSubtitles(*added.toTypedArray())
+                        else -> {
+                            subtitleChosenByUser = true
+                            vm.addSubtitles(added.toSet())
+                            player.setActiveSubtitles(vm.state.subtitles)
+                            listsVersion++
+                            if (i == 1) selectSecondarySubtitle(added.first())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Downloads the files of a search result without choosing them (null when the provider gave nothing) */
+    private suspend fun fetchOnlineSubtitle(entity: SubtitleEntity): List<SubtitleData>? {
+        val provider = GeneratorPlayer.subsProviders.firstOrNull { it.idPrefix == entity.idPrefix } ?: return null
+        val label = entity.name.trim().lineSequence().first().ifBlank { "Subtitle" }
+        postSubtitleStatus(SubtitleLoadState.Loading, "Downloading subtitles · $label")
+        return when (val r = Resource.fromResult(provider.resource(entity))) {
+            is Resource.Success -> r.value.getSubtitles().map { res ->
+                SubtitleData(res.name ?: entity.name, "", res.url, res.origin, res.url.toSubtitleMimeType(), entity.headers, entity.lang)
+            }.takeIf { it.isNotEmpty() }
+            else -> { postSubtitleStatus(SubtitleLoadState.Failed, "Couldn't download subtitles · $label"); null }
+        }
     }
 
     /** Adds subtitle tracks, reloads the player at the same position and selects the first one */
@@ -1184,7 +1537,10 @@ class PlayerSession(
 
     // ------------------------------------------------------------------ sources
 
-    class SourceItem(val link: VideoLink, val name: String, val quality: String, val usable: Boolean, val current: Boolean)
+    class SourceItem(
+        val link: VideoLink, val name: String, val quality: String, val usable: Boolean, val current: Boolean,
+        val sizeGb: Double? = null, val seeders: Int? = null, val qualityValue: Int = 0, val lastUsed: Boolean = false,
+    )
 
     /** Reads [sourcesVersion], so a composable that lists sources updates when more arrive */
     private fun sortedLinksNow(): List<DisplayLink> {
@@ -1196,7 +1552,11 @@ class PlayerSession(
         val l = it.link
         val q0 = l.first?.quality?.let { q -> Qualities.getStringByInt(q) }.orEmpty()
         val q = if (TorrentEngine.isTorrent(l.first)) (if (q0.isEmpty()) "Torrent" else "$q0 · Torrent") else q0
-        SourceItem(l, l.first?.name ?: l.second?.name ?: "Source", q, it.shouldUseLink, l == selectedLink)
+        SourceItem(
+            l, l.first?.name ?: l.second?.name ?: "Source", q, it.shouldUseLink, l == selectedLink,
+            sizeGb = com.lagradost.desktop.net.SourceWeight.sizeGb(l.first), seeders = TorrentEngine.seeders(l.first),
+            qualityValue = l.first?.quality ?: 0, lastUsed = com.lagradost.desktop.net.LastSource.isPreferred(l.first),
+        )
     }
 
     // the source that was playing before the user picked another one: when the new one does not work, the sources after it are tried
@@ -1319,7 +1679,18 @@ class PlayerSession(
         dialog.show()
     }
 
-    fun togglePlay() = player.handleEvent(CSPlayerEvent.PlayPauseToggle)
+    /** @return true when the video plays now, false when it was paused by this call */
+    fun togglePlay(): Boolean = player.togglePause()
+
+    /** What the main button shows: a pause button while the video plays or is only waiting for data (buffering, seeking), a play button when it is paused */
+    /** T: the writing on the picture (game windows, signs, letters) is read and shown translated over it; a second press puts it away */
+    fun toggleScreenText() {
+        if (com.lagradost.desktop.player.ScreenText.state !is com.lagradost.desktop.player.ScreenText.State.Idle) { com.lagradost.desktop.player.ScreenText.clear(); return }
+        if (showsPause) { togglePlay(); showHud(Icons.Pause, "Paused to read the picture") }
+        com.lagradost.desktop.player.ScreenText.start(positionMs)
+    }
+
+    val showsPause: Boolean get() = status == CSPlayerLoading.IsPlaying || (status == CSPlayerLoading.IsBuffering && loadingText == null && !player.pausedByUser)
     fun play() = player.handleEvent(CSPlayerEvent.Play)
     fun pause() {
         flushProgress()
@@ -1431,6 +1802,7 @@ class PlayerSession(
     // ------------------------------------------------------------------ lifecycle
 
     fun release() {
+        stopThumbs()
         if (released) return
         released = true
         if (active === this) active = null
@@ -1521,6 +1893,9 @@ class SubtitleStatus(val state: SubtitleLoadState, val text: String)
 
 /** How many dead subtitles in a row the automatic choice tries before it stops */
 private const val MAX_SUBTITLE_TRIES = 8
+
+/** The note shown while the online subtitles are looked at before one is chosen */
+private const val CHOOSING_NOTE = "Choosing the best subtitles…"
 
 /** One on-screen feedback bubble */
 class Hud(val glyph: String, val text: String, val fraction: Float? = null)

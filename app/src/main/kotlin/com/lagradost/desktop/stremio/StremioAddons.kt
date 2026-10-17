@@ -30,7 +30,7 @@ class StremioAddon(
 /**
  * The user's Stremio add-ons (Settings > Stremio & torrents). Add-ons with catalogs or meta become providers of their own (their catalogs
  * are rows on Home, their search is a search, their items open the title page); add-ons with streams or subtitles add sources and
- * subtitles to what the player finds (see [StremioStreams]). The list is kept in the app preferences, the first start has Cinemeta.
+ * subtitles to what the player finds (see [StremioStreams]). The list is kept in the app preferences, the first start has Cinemeta (switched off).
  */
 object StremioAddons {
     private const val TAG = "Stremio"
@@ -71,7 +71,8 @@ object StremioAddons {
             runCatching {
                 val p = prefs()
                 val text = p.getString(PREF, null)
-                val array = if (text == null) JSONArray().put(JSONObject().put("url", CINEMETA).put("enabled", true)) else JSONArray(text)
+                // Stremio is off until the viewer turns it on: the first start lists Cinemeta, switched off
+                val array = if (text == null) JSONArray().put(JSONObject().put("url", CINEMETA).put("enabled", false)) else JSONArray(text)
                 for (i in 0 until array.length()) {
                     val o = array.getJSONObject(i)
                     val url = o.optString("url").takeIf { it.isNotBlank() } ?: continue

@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.shell
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -103,7 +105,7 @@ private fun ProfileTile(account: DataStoreHelper.Account, current: Boolean, onCl
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
         Modifier.width(128.dp).clip(shape).background(if (hovered) c.cardHover else c.card, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (current) c.accent else c.stroke, shape)
+            .hairBorder(if (current) c.accent else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Button, onClick).padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {

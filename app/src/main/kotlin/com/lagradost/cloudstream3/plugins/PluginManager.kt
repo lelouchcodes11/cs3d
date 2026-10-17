@@ -200,6 +200,43 @@ object PluginManager {
      * into a fresh folder) are downloaded again from the address they came from, a few at a time.
      * @return how many were downloaded
      */
+    /**
+     * desktop: extension files that are in the data folder but not in the list of installed extensions (the list was emptied: a sync extension
+     * wiping the saved data, older settings put back) are taken back into the list and loaded. The repository page called them "installed" (the file
+     * decides that) while "Installed extensions" and the loading at start, which go by the list, had none of them: the only way out was to
+     * uninstall everything and install it again.
+     * @return how many were taken back
+     */
+    suspend fun adoptDownloadedPlugins(context: Context, repositoryUrl: String, plugins: List<SitePlugin>): Int {
+        val known = getPluginsOnline().map { it.filePath }.toSet()
+        var n = 0
+        for (p in plugins) {
+            val file = getPluginPath(context, p.internalName, repositoryUrl)
+            if (!file.exists() || file.absolutePath in known) continue
+            Log.i(TAG, "${p.internalName} is on the disk but not in the list of installed extensions: taken back")
+            if (loadPlugin(context, file, PluginData(p.internalName, p.url, true, file.absolutePath, PLUGIN_VERSION_NOT_SET))) n++
+        }
+        return n
+    }
+
+    /** Is there an extension file that the list of installed extensions does not know? (no network needed) */
+    fun hasUnlistedFiles(context: Context): Boolean {
+        val known = getPluginsOnline().map { it.filePath }.toSet()
+        return File("${context.filesDir}/$ONLINE_PLUGINS_FOLDER").listFiles { f -> f.isDirectory }
+            ?.any { dir -> dir.listFiles { f -> f.name.endsWith(".cs3") }?.any { it.absolutePath !in known } == true } == true
+    }
+
+    /** At the start: when files are unlisted, every repository is asked what its plugins are called and the files are taken back */
+    suspend fun adoptUnlistedPlugins(activity: Activity): Int {
+        if (!hasUnlistedFiles(activity)) return 0
+        var n = 0
+        for (repo in RepositoryManager.getRepositories()) {
+            val list = runCatching { RepositoryManager.getRepoPlugins(repo)?.map { it.plugin } }.getOrNull() ?: continue
+            n += runCatching { adoptDownloadedPlugins(activity, repo.url, list) }.getOrDefault(0)
+        }
+        return n
+    }
+
     suspend fun downloadMissingPluginFiles(activity: Activity): Int {
         val missing = getPluginsOnline().filter { !it.url.isNullOrBlank() && !File(it.filePath).exists() }
         if (missing.isEmpty()) return 0

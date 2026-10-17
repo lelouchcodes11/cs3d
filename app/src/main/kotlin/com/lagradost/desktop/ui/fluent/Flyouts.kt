@@ -111,12 +111,12 @@ fun FlyoutSurface(modifier: Modifier = Modifier, content: @Composable () -> Unit
     val shape = RoundedCornerShape(FluentShapes.overlay)
     // menus and lists open with a short fade and a little growth from their top edge instead of appearing at once
     val appear = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(if (Appearance.motion == Motion.Off) 1f else 0f) }
-    androidx.compose.runtime.LaunchedEffect(Unit) { if (appear.value < 1f) appear.animateTo(1f, androidx.compose.animation.core.tween(FluentMotion.ms(150), easing = FluentMotion.enter)) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (appear.value < 1f) appear.animateTo(1f, androidx.compose.animation.core.tween(FluentMotion.ms(200), easing = FluentMotion.enter)) }
     Box(
         modifier
-            .graphicsLayer { alpha = appear.value; val grow = 0.97f + 0.03f * appear.value; scaleX = grow; scaleY = grow; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f) }
+            .graphicsLayer { alpha = appear.value; scaleX = 0.94f + 0.06f * appear.value; scaleY = 0.78f + 0.22f * appear.value; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f) }
             .background(c.flyout, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (c.dark) Color(0x66757575) else Color(0x33000000), shape)
+            .hairBorder(if (c.dark) Color(0x66757575) else Color(0x33000000), shape)
             .clip(shape),
     ) { content() }
 }
@@ -168,7 +168,6 @@ private fun MenuRow(item: MenuItem, onClick: () -> Unit) {
             .padding(horizontal = 4.dp)
             .fillMaxWidth()
             .height(32.dp)
-            .clip(shape)
             .background(if (hovered && item.enabled) c.subtleHover else Color.Transparent, shape)
             .fluentClickable(source, item.enabled, shape, Role.Button, onClick)
             .padding(horizontal = 8.dp),
@@ -225,6 +224,8 @@ fun <T> ComboBox(
     minWidth: Dp = 120.dp,
     height: Dp = 32.dp,
     trailingItem: (@Composable (T) -> Unit)? = null,
+    /** Before the name, in the box and in the list (an extension's icon) */
+    leadingItem: (@Composable (T) -> Unit)? = null,
 ) {
     val c = Fluent.colors
     var open by remember { mutableStateOf(false) }
@@ -238,15 +239,18 @@ fun <T> ComboBox(
             Modifier
                 .defaultMinSize(minWidth = minWidth)
                 .height(height)
-                .clip(shape)
                 .background(if (!enabled) c.controlDisabled else if (hovered) c.controlHover else c.control, shape)
-                .border(androidx.compose.ui.unit.Dp.Hairline, if (enabled && (hovered || open)) c.accent.copy(alpha = 0.6f) else c.strokeStrong.copy(alpha = 0.45f), shape)
+                .hairBorder(if (enabled && (hovered || open)) c.accent.copy(alpha = 0.6f) else c.strokeStrong.copy(alpha = 0.45f), shape)
                 .fluentClickable(source, enabled, shape, Role.DropdownList) { open = !open }
                 .padding(start = 12.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) {
                 Icon(icon, size = 14.dp, tint = c.accentText)
+                Box(Modifier.width(8.dp))
+            }
+            if (selected != null && leadingItem != null) {
+                leadingItem(selected)
                 Box(Modifier.width(8.dp))
             }
             val text = selected?.let(label) ?: placeholder
@@ -263,7 +267,7 @@ fun <T> ComboBox(
                 DropdownList(
                     items, selected, label,
                     width = with(density) { anchorWidth.toDp() },
-                    trailingItem = trailingItem,
+                    trailingItem = trailingItem, leadingItem = leadingItem,
                     onPick = { open = false; onSelect(it) },
                 )
             }
@@ -272,7 +276,7 @@ fun <T> ComboBox(
 }
 
 @Composable
-private fun <T> DropdownList(items: List<T>, selected: T?, label: (T) -> String, width: Dp, trailingItem: (@Composable (T) -> Unit)? = null, onPick: (T) -> Unit) {
+private fun <T> DropdownList(items: List<T>, selected: T?, label: (T) -> String, width: Dp, trailingItem: (@Composable (T) -> Unit)? = null, leadingItem: (@Composable (T) -> Unit)? = null, onPick: (T) -> Unit) {
     val c = Fluent.colors
     val focus = remember { FocusRequester() }
     val list = rememberLazyListState()
@@ -293,7 +297,6 @@ private fun <T> DropdownList(items: List<T>, selected: T?, label: (T) -> String,
                 .padding(horizontal = 4.dp, vertical = 1.dp)
                 .fillMaxWidth()
                 .height(32.dp)
-                .clip(shape)
                 .background(
                     when {
                         i == index -> c.subtleHover
@@ -308,6 +311,10 @@ private fun <T> DropdownList(items: List<T>, selected: T?, label: (T) -> String,
         ) {
             if (isSel) Box(Modifier.align(Alignment.CenterStart).size(3.dp, 16.dp).background(c.accent, RoundedCornerShape(2.dp)))
             Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                if (leadingItem != null) {
+                    leadingItem(item)
+                    Box(Modifier.width(10.dp))
+                }
                 FText(label(item), Modifier.weight(1f, fill = false), maxLines = 1, softWrap = false)
                 if (trailingItem != null) {
                     Box(Modifier.width(8.dp))
@@ -435,7 +442,7 @@ private fun ContentDialogCard(d: Overlays.Dialog) {
             .width(d.width)
             .shadow(48.dp, shape, clip = false)
             .background(c.flyout, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (c.dark) Color(0x66757575) else Color(0x33000000), shape)
+            .hairBorder(if (c.dark) Color(0x66757575) else Color(0x33000000), shape)
             .clip(shape),
     ) {
         Column(Modifier.padding(24.dp)) {
@@ -450,9 +457,9 @@ private fun ContentDialogCard(d: Overlays.Dialog) {
                 Modifier.fillMaxWidth().background(c.bgPane.copy(alpha = if (c.dark) 0.6f else 0.8f)).padding(24.dp, 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (d.primary != null) Button(d.primary, { d.onPrimary(); dismiss() }, Modifier.weight(1f), ButtonKind.Accent, enabled = d.primaryEnabled())
-                if (d.secondary != null) Button(d.secondary, { d.onSecondary(); dismiss() }, Modifier.weight(1f))
-                if (d.close != null) Button(d.close, { d.onClose(); dismiss() }, Modifier.weight(1f))
+                if (d.primary != null) Button(d.primary, { try { d.onPrimary() } finally { dismiss() } }, Modifier.weight(1f), ButtonKind.Accent, enabled = d.primaryEnabled())
+                if (d.secondary != null) Button(d.secondary, { try { d.onSecondary() } finally { dismiss() } }, Modifier.weight(1f))
+                if (d.close != null) Button(d.close, { try { d.onClose() } finally { dismiss() } }, Modifier.weight(1f))
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.details
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -115,6 +117,7 @@ import com.lagradost.desktop.ui.fluent.SectionHeader
 import com.lagradost.desktop.ui.fluent.Shelf
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
+import com.lagradost.desktop.ui.fluent.reveal
 import com.lagradost.desktop.ui.Toasts
 import kotlinx.coroutines.launch
 import com.lagradost.desktop.ui.screens.home.openCard
@@ -265,7 +268,7 @@ private fun LinkLoadingCard(links: Int, subs: Int, skip: () -> Unit, cancel: () 
 
 // -------------------------------------------------------------------------------------------
 
-private enum class DetailsTab(val label: String) { Episodes("Episodes"), Related("Related"), More("More like this"), Cast("Cast & crew"), Gallery("Gallery"), Reviews("Reviews"), About("Details") }
+private enum class DetailsTab(val label: String) { Episodes("Episodes"), Related("Related"), Recommended("Recommended"), More("More like this"), Cast("Cast & crew"), Gallery("Gallery"), Reviews("Reviews"), About("Details") }
 
 /**
  * A related title from AniList or TMDB belongs to no extension. Opening one searches the extension this page came from (the sources the
@@ -384,6 +387,9 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
     val related by androidx.compose.runtime.produceState<List<RelatedTitle>>(emptyList(), route.url, isAnime) {
         value = if (isAnime && com.lagradost.desktop.ui.fluent.Appearance.tmdbEnabled) runCatching { AnimeRelations.load(d.title, d.syncData) }.getOrDefault(emptyList()) else emptyList()
     }
+    val anilistRecs by androidx.compose.runtime.produceState<List<RelatedTitle>>(emptyList(), route.url, isAnime) {
+        value = if (isAnime && com.lagradost.desktop.ui.fluent.Appearance.tmdbEnabled) runCatching { AnimeRelations.recommendations(d.title, d.syncData) }.getOrDefault(emptyList()) else emptyList()
+    }
     val hideSpoilers = com.lagradost.desktop.ui.fluent.Appearance.hideSpoilers
 
     // an extension often sends an episode without its still, title or synopsis: TMDB's own are filled in (see withTmdbEpisodes for when)
@@ -411,6 +417,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
         val tabs = buildList {
             if (!isMovie) add(DetailsTab.Episodes)
             if (related.isNotEmpty()) add(DetailsTab.Related)
+            if (anilistRecs.isNotEmpty()) add(DetailsTab.Recommended)
             if (recs.isNotEmpty()) add(DetailsTab.More)
             if (cast.isNotEmpty() || tmdbCast.isNotEmpty() || d.actorsText.str() != null) add(DetailsTab.Cast)
             if ((tmdb?.backdrops?.size ?: 0) > 1) add(DetailsTab.Gallery)
@@ -430,7 +437,8 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
             }
             item(key = "trackers") { TrackerCard(sync) }
             if (tabs.isNotEmpty()) item(key = "tabs") {
-                Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                // the part under the picture comes up a moment after it (the way NuvioDesktop lets a title page's content in)
+                Row(Modifier.reveal("details-tabs/" + route.url, 140).fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     com.lagradost.desktop.ui.fluent.UnderlineTabs(tabs.map { it.label }, tabs.indexOf(shown).coerceAtLeast(0), { tab = tabs[it] }, Modifier.weight(1f))
                     if (shown == DetailsTab.Episodes) {
                         // the season packs an extension lists among the episodes are not counted as episodes
@@ -495,7 +503,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                             val currentEpIdx = real.indexOfLast { isWatched(it) || it.position > 0 }.coerceAtLeast(0)
                             val openIds = if (!hideSpoilers) null else real.filterIndexed { i, ep -> i <= currentEpIdx || isWatched(ep) || ep.position > 0 }.map { it.id }.toSet()
                             items(rows.size, key = { i -> "eprow-" + (rows[i].firstOrNull()?.id ?: i) + "-" + i }) { i ->
-                                Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                                Row(Modifier.reveal("eprow/" + route.url + "/" + (rows[i].firstOrNull()?.id ?: i), 200 + i.coerceAtMost(6) * 60).fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                                     rows[i].forEach { ep -> Box(Modifier.weight(1f)) { EpisodeCard(vm, ep, d.backgroundPosterUrl ?: d.posterImage, d.posterHeaders, spoiler = openIds != null && ep.id !in openIds) } }
                                     repeat(columns - rows[i].size) { Box(Modifier.weight(1f)) }
                                 }
@@ -525,21 +533,43 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                         FText("Prequels, sequels and other titles of this story, from AniList. Opening one searches ${route.apiName}; right-click it to search all extensions.", style = Fluent.type.caption, color = c.textTertiary)
                         related.chunked(perRow).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                row.forEach { r -> PosterCard(r.card, { openRelated(r.card, route.apiName) }, w, subtitle = r.detail, menu = relatedMenu(r.card, route.apiName)) }
+                                row.forEachIndexed { i, r -> Box(Modifier.reveal("related/" + r.card.url, i * 45)) { PosterCard(r.card, { openRelated(r.card, route.apiName) }, w, subtitle = r.detail, menu = relatedMenu(r.card, route.apiName)) } }
+                            }
+                        }
+                    }
+                }
+                DetailsTab.Recommended -> item(key = "anilist-recs") {
+                    val w = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width
+                    val perRow = ((pageWidth - gutter * 2 + 16.dp) / (w + 16.dp)).toInt().coerceAtLeast(2)
+                    var added by remember { mutableStateOf(setOf<Int>()) }
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                        FText("What people who liked this also liked, from AniList. Opening one searches ${route.apiName}.", style = Fluent.type.caption, color = c.textTertiary)
+                        anilistRecs.chunked(perRow).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+                                row.forEach { r ->
+                                    Column(Modifier.width(w), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        PosterCard(r.card, { openRelated(r.card, route.apiName) }, w, subtitle = r.detail, menu = relatedMenu(r.card, route.apiName))
+                                        val done = r.order in added
+                                        Button(
+                                            if (done) "On your Planning list" else "Add to Planning",
+                                            {
+                                                if (!done) scope.launch {
+                                                    val ok = runCatching { AnimeRelations.addToPlanning(r.order) }.getOrDefault(false)
+                                                    if (ok) added = added + r.order
+                                                    Toasts.show(if (ok) "Added to your Planning list on AniList" else "Sign in to AniList in Settings first", !ok)
+                                                }
+                                            },
+                                            kind = ButtonKind.Standard, icon = if (done) Icons.Check else Icons.Add, height = 30.dp, modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
                 DetailsTab.More -> item(key = "recs") {
-                    val w = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width
-                    val perRow = ((pageWidth - gutter * 2 + 16.dp) / (w + 16.dp)).toInt().coerceAtLeast(2)
-                    Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        recs.chunked(perRow).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                row.forEach { card -> PosterCard(card, { openRelated(card, route.apiName) }, w, menu = relatedMenu(card, route.apiName)) }
-                            }
-                        }
-                    }
+                    MoreLikeThis(d.title, recs, pageWidth, gutter, { openRelated(it, route.apiName) }, { relatedMenu(it, route.apiName) })
                 }
                 DetailsTab.Gallery -> tmdb?.let { t -> item(key = "gallery") { TmdbGallery(t, pageWidth) } }
                 DetailsTab.About -> tmdb?.let { t -> item(key = "about") { TmdbStrip(t) } }
@@ -575,7 +605,7 @@ private fun CastCard(name: String, image: String?, role: String?, onClick: (() -
     Column(Modifier.width(132.dp).hoverable(source).let { if (onClick != null) it.fluentClickable(source, true, RoundedCornerShape(FluentShapes.card), Role.Button, onClick) else it }, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(112.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(c.layer)
-                .border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, CircleShape),
+                .hairBorder(if (hovered) c.strokeStrong else c.stroke, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             FText(name.split(' ').mapNotNull { it.firstOrNull()?.uppercase() }.take(2).joinToString(""), style = Fluent.type.subtitle, color = c.textTertiary)
@@ -694,7 +724,7 @@ private fun UpNextCard(vm: ResultViewModel2, ep: ResultEpisode, image: String?, 
             .width(330.dp)
             .clip(shape)
             .background(if (hovered) Color(0xE6141418) else Color(0xCC0B0B10), shape)
-            .border(Dp.Hairline, Color(0x33FFFFFF), shape)
+            .hairBorder(Color(0x33FFFFFF), shape)
             .fluentClickable(source, true, shape, Role.Button) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) }
             .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -769,6 +799,14 @@ private fun ActionRow(
                     onDismiss = { bookmarkOpen = false },
                 )
             }
+        }
+        // new-episode notifications: one tap, no longer only in the ⋯ menu
+        subscribed?.let { sub ->
+            com.lagradost.desktop.ui.fluent.GlassCircleButton(
+                if (sub) Icons.Notification else Icons.Bell, if (sub) "Notifications on: you are told about new episodes" else "Get notified about new episodes",
+                { vm.toggleSubscriptionStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "You will be told about new episodes" else "Notifications turned off", false) } },
+                active = sub, size = 50.dp,
+            )
         }
         if (hasTrailer && trailerUrl != null) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { playTrailer(trailerUrl) }, size = 50.dp)
         Box {
@@ -873,7 +911,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
             Box(
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                     .graphicsLayer { scaleX = lift; scaleY = lift }
-                    .clip(shape).background(c.card).border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, shape),
+                    .clip(shape).background(c.card).hairBorder(if (hovered) c.strokeStrong else c.stroke, shape),
             ) {
                 if (pack) {
                     // an archive, not a picture: the folder, and what it is (quality, size) in big letters
@@ -893,7 +931,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                 if (covered) {
                     Box(Modifier.matchParentSize().background(Color(0x66000000)))
                     Row(
-                        Modifier.align(Alignment.Center).clip(RoundedCornerShape(50)).background(Color(0x99000000)).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x40FFFFFF), RoundedCornerShape(50))
+                        Modifier.align(Alignment.Center).clip(RoundedCornerShape(50)).background(Color(0x99000000)).hairBorder(Color(0x40FFFFFF), RoundedCornerShape(50))
                             .fluentClickable(rememberInteraction(), true, RoundedCornerShape(50), Role.Button) { uncovered = true }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -908,7 +946,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                 }
                 if (watched) Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(24.dp).background(c.success, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Check, size = 12.dp, tint = Color.Black) }
                 if (glow > 0.01f && !covered) Box(Modifier.matchParentSize().graphicsLayer { alpha = glow }.background(Color(0x4D000000)), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(48.dp).background(Color(0x33FFFFFF), CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, Color(0x66FFFFFF), CircleShape), contentAlignment = Alignment.Center) { Icon(if (pack) Icons.Link else Icons.Play, size = 18.dp, tint = Color.White) }
+                    Box(Modifier.size(48.dp).background(Color(0x33FFFFFF), CircleShape).hairBorder(Color(0x66FFFFFF), CircleShape), contentAlignment = Alignment.Center) { Icon(if (pack) Icons.Link else Icons.Play, size = 18.dp, tint = Color.White) }
                 }
                 ep.runTime?.takeIf { it > 0 && !pack }?.let { rt ->
                     Box(Modifier.align(Alignment.BottomEnd).padding(10.dp).background(Color(0xB3000000), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp)) {

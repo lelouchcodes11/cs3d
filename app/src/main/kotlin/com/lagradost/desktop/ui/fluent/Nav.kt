@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,7 +26,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lagradost.desktop.ui.shell.noWindowDrag
 
-class NavItem(val id: String, val label: String, val glyph: String)
+class NavItem(val id: String, val label: String, val glyph: String, val badge: () -> Boolean = { false })
+
+/** The icon of a navigation item; a small dot at its corner when the item has news (new episodes on the Schedule page) */
+@Composable
+fun NavIcon(item: NavItem, size: Dp, tint: androidx.compose.ui.graphics.Color) {
+    Box {
+        Icon(item.glyph, size = size, tint = tint)
+        if (item.badge()) Box(
+            Modifier.align(Alignment.TopEnd).offset(3.dp, (-2).dp).size(7.dp).background(Fluent.colors.accent, androidx.compose.foundation.shape.CircleShape),
+        )
+    }
+}
 
 const val NavPaneOpen = 240
 const val NavPaneCompact = 48

@@ -74,5 +74,15 @@ object Warmups {
             )
             for (read in reads) runCatching { read() }
         }
+        // extension files that the list of installed extensions lost (see PluginManager.adoptDownloadedPlugins) come back a little after the start
+        Thread({
+            runCatching {
+                Thread.sleep(25_000)
+                val n = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.plugins.PluginManager.adoptUnlistedPlugins(DesktopBootstrap.activity) }
+                if (n > 0) android.util.Log.i("Warmups", "$n extensions taken back into the list of installed ones")
+            }
+        }, "adopt-plugins").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
+        // new episodes of the titles with the bell on (looked for a little after the start, then every few hours)
+        if (com.lagradost.desktop.platform.MultiInstance.number == 1) runCatching { com.lagradost.desktop.notify.UpdateNotices.start() }
     }
 }

@@ -206,7 +206,10 @@ class PluginsViewModel : ViewModel() {
             ?.contains(TvType.NSFW.ordinal.toString()) == true
 
         val plugins = repositories.flatMap { repositoryUrl ->
-            getPlugins(repositoryUrl)
+            getPlugins(repositoryUrl).also { wrappers ->
+                // files that are on the disk but missing in the list of installed extensions are taken back (else they showed as installed here and nowhere else)
+                runCatching { PluginManager.adoptDownloadedPlugins(context, repositoryUrl.url, wrappers.map { it.plugin }) }
+            }
         }
 
         val list = plugins.filter {

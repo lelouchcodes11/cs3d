@@ -103,6 +103,10 @@ abstract class AuthRepo(open val api: AuthAPI) {
             AccountManager.updateAccountsId(idPrefix, 0)
         }
 
+        // the lists (library, title pages) must not go on showing the account that was just left
+        if (this is SyncRepo) requireLibraryRefresh = true
+        showToast(txt("Signed out of ${api.name}"))
+
         for (oldAccount in oldAccounts) {
             try {
                 api.invalidateToken(oldAccount.token)

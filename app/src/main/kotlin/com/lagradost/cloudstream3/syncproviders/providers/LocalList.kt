@@ -31,7 +31,7 @@ class LocalList : SyncAPI() {
             getAllWatchStateIds()?.map { id ->
                 Pair(id, getResultWatchState(id))
             }
-        }?.distinctBy { it.first } ?: return null
+        }?.distinctBy { it.first } ?: emptyList()
 
         val list = ioWork {
             val isTrueTv = isLayout(TV)
@@ -51,12 +51,12 @@ class LocalList : SyncAPI() {
 
             val watchStatusMap = watchStatusIds.groupBy { it.second.stringRes }.mapValues { group ->
                 group.value.mapNotNull {
-                    getBookmarkedData(it.first)?.toLibraryItem(it.first.toString())
+                    runCatching { getBookmarkedData(it.first)?.toLibraryItem(it.first.toString()) }.getOrNull()
                 }
             }
 
             val favoritesMap = mapOf(R.string.favorites_list_name to getAllFavorites().mapNotNull {
-                it.toLibraryItem()
+                runCatching { it.toLibraryItem() }.getOrNull()
             })
 
             // Don't show subscriptions on TV
@@ -65,7 +65,7 @@ class LocalList : SyncAPI() {
             } else {
                 val subscriptionsMap =
                     mapOf(R.string.subscription_list_name to getAllSubscriptions().mapNotNull {
-                        it.toLibraryItem()
+                        runCatching { it.toLibraryItem() }.getOrNull()
                     })
 
                 baseMap + watchStatusMap + subscriptionsMap + favoritesMap

@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.shell
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -79,6 +81,7 @@ import com.lagradost.desktop.ui.fluent.Icon
 import com.lagradost.desktop.ui.fluent.IconButton
 import com.lagradost.desktop.ui.fluent.Icons
 import com.lagradost.desktop.ui.fluent.NavItem
+import com.lagradost.desktop.ui.fluent.NavIcon
 import com.lagradost.desktop.ui.fluent.NavPaneCompact
 import com.lagradost.desktop.ui.fluent.NavPaneOpen
 import com.lagradost.desktop.ui.fluent.NavPosition
@@ -118,7 +121,7 @@ object ShellState {
     var dockHidden by mutableStateOf(false)
 
     /** The window title (the player shows what is playing) */
-    var windowTitle by mutableStateOf("CloudStream")
+    var windowTitle by mutableStateOf(if (com.lagradost.desktop.platform.MultiInstance.number > 1) "CloudStream (${com.lagradost.desktop.platform.MultiInstance.number})" else "CloudStream")
     var searchText by mutableStateOf("")
 
     /** Artwork whose colours tint the window behind the pages (Appearance > Backdrop > Ambient) */
@@ -162,6 +165,7 @@ internal val navItems = listOf(
     NavItem("home", "Home", Icons.Home),
     NavItem("search", "Search", Icons.Search),
     NavItem("library", "Library", Icons.Library),
+    NavItem("schedule", "Schedule", Icons.Calendar, badge = { com.lagradost.desktop.notify.UpdateNotices.unread > 0 }),
     NavItem("downloads", "Downloads", Icons.Download),
 )
 internal val footerItems = listOf(
@@ -172,6 +176,7 @@ internal fun tabOf(id: String): Tab = when (id) {
     "home" -> Tab.Home
     "search" -> Tab.Search
     "library" -> Tab.Library
+    "schedule" -> Tab.Schedule
     "downloads" -> Tab.Downloads
     "extensions" -> Tab.Extensions
     else -> Tab.Settings
@@ -181,6 +186,7 @@ internal fun Tab.id(): String = when (this) {
     Tab.Home -> "home"
     Tab.Search -> "search"
     Tab.Library -> "library"
+    Tab.Schedule -> "schedule"
     Tab.Downloads -> "downloads"
     Tab.Extensions -> "extensions"
     Tab.Settings -> "settings"
@@ -250,6 +256,7 @@ fun AppShell() {
             }
         }
         ToastLayer()
+        com.lagradost.desktop.ui.CloudflareSolveBar()
     }
 }
 
@@ -274,7 +281,7 @@ private fun ContentArea(shape: Shape, topNav: Boolean = false, edge: Boolean = f
             .fillMaxSize()
             .clip(shape)
             .background(layer, shape)
-            .let { if (edge) it else it.border(Dp.Hairline, c.stroke, shape) },
+            .let { if (edge) it else it.hairBorder(c.stroke, shape) },
     ) {
         // the user's own picture, dimmed with the page colour so the text stays readable
         if (Appearance.wallpaper.isNotBlank()) {
@@ -344,7 +351,7 @@ private fun SideRail(modifier: Modifier, end: Boolean) {
             }
             .shadow(if (floating) 24.dp else 0.dp, shape, clip = false)
             .background(if (floating) c.flyout else Color.Transparent, shape)
-            .then(if (floating) Modifier.border(Dp.Hairline, c.stroke, shape) else Modifier),
+            .then(if (floating) Modifier.hairBorder(c.stroke, shape) else Modifier),
     )
 }
 
@@ -361,7 +368,7 @@ private fun PageHost() {
                 targetState.route is Route.Player || initialState.route is Route.Player -> androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
                 // only what moves cheaply: a fade and a short rise (a scale of the whole page redrew it at another size on every frame), a moment late
                 Navigator.lastWasBack -> fadeIn(FluentMotion.tweenInAfter(220, 30)) togetherWith fadeOut(FluentMotion.tweenOut(90))
-                else -> (fadeIn(FluentMotion.tweenInAfter(240, 30)) + slideInVertically(FluentMotion.tweenInAfter(320, 30)) { 24 }) togetherWith fadeOut(FluentMotion.tweenOut(90))
+                else -> (fadeIn(FluentMotion.tweenInAfter(240, 30)) + slideInVertically(FluentMotion.tweenSoftAfter(440, 30)) { 28 }) togetherWith fadeOut(FluentMotion.tweenOut(90))
             }
         },
         label = "page",
@@ -372,7 +379,7 @@ private fun PageHost() {
     val ids = Navigator.stack.map { it.id }
     LaunchedEffect(ids) {
         // SaveableStateHolder keeps what it has seen; popped entries are removed here
-        lastSeen.filter { it !in ids }.forEach { holder.removeState(it) }
+        lastSeen.filter { it !in ids }.forEach { holder.removeState(it); com.lagradost.desktop.ui.screens.settings.SettingsNav.views.remove(it) }
         lastSeen = ids
     }
 }
@@ -470,9 +477,11 @@ private fun PageBody(entry: Entry) {
         is Route.Person -> com.lagradost.desktop.ui.screens.person.PersonScreen(r)
         Route.History -> com.lagradost.desktop.ui.screens.history.HistoryScreen()
         Route.Library -> LibraryScreen()
+        Route.Schedule -> com.lagradost.desktop.ui.screens.schedule.ScheduleScreen()
+        Route.Stats -> com.lagradost.desktop.ui.screens.stats.StatsScreen()
         Route.Downloads -> DownloadsScreen()
         Route.Extensions -> ExtensionsScreen()
-        is Route.Settings -> SettingsScreen(r)
+        is Route.Settings -> SettingsScreen(r, entry.id)
         is Route.Details -> DetailsScreen(entry, r)
         is Route.Section -> SectionPage(r)
         is Route.Player -> PlayerScreen(entry, r)
@@ -488,6 +497,8 @@ private fun titleOf(route: Route): String? = when (route) {
     is Route.Person -> null
     Route.History -> null
     Route.Library -> null
+    Route.Schedule -> null
+    Route.Stats -> null
     Route.Downloads -> null
     Route.Extensions -> null
     is Route.Settings -> null
@@ -596,7 +607,7 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
                 .padding(horizontal = if (iconOnly) 9.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(item.glyph, size = 16.dp, tint = fg)
+            NavIcon(item, size = 16.dp, tint = fg)
             if (!iconOnly) {
                 Box(Modifier.width(8.dp))
                 FText(item.label, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = fg, maxLines = 1, softWrap = false)
@@ -621,7 +632,7 @@ private fun FloatingDock(modifier: Modifier) {
             .shadow(18.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
             .background(if (isClassic) Color(0xD90B0B10) else if (Appearance.glass) c.flyout.copy(alpha = 0.90f) else c.flyout, shape)
-            .border(Dp.Hairline, if (isClassic) Color(0x2BFFFFFF) else c.strokeStrong.copy(alpha = 0.5f), shape)
+            .hairBorder(if (isClassic) Color(0x2BFFFFFF) else c.strokeStrong.copy(alpha = 0.5f), shape)
             .padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -648,7 +659,7 @@ private fun FloatingDockItem(item: NavItem) {
                     .background(if (selected && colored) c.button.copy(alpha = 0.22f) else if (hovered) Color(0x18FFFFFF) else Color.Transparent, shape)
                     .fluentClickable(source, true, shape, Role.Tab) { Navigator.goTab(tabOf(item.id)) },
                 contentAlignment = Alignment.Center,
-            ) { Icon(item.glyph, size = 20.dp, tint = if (selected) (if (colored) c.accentText else Color.White) else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF)) }
+            ) { NavIcon(item, size = 20.dp, tint = if (selected) (if (colored) c.accentText else Color.White) else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF)) }
         }
     }
 }
@@ -678,7 +689,7 @@ private fun BottomDock(modifier: Modifier, shown: Float = 1f) {
             }
             .clip(shape)
             .background(c.flyout, shape)
-            .border(Dp.Hairline, c.strokeStrong.copy(alpha = 0.35f), shape)
+            .hairBorder(c.strokeStrong.copy(alpha = 0.35f), shape)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -716,7 +727,7 @@ private fun DockItem(item: NavItem) {
                         RoundedCornerShape(50),
                     ),
                 )
-                Icon(item.glyph, size = 18.dp, tint = if (selected) activeFg else c.textSecondary)
+                NavIcon(item, size = 18.dp, tint = if (selected) activeFg else c.textSecondary)
             }
             FText(item.label, style = Fluent.type.caption, color = if (selected) c.text else c.textTertiary, maxLines = 1, softWrap = false)
         }
@@ -730,7 +741,7 @@ internal fun AccountAvatar() {
     val account by vm.currentAccount.observeAsState()
     LaunchedEffect(Unit) { vm.currentAccount.value ?: runCatching { com.lagradost.cloudstream3.utils.DataStoreHelper.getCurrentAccount() }.getOrNull()?.let { vm.currentAccount.postValue(it) } }
     val a = account
-    Box(Modifier.size(32.dp).clip(CircleShape).background(c.control).border(Dp.Hairline, c.stroke, CircleShape).noWindowDrag("avatar").fluentClickable(rememberInteraction(), true, CircleShape, Role.Button) { showAccountPicker() }, contentAlignment = Alignment.Center) {
+    Box(Modifier.size(32.dp).clip(CircleShape).background(c.control).hairBorder(c.stroke, CircleShape).noWindowDrag("avatar").fluentClickable(rememberInteraction(), true, CircleShape, Role.Button) { showAccountPicker() }, contentAlignment = Alignment.Center) {
         if (a != null) {
             ProfileAvatar(a, 32.dp)
         } else {
@@ -755,7 +766,7 @@ private fun AccountButton(expanded: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(28.dp).clip(CircleShape).background(c.control).border(Dp.Hairline, c.stroke, CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(28.dp).clip(CircleShape).background(c.control).hairBorder(c.stroke, CircleShape), contentAlignment = Alignment.Center) {
                 if (a != null) ProfileAvatar(a, 28.dp) else FText("?", color = c.textSecondary)
             }
         }
@@ -783,7 +794,7 @@ private fun ToastLayer() {
                                 .widthIn(max = 420.dp)
                                 .shadow(18.dp, shape, clip = false)
                                 .background(c.flyout, shape)
-                                .border(Dp.Hairline, c.strokeStrong.copy(alpha = 0.4f), shape)
+                                .hairBorder(c.strokeStrong.copy(alpha = 0.4f), shape)
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

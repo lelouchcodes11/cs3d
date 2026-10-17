@@ -3,6 +3,7 @@
 package com.lagradost.desktop.ui.fluent
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
@@ -292,21 +293,28 @@ fun ButtonBase(
     val hovered by source.collectIsHoveredAsState()
     val pressed by source.collectIsPressedAsState()
     val shape = RoundedCornerShape(FluentShapes.control)
-    val fill: Brush = when (kind) {
-        ButtonKind.Standard -> SolidColor(when {
+    // the flat fills glide between rest, hover and press instead of switching; a press gives way a little (a spring, so it comes back with a touch of overshoot)
+    val flat: Color? = when (kind) {
+        ButtonKind.Standard -> when {
             !enabled -> c.controlDisabled
             pressed -> c.controlPressed
             hovered -> c.controlHover
             else -> c.control
-        })
-        ButtonKind.Accent -> if (!enabled) SolidColor(c.controlDisabled) else c.accentBrush(hovered, pressed)
-        ButtonKind.Subtle -> SolidColor(when {
+        }
+        ButtonKind.Accent -> null
+        ButtonKind.Subtle -> when {
             !enabled -> Color.Transparent
             pressed -> c.subtlePressed
             hovered -> c.subtleHover
             else -> Color.Transparent
-        })
+        }
     }
+    val flatNow by animateColorAsState(flat ?: Color.Transparent, FluentMotion.tweenStd(110), label = "buttonFill")
+    val fill: Brush = if (flat != null) SolidColor(flatNow) else if (!enabled) SolidColor(c.controlDisabled) else c.accentBrush(hovered, pressed)
+    val give by androidx.compose.animation.core.animateFloatAsState(
+        if (pressed && enabled) 0.965f else 1f,
+        if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap() else androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 780f), label = "buttonGive",
+    )
     val content0 = when {
         !enabled -> c.textDisabled
         kind == ButtonKind.Accent -> c.onButton
@@ -319,11 +327,11 @@ fun ButtonBase(
     }
     Row(
         modifier
+            .graphicsLayer { scaleX = give; scaleY = give }
             .heightIn(min = height)
             .height(height)
-            .clip(shape)
             .background(fill, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, stroke, shape)
+            .hairBorder(stroke, shape)
             .fluentClickable(source, enabled, shape, Role.Button, onClick)
             .padding(contentPadding),
         verticalAlignment = Alignment.CenterVertically,
@@ -360,7 +368,7 @@ fun Tooltip(text: String, side: Boolean = false, content: @Composable () -> Unit
             Box(
                 Modifier
                     .background(c.flyout, RoundedCornerShape(FluentShapes.control))
-                    .border(androidx.compose.ui.unit.Dp.Hairline, c.strokeStrong.copy(alpha = 0.4f), RoundedCornerShape(FluentShapes.control))
+                    .hairBorder(c.strokeStrong.copy(alpha = 0.4f), RoundedCornerShape(FluentShapes.control))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) { FText(text, style = Fluent.type.caption, color = c.text, maxLines = 4) }
         },
@@ -406,7 +414,7 @@ fun ToggleSwitch(
         modifier
             .size(40.dp, 20.dp)
             .background(fill, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (checked) Color.Transparent else if (enabled) c.textSecondary else c.textDisabled, shape)
+            .hairBorder(if (checked) Color.Transparent else if (enabled) c.textSecondary else c.textDisabled, shape)
             .fluentClickable(source, enabled, shape, Role.Switch) { onCheckedChange(!checked) },
     ) {
         Box(
@@ -438,7 +446,7 @@ fun CheckBox(
             Modifier
                 .size(20.dp)
                 .background(if (checked) c.accent else if (hovered) c.controlHover else c.control, shape)
-                .border(androidx.compose.ui.unit.Dp.Hairline, if (checked) Color.Transparent else c.textSecondary, shape),
+                .hairBorder(if (checked) Color.Transparent else c.textSecondary, shape),
             contentAlignment = Alignment.Center,
         ) { if (checked) Icon(Icons.Check, size = 12.dp, tint = c.onAccent) }
         if (label != null) {
@@ -485,7 +493,6 @@ fun TextBox(
     Box(
         modifier
             .heightIn(min = height)
-            .clip(shape)
             .background(fill, shape)
             .border(if (pill && focused) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, if (pill && focused) c.accent else c.stroke, shape)
             .hoverable(source)
@@ -655,7 +662,7 @@ fun Slider(
                     .offset { androidx.compose.ui.unit.IntOffset((fraction * (width - 20.dp.toPx())).roundToInt(), 0) }
                     .size(20.dp),
                 contentAlignment = Alignment.Center,
-            ) { Box(Modifier.size(thumb).background(if (enabled) Color.White else c.textDisabled, CircleShape).border(androidx.compose.ui.unit.Dp.Hairline, if (c.dark) Color(0x33000000) else c.strokeStrong, CircleShape)) }
+            ) { Box(Modifier.size(thumb).background(if (enabled) Color.White else c.textDisabled, CircleShape).hairBorder(if (c.dark) Color(0x33000000) else c.strokeStrong, CircleShape)) }
         }
     }
 }
@@ -677,7 +684,7 @@ fun Badge(text: String, modifier: Modifier = Modifier, accent: Boolean = false) 
     Box(
         modifier
             .background(if (accent) c.button else c.control, shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (accent) Color.Transparent else c.stroke, shape)
+            .hairBorder(if (accent) Color.Transparent else c.stroke, shape)
             .padding(horizontal = 6.dp, vertical = 1.dp),
     ) { FText(text, style = Fluent.type.caption, color = if (accent) c.onButton else c.textSecondary, maxLines = 1) }
 }
@@ -689,7 +696,6 @@ fun StremioLogo(size: Dp = 14.dp, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(size)
-            .clip(shape)
             .background(
                 Brush.linearGradient(
                     listOf(Color(0xFFA055F5), Color(0xFF6B26A6))
@@ -717,9 +723,8 @@ fun StremioBadge(modifier: Modifier = Modifier, showText: Boolean = true) {
     val shape = RoundedCornerShape(4.dp)
     Row(
         modifier
-            .clip(shape)
             .background(Color(0xFF8E4EC6).copy(alpha = 0.22f), shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, Color(0xFF8E4EC6).copy(alpha = 0.55f), shape)
+            .hairBorder(Color(0xFF8E4EC6).copy(alpha = 0.55f), shape)
             .padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -742,9 +747,8 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
     Row(
         modifier
             .height(32.dp)
-            .clip(shape)
             .background(if (selected) c.primaryFill(hovered, pressed) else SolidColor(if (hovered) c.controlHover else Color.Transparent), shape)
-            .border(androidx.compose.ui.unit.Dp.Hairline, if (selected) c.primaryBorder(hovered) else if (hovered) c.strokeStrong else c.stroke, shape)
+            .hairBorder(if (selected) c.primaryBorder(hovered) else if (hovered) c.strokeStrong else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,

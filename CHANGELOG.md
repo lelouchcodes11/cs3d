@@ -1,5 +1,76 @@
 # Changelog
 
+## Unreleased
+
+**Round 7 (17 October)**
+- **Settings stay where you are**: changing the navigation position (which rebuilt the whole page) no longer sends Settings back to General; the page, the search and the scroll position are kept.
+- **Settings reorganised**: General (language, downloads, network, window), Player (playback, sources, video, audio, subtitles, controls, cache), Appearance (theme & colours, background, layout, home, title pages), Accounts & sync, Updates & backup, About. Player options that sat under Appearance moved to Player; rows that do nothing in this app (phone layout, gestures, poster toggles, search and cast switches of the phone UI) are gone.
+- **Search settings** finds every row, including the colour pickers, the navigation position and the About links, by title, description or a few related words, and shows them working in the results.
+- **List status**: a title is moved to Watching (and to Completed after its last episode) only when it is already on one of your lists. New: Settings > Accounts & sync > Lists > "Add every title I play" to add all, and "Update list status automatically" can be turned off.
+- **Cancel while a Cloudflare check is being passed**: a bar at the bottom of the window ("Passing the Cloudflare check of <site>…", after a second and a half) has a Cancel button that stops the hidden page at once; the extension's request goes on without the clearance and that site is left alone for two minutes. A page dialog that has no Cancel of its own (an extension's check window) gets a Cancel button under the page.
+- **Pass Cloudflare checks** (Settings > General > Network): off, no page is opened to pass a Cloudflare check (CloudflareKiller returns the answer as it is, extensions' challenge sheets and dialogs with a page and a Cancel button, like Nepu's, are refused). **Nepu's flashing**: its window wipes the old `cf_clearance` cookie with a plain "expire it" for the site's address, which the cookie jar did not apply to the site's domain cookie (`.nepu.io`); the old cookie stayed, the window "passed" in a second on it, the request was blocked again and the window came back, over and over. Wiping a cookie by the page's address now removes the domain cookie too (and from the browser engine's jar). If a check still cannot be passed, a third page dialog within two minutes is not shown and the next ones wait 20 minutes (a message says so).
+
+**Round 6 (16 October, night)**
+- **Explore** is calmer: no empty "Recent searches" box, and one row of controls (Movies / TV series / Anime, Global / Local, then Genre, Streaming and Language as drop-downs with a "Clear filters" button) instead of three rows of thirty chips; the banner is the first thing under it, stops turning while the pointer is on it, has arrows and dots that glide.
+- **More like this** has a heading ("More like <title>"), a line that says what the list is, the year and first genre under every poster, posters that share the width of the page and arrive in a wave.
+- **Polish, from looking at NuvioDesktop (reference/nuvio-desktop, GPL-3, ideas only):** buttons give way under a press and glide between rest, hover and press; the pill tabs (Schedule, Explore, Library ...) slide the filled pill to the new tab; posters have a top-lit hairline edge; the posters of a shelf, a grid, the episode rows and the "related" lists arrive one after the other; the part of a title page under the picture comes up a moment after it; empty states fade in; pages land with the soft curve of Nuvio's content reveal.
+- **Schedule: anime timetable** is the first tab: seven day buttons (today and the six days after it, with the number of episodes each has) that stay at the top while you scroll, and the chosen day as a timeline, hour by hour, in your time zone, with a "now" line and a countdown on every time ("in 1 h 20 min"). What aired earlier today is folded away above the now line. Filters: My list / Popular / Everything. Cards show cover, episode, format, score, "In your list" and "Premiere".
+- **Schedule: Movies & series** is the second tab: a slider (turns by itself, arrows and dots, "Find to watch") and shelves of what comes out in the next three months: films in your cinemas, films reaching streaming, new series with their network, and anime that has not started (TMDB for your country, AniList). Notifications is the third tab. The code is split by tab (`TimetableTab`, `ComingSoonTab`, `NoticesTab`).
+- **Signs & songs where the picture's writing is**: a second subtitle that is a signs / songs / typeset track keeps its own places and look (the translated shop sign stays at the shop sign, as on the phone) instead of being stacked as plain text at the top. Subtitles > Second subtitle > "Where it is shown" switches it either way for any track.
+- **Episode list**: a click on the picture closes it (and does not pause the video).
+- **Picture in picture**: 10 s back / forward buttons around play; the small window and its controls window now move and resize in one step (the controls used to follow a few frames late), and a drag asks Windows less per pointer report.
+- **Player controls**: they stay while a mouse button is held (dragging the seek bar or the volume and resting the pointer beside the bar took the bar away under the drag), and Settings > Appearance > "Hide the player controls" lets them stay 2, 4, 8 or 15 seconds, or always.
+- **Subtitle pill**: "Looking for subtitles…" no longer stays on a video that has none; it goes after 8 s (20 s for other loading messages).
+- **Stremio is off until you turn it on**: the first start lists Cinemeta switched off.
+- **Black line along the right edge of a maximised or full screen video** (150 % scale): the video now reaches the edge.
+- **From CloudStream 4 (d9c55e2)**: Dynamic range compressor (Settings > Player and Dynamic range in the player menu: Off, Light, Dialogue boost, Heavy, the phone's presets, run by mpv's `acompressor`), the DNS setting applies at once, new and updated translations, `setAccount(showToast)`.
+
+**Round 5 (16 October, evening)**
+- **Search in the source list** of the player menu (from 5 sources on): type part of a name, quality or site.
+- **Subtitles no longer "random"**: the automatic choice waits until the video is open and the online files are looked at (dead, empty and wrong-length ones are left out), then takes the file whose timing most files agree on, says "Choosing the best subtitles" meanwhile, and keeps it. The list puts the files with that timing first.
+- **Search extensions** dialog: the stars are in one column at the right.
+- **Extension priority**: Settings > General > Extension priority and a star in the search's extension list put the extensions you use first, in your order (search results, the search's list and the Home picker).
+- **Subtitle encoding** like on the phone (list with a check mark, Apply / Cancel): Settings > Player and Subtitles > Encoding in the player; old Shift JIS, Windows-1251 ... files read right. The installed runtime now has all character sets.
+- **Translate on-screen text** (key T, player menu): reads the writing that is part of the picture (game windows, signs) with Windows' own OCR and shows it translated over the picture. Needs the OCR language pack of the language in Windows (Japanese: Settings > Time & language > Language & region); the card says how.
+
+**Round 4 (16 October)**
+- **Extensions list lost** (also on the phone through the sync extension): the app no longer lets its preference file disappear for an instant while saving (the sync extension took that for a deleted profile). Extensions whose files are on the disk but missing from the installed list are taken back into it, when a repository page is opened and after the start.
+- **Zinkmovies Cloudflare sheet**: no longer asked again and again (at most once in two minutes), and it closes itself once its page is no challenge any more.
+- **Subtitles**: online subtitles are checked in the background: dead links, block pages and empty files disappear from the list, the working ones come first, files made for another cut go last.
+- **Play / pause**: the button and the on-screen mark follow what the press did (also while buffering, also with quick presses).
+- Settings dialogs close with Cancel even when the action behind the button fails; the log file `logs/app.log` is written again.
+
+**Round 3 (15 October)**
+- **Keys and media keys follow the focus**: clicking the picture of a native video now gives the keyboard to CloudStream (a no-activate controls window left it with the browser next to it, and Space paused the browser's video). The media keys go to the player while a CloudStream window is in front and are given back to other programs when the player page is left.
+- **Several windows share your data**: library, history, resume positions, accounts and settings are the same in every window, and a change in one shows in the others within a second. Each window has its own IPC port (52526 is the sign-in page) and log file.
+- **Seek preview** sits just above the bar with the time over its lower edge, without a frame, and black bars of letterboxed films are cut off.
+- **Extension icons** in the Home list use the site's real icon instead of a stretched 16 px one.
+- **Borders** are strokes one dp wide (1.5 px at 150 %): no more strings of dots on curves.
+- **Desi community pop-up** (Zinkmovies and the other Desi extensions) is dismissed at once.
+- **Log out** says so, refreshes the library and the account rows show who is signed in; MAL sign-in errors say what to do.
+
+**Round 2**
+- **Extension list on Home**: searchable panel with icons, language, types and a Stremio group.
+- **Library**: a failing service no longer locks the library; the page offers another list and a retry.
+- **Several windows**: starting the app again opens a second window (Settings > Appearance > Several windows).
+- **Video window**: after a resize or snap the picture could sit too low and be cut, with the controls covering only part of it; both are put back to the window's size.
+- **Borders** drawn as filled 1 px rings: no more dotted edges on curves.
+
+**From the community feature-request list**
+- **Schedule page** (new tab): *Notifications* lists the new episodes of the titles with the bell on, *This week* shows what airs in the next 7 days from AniList in your time, your library marked. The bell was saving the subscription but nothing on the PC ever looked for episodes; the app now checks while it is open (a minute after the start, then every 3 hours) and sends a silent tray notification. The tab has a dot while something is unread.
+- **Bell button** on the title page next to the library button.
+- **Update list status automatically** (Settings > Player): Watching when you start a title, Completed when its last episode is done (AniList, MyAnimeList, Simkl).
+- **Continue watching** is a row of 16:9 cards: still of the episode, what is next, time left, the source you watched with.
+- **Recommended** tab on anime pages (AniList: users who liked this also liked) with *Add to Planning*.
+- **Stats** (button on History): watch time, streak, activity map, genres, studios, cast, extensions, languages, rewatches.
+- **Sources list**: sort by quality, size or seeders, size and seeders shown, *Last used first* keeps the source that played the last episode on top and picks it automatically.
+- **Extension icons** in the list of extensions on Home.
+- **Subtitles**: Kitsunekko (Japanese) as a provider; *Signs & songs / forced* filter in the search; tick several results to add them at once, the second one is shown beside the first as a second subtitle (Subtitles > Second subtitle).
+- **Seek preview**: the picture of the scene above the time when you point at the seek bar.
+- Smoother motion: play/pause morphs, buttons pop when their icon changes, menus grow open, the progress bar glides.
+- Buttons and pills no longer clip their own anti-aliased fill and border twice (edges looked stepped on some PCs).
+
+
 ## 1.0.3
 
 **Local lists showed the United States**

@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -131,7 +133,7 @@ private fun showSelection(r: DesktopDialogs.Request.Selection) {
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             if (r.isMultiSelect) CheckBox(on, { if (it) selected.add(index) else selected.remove(index) })
-                            else if (!instant) Box(Modifier.size(16.dp).border(androidx.compose.ui.unit.Dp.Hairline, if (on) c.accent else c.textSecondary, CircleShape), contentAlignment = Alignment.Center) {
+                            else if (!instant) Box(Modifier.size(16.dp).hairBorder(if (on) c.accent else c.textSecondary, CircleShape), contentAlignment = Alignment.Center) {
                                 if (on) Box(Modifier.size(8.dp).background(c.accent, CircleShape))
                             }
                             FText(item, Modifier.weight(1f), color = if (on && !instant) c.accentText else c.text, maxLines = 2)

@@ -50,10 +50,25 @@ object EvenPixels {
         return 1
     }
 
+    private const val HOLD = "cloudstream.evenPixels.hold"
+
+    /**
+     * While a native video fills the window (maximised or full screen) none of the window's own picture shows, and the trim would only leave a strip
+     * at the right and bottom edge that no window covers: AWT puts the content one pixel up and left of the real client area at 125 / 150 / 175 %
+     * (it rounds the 7 dp frame inset down), the trimmed content ends one pixel short of the edge, and a thin black line ran along the edge of the
+     * video (measured on the real screen at 150 %: column 1919 black, 1918 white). While held the window keeps its whole content area.
+     */
+    fun hold(window: Window, on: Boolean) {
+        val pane = (window as? RootPaneContainer)?.contentPane as? JComponent ?: return
+        if ((pane.getClientProperty(HOLD) == true) == on) return
+        pane.putClientProperty(HOLD, on)
+        update(window, pane)
+    }
+
     private fun update(window: Window, pane: JComponent) {
         if (pane.width <= 0 || pane.height <= 0) return
         val scale = window.graphicsConfiguration?.defaultTransform?.scaleX ?: 1.0
-        val step = step(scale)
+        val step = if (pane.getClientProperty(HOLD) == true) 1 else step(scale)
         val extraW = if (step > 1) pane.width % step else 0
         val extraH = if (step > 1) pane.height % step else 0
         val ours = pane.border as? TrimBorder

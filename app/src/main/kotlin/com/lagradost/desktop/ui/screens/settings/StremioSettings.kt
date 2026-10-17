@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.settings
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -98,7 +100,7 @@ private fun AddAddonCard() {
         }
     }
     val shape = RoundedCornerShape(FluentShapes.card)
-    Column(Modifier.fillMaxWidth().background(c.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxWidth().background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FText("Add an add-on", style = Fluent.type.body)
         FText("Paste the address of its manifest (stremio://… or https://…/manifest.json) or of its page.", style = Fluent.type.caption, color = c.textSecondary)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -124,7 +126,7 @@ private fun AddonCard(a: StremioAddon) {
     val shape = RoundedCornerShape(FluentShapes.card)
     val index = StremioAddons.addons.indexOfFirst { it.manifestUrl == a.manifestUrl }
     Row(
-        Modifier.fillMaxWidth().background(c.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape).padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().background(c.card, shape).hairBorder(c.stroke, shape).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(c.control), contentAlignment = Alignment.Center) {
@@ -185,7 +187,7 @@ private fun TorrentCards() {
     val shape = RoundedCornerShape(FluentShapes.card)
     var latest by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().background(c.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FText("Torrent engine (TorrServer)", style = Fluent.type.body)
         if (TorrentEngine.installed) FText("Installed: ${TorrentEngine.version ?: "unknown version"}  ·  ${TorrentEngine.sizeMb} MB", style = Fluent.type.caption, color = c.textSecondary)
         else FText("Not installed. It is downloaded once, about 60 MB, from github.com/YouROK/TorrServer.", style = Fluent.type.caption, color = c.textSecondary)

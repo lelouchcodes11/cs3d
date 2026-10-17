@@ -109,6 +109,9 @@ object Icons {
     const val BackToWindow = ""
     const val Cast =""
     const val Notification = ""
+    const val Bell = ""
+    const val Chart = ""
+    const val Thumbnail = ""
 }
 
 /** One glyph of [FluentFonts.icons] centred in a square of [size] */

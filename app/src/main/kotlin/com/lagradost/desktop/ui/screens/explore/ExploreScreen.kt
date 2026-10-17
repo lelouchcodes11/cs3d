@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,7 +47,10 @@ import com.lagradost.desktop.ui.fluent.Appearance
 import com.lagradost.desktop.ui.fluent.ArtChip
 import com.lagradost.desktop.ui.fluent.Button
 import com.lagradost.desktop.ui.fluent.ButtonKind
-import com.lagradost.desktop.ui.fluent.Chip
+import com.lagradost.desktop.ui.fluent.ChevronButton
+import com.lagradost.desktop.ui.fluent.ComboBox
+import com.lagradost.desktop.ui.fluent.MotionCurves
+import com.lagradost.desktop.ui.fluent.rememberInteraction
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
 import com.lagradost.desktop.ui.fluent.FluentMotion
@@ -103,42 +109,25 @@ class ExploreFilters {
  */
 fun LazyListScope.exploreSections(f: ExploreFilters, rows: List<ExploreRow>, cardWidth: Dp) {
     item(key = "explore-title") {
-        Column(Modifier.padding(horizontal = gutter).padding(top = 8.dp, bottom = 14.dp)) {
+        Column(Modifier.padding(horizontal = gutter).padding(top = 6.dp, bottom = 18.dp)) {
             RichSectionHeader("Explore", subtitle = if (Tmdb.enabled) "Find something to watch; pick a title and your extensions look for it" else "TMDB is switched off (Settings > Appearance > Title information): most film and series lists are empty")
-            Box(Modifier.height(14.dp))
-            // films, series or anime; and, for the first two, what the world watches or what is made in the viewer's own country
-            val kindsScroll = rememberScrollState()
-            Row(Modifier.fillMaxWidth().scrollEdgeFade(kindsScroll).horizontalScroll(kindsScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.height(16.dp))
+            // One row of controls instead of three rows of chips: films, series or anime; what the world watches or what is made in the viewer's own
+            // country; then drop-downs for the genre, the streaming service and (for local titles) the language.
+            val barScroll = rememberScrollState()
+            Row(Modifier.fillMaxWidth().scrollEdgeFade(barScroll).horizontalScroll(barScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PillTabs(ExploreKind.values().map { it.label }, f.kind.ordinal, { f.kind = ExploreKind.values()[it]; f.genre = null; f.service = null })
                 if (f.kind != ExploreKind.Anime) {
                     PillTabs(listOf("Global", "Local · " + ExploreClient.countryName(Tmdb.region)), f.scope.ordinal, { f.chooseScope(ExploreScope.values()[it]) })
                 }
-            }
-            val languages = if (f.local) ExploreClient.languages(Tmdb.region) else emptyMap()
-            if (languages.isNotEmpty()) {
-                Box(Modifier.height(12.dp))
-                val languageScroll = rememberScrollState()
-                Row(Modifier.fillMaxWidth().scrollEdgeFade(languageScroll).horizontalScroll(languageScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FText("Language", color = Fluent.colors.textSecondary, modifier = Modifier.padding(end = 4.dp))
-                    Chip("Any", f.activeLanguage == null, { f.chooseLanguage(null) })
-                    languages.forEach { (code, name) -> Chip(name, f.activeLanguage == code, { f.chooseLanguage(if (f.activeLanguage == code) null else code) }) }
+                Box(Modifier.width(1.dp).height(24.dp).background(Fluent.colors.stroke))
+                FilterBox("Genre", "All genres", ExploreClient.genres(f.kind), f.genre, { f.genre = it }, Icons.Filter)
+                if (ExploreClient.hasServices(f.kind)) FilterBox("Streaming on", "Any service", Tmdb.services.keys.toList(), f.service, { f.service = it }, Icons.Tv)
+                val languages = if (f.local) ExploreClient.languages(Tmdb.region) else emptyMap()
+                if (languages.isNotEmpty()) FilterBox("Language", "Any language", languages.values.toList(), f.activeLanguage?.let { languages[it] }, { name -> f.chooseLanguage(languages.entries.firstOrNull { it.value == name }?.key) }, Icons.Language)
+                if (f.genre != null || f.service != null) {
+                    Button("Clear filters", { f.genre = null; f.service = null }, kind = ButtonKind.Subtle, icon = Icons.Close, height = 32.dp)
                 }
-            }
-            if (ExploreClient.hasServices(f.kind)) {
-                Box(Modifier.height(12.dp))
-                val servicesScroll = rememberScrollState()
-                Row(Modifier.fillMaxWidth().scrollEdgeFade(servicesScroll).horizontalScroll(servicesScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FText("Streaming on", color = Fluent.colors.textSecondary, modifier = Modifier.padding(end = 4.dp))
-                    Chip("Any", f.service == null, { f.service = null })
-                    Tmdb.services.keys.forEach { s -> Chip(s, f.service == s, { f.service = if (f.service == s) null else s }) }
-                }
-            }
-            Box(Modifier.height(10.dp))
-            val genreScroll = rememberScrollState()
-            Row(Modifier.fillMaxWidth().scrollEdgeFade(genreScroll).horizontalScroll(genreScroll), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FText("Genre", color = Fluent.colors.textSecondary, modifier = Modifier.padding(end = 4.dp))
-                Chip("All", f.genre == null, { f.genre = null })
-                ExploreClient.genres(f.kind).forEach { g -> Chip(g, f.genre == g, { f.genre = if (f.genre == g) null else g }) }
             }
         }
     }
@@ -160,12 +149,16 @@ private fun ExploreHero(first: ExploreRow) {
     val items by produceState<List<TmdbCard>>(emptyList(), first) { value = runCatching { first.load() }.getOrDefault(emptyList()).filter { it.backdrop != null }.take(5) }
     if (items.isEmpty()) return
     var index by remember(items) { mutableStateOf(0) }
-    LaunchedEffect(items) {
+    val source = rememberInteraction()
+    val hovering by source.collectIsHoveredAsState()
+    // it turns by itself, and waits while the pointer is on it
+    LaunchedEffect(items, hovering) {
+        if (hovering) return@LaunchedEffect
         while (true) { delay(8000); index = (index + 1) % items.size }
     }
     val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.card)
-    Box(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 30.dp).height(340.dp).clip(shape)) {
-        Crossfade(items[index], animationSpec = FluentMotion.tweenStd(700), label = "exploreHero") { item ->
+    Box(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 30.dp).height(340.dp).clip(shape).hoverable(source)) {
+        Crossfade(items[index], animationSpec = androidx.compose.animation.core.tween(FluentMotion.ms(800), easing = MotionCurves.easing), label = "exploreHero") { item ->
             Box(Modifier.fillMaxSize()) {
                 RemoteImage(item.backdrop, null, null, Modifier.fillMaxSize(), ContentScale.Crop)
                 Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.95f), 0.5f to Fluent.colors.bg.copy(alpha = 0.6f), 1f to Fluent.colors.bg.copy(alpha = 0.1f))))
@@ -183,11 +176,26 @@ private fun ExploreHero(first: ExploreRow) {
                 }
             }
         }
+        if (hovering && items.size > 1) {
+            ChevronButton(Icons.ChevronLeft, Modifier.align(Alignment.CenterStart).padding(start = 14.dp)) { index = (index - 1 + items.size) % items.size }
+            ChevronButton(Icons.ChevronRight, Modifier.align(Alignment.CenterEnd).padding(end = 14.dp)) { index = (index + 1) % items.size }
+        }
         Row(Modifier.align(Alignment.BottomEnd).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items.forEachIndexed { i, _ ->
-                Box(Modifier.size(if (i == index) 22.dp else 8.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(if (i == index) Fluent.colors.accent else Color(0x55FFFFFF)).clickable(remember { MutableInteractionSource() }, null) { index = i })
+                val dotWidth by androidx.compose.animation.core.animateDpAsState(if (i == index) 22.dp else 8.dp, androidx.compose.animation.core.spring(0.8f, 420f), label = "heroDot")
+                Box(Modifier.size(dotWidth, 4.dp).clip(RoundedCornerShape(2.dp)).background(if (i == index) Fluent.colors.accent else Color(0x55FFFFFF)).clickable(remember { MutableInteractionSource() }, null) { index = i })
             }
         }
+    }
+}
+
+private const val ALL = "__all__"
+
+/** A drop-down filter of the Explore bar: the first entry clears it */
+@Composable
+private fun FilterBox(title: String, all: String, items: List<String>, selected: String?, onSelect: (String?) -> Unit, icon: String) {
+    com.lagradost.desktop.ui.fluent.Tooltip(title) {
+        ComboBox(listOf(ALL) + items, selected ?: ALL, { if (it == ALL) all else it }, { onSelect(it.takeIf { v -> v != ALL }) }, icon = icon, minWidth = 150.dp, height = 36.dp)
     }
 }
 

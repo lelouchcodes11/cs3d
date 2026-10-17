@@ -29,6 +29,13 @@ object SingleInstanceIpc {
     @Volatile
     private var serverSocket: ServerSocket? = null
 
+    /** Does anything answer on [port]? (a connection that sends nothing) */
+    fun isRunning(port: Int = this.port): Boolean = try {
+        Socket().use { it.connect(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 400); true }
+    } catch (_: Throwable) {
+        false
+    }
+
     /**
      * Tries to send arguments to an already-running primary instance.
      * Returns true if successfully delivered, false if no running instance answered.

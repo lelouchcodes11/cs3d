@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.shell
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -334,7 +336,7 @@ fun showProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit = {}
                             val on = draft.emoji == e
                             val shape = RoundedCornerShape(10.dp)
                             Box(
-                                Modifier.size(36.dp).clip(shape).background(if (on) c.accent.copy(alpha = 0.28f) else c.card, shape).border(Dp.Hairline, if (on) c.accent else c.stroke, shape)
+                                Modifier.size(36.dp).clip(shape).background(if (on) c.accent.copy(alpha = 0.28f) else c.card, shape).hairBorder(if (on) c.accent else c.stroke, shape)
                                     .fluentClickable(rememberInteraction(), true, shape, Role.RadioButton) { draft.emoji = e },
                                 contentAlignment = Alignment.Center,
                             ) { FText(if (e.isEmpty()) "Aa" else e, style = Fluent.type.body, maxLines = 1, softWrap = false) }

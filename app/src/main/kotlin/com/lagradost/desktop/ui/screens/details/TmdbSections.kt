@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.details
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -55,7 +57,7 @@ private fun InfoPill(text: String, accent: Boolean = false) {
     val c = Fluent.colors
     Box(
         Modifier.background(if (accent) c.accent.copy(alpha = 0.18f) else c.card, RoundedCornerShape(50))
-            .border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 4.dp),
+            .hairBorder(c.stroke, RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 4.dp),
     ) { FText(text, style = Fluent.type.caption, color = if (accent) c.accentText else c.text, maxLines = 1, softWrap = false) }
 }
 
@@ -66,7 +68,7 @@ private fun MakerChip(text: String, onClick: () -> Unit) {
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(50)
     Box(
-        Modifier.background(if (hovered) c.control else c.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.strokeStrong else c.stroke, shape)
+        Modifier.background(if (hovered) c.control else c.card, shape).hairBorder(if (hovered) c.strokeStrong else c.stroke, shape)
             .hoverable(source).fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 12.dp, vertical = 5.dp),
     ) { FText(text, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1, softWrap = false) }
 }
@@ -117,7 +119,7 @@ fun TmdbStrip(info: TmdbInfo) {
         info.collection?.let { (id, name) ->
             val source = rememberInteraction()
             Row(
-                Modifier.clip(RoundedCornerShape(FluentShapes.control)).background(c.card).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.control))
+                Modifier.clip(RoundedCornerShape(FluentShapes.control)).background(c.card).hairBorder(c.stroke, RoundedCornerShape(FluentShapes.control))
                     .fluentClickable(source, true, RoundedCornerShape(FluentShapes.control), Role.Button) {
                         scope.launch { Tmdb.collection(id)?.let { (title, parts) -> if (parts.isNotEmpty()) Navigator.go(Route.Section(title, parts)) } }
                     }
@@ -142,7 +144,7 @@ fun TmdbGallery(info: TmdbInfo, pageWidth: Dp) {
         info.backdrops.chunked(per).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 row.forEach { url ->
-                    Box(Modifier.weight(1f).aspectRatio(16f / 9f).clip(RoundedCornerShape(FluentShapes.card)).background(Fluent.colors.card).border(androidx.compose.ui.unit.Dp.Hairline, Fluent.colors.stroke, RoundedCornerShape(FluentShapes.card))) {
+                    Box(Modifier.weight(1f).aspectRatio(16f / 9f).clip(RoundedCornerShape(FluentShapes.card)).background(Fluent.colors.card).hairBorder(Fluent.colors.stroke, RoundedCornerShape(FluentShapes.card))) {
                         RemoteImage(url, null, null, Modifier.fillMaxSize(), ContentScale.Crop)
                     }
                 }
@@ -162,7 +164,7 @@ fun TmdbReviews(reviews: List<TmdbReview>) {
             val source = rememberInteraction()
             val shape = RoundedCornerShape(FluentShapes.card)
             Column(
-                Modifier.widthIn(max = 1000.dp).fillMaxWidth().clip(shape).background(c.card).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape)
+                Modifier.widthIn(max = 1000.dp).fillMaxWidth().clip(shape).background(c.card).hairBorder(c.stroke, shape)
                     .fluentClickable(source, true, shape, Role.Button) { open = !open }.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

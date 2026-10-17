@@ -4,6 +4,9 @@ import android.app.Dialog
 import android.content.Context
 import android.content.DialogInterface
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -32,6 +35,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     }
 
     open fun show(manager: FragmentManager, tag: String?) {
+        if (skipRepeatedChallenge()) return
         mDismissed = false
         mShownByMe = true
         val ft = manager.beginTransaction()
@@ -41,6 +45,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     }
 
     open fun show(transaction: FragmentTransaction, tag: String?): Int {
+        if (skipRepeatedChallenge()) return -1
         mDismissed = false
         mShownByMe = true
         transaction.add(this, tag)
@@ -48,6 +53,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     }
 
     open fun showNow(manager: FragmentManager, tag: String?) {
+        if (skipRepeatedChallenge()) return
         mDismissed = false
         mShownByMe = true
         val ft = manager.beginTransaction()
@@ -62,6 +68,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     private fun dismissInternal(allowStateLoss: Boolean, immediate: Boolean) {
         if (mDismissed) return
         mDismissed = true
+        challengeEnded()
         mDialog?.setOnDismissListener(null)
         mDialog?.dismiss()
         onDismiss(mDialog ?: return removeSelf(immediate))
@@ -122,6 +129,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
         if (mShowsDialog && mDialog == null) {
             val dialog = onCreateDialog(savedInstanceState)
             mDialog = dialog
+            dialog.isFragmentDialog = true
             setupDialog(dialog, mStyle)
             dialog.setCancelable(mCancelable)
             dialog.setOnCancelListener(this)
@@ -136,7 +144,10 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     internal override fun performStart() {
         super.performStart()
         val d = mDialog
-        if (d != null && !mDismissed) d.show()
+        if (d != null && !mDismissed) {
+            d.show()
+            if (isChallengeDialog()) watchChallenge()
+        }
     }
 
     internal override fun performStop() {
@@ -148,11 +159,78 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
         val d = mDialog
         if (d != null) {
             mDismissed = true
+            challengeEnded()
             d.setOnDismissListener(null)
             d.dismiss()
             mDialog = null
         }
         super.performDestroyView()
+    }
+
+    // ---- Cloudflare challenge sheets of extensions (Zinkmovies and others): a page the user may have to help, that the extension closes itself once it
+    // has the cookie. Some never get that cookie (the site moved to a host the extension does not look at), the sheet then stays for two minutes and,
+    // closed by hand or timed out, is asked for again by the next request, and again.
+    private var mChallengeNoted = false
+
+    private fun isChallengeDialog(): Boolean = javaClass.name.let { it.contains("Cloudflare", ignoreCase = true) || it.contains("CFBypass", ignoreCase = true) }
+
+    private object Challenges {
+        @Volatile var open = 0
+        @Volatile var endedAt = 0L
+        const val QUIET_MS = 120_000L
+        val TITLES = listOf("just a moment", "attention required", "checking your browser", "one more step", "ddos-guard", "verify", "security check")
+    }
+
+    /** A sheet asked for within two minutes of the last one's end is not shown: the extension is told (its onDismiss) that there are no cookies */
+    private fun skipRepeatedChallenge(): Boolean {
+        if (!isChallengeDialog()) return false
+        val off = !com.lagradost.desktop.runtime.web.CloudflareGate.solversOn
+        if (off || Challenges.open == 0 && System.currentTimeMillis() - Challenges.endedAt < Challenges.QUIET_MS) {
+            Log.i("DialogFragment", "${javaClass.simpleName}: " + if (off) "the Cloudflare solvers are off, not shown" else "asked again so soon after the last one, not shown")
+            mDismissed = true
+            onDismiss(object : DialogInterface {
+                override fun cancel() {}
+                override fun dismiss() {}
+            })
+            return true
+        }
+        Challenges.open++
+        mChallengeNoted = false
+        return false
+    }
+
+    private fun challengeEnded() {
+        if (!isChallengeDialog() || mChallengeNoted) return
+        mChallengeNoted = true
+        if (Challenges.open > 0) Challenges.open--
+        Challenges.endedAt = System.currentTimeMillis()
+    }
+
+    private fun findWebView(v: View?): android.webkit.WebView? {
+        if (v is android.webkit.WebView) return v
+        if (v is ViewGroup) for (i in 0 until v.getChildCount()) findWebView(v.getChildAt(i))?.let { return it }
+        return null
+    }
+
+    /** The page is no challenge any more (the extension's own check missed it): the sheet is closed after a few quiet seconds, at the latest this way */
+    private fun watchChallenge() {
+        val handler = Handler(Looper.getMainLooper())
+        val started = System.currentTimeMillis()
+        var calm = 0
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                if (mDismissed || mDialog == null) return
+                val title = findWebView(getView())?.getTitle().orEmpty().trim().lowercase()
+                val challenge = title.isEmpty() || Challenges.TITLES.any { title.contains(it) }
+                calm = if (challenge) 0 else calm + 1
+                if (calm >= 3 && System.currentTimeMillis() - started >= 10_000) {
+                    Log.i("DialogFragment", "${javaClass.simpleName}: the page is no challenge any more, closing")
+                    dismissAllowingStateLoss()
+                    return
+                }
+                handler.postDelayed(this, 2000)
+            }
+        }, 4000)
     }
 
     override fun onAttach(context: Context) {

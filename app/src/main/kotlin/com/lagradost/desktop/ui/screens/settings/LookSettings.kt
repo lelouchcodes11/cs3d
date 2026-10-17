@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.settings
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -65,38 +67,42 @@ import com.lagradost.desktop.ui.fluent.contrastText
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 
-/** Settings > Appearance > Layout and style: where the navigation sits, corners, sizes, backdrop, motion */
+/** Settings > Appearance > Layout: where the navigation sits, corners, sizes, motion */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun LayoutAndStyleCards() {
+fun GroupBuilder.layoutItems() {
     val c = Fluent.colors
     fun changed() = Appearance.save()
-    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp, start = 2.dp, top = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-        FText("Layout and style", style = Fluent.type.bodyStrong, modifier = Modifier.weight(1f))
-        Button("Reset to default", { Appearance.reset() }, kind = ButtonKind.Subtle, icon = Icons.Refresh)
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        // navigation position: four small windows to pick from
-        val shape = RoundedCornerShape(FluentShapes.card)
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).border(Dp.Hairline, c.stroke, shape).padding(16.dp)) {
+    action { Button("Reset to default", { Appearance.reset() }, kind = ButtonKind.Subtle, icon = Icons.Refresh) }
+    val shape = RoundedCornerShape(FluentShapes.card)
+    // navigation position: small windows to pick from
+    block(
+        "Navigation position",
+        "Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.",
+        "menu bar dock rail tabs top bottom left right capsule sidebar",
+    ) {
+        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             FText("Navigation position", style = Fluent.type.body)
             FText("Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.", style = Fluent.type.caption, color = c.textSecondary)
             Box(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 for (p in NavPosition.entries) NavPreview(p, Appearance.navPosition == p) { Appearance.navPosition = p; changed() }
             }
         }
-        if (Appearance.navPosition == NavPosition.Bottom) {
-            SettingsCard("Hide the dock while scrolling", "The dock slides away when you scroll a page down and comes back when you scroll up or move the pointer to the bottom edge.") {
-                ToggleSwitch(Appearance.dockAutoHide, { Appearance.dockAutoHide = it; if (!it) com.lagradost.desktop.ui.shell.ShellState.dockHidden = false; changed() })
-            }
+    }
+    if (Appearance.navPosition == NavPosition.Bottom) {
+        card("Hide the dock while scrolling", "The dock slides away when you scroll a page down and comes back when you scroll up or move the pointer to the bottom edge.") {
+            ToggleSwitch(Appearance.dockAutoHide, { Appearance.dockAutoHide = it; if (!it) com.lagradost.desktop.ui.shell.ShellState.dockHidden = false; changed() })
         }
-        if (Appearance.navPosition == NavPosition.Left || Appearance.navPosition == NavPosition.Right) {
-            SettingsCard("Side rail", "Show the page names when the pointer is on the rail, never, or all the time.") {
-                ComboBox(NavStyle.entries.toList(), Appearance.navStyle, { it.label }, { Appearance.navStyle = it; changed() }, minWidth = 190.dp)
-            }
+    }
+    if (Appearance.navPosition == NavPosition.Left || Appearance.navPosition == NavPosition.Right) {
+        card("Side rail", "Show the page names when the pointer is on the rail, never, or all the time.") {
+            ComboBox(NavStyle.entries.toList(), Appearance.navStyle, { it.label }, { Appearance.navStyle = it; changed() }, minWidth = 190.dp)
         }
-        // corner radius with a live sample
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).border(Dp.Hairline, c.stroke, shape).padding(16.dp)) {
+    }
+    // corner radius with a live sample
+    block("Corner radius", "Roundness of cards, posters, dialogs and buttons: ${Appearance.cornerRadius} px", "round rounded corners") {
+        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     FText("Corner radius", style = Fluent.type.body)
@@ -107,58 +113,123 @@ fun LayoutAndStyleCards() {
             Box(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val r = FluentShapes.card
-                Box(Modifier.size(width = 64.dp, height = 96.dp).clip(RoundedCornerShape(r)).background(c.control).border(Dp.Hairline, c.stroke, RoundedCornerShape(r)))
-                Box(Modifier.size(width = 150.dp, height = 84.dp).clip(RoundedCornerShape(r)).background(c.control).border(Dp.Hairline, c.stroke, RoundedCornerShape(r)))
-                Column(Modifier.size(width = 190.dp, height = 96.dp).clip(RoundedCornerShape(FluentShapes.overlay)).background(c.flyout).border(Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.overlay)).padding(12.dp)) {
+                Box(Modifier.size(width = 64.dp, height = 96.dp).clip(RoundedCornerShape(r)).background(c.control).hairBorder(c.stroke, RoundedCornerShape(r)))
+                Box(Modifier.size(width = 150.dp, height = 84.dp).clip(RoundedCornerShape(r)).background(c.control).hairBorder(c.stroke, RoundedCornerShape(r)))
+                Column(Modifier.size(width = 190.dp, height = 96.dp).clip(RoundedCornerShape(FluentShapes.overlay)).background(c.flyout).hairBorder(c.stroke, RoundedCornerShape(FluentShapes.overlay)).padding(12.dp)) {
                     FText("Dialog", style = Fluent.type.bodyStrong)
                     Spacer(Modifier.weight(1f))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(Modifier.size(70.dp, 26.dp).clip(RoundedCornerShape(FluentShapes.control)).background(c.accent))
-                        Box(Modifier.size(70.dp, 26.dp).clip(RoundedCornerShape(FluentShapes.control)).background(c.control).border(Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.control)))
+                        Box(Modifier.size(70.dp, 26.dp).clip(RoundedCornerShape(FluentShapes.control)).background(c.control).hairBorder(c.stroke, RoundedCornerShape(FluentShapes.control)))
                     }
                 }
             }
         }
-        SettingsCard("Backdrop", "Ambient tints the window with the colours of the artwork you look at." +
-            if (Appearance.theme != "classic" && Appearance.backdrop == Backdrop.Black) " Pure black is the look of the Classic theme: a colour theme brings its own page colour." else "") {
-            ComboBox(Backdrop.entries.toList(), Appearance.backdrop, { it.label }, { Appearance.backdrop = it; changed() }, minWidth = 220.dp)
+    }
+    card("Interface size", "Makes everything larger or smaller than the Windows scale: ${(Appearance.uiScale * 100).toInt()} %", "zoom scale text size dpi") {
+        Slider(Appearance.uiScale, { Appearance.uiScale = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0.8f..1.3f, onValueChangeFinished = { changed() })
+    }
+    card("Spacing", "Room between and around items.", "density compact") {
+        ComboBox(Density.entries.toList(), Appearance.density, { it.label }, { Appearance.density = it; changed() }, minWidth = 150.dp)
+    }
+    card("Animations", "Page transitions and hover effects.", "motion transitions reduce") {
+        ComboBox(Motion.entries.toList(), Appearance.motion, { it.label }, { Appearance.motion = it; changed() }, minWidth = 150.dp)
+    }
+    card("Zoom on hover", "Posters and dock items grow a little under the pointer.", "hover") {
+        ToggleSwitch(Appearance.hoverZoom, { Appearance.hoverZoom = it; changed() })
+    }
+}
+
+/** Settings > Appearance > Background: what is behind the pages */
+@Composable
+fun GroupBuilder.backgroundItems() {
+    fun changed() = Appearance.save()
+    card(
+        "Backdrop",
+        "Ambient tints the window with the colours of the artwork you look at." +
+            if (Appearance.theme != "classic" && Appearance.backdrop == Backdrop.Black) " Pure black is the look of the Classic theme: a colour theme brings its own page colour." else "",
+        "ambient black background",
+    ) {
+        ComboBox(Backdrop.entries.toList(), Appearance.backdrop, { it.label }, { Appearance.backdrop = it; changed() }, minWidth = 220.dp)
+    }
+    card("See-through bars", "Bars, the dock and the open rail let the page show through a little.", "glass transparent blur acrylic") {
+        ToggleSwitch(Appearance.glass, { Appearance.glass = it; changed() })
+    }
+    card("Wallpaper", if (Appearance.wallpaper.isBlank()) "A picture of your own behind every page, dimmed so the text stays readable." else java.io.File(Appearance.wallpaper).name, "picture image background") {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (Appearance.wallpaper.isNotBlank()) Button("Remove", { Appearance.wallpaper = ""; changed() }, kind = ButtonKind.Subtle)
+            Button("Choose picture…", { pickWallpaper()?.let { Appearance.wallpaper = it; changed() } }, kind = ButtonKind.Standard, icon = Icons.Folder)
         }
-        SettingsCard("See-through bars", "Bars, the dock and the open rail let the page show through a little.") {
-            ToggleSwitch(Appearance.glass, { Appearance.glass = it; changed() })
-        }
-        SettingsCard("Poster size", "Size of the posters in shelves and grids.") {
-            ComboBox(PosterSize.entries.toList(), Appearance.posterSize, { it.label }, { Appearance.posterSize = it; changed() }, minWidth = 150.dp)
-        }
-        SettingsCard("Spacing", "Room between and around items.") {
-            ComboBox(Density.entries.toList(), Appearance.density, { it.label }, { Appearance.density = it; changed() }, minWidth = 150.dp)
-        }
-        SettingsCard("Interface size", "Makes everything larger or smaller than the Windows scale: ${(Appearance.uiScale * 100).toInt()} %") {
-            Slider(Appearance.uiScale, { Appearance.uiScale = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0.8f..1.3f, onValueChangeFinished = { changed() })
-        }
-        SettingsCard("Animations", "Page transitions and hover effects.") {
-            ComboBox(Motion.entries.toList(), Appearance.motion, { it.label }, { Appearance.motion = it; changed() }, minWidth = 150.dp)
-        }
-        SettingsCard("Hide the title bar when maximized", "A maximized window shows only the app: the title bar (back, window buttons) slides in when the pointer touches the top edge of the screen and goes away when it leaves. Full screen always works this way.") {
-            ToggleSwitch(Appearance.hideTitleBar, { Appearance.hideTitleBar = it; changed() })
-        }
-        SettingsCard("Zoom on hover", "Posters and dock items grow a little under the pointer.") {
-            ToggleSwitch(Appearance.hoverZoom, { Appearance.hoverZoom = it; changed() })
-        }
-        SettingsCard("Native GPU player (beta)", "mpv draws the video with its own GPU renderer in a window of its own, in step with your screen's refresh, and the controls float above it. Smoothest motion and the least CPU, but still being tested: if the picture or the controls misbehave, switch it off. Applies to the next video.") {
-            ToggleSwitch(Appearance.nativePlayer, { Appearance.nativePlayer = it; changed() })
-        }
-        SettingsCard("Prefer smooth sources", "When a title is played, 4K, REMUX and very large files are tried after the lighter ones: they are the sources that stall on slow hosts and buffer or drop frames on a weak graphics card. All of them stay in the Sources list. Turn it off to always try the highest quality first.") {
-            ToggleSwitch(Appearance.smoothSources, { Appearance.smoothSources = it; changed() })
-        }
-        SettingsCard("Upscaling", "How the picture is enlarged when it is shown larger than it is. mpv's own filters (Sharp, High quality), FSR for anything, or Anime4K's neural filters for anime (modes A, B, C; they ask a lot of the graphics card). Native GPU player only; it can also be changed in the player's menu while a video plays. Anime4K by bloc97, FSR and CAS by AMD, ported by agyild (MIT).") {
-            ComboBox(Upscaler.entries.toList(), Appearance.upscaler, { it.label }, { Appearance.upscaler = it; changed() }, minWidth = 240.dp)
-        }
-        SettingsCard("Smooth motion", "Blends the frames of 24 and 25 frames per second video so pans and scrolling credits do not judder on a 60 Hz screen. Turn it off if you prefer the pure frames.") {
-            ToggleSwitch(Appearance.smoothMotion, { Appearance.smoothMotion = it; changed() })
-        }
-        SettingsCard("Player controls", "Modern: a floating bar over the picture. Classic: a full-width bar at the bottom.") {
-            ComboBox(PlayerStyle.entries.toList(), Appearance.playerStyle, { it.label }, { Appearance.playerStyle = it; changed() }, minWidth = 210.dp)
-        }
+    }
+    if (Appearance.wallpaper.isNotBlank()) card("Wallpaper dimming", "How much of the page colour covers the picture: ${(Appearance.wallpaperDim * 100).toInt()} %") {
+        Slider(Appearance.wallpaperDim, { Appearance.wallpaperDim = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0.3f..0.95f, onValueChangeFinished = { changed() })
+    }
+}
+
+/** Settings > Appearance > Home: what Home shows and how big the posters are */
+@Composable
+fun GroupBuilder.homeItems() {
+    fun changed() = Appearance.save()
+    card("Home banner", "The large rotating banner at the top of Home.", "featured carousel") {
+        ToggleSwitch(Appearance.homeBanner, { Appearance.homeBanner = it; changed() })
+    }
+    card("Continue watching on Home", "The row of titles you started (the full list is under See all, in History).", "resume history") {
+        ToggleSwitch(Appearance.homeContinue, { Appearance.homeContinue = it; changed() })
+    }
+    card("Poster size", "Size of the posters in shelves and grids.", "cards thumbnails") {
+        ComboBox(PosterSize.entries.toList(), Appearance.posterSize, { it.label }, { Appearance.posterSize = it; changed() }, minWidth = 150.dp)
+    }
+}
+
+/** Settings > General > Window: the title bar and several windows */
+@Composable
+fun GroupBuilder.windowItems() {
+    fun changed() = Appearance.save()
+    card("Hide the title bar when maximized", "A maximized window shows only the app: the title bar slides in when the pointer touches the top edge of the screen. Full screen always works this way.", "maximise fullscreen") {
+        ToggleSwitch(Appearance.hideTitleBar, { Appearance.hideTitleBar = it; changed() })
+    }
+    card("Several windows", "Starting the app again while it runs opens another window with its own player, so two things can play side by side. All windows share the same data and settings. Off: a second start only brings the first window to the front.", "multiple instances second") {
+        var multi by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.lagradost.desktop.platform.MultiInstance.enabled()) }
+        ToggleSwitch(multi, { multi = it; com.lagradost.desktop.platform.MultiInstance.setEnabled(it) })
+    }
+}
+
+/** Settings > Player > Video: the renderer, the picture and how it is enlarged */
+@Composable
+fun GroupBuilder.videoItems() {
+    fun changed() = Appearance.save()
+    card("Native GPU player (beta)", "mpv draws the video with its own GPU renderer, in step with your screen's refresh: the smoothest motion and the least CPU. Still being tested: if the picture or the controls misbehave, switch it off. Applies to the next video.", "mpv renderer hardware") {
+        ToggleSwitch(Appearance.nativePlayer, { Appearance.nativePlayer = it; changed() })
+    }
+    card("Upscaling", "How the picture is enlarged when it is shown larger than it is: mpv's filters, FSR, or Anime4K for anime (modes A, B, C; they ask a lot of the graphics card). Native GPU player only; also in the player's menu. Anime4K by bloc97, FSR and CAS by AMD, ported by agyild (MIT).", "anime4k fsr scaler sharpen") {
+        ComboBox(Upscaler.entries.toList(), Appearance.upscaler, { it.label }, { Appearance.upscaler = it; changed() }, minWidth = 240.dp)
+    }
+    card("Smooth motion", "Blends the frames of 24 and 25 frames per second video so pans and scrolling credits do not judder on a 60 Hz screen. Turn it off if you prefer the pure frames.", "interpolation judder fps") {
+        ToggleSwitch(Appearance.smoothMotion, { Appearance.smoothMotion = it; changed() })
+    }
+}
+
+/** Settings > Player > Sources: how the sources of a title are ordered */
+@Composable
+fun GroupBuilder.smoothSourcesItem() {
+    fun changed() = Appearance.save()
+    card("Prefer smooth sources", "4K, REMUX and very large files are tried after the lighter ones: they stall on slow hosts and drop frames on a weak graphics card. All of them stay in the Sources list. Off: the highest quality is tried first.", "4k remux buffering stall quality") {
+        ToggleSwitch(Appearance.smoothSources, { Appearance.smoothSources = it; changed() })
+    }
+}
+
+/** Settings > Player > Controls: the bar over the video */
+@Composable
+fun GroupBuilder.controlItems() {
+    fun changed() = Appearance.save()
+    card("Player controls", "Modern: a floating bar over the picture. Classic: a full-width bar at the bottom.", "style bar") {
+        ComboBox(PlayerStyle.entries.toList(), Appearance.playerStyle, { it.label }, { Appearance.playerStyle = it; changed() }, minWidth = 210.dp)
+    }
+    card("Hide the player controls", "How long after the last mouse movement the controls go away. They stay while the pointer is on them, a button is held or a menu is open. The keyboard shortcuts work either way.", "auto hide timeout cursor") {
+        ComboBox(listOf(2, 4, 8, 15, 0), Appearance.controlsHideSeconds, { if (it == 0) "Never" else "After $it s" }, { Appearance.controlsHideSeconds = it; changed() }, minWidth = 150.dp)
+    }
+    card("Seek preview", "A picture of the scene above the time when you point at the seek bar, read by a second, light player in the background. Turn it off to save bandwidth on a slow connection.", "thumbnail scrub bar") {
+        ToggleSwitch(Appearance.seekPreviews, { Appearance.seekPreviews = it; changed() })
     }
 }
 
@@ -192,7 +263,7 @@ private fun NavPreview(p: NavPosition, selected: Boolean, onClick: () -> Unit) {
                 }
                 NavPosition.Floating -> Box(Modifier.fillMaxSize().background(page, RoundedCornerShape(3.dp))) {
                     Row(
-                        Modifier.align(Alignment.TopCenter).padding(top = 3.dp).background(c.flyout, RoundedCornerShape(5.dp)).border(Dp.Hairline, c.strokeStrong, RoundedCornerShape(5.dp)).padding(horizontal = 4.dp, vertical = 3.dp),
+                        Modifier.align(Alignment.TopCenter).padding(top = 3.dp).background(c.flyout, RoundedCornerShape(5.dp)).hairBorder(c.strokeStrong, RoundedCornerShape(5.dp)).padding(horizontal = 4.dp, vertical = 3.dp),
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         Box(Modifier.size(14.dp, 6.dp).background(accent, RoundedCornerShape(3.dp)))
@@ -201,7 +272,7 @@ private fun NavPreview(p: NavPosition, selected: Boolean, onClick: () -> Unit) {
                 }
                 NavPosition.Dock -> Box(Modifier.fillMaxSize().background(page, RoundedCornerShape(3.dp))) {
                     Column(
-                        Modifier.align(Alignment.CenterStart).padding(start = 4.dp).background(c.flyout, RoundedCornerShape(5.dp)).border(Dp.Hairline, c.strokeStrong, RoundedCornerShape(5.dp)).padding(horizontal = 3.dp, vertical = 4.dp),
+                        Modifier.align(Alignment.CenterStart).padding(start = 4.dp).background(c.flyout, RoundedCornerShape(5.dp)).hairBorder(c.strokeStrong, RoundedCornerShape(5.dp)).padding(horizontal = 3.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         Box(Modifier.size(6.dp).background(accent, RoundedCornerShape(2.dp)))
@@ -218,7 +289,7 @@ private fun NavPreview(p: NavPosition, selected: Boolean, onClick: () -> Unit) {
                 }
                 NavPosition.Bottom -> Box(Modifier.fillMaxSize().background(page, RoundedCornerShape(3.dp))) {
                     Row(
-                        Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp).background(c.flyout, RoundedCornerShape(5.dp)).border(Dp.Hairline, c.strokeStrong, RoundedCornerShape(5.dp)).padding(horizontal = 4.dp, vertical = 3.dp),
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp).background(c.flyout, RoundedCornerShape(5.dp)).hairBorder(c.strokeStrong, RoundedCornerShape(5.dp)).padding(horizontal = 4.dp, vertical = 3.dp),
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         Box(Modifier.size(6.dp).background(accent, RoundedCornerShape(2.dp)))
@@ -232,35 +303,28 @@ private fun NavPreview(p: NavPosition, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Settings for the information TMDB adds to title pages, the Home banner and Explore */
+/** Settings > Appearance > Title pages: the information TMDB adds to title pages, the Home banner and Explore */
 @Composable
-fun TitleInfoCards() {
-    val c = Fluent.colors
+fun GroupBuilder.titleInfoItems() {
     fun changed() = Appearance.save()
-    FText("Title information", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp, top = 24.dp))
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        SettingsCard("Title information from TMDB", "Logos and backdrops, cast photos, ratings, reviews, trailers, where a title streams, and the Explore lists. Anime also get their prequels and sequels from AniList. Turn it off and the app never contacts TMDB or AniList for this (extensions' own information is shown). This product uses the TMDB API but is not endorsed or certified by TMDB.") {
-            ToggleSwitch(Appearance.tmdbEnabled, { Appearance.tmdbEnabled = it; changed() })
-        }
-        if (Appearance.tmdbEnabled) SettingsCard("Country", "Decides the age rating and the streaming services shown on title pages and in the Explore filters.") {
-            val codes = listOf("") + com.lagradost.desktop.tmdb.Tmdb.regions.keys
-            ComboBox(codes, Appearance.tmdbRegion, { if (it.isEmpty()) "Windows region (${com.lagradost.desktop.tmdb.Tmdb.region})" else com.lagradost.desktop.tmdb.Tmdb.regions[it] ?: it }, { Appearance.tmdbRegion = it; changed() }, minWidth = 230.dp)
-        }
+    card("Title information from TMDB", "Logos, backdrops, cast, ratings, reviews, trailers, where a title streams and the Explore lists; anime also get prequels and sequels from AniList. Off: the app never contacts TMDB or AniList for this. This product uses the TMDB API but is not endorsed or certified by TMDB.", "tmdb anilist cast logos ratings reviews privacy") {
+        ToggleSwitch(Appearance.tmdbEnabled, { Appearance.tmdbEnabled = it; changed() })
+    }
+    if (Appearance.tmdbEnabled) card("Country", "Decides the age rating and the streaming services shown on title pages and in the Explore filters.", "region") {
+        val codes = listOf("") + com.lagradost.desktop.tmdb.Tmdb.regions.keys
+        ComboBox(codes, Appearance.tmdbRegion, { if (it.isEmpty()) "Windows region (${com.lagradost.desktop.tmdb.Tmdb.region})" else com.lagradost.desktop.tmdb.Tmdb.regions[it] ?: it }, { Appearance.tmdbRegion = it; changed() }, minWidth = 230.dp)
     }
 }
 
 /** Episode lists: hide what is ahead of the viewer */
 @Composable
-fun SpoilerCards() {
+fun GroupBuilder.spoilerItems() {
     fun changed() = Appearance.save()
-    FText("Spoilers", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp, top = 24.dp))
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        SettingsCard("Hide spoilers in episode lists", "Blurs the still and hides the description of every episode after the one you watch next (episodes you watched or started stay open). The eye on a covered episode shows it, and the button above the list switches this off for good.") {
-            ToggleSwitch(Appearance.hideSpoilers, { Appearance.hideSpoilers = it; changed() })
-        }
-        if (Appearance.hideSpoilers) SettingsCard("Hide the titles as well", "A covered episode is called just \"Episode 12\" until you reach it.") {
-            ToggleSwitch(Appearance.hideSpoilerTitles, { Appearance.hideSpoilerTitles = it; changed() })
-        }
+    card("Hide spoilers in episode lists", "Blurs the still and hides the description of every episode after the one you watch next. The eye on a covered episode shows it.", "blur episode thumbnails description") {
+        ToggleSwitch(Appearance.hideSpoilers, { Appearance.hideSpoilers = it; changed() })
+    }
+    if (Appearance.hideSpoilers) card("Hide the titles as well", "A covered episode is called just \"Episode 12\" until you reach it.", "episode names") {
+        ToggleSwitch(Appearance.hideSpoilerTitles, { Appearance.hideSpoilerTitles = it; changed() })
     }
 }
 
@@ -298,45 +362,43 @@ private fun colorToHex(color: Color): String {
     return "#%02X%02X%02X".format(r, g, b)
 }
 
-/** Themes, accent colors, independent button/pill colors, fill styles, surface tinting, and wallpaper */
+/** Settings > Appearance > Theme & colours: themes, accent colours, independent button/pill colours, fill styles and surface tinting */
 @Composable
-fun ThemeCards() {
+fun GroupBuilder.themeItems() {
     val c = Fluent.colors
     fun changed() = Appearance.save()
-
-    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp, start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        FText("Themes & colours", style = Fluent.type.bodyStrong, modifier = Modifier.weight(1f))
-        Button(
-            "Reset colours",
-            {
-                Appearance.theme = "classic"
-                Appearance.buttonStyle = ButtonStyle.White
-                Appearance.surfaceTint = SurfaceTint.Balanced
-                Appearance.navAccentPill = false
-                Appearance.themeGlow = false
-                FluentSettings.chooseAccent(null)
-                FluentSettings.chooseButtonColor(null)
-                changed()
-            },
-            kind = ButtonKind.Subtle,
-            icon = Icons.Refresh,
-        )
+    action {
+            Button(
+                "Reset colours",
+                {
+                    Appearance.theme = "classic"
+                    Appearance.buttonStyle = ButtonStyle.White
+                    Appearance.surfaceTint = SurfaceTint.Balanced
+                    Appearance.navAccentPill = false
+                    Appearance.themeGlow = false
+                    FluentSettings.chooseAccent(null)
+                    FluentSettings.chooseButtonColor(null)
+                    changed()
+                },
+                kind = ButtonKind.Subtle,
+                icon = Icons.Refresh,
+            )
     }
 
     val shape = RoundedCornerShape(FluentShapes.card)
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        SettingsCard("App mode", "Follow Windows, or always use light or dark surfaces.") {
-            ComboBox(
-                ThemeMode.entries.toList(),
-                FluentSettings.themeMode,
-                { when (it) { ThemeMode.System -> "Use system setting"; ThemeMode.Light -> "Light"; ThemeMode.Dark -> "Dark" } },
-                { FluentSettings.chooseMode(it) },
-                minWidth = 190.dp,
-            )
-        }
+    card("App mode", "Follow Windows, or always use light or dark surfaces.") {
+        ComboBox(
+            ThemeMode.entries.toList(),
+            FluentSettings.themeMode,
+            { when (it) { ThemeMode.System -> "Use system setting"; ThemeMode.Light -> "Light"; ThemeMode.Dark -> "Dark" } },
+            { FluentSettings.chooseMode(it) },
+            minWidth = 190.dp,
+        )
+    }
 
-        // 1. Clean Flat Theme Gallery (grid of all 20 themes)
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).border(Dp.Hairline, c.stroke, shape).padding(16.dp)) {
+    // 1. Clean Flat Theme Gallery (grid of all 20 themes)
+    block("Colour theme", "Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.", "palette preset catppuccin nord dracula gruvbox slate graphite") {
+        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     FText("Colour theme", style = Fluent.type.bodyStrong)
@@ -368,9 +430,11 @@ fun ThemeCards() {
                 }
             }
         }
+    }
 
-        // 2. Accent Colour Picker (Swatches + Custom Hex)
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).border(Dp.Hairline, c.stroke, shape).padding(16.dp)) {
+    // 2. Accent Colour Picker (Swatches + Custom Hex)
+    block("Accent colour", "Tints switches, sliders, active tabs, focus rings and links. Override the theme's accent or enter any hex colour.", "color hex swatch highlight") {
+        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             var customHex by remember(FluentSettings.accentOverride) {
                 mutableStateOf(FluentSettings.accentOverride?.let { colorToHex(it) } ?: "")
             }
@@ -400,9 +464,11 @@ fun ThemeCards() {
                 onSelect = { FluentSettings.chooseAccent(it) },
             )
         }
+    }
 
-        // 3. Independent Button, Chip & Pill Colour Picker (Swatches + Custom Hex)
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).border(Dp.Hairline, c.stroke, shape).padding(16.dp)) {
+    // 3. Independent Button, Chip & Pill Colour Picker (Swatches + Custom Hex)
+    block("Button, chip & pill colour", "Keep the default crisp white buttons and pills, match the accent colour, or pick any solid colour for primary buttons (Watch now, Play), selected chips and active pills.", "color hex swatch primary") {
+        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             val isDefaultWhite = FluentSettings.buttonColorOverride == null && Appearance.buttonStyle == ButtonStyle.White
             val isMatchAccent = FluentSettings.buttonColorOverride == null && Appearance.buttonStyle != ButtonStyle.White
             var buttonHex by remember(FluentSettings.buttonColorOverride) {
@@ -454,7 +520,7 @@ fun ThemeCards() {
                 Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(FluentShapes.control))
                     .background(c.layer, RoundedCornerShape(FluentShapes.control))
-                    .border(Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.control))
+                    .hairBorder(c.stroke, RoundedCornerShape(FluentShapes.control))
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -469,32 +535,17 @@ fun ThemeCards() {
                 Badge("4K HDR", accent = true)
             }
         }
+    }
 
-        // 4. Button & Surface Style Controls
-        SettingsCard("Button & pill style", "White (default) keeps primary buttons and pills crisp white unless a custom button colour is chosen. Solid colour and Tinted glass use the button or accent colour.") {
-            ComboBox(ButtonStyle.entries.toList(), Appearance.buttonStyle, { it.label }, { Appearance.buttonStyle = it; changed() }, minWidth = 190.dp)
-        }
-        SettingsCard("Coloured navigation highlight", "Fill the active tab in the floating bar, side rail and dock with your button colour instead of neutral dark glass.") {
-            ToggleSwitch(Appearance.navAccentPill, { Appearance.navAccentPill = it; changed() })
-        }
-        SettingsCard("Surface & border tint", "How strongly cards, menus, controls and borders absorb the theme or accent colour.") {
-            ComboBox(SurfaceTint.entries.toList(), Appearance.surfaceTint, { it.label }, { Appearance.surfaceTint = it; changed() }, minWidth = 190.dp)
-        }
-        SettingsCard("Wallpaper", if (Appearance.wallpaper.isBlank()) "A picture of your own behind every page, dimmed so the text stays readable." else java.io.File(Appearance.wallpaper).name) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (Appearance.wallpaper.isNotBlank()) Button("Remove", { Appearance.wallpaper = ""; changed() }, kind = ButtonKind.Subtle)
-                Button("Choose picture…", { pickWallpaper()?.let { Appearance.wallpaper = it; changed() } }, kind = ButtonKind.Standard, icon = Icons.Folder)
-            }
-        }
-        if (Appearance.wallpaper.isNotBlank()) SettingsCard("Wallpaper dimming", "How much of the page colour covers the picture: ${(Appearance.wallpaperDim * 100).toInt()} %") {
-            Slider(Appearance.wallpaperDim, { Appearance.wallpaperDim = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0.3f..0.95f, onValueChangeFinished = { changed() })
-        }
-        SettingsCard("Home banner", "The large rotating banner at the top of Home.") {
-            ToggleSwitch(Appearance.homeBanner, { Appearance.homeBanner = it; changed() })
-        }
-        SettingsCard("Continue watching on Home", "The row of titles you started (the full list is under See all, in History).") {
-            ToggleSwitch(Appearance.homeContinue, { Appearance.homeContinue = it; changed() })
-        }
+    // 4. Button & Surface Style Controls
+    card("Button & pill style", "White (default) keeps primary buttons and pills crisp white unless a custom button colour is chosen. Solid colour and Tinted glass use the button or accent colour.") {
+        ComboBox(ButtonStyle.entries.toList(), Appearance.buttonStyle, { it.label }, { Appearance.buttonStyle = it; changed() }, minWidth = 190.dp)
+    }
+    card("Coloured navigation highlight", "Fill the active tab in the floating bar, side rail and dock with your button colour instead of neutral dark glass.") {
+        ToggleSwitch(Appearance.navAccentPill, { Appearance.navAccentPill = it; changed() })
+    }
+    card("Surface & border tint", "How strongly cards, menus, controls and borders absorb the theme or accent colour.") {
+        ComboBox(SurfaceTint.entries.toList(), Appearance.surfaceTint, { it.label }, { Appearance.surfaceTint = it; changed() }, minWidth = 190.dp)
     }
 }
 
@@ -523,7 +574,7 @@ private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: 
         val innerShape = RoundedCornerShape((FluentShapes.card - 3.dp).coerceAtLeast(4.dp))
         Box(
             Modifier.fillMaxWidth().height(72.dp).clip(innerShape).background(p.bg)
-                .border(Dp.Hairline, p.tint.copy(alpha = 0.18f), innerShape)
+                .hairBorder(p.tint.copy(alpha = 0.18f), innerShape)
                 .padding(8.dp),
         ) {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
@@ -535,7 +586,7 @@ private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: 
                 ) {
                     Row(
                         Modifier.background(p.flyout, RoundedCornerShape(50))
-                            .border(Dp.Hairline, p.tint.copy(alpha = 0.20f), RoundedCornerShape(50))
+                            .hairBorder(p.tint.copy(alpha = 0.20f), RoundedCornerShape(50))
                             .padding(horizontal = 4.dp, vertical = 2.dp),
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -563,7 +614,7 @@ private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: 
                     Column(
                         Modifier.weight(1f)
                             .background(p.layer, RoundedCornerShape(4.dp))
-                            .border(Dp.Hairline, p.tint.copy(alpha = 0.16f), RoundedCornerShape(4.dp))
+                            .hairBorder(p.tint.copy(alpha = 0.16f), RoundedCornerShape(4.dp))
                             .padding(5.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -575,7 +626,7 @@ private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: 
                             Modifier.size(width = 20.dp, height = 28.dp)
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(p.layer)
-                                .border(Dp.Hairline, p.tint.copy(alpha = 0.20f), RoundedCornerShape(4.dp)),
+                                .hairBorder(p.tint.copy(alpha = 0.20f), RoundedCornerShape(4.dp)),
                         )
                     }
                 }
@@ -680,7 +731,7 @@ private fun ButtonColorSwatchGrid(
             contentAlignment = Alignment.Center,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(Color.White).border(Dp.Hairline, c.strokeStrong, CircleShape))
+                Box(Modifier.size(10.dp).clip(CircleShape).background(Color.White).hairBorder(c.strokeStrong, CircleShape))
                 FText("White (default)", style = Fluent.type.caption, color = if (isDefaultWhite) c.text else c.textSecondary)
             }
         }

@@ -1,6 +1,7 @@
 package com.lagradost.desktop.ui.fluent
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -28,6 +29,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -154,31 +157,55 @@ private fun Modifier.onPlacedAt(onPlace: (Float, Float) -> Unit): Modifier =
 @Composable
 fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, counts: List<Int?>? = null) {
     val c = Fluent.colors
-    Row(
-        modifier.background(c.card, RoundedCornerShape(50)).border(Dp.Hairline, c.stroke, RoundedCornerShape(50)).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        tabs.forEachIndexed { i, text ->
-            val source = rememberInteraction()
-            val hovered by source.collectIsHoveredAsState()
-            val pressed by source.collectIsPressedAsState()
-            val on = i == selected
-            val bg by animateColorAsState(if (hovered && !on) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
-            val fg = if (on) c.primaryContent() else if (hovered) c.text else c.textSecondary
-            val shape = RoundedCornerShape(50)
-            Row(
-                Modifier.height(34.dp).clip(shape)
-                    .background(if (on) c.primaryFill(hovered, pressed) else SolidColor(bg), shape)
-                    .border(Dp.Hairline, if (on) c.primaryBorder(hovered) else Color.Transparent, shape)
-                    .fluentClickable(source, true, shape, Role.Tab) { onSelect(i) }.padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FText(text, style = Fluent.type.bodyStrong, color = fg, maxLines = 1, softWrap = false)
-                counts?.getOrNull(i)?.let { n ->
-                    Box(Modifier.width(8.dp))
-                    Box(Modifier.background(if (on) fg.copy(alpha = 0.16f) else c.control, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
-                        FText(n.toString(), style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1, softWrap = false)
+    val shape = RoundedCornerShape(50)
+    // where each tab sits (px, inside the row), so the filled pill can glide from one tab to the next instead of jumping
+    val spots = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateMapOf<Int, Pair<Float, Float>>() }
+    val target = spots[selected]
+    val glideX = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    val glideW = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    var placed by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(target) {
+        val t = target ?: return@LaunchedEffect
+        if (!placed || Appearance.motion == Motion.Off) {
+            glideX.snapTo(t.first); glideW.snapTo(t.second); placed = true
+        } else {
+            // a spring with a little overshoot: the pill leans into the new tab (the same feel as the line under the tabs of a title page)
+            val spec = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.78f, stiffness = 420f)
+            kotlinx.coroutines.coroutineScope {
+                launch { glideX.animateTo(t.first, spec) }
+                launch { glideW.animateTo(t.second, spec) }
+            }
+        }
+    }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    Box(modifier.background(c.card, shape).hairBorder(c.stroke, shape).padding(4.dp)) {
+        if (placed) {
+            Box(
+                Modifier.offset { androidx.compose.ui.unit.IntOffset(glideX.value.toInt(), 0) }
+                    .width(with(density) { glideW.value.toDp() }).height(34.dp)
+                    .background(c.primaryFill(false, false), shape).hairBorder(c.primaryBorder(false), shape),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            tabs.forEachIndexed { i, text ->
+                val source = rememberInteraction()
+                val hovered by source.collectIsHoveredAsState()
+                val on = i == selected
+                val bg by animateColorAsState(if (hovered && !on) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(180))
+                val fg by animateColorAsState(if (on) c.primaryContent() else if (hovered) c.text else c.textSecondary, FluentMotion.tweenStd(200), label = "pillText")
+                Row(
+                    Modifier.height(34.dp)
+                        .onPlacedAt { x, w -> spots[i] = x to w }
+                        .background(bg, shape)
+                        .fluentClickable(source, true, shape, Role.Tab) { onSelect(i) }.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FText(text, style = Fluent.type.bodyStrong, color = fg, maxLines = 1, softWrap = false)
+                    counts?.getOrNull(i)?.let { n ->
+                        Box(Modifier.width(8.dp))
+                        Box(Modifier.background(if (on) fg.copy(alpha = 0.16f) else c.control, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)) {
+                            FText(n.toString(), style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             }
@@ -195,19 +222,19 @@ fun Modifier.glass(radius: Dp = FluentShapes.card, elevation: Dp = 0.dp, strong:
         .then(if (elevation > 0.dp) Modifier.shadow(elevation, shape, clip = false) else Modifier)
         .clip(shape)
         .background(if (strong || elevation > 0.dp) c.flyout else c.card, shape)
-        .border(Dp.Hairline, c.stroke, shape)
+        .hairBorder(c.stroke, shape)
 }
 
 /** Icon, title, text and an optional action: for empty lists and failures */
 @Composable
 fun EmptyState(glyph: String, title: String, text: String? = null, modifier: Modifier = Modifier, action: @Composable () -> Unit = {}) {
     val c = Fluent.colors
-    Column(modifier.fillMaxWidth().padding(vertical = 56.dp, horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.reveal("empty/" + title, 40, rise = 16.dp).fillMaxWidth().padding(vertical = 56.dp, horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(84.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Box(Modifier.size(56.dp).background(c.card, CircleShape).border(Dp.Hairline, c.stroke, CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(56.dp).background(c.card, CircleShape).hairBorder(c.stroke, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(glyph, size = 24.dp, tint = c.accentText)
             }
         }
@@ -259,7 +286,7 @@ fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int)
             Box(
                 Modifier.size(width, 64.dp)
                     .clip(shape).background(Color(0xFF15161A))
-                    .border(Dp.Hairline, if (on) Color(0x80FFFFFF) else Color(0x24FFFFFF), shape)
+                    .hairBorder(if (on) Color(0x80FFFFFF) else Color(0x24FFFFFF), shape)
                     .fluentClickable(source, true, shape, Role.Button) { onSelect(i) },
             ) {
                 RemoteImage(url, headers, null, Modifier.fillMaxSize(), ContentScale.Crop)
@@ -290,12 +317,22 @@ fun GlassCircleButton(glyph: String, tooltip: String, onClick: () -> Unit, modif
     val glass by animateColorAsState(if (hovered) Color(0x66000000) else Color(0x4D000000), FluentMotion.tweenStd(140))
     Tooltip(tooltip) {
         Box(
-            modifier.size(size).clip(CircleShape)
+            modifier.size(size)
                 .background(if (active) c.primaryFill(hovered, pressed) else SolidColor(glass), CircleShape)
-                .border(Dp.Hairline, if (active) c.primaryBorder(hovered) else Color.White.copy(alpha = if (hovered) 0.5f else 0.3f), CircleShape)
+                .hairBorder(if (active) c.primaryBorder(hovered) else Color.White.copy(alpha = if (hovered) 0.5f else 0.3f), CircleShape)
                 .fluentClickable(source, true, CircleShape, Role.Button, onClick),
             contentAlignment = Alignment.Center,
-        ) { Icon(glyph, size = 16.dp, tint = if (active) c.primaryContent() else Color.White) }
+        ) {
+            // a glyph that changes (bookmark -> bookmarked, bell -> ringing) pops in on a spring instead of switching
+            androidx.compose.animation.AnimatedContent(
+                glyph,
+                transitionSpec = {
+                    (androidx.compose.animation.scaleIn(androidx.compose.animation.core.spring(0.45f, 600f), initialScale = 0.3f) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(120))) togetherWith
+                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(80))
+                },
+                label = "glassGlyph",
+            ) { g -> Icon(g, size = 16.dp, tint = if (active) c.primaryContent() else Color.White) }
+        }
     }
 }
 
@@ -317,9 +354,8 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
     val stroke = if (primary) c.primaryBorder(hovered) else Color.White.copy(alpha = if (hovered) 0.5f else 0.3f)
     Row(
         modifier.height(height).graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(shape)
             .background(fill, shape)
-            .border(Dp.Hairline, stroke, shape)
+            .hairBorder(stroke, shape)
             .focusRing(source, shape)
             .fluentClickable(source, true, shape, Role.Button, onClick)
             .padding(horizontal = 24.dp),
@@ -339,7 +375,7 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
 fun ArtChip(text: String, accent: Boolean = false) {
     Box(
         // a thin outlined tag (an age rating, a type): no fill, no accent
-        Modifier.border(Dp.Hairline, Color.White.copy(alpha = if (accent) 0.7f else 0.45f), RoundedCornerShape(6.dp))
+        Modifier.hairBorder(Color.White.copy(alpha = if (accent) 0.7f else 0.45f), RoundedCornerShape(6.dp))
             .padding(horizontal = 7.dp, vertical = 2.dp),
     ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = Color.White.copy(alpha = if (accent) 1f else 0.85f), maxLines = 1, softWrap = false) }
 }

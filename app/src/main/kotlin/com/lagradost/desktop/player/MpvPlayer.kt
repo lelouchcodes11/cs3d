@@ -236,6 +236,21 @@ open class MpvPlayer : IPlayer {
     @Volatile
     private var userPaused = false
 
+    /** The viewer asked for a pause (mpv may also be paused for other reasons: the cache ran dry, the end of the file) */
+    val pausedByUser: Boolean get() = userPaused
+
+    /**
+     * Play or pause by what the viewer last asked, not by what mpv last reported (that arrives a moment later: a second press before it came, or
+     * one while the picture was buffering, read the old state and did the wrong thing). A video mpv itself stopped (end of the file) is resumed.
+     * @return true when the video is told to play, false when it is told to pause
+     */
+    fun togglePause(): Boolean {
+        val pause = !(userPaused || isPaused)
+        userPaused = pause
+        setMpvProperty("pause", if (pause) "yes" else "no")
+        return !pause
+    }
+
     private var eventHandler: ((PlayerEvent) -> Unit)? = null
     private var requestedListeningPercentages: List<Int>? = null
     private val reportedPercentages = mutableSetOf<Int>()
@@ -317,7 +332,7 @@ open class MpvPlayer : IPlayer {
             // (mpv measured ~54 Hz, jitter 0.46 on a 60 Hz screen): 66 dropped and 155 mistimed frames in 40 s of 24p; audio timing: none
             Log.i(TAG, "native video window 0x${java.lang.Long.toHexString(wid)}")
             for ((k, v) in listOf("wid" to wid.toString(), "vo" to "gpu", "gpu-api" to "d3d11", "hwdec" to "auto-safe",
-                "osc" to "no", "osd-level" to "0", "input-default-bindings" to "no", "input-vo-keyboard" to "no", "input-cursor" to "no", "cursor-autohide" to "no", "keepaspect" to "yes", "background-color" to "#000000"))
+                "osc" to "no", "osd-level" to "0", "input-default-bindings" to "no", "input-vo-keyboard" to "no", "input-media-keys" to "no", "media-controls" to "no", "input-cursor" to "no", "cursor-autohide" to "no", "keepaspect" to "yes", "background-color" to "#000000"))
                 mpv.mpv_set_option_string(ctx, k, v)
             // the upscaling mode of the settings (Off leaves mpv's own defaults alone)
             com.lagradost.desktop.ui.fluent.Appearance.upscaler.takeIf { it != com.lagradost.desktop.ui.fluent.Upscaler.Off }
@@ -328,6 +343,8 @@ open class MpvPlayer : IPlayer {
             mpv.mpv_set_option_string(ctx, "hwdec", "auto-copy-safe")
         }
         mpv.mpv_set_option_string(ctx, "audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
+        // the compressor of the settings (Off leaves the sound alone)
+        com.lagradost.desktop.ui.fluent.Appearance.dynamicRange.filter.takeIf { it.isNotEmpty() && !headless }?.let { mpv.mpv_set_option_string(ctx, "af", it) }
         if (headless) mpv.mpv_set_option_string(ctx, "ao", "null")
         mpv.mpv_set_option_string(ctx, "keep-open", "yes")
         mpv.mpv_set_option_string(ctx, "idle", "yes")
@@ -355,6 +372,8 @@ open class MpvPlayer : IPlayer {
         mpv.mpv_set_option_string(ctx, "demuxer-max-bytes", "150MiB")
         mpv.mpv_set_option_string(ctx, "demuxer-max-back-bytes", "32MiB")
 
+        // the viewer's subtitle encoding, for the files mpv opens itself (local ones; downloaded ones are converted before mpv sees them)
+        SubtitleEncoding.value().takeIf { it.isNotEmpty() }?.let { mpv.mpv_set_option_string(ctx, "sub-codepage", it) }
         // debugging: ffmpeg demuxer messages only show with a module level, e.g. -Dcloudstream.mpvmsglevel=all=no,ffmpeg/demuxer=v,cplayer=v
         System.getProperty("cloudstream.mpvmsglevel")?.let { mpv.mpv_set_option_string(ctx, "msg-level", it) }
         val res = mpv.mpv_initialize(ctx)
@@ -447,6 +466,8 @@ open class MpvPlayer : IPlayer {
                     }
                     Mpv.MPV_EVENT_FILE_LOADED -> {
                         fileLoaded = true
+                        // the second subtitle belongs to the file it was chosen for (track ids are per file)
+                        secondarySubtitle = null
                         liveStream = detectLive()
                         // the pause mpv puts on itself at the end of the failed source (keep-open) can land after our "play" for this one
                         ensurePlaying()
@@ -685,6 +706,9 @@ open class MpvPlayer : IPlayer {
     /** A new audio decoder choice (SW / HW / HW+) while a video plays: mpv reopens the sound in place, the position stays */
     fun applyAudioDecoder() = setMpvProperty("audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
 
+    /** A new compressor preset while a video plays: the audio filter chain is replaced (an empty value takes it away), the position stays */
+    fun applyDynamicRange() = setMpvProperty("af", com.lagradost.desktop.ui.fluent.Appearance.dynamicRange.filter)
+
     /** A new upscaling mode (scaling filters and shader chain) while a video plays: the picture is redrawn with it at once, the position stays */
     fun applyUpscaler() {
         for ((k, v) in Upscaling.settings(com.lagradost.desktop.ui.fluent.Appearance.upscaler)) setMpvProperty(k, v)
@@ -695,6 +719,25 @@ open class MpvPlayer : IPlayer {
         val codec = getMpvPropertyString("audio-codec-name")?.takeIf { it.isNotBlank() } ?: return null
         val format = getMpvPropertyString("audio-params/format").orEmpty()
         return if (format.startsWith("spdif")) "$codec sent to the receiver / TV" else "$codec decoded by the app"
+    }
+
+    /** The picture on screen as a PNG file, at the video's own size, without subtitles and controls (for reading the writing on it); false when mpv has none */
+    fun captureFrame(file: java.io.File): Boolean {
+        if (handle == null) return false
+        setMpvProperty("screenshot-format", "png")
+        return mpvCommandResult("screenshot-to-file", file.absolutePath, "video") >= 0 && file.length() > 0
+    }
+
+    /** Where the picture lies inside the player window as fractions 0..1 (left, top, right, bottom); null when mpv does not say */
+    fun pictureRect(): ScreenText.Picture? {
+        fun n(name: String) = getMpvPropertyString("osd-dimensions/$name")?.toFloatOrNull()
+        val w = n("w")?.takeIf { it > 0f } ?: return null
+        val h = n("h")?.takeIf { it > 0f } ?: return null
+        val ml = n("ml") ?: return null
+        val mt = n("mt") ?: return null
+        val mr = n("mr") ?: return null
+        val mb = n("mb") ?: return null
+        return ScreenText.Picture(ml / w, mt / h, 1f - mr / w, 1f - mb / h).takeIf { it.r > it.l && it.b > it.t }
     }
 
     fun mpvCommandResult(vararg args: String): Int {
@@ -993,6 +1036,15 @@ open class MpvPlayer : IPlayer {
             runCatching { RangeProxy.cancel(oldAddr) }
         }
         playingAddress = url
+        // what a second headless mpv needs to open the same video for the previews above the seek bar (SeekThumbs)
+        thumbSource = if (url == null || (drm != null)) null else {
+            val h = link?.headers.orEmpty()
+            SeekThumbs.Source(
+                url, h.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: defaultUserAgent,
+                h.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: link?.referer?.takeIf { it.isNotBlank() },
+                h.filter { (k, _) -> !k.equals("User-Agent", true) && !k.equals("Referer", true) && HOP_HEADERS.none { k.equals(it, true) } },
+            )
+        }
         liveStream = false
 
         if (url != null) {
@@ -1243,7 +1295,42 @@ open class MpvPlayer : IPlayer {
     }
 
     /** Fetches a subtitle file with the app's HTTP client into the cache folder; null when it is not a subtitle (a block page, an error) */
-    private class DownloadedSubtitle(val path: String?, val webPage: Boolean)
+    private class DownloadedSubtitle(val path: String?, val webPage: Boolean, val cues: Int = 0, val lastCueMs: Long = -1L, val profile: IntArray = IntArray(0), val firstCueMs: Long = -1L)
+
+    /** What looking at an online subtitle before it is chosen found: whether it is a subtitle at all, how many cues, where the last one ends */
+    class SubtitleCheck(val usable: Boolean, val cues: Int, val lastCueMs: Long, val profile: IntArray = IntArray(0), val firstCueMs: Long = -1L)
+
+    private val subtitleChecks = java.util.concurrent.ConcurrentHashMap<String, SubtitleCheck>()
+
+    /**
+     * Fetches an online subtitle ahead of its choice (the cleaned file is kept, choosing it later does not fetch it again). StreamPlay-like
+     * extensions list dozens of files per language, many of them dead links, block pages or empty files; the list can then show the working ones
+     * first and leave the dead ones out. Null for what is not online. Call from a background thread.
+     */
+    fun checkSubtitle(sub: SubtitleData): SubtitleCheck? {
+        val url = com.lagradost.desktop.net.UrlFix.encode(sub.getFixedUrl())
+        if (!url.startsWith("http", ignoreCase = true)) return null
+        subtitleChecks[url]?.let { return it }
+        val cached = downloadedSubtitles[url]?.takeIf { java.io.File(it).isFile }
+        if (cached != null) return SubtitleCheck(true, -1, -1L)
+        val got = downloadSubtitle(sub, url)
+        got.path?.let { downloadedSubtitles[url] = it }
+        return SubtitleCheck(got.path != null, got.cues, got.lastCueMs, got.profile, got.firstCueMs).also { subtitleChecks[url] = it }
+    }
+
+    /**
+     * The viewer chose another subtitle encoding: the files fetched so far were read with the old one, so they are forgotten and the chosen
+     * subtitle is loaded again (a file mpv opens by itself, a local one, is read with mpv's own codepage option)
+     */
+    fun subtitleEncodingChanged() {
+        downloadedSubtitles.clear()
+        subtitleChecks.clear()
+        externalTracks.clear()
+        externalFailedAt.clear()
+        val cs = SubtitleEncoding.value()
+        runCatching { setMpvProperty("sub-codepage", if (cs.isEmpty()) "auto" else cs) }
+        if (fileLoaded) subtitleTask { applySubtitleSelection() }
+    }
 
     private fun downloadSubtitle(sub: SubtitleData, url: String): DownloadedSubtitle = try {
         kotlinx.coroutines.runBlocking {
@@ -1270,7 +1357,7 @@ open class MpvPlayer : IPlayer {
                     DownloadedSubtitle(null, true)
                 } else {
                     Log.i(TAG, "subtitle ${clean.cues} cues (${clean.extension}) from ${bytes.size} bytes")
-                    DownloadedSubtitle(java.io.File.createTempFile("subtitle-", clean.extension, java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "cache").also { it.mkdirs() }).apply { deleteOnExit(); writeBytes(clean.bytes) }.absolutePath, false)
+                    DownloadedSubtitle(java.io.File.createTempFile("subtitle-", clean.extension, java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "cache").also { it.mkdirs() }).apply { deleteOnExit(); writeBytes(clean.bytes) }.absolutePath, false, clean.cues, clean.lastCueMs, clean.profile, clean.firstCueMs)
                 }
             }
         }
@@ -1400,6 +1487,60 @@ open class MpvPlayer : IPlayer {
         return false
     }
 
+    /** The address and headers of the video being played, for the previews of the seek bar (null: nothing to open, or a protected stream) */
+    @Volatile
+    var thumbSource: SeekThumbs.Source? = null
+        private set
+
+    /** A second subtitle shown at the same time (mpv `secondary-sid`: at the top of the picture), for two languages at once */
+    @Volatile
+    var secondarySubtitle: SubtitleData? = null
+        private set
+
+    fun setSecondarySubtitle(subtitle: SubtitleData?) {
+        secondarySubtitle = subtitle
+        // another track: the automatic choice decides again
+        secondaryInPlace = null
+        if (handle == null || !fileLoaded) return
+        subtitleTask {
+            val sub = secondarySubtitle
+            if (sub == null) {
+                setMpvProperty("secondary-sid", "no")
+            } else {
+                val embedded = sub.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO
+                val id = if (embedded) sub.url.toIntOrNull() else ensureExternal(sub)
+                if (id != null && secondarySubtitle == sub) {
+                    Log.i(TAG, "second subtitle: ${sub.name.trim()} -> track $id, own places: ${secondaryKeepsPlaces()}")
+                    applySecondaryPlaces()
+                    setMpvProperty("secondary-sid", id.toString())
+                }
+            }
+        }
+    }
+
+    /**
+     * The second subtitle keeps the places and looks of its own track (null: only for a signs & songs track). mpv's default draws a second
+     * subtitle as plain text stacked at the top and drops the positions of an ASS track, so the translated writing of the picture (a shop
+     * sign, a game window, a title card) stood in a list at the top instead of where it is, as it does on the phone. Off keeps the
+     * plain text at the top, which is right for a second language of the dialogue.
+     */
+    @Volatile
+    var secondaryInPlace: Boolean? = null
+        private set
+
+    /** Signs, songs and typeset tracks are meant to be seen where the picture's writing is */
+    private fun looksLikeSigns(sub: SubtitleData): Boolean =
+        listOf("sign", "song", "typeset", "karaoke").any { (sub.name + " " + sub.nameSuffix + " " + sub.originalName).contains(it, ignoreCase = true) }
+
+    fun secondaryKeepsPlaces(): Boolean = secondaryInPlace ?: secondarySubtitle?.let { looksLikeSigns(it) } ?: false
+
+    private fun applySecondaryPlaces() = setMpvProperty("secondary-sub-ass-override", if (secondaryKeepsPlaces()) "no" else "strip")
+
+    fun setSecondaryInPlace(value: Boolean?) {
+        secondaryInPlace = value
+        if (handle != null && fileLoaded) subtitleTask { applySecondaryPlaces() }
+    }
+
     override fun getCurrentPreferredSubtitle(): SubtitleData? {
         if (handle == null || !fileLoaded) return preferredSubtitle
         val sid = sidSnapshot?.toIntOrNull() ?: return null
@@ -1415,7 +1556,7 @@ open class MpvPlayer : IPlayer {
             // the "pause" property observer updates the state and emits Play/Pause and Status events
             CSPlayerEvent.Play -> { userPaused = false; setMpvProperty("pause", "no") }
             CSPlayerEvent.Pause -> { userPaused = true; setMpvProperty("pause", "yes") }
-            CSPlayerEvent.PlayPauseToggle -> { userPaused = !isPaused; setMpvProperty("pause", if (isPaused) "no" else "yes") }
+            CSPlayerEvent.PlayPauseToggle -> togglePause()
             CSPlayerEvent.SeekForward -> seekTime(10000L, source)
             CSPlayerEvent.SeekBack -> seekTime(-10000L, source)
             CSPlayerEvent.Restart -> seekTo(0L, source)

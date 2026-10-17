@@ -77,4 +77,65 @@ object AnimeRelations {
         cache[key] = list
         return list
     }
+
+    // ------------------------------------------------------------------ recommendations
+
+    private val recCache = ConcurrentHashMap<String, List<RelatedTitle>>()
+
+    /** "Users who liked this also liked ...": AniList's recommendations of the title, the best rated first. [RelatedTitle.order] holds the AniList id */
+    suspend fun recommendations(title: String, syncData: Map<String, String>): List<RelatedTitle> {
+        val aniId = syncData["anilist"]?.toIntOrNull()
+        val malId = syncData["mal"]?.toIntOrNull()
+        val key = when {
+            aniId != null -> "id:$aniId"
+            malId != null -> "mal:$malId"
+            else -> "q:" + clean(title).lowercase()
+        }
+        recCache[key]?.let { return it }
+        val args = when {
+            aniId != null -> "id: $aniId"
+            malId != null -> "idMal: $malId"
+            else -> "search: \$search"
+        }
+        val query = (if (aniId == null && malId == null) "query(\$search: String)" else "query") +
+            "{ Media($args, type: ANIME) { id recommendations(sort: RATING_DESC, perPage: 18) { nodes { rating mediaRecommendation { id type format seasonYear title { romaji english } coverImage { extraLarge large } averageScore genres } } } } }"
+        val body = mutableMapOf<String, Any>("query" to query)
+        if (aniId == null && malId == null) body["variables"] = mapOf("search" to clean(title))
+        val json = JSONObject(app.post("https://graphql.anilist.co", json = body, timeout = 20).text)
+        val nodes = json.optJSONObject("data")?.optJSONObject("Media")?.optJSONObject("recommendations")?.optJSONArray("nodes")
+        val list = buildList {
+            if (nodes != null) for (i in 0 until nodes.length()) {
+                val n = nodes.getJSONObject(i)
+                val rating = n.optInt("rating")
+                if (rating < 1) continue
+                val node = n.optJSONObject("mediaRecommendation") ?: continue
+                if (node.optString("type") != "ANIME") continue
+                val t = node.optJSONObject("title")
+                val name = (t?.optString("english")?.takeIf { it.isNotBlank() && it != "null" } ?: t?.optString("romaji"))?.takeIf { it.isNotBlank() } ?: continue
+                val cover = node.optJSONObject("coverImage")?.let { it.optString("extraLarge").takeIf { s -> s.isNotBlank() } ?: it.optString("large") }?.takeIf { it.isNotBlank() }
+                val format = formats[node.optString("format")]
+                val year = node.optInt("seasonYear").takeIf { it > 0 }
+                val genres = node.optJSONArray("genres")?.let { g -> (0 until g.length()).map { g.getString(it) } }.orEmpty()
+                add(
+                    RelatedTitle(
+                        "$rating liked this", listOfNotNull(format, year?.toString(), "$rating liked this").joinToString(" · "),
+                        TmdbCard(
+                            name = name, url = "anilist:" + node.optInt("id"), type = if (node.optString("format") == "MOVIE") TvType.AnimeMovie else TvType.Anime,
+                            posterUrl = cover, year = year, genres = genres, score = Score.from100(node.optInt("averageScore").takeIf { it > 0 }), isMovie = false,
+                        ),
+                        node.optInt("id"),
+                    ),
+                )
+            }
+        }
+        recCache[key] = list
+        return list
+    }
+
+    /** One click: the title goes on the Planning list of AniList (needs the account; false when there is none or it failed) */
+    suspend fun addToPlanning(anilistId: Int): Boolean {
+        val repo = com.lagradost.cloudstream3.syncproviders.AccountManager.syncApis.firstOrNull { it.idPrefix == "anilist" } ?: return false
+        val status = com.lagradost.cloudstream3.syncproviders.SyncAPI.SyncStatus(com.lagradost.cloudstream3.ui.SyncWatchType.PLANTOWATCH, null, null)
+        return repo.updateStatus(anilistId.toString(), status).getOrNull() == true
+    }
 }

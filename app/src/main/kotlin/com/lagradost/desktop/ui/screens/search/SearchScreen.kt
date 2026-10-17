@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.search
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -192,6 +194,10 @@ fun SearchScreen(route: Route.Search) {
             // the extension chosen on Home comes first when it has something (the others keep the order they answered in)
             val first = com.lagradost.desktop.ui.shell.selectedHomeProvider()?.takeIf { route.only == null && it in all }
             if (first == null) all else all.entries.sortedBy { if (it.key == first) 0 else 1 }.associate { it.key to it.value }
+        }.let { shown ->
+            // the extensions the viewer pinned (Settings > General > Extension priority) before all the others, in their order
+            if (com.lagradost.desktop.net.ExtensionPriority.names.isEmpty()) shown
+            else shown.entries.sortedBy { com.lagradost.desktop.net.ExtensionPriority.rank(it.key) }.associate { it.key to it.value }
         }
         val searched = (total - pending.size).coerceAtLeast(0)
         val header: @Composable () -> Unit = {
@@ -327,7 +333,9 @@ private fun ResultsHeader(
 
 private fun chooseProviders(selected: Set<String>, onDone: (Set<String>) -> Unit) {
     val ctx = DesktopBootstrap.activityOrNull() ?: return
+    // the pinned ones first (in their order), the rest by name
     val all = runCatching { ctx.filterProviderByPreferredMedia().map { it.name }.sorted() }.getOrNull().orEmpty()
+        .let { names -> com.lagradost.desktop.net.ExtensionPriority.ordered(names) { it } }
     val working = androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(selected.filter { it in all }) }
     Overlays.show(
         Overlays.Dialog(
@@ -342,16 +350,25 @@ private fun chooseProviders(selected: Set<String>, onDone: (Set<String>) -> Unit
                     Button("Select all", { working.clear(); working.addAll(all) }, kind = ButtonKind.Subtle)
                     Button("Select none", { working.clear() }, kind = ButtonKind.Subtle)
                 }
-                Box(Modifier.height(8.dp))
-                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                Box(Modifier.height(4.dp))
+                FText("The star keeps an extension on top: its results come first.", style = Fluent.type.caption, color = Fluent.colors.textSecondary)
+                Box(Modifier.height(6.dp))
+                LazyColumn(Modifier.heightIn(max = 300.dp)) {
                     items(all, key = { it }) { name ->
                         val isStremio = com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(name) is com.lagradost.desktop.stremio.StremioApi
                         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            CheckBox(name in working, { on -> if (on) working.add(name) else working.remove(name) }, Modifier.weight(1f, fill = false), label = name)
+                            // the name takes the room, the badge and the star stay at the right edge in one column
+                            CheckBox(name in working, { on -> if (on) working.add(name) else working.remove(name) }, Modifier.weight(1f), label = name)
                             if (isStremio) {
-                                Box(Modifier.width(8.dp))
                                 com.lagradost.desktop.ui.fluent.StremioBadge()
+                                Box(Modifier.width(8.dp))
                             }
+                            val pinned = com.lagradost.desktop.net.ExtensionPriority.isPinned(name)
+                            IconButton(
+                                if (pinned) Icons.StarFilled else Icons.Star, { com.lagradost.desktop.net.ExtensionPriority.toggle(name) },
+                                tooltip = if (pinned) "Pinned: its results come first. Click to unpin" else "Keep on top: its results come first",
+                                size = 28.dp, iconSize = 14.dp, tint = if (pinned) Fluent.colors.accentText else Fluent.colors.textTertiary,
+                            )
                         }
                     }
                 }
@@ -447,7 +464,8 @@ private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel, v
         }
         // the earlier searches: one row that scrolls sideways
         item(key = "recent") {
-            Column(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 26.dp, bottom = 10.dp)) {
+            // nothing to say until there is something to show: an empty box only pushed Explore down
+            if (history.isEmpty()) Box(Modifier.height(22.dp)) else Column(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 26.dp, bottom = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FText("Recent searches", Modifier.weight(1f), style = Fluent.type.bodyStrong, color = c.textSecondary)
                     if (history.isNotEmpty()) Button("Clear", {
@@ -513,7 +531,7 @@ private fun HistoryChip(item: SearchHistoryItem, onOpen: () -> Unit, onRemove: (
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(50)
     Row(
-        Modifier.height(36.dp).clip(shape).background(if (hovered) c.cardHover else c.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape)
+        Modifier.height(36.dp).clip(shape).background(if (hovered) c.cardHover else c.card, shape).hairBorder(c.stroke, shape)
             .hoverable(source).fluentClickable(source, true, shape, Role.Button, onOpen).padding(start = 14.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

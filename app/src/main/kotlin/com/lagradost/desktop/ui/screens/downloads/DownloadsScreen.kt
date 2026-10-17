@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.downloads
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -157,7 +159,7 @@ private fun DownloadRow(item: VisualDownloadCached, onOpenFolder: (VisualDownloa
     }
     ContextMenuArea(menu) {
         Row(
-            Modifier.fillMaxWidth().clip(shape).background(if (hovered) c.cardHover else c.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, shape)
+            Modifier.fillMaxWidth().clip(shape).background(if (hovered) c.cardHover else c.card, shape).hairBorder(c.stroke, shape)
                 .fluentClickable(source, true, shape, Role.Button) { open() }.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {

@@ -59,6 +59,9 @@ class CloudflareKiller : Interceptor {
                 val response = chain.proceed(request)
                 if(!(response.header("Server") in CLOUDFLARE_SERVERS && response.code in ERROR_CODES)) {
                     return@runBlocking response
+                } else if (!com.lagradost.desktop.runtime.web.CloudflareGate.allowsSolving(request.url.host)) {
+                    // Settings > General > Pass Cloudflare checks is off, or the user just cancelled this site's: no page is opened, the extension gets the answer as it is
+                    return@runBlocking response
                 } else {
                     response.close()
                     bypassCloudflare(request)?.let {
@@ -116,7 +119,7 @@ class CloudflareKiller : Interceptor {
         // Remove this if statement if cookies expire
         if (!trySolveWithSavedCookies(request)) {
             Log.d(TAG, "Loading webview to solve cloudflare for ${request.url}")
-            WebViewResolver(
+            val resolver = WebViewResolver(
                 // Never exit based on url
                 Regex(".^"),
                 // Cloudflare needs default user agent
@@ -125,10 +128,17 @@ class CloudflareKiller : Interceptor {
                 useOkhttp = false,
                 // Match every url for the requestCallBack
                 additionalUrls = listOf(Regex("."))
-            ).resolveUsingWebView(
-                url
-            ) {
-                trySolveWithSavedCookies(request)
+            )
+            // the bar with a Cancel button shows while the page works (see CloudflareGate)
+            val solve = com.lagradost.desktop.runtime.web.CloudflareGate.beginSolve(request.url.host) { resolver.cancel() }
+            try {
+                resolver.resolveUsingWebView(
+                    url
+                ) {
+                    trySolveWithSavedCookies(request)
+                }
+            } finally {
+                com.lagradost.desktop.runtime.web.CloudflareGate.endSolve(solve)
             }
         }
 

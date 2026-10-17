@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.player
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,7 +31,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import com.lagradost.desktop.player.ScreenText
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -69,9 +73,9 @@ import com.lagradost.desktop.ui.fluent.rememberInteraction
 // Same rows, sizes and colours on every page; the player is always dark, so the colours are fixed (not the app theme's).
 
 enum class MenuPage(val title: String) {
-    Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Tracks("Video & Audio"), Subtitles("Subtitles"), SubtitleTiming("Subtitle delay and size"),
-    Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"),
-    Upscaling("Upscaling"), Skip("Skip intro & credits"),
+    Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Tracks("Video & Audio"), Subtitles("Subtitles"), SecondSubtitle("Second subtitle"), SubtitleTiming("Subtitle delay and size"),
+    Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"), Compressor("Dynamic range"),
+    Upscaling("Upscaling"), Skip("Skip intro & credits"), ScreenText("Translate on-screen text"),
 }
 
 /** Every panel and bubble over the video (menu, episodes, volume and seek bubbles, subtitle pill): one surface */
@@ -106,7 +110,7 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                 translationY = (1f - appear.value) * 16.dp.toPx() * (if (fromTop) -1f else 1f)
                 transformOrigin = TransformOrigin(originX, if (fromTop) 0f else 1f)
             }
-            .clip(shape).background(MenuColors.card, shape).border(androidx.compose.ui.unit.Dp.Hairline, MenuColors.border, shape)
+            .clip(shape).background(MenuColors.card, shape).hairBorder(MenuColors.border, shape)
             // clicks on the card stay on the card (the layer behind it closes the menu)
             .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
     ) {
@@ -136,11 +140,14 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                     MenuPage.Tracks -> TracksPage(s)
                     MenuPage.Subtitles -> SubtitlesPage(s, onPage)
                     MenuPage.SubtitleTiming -> SubtitleTimingPage(s)
+                    MenuPage.SecondSubtitle -> SecondSubtitlePage(s)
                     MenuPage.Speed -> ChoicePage(speeds.map { speedLabel(it) }, speeds.indexOf(s.speed)) { s.changeSpeed(speeds[it]) }
                     MenuPage.Picture -> ChoicePage(Resize.entries.map { it.label }, Resize.entries.indexOf(s.resize)) { s.changeResize(Resize.entries[it]) }
                     MenuPage.Decoder -> DecoderPage()
+                    MenuPage.Compressor -> CompressorPage()
                     MenuPage.Upscaling -> UpscalingPage()
                     MenuPage.Skip -> SkipPage()
+                    MenuPage.ScreenText -> ScreenTextPage(s, onPage)
                 }
             }
         }
@@ -163,8 +170,10 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         NavRow(Icons.Speed, "Playback speed", speedLabel(s.speed)) { onPage(MenuPage.Speed) }
         NavRow(Icons.Aspect, "Picture size", s.resize.label) { onPage(MenuPage.Picture) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
+        NavRow(Icons.Volume, "Dynamic range", Appearance.dynamicRange.label) { onPage(MenuPage.Compressor) }
         NavRow(Icons.Anime, "Upscaling", Appearance.upscaler.label.substringBefore(" (").substringBefore(", ")) { onPage(MenuPage.Upscaling) }
         NavRow(Icons.Skip, "Skip intro & credits", if (Appearance.autoSkipStamps) (if (Appearance.autoSkipDelay5s) "Auto (5s)" else "Auto") else "Manual") { onPage(MenuPage.Skip) }
+        NavRow(Icons.Language, "Translate on-screen text", ScreenText.version.let { ScreenText.fromName().substringBefore(" (") + " → " + ScreenText.toName().substringBefore(" (") }) { onPage(MenuPage.ScreenText) }
         Divider()
         ActionRow(Icons.Help, "Keyboard shortcuts") { onPage(null); Shortcuts.show() }
         ActionRow(Icons.Play, "Open in VLC") { onPage(null); s.openExternal(vlc = true) }
@@ -195,19 +204,78 @@ private fun tier(w: Int?, h: Int?): String? {
 @Composable
 private fun SourcesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     val all = s.sources()
-    val sources = all.filter { it.usable || it.current }
-    val hidden = all.size - sources.size
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = (sources.indexOfFirst { it.current } - 2).coerceAtLeast(0))
-    LazyColumn(Modifier.fillMaxWidth(), state = state) {
-        itemsIndexed(sources) { _, src ->
-            CheckRow(src.name.lineSequence().first(), src.current, detail = src.quality.takeIf { it.isNotBlank() }) {
-                if (!src.current) { onPage(null); s.selectSource(src.link) }
-            }
-        }
-        if (sources.isEmpty() && !s.loadingMore) item { Note("No sources") }
-        if (s.loadingMore) item { Note("More sources are being collected…") }
-        if (hidden > 0) item { Note("$hidden hidden by the quality profile") }
+    val usable = all.filter { it.usable || it.current }
+    val hidden = all.size - usable.size
+    var sort by remember { mutableStateOf(com.lagradost.desktop.net.LastSource.sort) }
+    var lastFirst by remember { mutableStateOf(com.lagradost.desktop.net.LastSource.enabled) }
+    val hasSizes = usable.any { it.sizeGb != null }
+    val hasSeeders = usable.any { it.seeders != null }
+    // "Best" keeps the profile order (the one the automatic choice uses); the others are for picking by hand
+    val ordered = when (sort) {
+        com.lagradost.desktop.net.LastSource.Sort.Best -> usable
+        com.lagradost.desktop.net.LastSource.Sort.Quality -> usable.sortedByDescending { it.qualityValue }
+        com.lagradost.desktop.net.LastSource.Sort.Size -> usable.sortedByDescending { it.sizeGb ?: -1.0 }
+        com.lagradost.desktop.net.LastSource.Sort.Seeders -> usable.sortedByDescending { it.seeders ?: -1 }
     }
+    val byUse = if (lastFirst) ordered.sortedBy { if (it.lastUsed) 0 else 1 } else ordered
+    // the search: every word has to be in the name, the quality, the site's name or the address (hundreds of sources come from some extensions)
+    var query by remember { mutableStateOf("") }
+    val words = query.trim().lowercase().split(Regex("""\s+""")).filter { it.isNotEmpty() }
+    val sources = if (words.isEmpty()) byUse else byUse.filter { src ->
+        val hay = (src.name + " " + src.quality + " " + (src.link.first?.source ?: "") + " " + (src.link.first?.url ?: "")).lowercase()
+        words.all { it in hay }
+    }
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = (sources.indexOfFirst { it.current } - 2).coerceAtLeast(0))
+    // the controls window takes the keyboard while the box has it (it does not otherwise: the keys belong to the player)
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { s.typing = false } }
+    Column {
+        if (all.size > 4) Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+            com.lagradost.desktop.ui.fluent.TextBox(
+                query, { query = it }, Modifier.fillMaxWidth(), placeholder = "Search ${all.size} sources", leadingIcon = Icons.Search,
+                onFocusChange = { s.typing = it }, height = 32.dp, pill = true,
+            )
+        }
+        // sort: the usual chips of the menu, only the orders that mean something for what was found
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            com.lagradost.desktop.net.LastSource.Sort.entries.forEach { m ->
+                if (m == com.lagradost.desktop.net.LastSource.Sort.Size && !hasSizes) return@forEach
+                if (m == com.lagradost.desktop.net.LastSource.Sort.Seeders && !hasSeeders) return@forEach
+                MenuChip(m.label, sort == m) { sort = m; com.lagradost.desktop.net.LastSource.sort = m }
+            }
+            Box(Modifier.weight(1f))
+            MenuChip("Last used first", lastFirst) { lastFirst = !lastFirst; com.lagradost.desktop.net.LastSource.enabled = lastFirst }
+        }
+        LazyColumn(Modifier.fillMaxWidth(), state = state) {
+            itemsIndexed(sources) { _, src ->
+                val detail = listOfNotNull(
+                    src.quality.takeIf { it.isNotBlank() },
+                    src.sizeGb?.let { if (it >= 1.0) "%.1f GB".format(it) else "%d MB".format((it * 1024).toInt()) },
+                    src.seeders?.let { "$it seeders" },
+                    if (src.lastUsed) "last used" else null,
+                ).joinToString("  ·  ").ifBlank { null }
+                CheckRow(src.name.lineSequence().first(), src.current, detail = detail) {
+                    if (!src.current) { onPage(null); s.selectSource(src.link) }
+                }
+            }
+            if (sources.isEmpty() && !s.loadingMore) item { Note(if (words.isNotEmpty()) "No source matches \"${query.trim()}\"" else "No sources") }
+            if (s.loadingMore) item { Note("More sources are being collected…") }
+            if (hidden > 0) item { Note("$hidden hidden by the quality profile") }
+        }
+    }
+}
+
+/** A small choice chip of the player menu (selected = filled) */
+@Composable
+private fun MenuChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(50)
+    Box(
+        Modifier.height(28.dp).clip(shape)
+            .background(if (selected) Color(0x33FFFFFF) else if (hovered) Color(0x1FFFFFFF) else Color(0x10FFFFFF), shape)
+            .fluentClickable(source, true, shape, Role.RadioButton, onClick).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = if (selected) MenuColors.text else MenuColors.secondary, maxLines = 1, softWrap = false) }
 }
 
 @Composable
@@ -269,6 +337,25 @@ private fun DecoderPage() {
     }
 }
 
+/** The compressor (CloudStream's new "Dynamic Range Compressor"): loud scenes down, speech up. A click applies at once to the playing video */
+@Composable
+private fun CompressorPage() {
+    var pick by remember { mutableStateOf(Appearance.dynamicRange) }
+    Column(Modifier.verticalScrollIfNeeded()) {
+        com.lagradost.desktop.ui.fluent.DynamicRange.entries.forEach { d ->
+            CheckRow(d.label, d == pick, detail = if (d == com.lagradost.desktop.ui.fluent.DynamicRange.Off) d.detail else d.detail + "  ${d.thresholdDb} dB, +${d.makeupDb} dB") {
+                if (d != pick) {
+                    pick = d
+                    Appearance.dynamicRange = d
+                    Appearance.save()
+                    ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyDynamicRange() }
+                }
+            }
+        }
+        Note("Helps when action scenes are loud and the voices are quiet. Does not apply to the Hardware audio output (the sound is passed on as it is).")
+    }
+}
+
 /** How the picture is enlarged: mpv's own filters, FSR, or Anime4K's neural filters (modes A, B, C). A click applies at once to the playing video */
 @Composable
 private fun UpscalingPage() {
@@ -287,6 +374,19 @@ private fun UpscalingPage() {
             }
         }
         Note("Needs the native GPU player (Settings > Appearance). Anime4K by bloc97, FSR and CAS by AMD, ported by agyild (MIT).")
+    }
+}
+
+@Composable
+private fun ScreenTextPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
+    ScreenText.version // a new choice: draw again
+    LazyColumn(Modifier.fillMaxWidth()) {
+        item { ActionRow(Icons.Language, if (ScreenText.state is ScreenText.State.Idle) "Translate this picture now" else "Put the translation away") { onPage(null); s.toggleScreenText() } }
+        item { Note("Reads the writing that is part of the picture (game windows, signs, letters, titles; the subtitles do not have it) and shows it translated over it, where it stands. Press T for the same. Playing or seeking puts it away.") }
+        item { SectionLabel("The writing is in") }
+        items(ScreenText.sources) { (name, tag) -> CheckRow(name, ScreenText.from() == tag) { ScreenText.setFrom(tag) } }
+        item { SectionLabel("Translate it into") }
+        items(ScreenText.targets) { (name, code) -> CheckRow(name, ScreenText.to() == code) { ScreenText.setTo(code) } }
     }
 }
 
@@ -340,8 +440,10 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
             }
         }
         item { Divider() }
+        item { NavRow(Icons.Subtitles, "Second subtitle", s.secondarySubtitle()?.originalName?.trim() ?: "Off") { onPage(MenuPage.SecondSubtitle) } }
         item { NavRow(Icons.Clock, "Delay and size", if (s.subtitleDelayMs != 0L) "${s.subtitleDelayMs} ms" else null) { onPage(MenuPage.SubtitleTiming) } }
         item { ActionRow(Icons.Edit, "Style…") { onPage(null); openSubtitleStyleDialog(s) } }
+        item { NavRow(Icons.Edit, "Encoding", com.lagradost.desktop.player.SubtitleEncoding.label()) { onPage(null); com.lagradost.desktop.ui.showSubtitleEncodingDialog() } }
         item { ActionRow(Icons.Folder, "Add a subtitle file…") { onPage(null); s.pickSubtitleFile() } }
         item { ActionRow(Icons.Search, "Search online…") { onPage(null); openSubtitleSearch(s) } }
         item { ActionRow(Icons.Download, "Add the first online result") { onPage(null); s.addFirstOnlineSubtitle() } }
@@ -502,4 +604,31 @@ internal fun audioLabel(t: com.lagradost.cloudstream3.ui.player.AudioTrack, inde
     }
     val codec = t.sampleMimeType?.takeIf { it.isNotBlank() }?.uppercase().orEmpty()
     return listOf(language, channels, codec).filter { it.isNotBlank() }.joinToString(" • ")
+}
+
+/** Another subtitle at the same time (a second language), shown at the top of the picture */
+@Composable
+private fun SecondSubtitlePage(s: PlayerSession) {
+    remember(s.listsVersion) { 0 }
+    val current = s.secondarySubtitle()
+    val main = s.currentSubtitle()
+    val list = s.subtitles().filter { it != main }
+    LazyColumn(Modifier.fillMaxWidth()) {
+        item { CheckRow("Off", current == null) { if (current != null) s.selectSecondarySubtitle(null) } }
+        itemsIndexed(list, key = { i, _ -> "s:$i" }) { _, sub ->
+            val name = sub.originalName.trim() + (sub.nameSuffix.trim().takeIf { it.isNotBlank() && it != "0" }?.let { " $it" } ?: "")
+            CheckRow(name, current == sub, detail = originLabel(sub)) { if (current != sub) s.selectSecondarySubtitle(sub) }
+        }
+        if (list.isEmpty()) item { Note("Add another subtitle first (Subtitles > Search online: tick two results).") }
+        if (current != null) {
+            item { SectionLabel("Where it is shown") }
+            item {
+                val inPlace = s.secondaryKeepsPlaces()
+                Column {
+                    CheckRow("Plain text at the top", !inPlace, detail = "A second language of the dialogue") { if (inPlace) s.setSecondaryInPlace(false) }
+                    CheckRow("In its own places", inPlace, detail = "Signs & songs: the writing of the picture, translated, stays where it is, with its own look") { if (!inPlace) s.setSecondaryInPlace(true) }
+                }
+            }
+        }
+    }
 }

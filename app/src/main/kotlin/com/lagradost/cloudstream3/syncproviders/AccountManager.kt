@@ -1,5 +1,7 @@
 package com.lagradost.cloudstream3.syncproviders
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKey
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.setKey
 import com.lagradost.cloudstream3.LoadResponse
@@ -12,6 +14,7 @@ import com.lagradost.cloudstream3.syncproviders.providers.OpenSubtitlesApi
 import com.lagradost.cloudstream3.syncproviders.providers.SimklApi
 import com.lagradost.cloudstream3.syncproviders.providers.SubDlApi
 import com.lagradost.cloudstream3.syncproviders.providers.SubSourceApi
+import com.lagradost.cloudstream3.syncproviders.providers.Kitsunekko
 import com.lagradost.cloudstream3.syncproviders.providers.SubtitleCat
 import com.lagradost.cloudstream3.utils.DataStoreHelper
 import com.lagradost.cloudstream3.utils.videoskip.AnimeSkipAuth
@@ -31,7 +34,15 @@ abstract class AccountManager {
         val subDlApi = SubDlApi()
         val subSourceApi = SubSourceApi()
         val subtitleCat = SubtitleCat()
+        val kitsunekko = Kitsunekko()
         val animeSkipApi = AnimeSkipAuth()
+
+        /** Counts every change of the signed-in accounts or of the selected one: what shows them (Settings) reads it and redraws */
+        var changes by androidx.compose.runtime.mutableIntStateOf(0)
+            private set
+
+        // strong reference: the store keeps its listeners weakly (declared before the init block, whose code sets it)
+        private var storeListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
 
         var cachedAccounts: MutableMap<String, Array<AuthData>>
         var cachedAccountIds: MutableMap<String, Int>
@@ -53,6 +64,7 @@ abstract class AccountManager {
             synchronized(cachedAccounts) {
                 cachedAccounts[prefix] = array
             }
+            changes++
         }
 
         fun updateAccountsId(prefix: String, id: Int) {
@@ -61,6 +73,7 @@ abstract class AccountManager {
             synchronized(cachedAccountIds) {
                 cachedAccountIds[prefix] = id
             }
+            changes++
         }
 
         val allApis = arrayOf(
@@ -74,7 +87,8 @@ abstract class AccountManager {
             SubtitleRepo(subDlApi),
             PlainAuthRepo(animeSkipApi),
             SubtitleRepo(subSourceApi),
-            SubtitleRepo(subtitleCat)
+            SubtitleRepo(subtitleCat),
+            SubtitleRepo(kitsunekko)
         )
 
         fun updateAccountIds() {
@@ -110,6 +124,34 @@ abstract class AccountManager {
             }
             cachedAccounts = data
             cachedAccountIds = ids
+            watchStoreForOtherWindows()
+        }
+
+
+        /**
+         * Another window of the app (same data folder) signed in or out: the account lists here are read from the store again, so that the
+         * accounts of every window are the same ones. A change made by this window comes through here too and finds the same lists.
+         */
+        private fun watchStoreForOtherWindows() {
+            runCatching {
+                val ctx = com.lagradost.cloudstream3.CloudStreamApp.context ?: return
+                val prefs = with(com.lagradost.cloudstream3.utils.DataStore) { ctx.getSharedPrefs() }
+                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    if (key == null || key.startsWith("$ACCOUNT_TOKEN/") || key.startsWith("$ACCOUNT_IDS/")) reloadFromStore()
+                }
+                storeListener = listener
+                prefs.registerOnSharedPreferenceChangeListener(listener)
+            }
+        }
+
+        private fun reloadFromStore() {
+            runCatching {
+                val data = mutableMapOf<String, Array<AuthData>>()
+                for (api in allApis) data[api.idPrefix] = accounts(api.idPrefix)
+                synchronized(cachedAccounts) { cachedAccounts = data }
+                updateAccountIds()
+                changes++
+            }
         }
 
         // I do not want to place this in the init block as JVM initialization order is weird, and it may cause exceptions
@@ -126,7 +168,8 @@ abstract class AccountManager {
             SubtitleRepo(addic7ed),
             SubtitleRepo(subDlApi),
             SubtitleRepo(subSourceApi),
-            SubtitleRepo(subtitleCat)
+            SubtitleRepo(subtitleCat),
+            SubtitleRepo(kitsunekko)
         )
         val syncApis = arrayOf(
             SyncRepo(malApi),

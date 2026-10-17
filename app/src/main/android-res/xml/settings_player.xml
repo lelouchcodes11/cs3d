@@ -9,6 +9,13 @@
         app:defaultValue="true"
         app:key="@string/episode_sync_enabled_key" />
 
+    <SwitchPreference
+        android:icon="@drawable/baseline_sync_24"
+        android:summary="@string/auto_status_sync_des"
+        android:title="@string/auto_status_sync_title"
+        app:defaultValue="true"
+        app:key="@string/auto_status_sync_key" />
+
     <PreferenceCategory android:title="@string/pref_category_defaults">
         <!--        <Preference-->
         <!--            android:icon="@drawable/ic_baseline_hd_24"-->
@@ -80,6 +87,12 @@
             android:title="@string/eigengraumode_settings"
             app:defaultValue="false"
             app:key="@string/playback_speed_enabled_key" />
+        <SwitchPreference
+            android:icon="@drawable/ic_compressor_24"
+            android:summary="@string/compressor_setting_summary"
+            android:title="@string/compressor_setting"
+            app:defaultValue="false"
+            app:key="@string/compressor_enabled_key" />
         <SwitchPreference
             android:icon="@drawable/speedup"
             android:summary="@string/speedup_summary"

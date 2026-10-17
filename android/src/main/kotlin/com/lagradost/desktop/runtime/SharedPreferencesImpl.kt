@@ -7,9 +7,12 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.File
 import java.io.FileInputStream
 import java.io.StringWriter
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -17,6 +20,11 @@ import kotlin.concurrent.write
 /**
  * SharedPreferences persisted in the exact XML format Android uses (shared_prefs/<name>.xml),
  * with in-memory reads, coalesced asynchronous writes for apply() and synchronous commit().
+ *
+ * Several processes (the windows of the app started more than once, see MultiInstance) may use the same folder: a write does not put the
+ * whole map of this process on the disk but reads the file again first (under a lock on a file shared by the processes) and puts only what
+ * this process changed on top of it, and a timer looks at the file once a second and takes over what another process wrote (the listeners
+ * are told which keys changed). What one window saves is therefore seen by the others and nobody's changes are wiped.
  */
 class SharedPreferencesImpl(private val file: File) : SharedPreferences {
     private val lock = ReentrantReadWriteLock()
@@ -27,19 +35,40 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
     @Volatile
     private var loaded = false
 
+    // what this process changed and has not written yet (guarded by `lock`)
+    private val pendingPut = HashMap<String, Any>()
+    private val pendingDel = HashSet<String>()
+    private var pendingClear = false
+
+    // the file as this process last read or wrote it: another process writing it shows as a difference
     @Volatile
-    private var dirtyGeneration = 0L
-    private var writtenGeneration = 0L
+    private var diskStamp = NO_FILE
     private var pendingWrite: ScheduledFuture<*>? = null
 
+    private class Delta(val clear: Boolean, val del: Set<String>, val put: Map<String, Any>)
+
+    private data class Stamp(val modified: Long, val length: Long)
+
     companion object {
+        private val NO_FILE = Stamp(0L, -1L)
+
         private val writer = Executors.newSingleThreadScheduledExecutor { r ->
             Thread(r, "shared-prefs-writer").also { it.isDaemon = false }
         }
+        private val poller = Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "shared-prefs-poll").also { it.isDaemon = true }
+        }
         private val instances = ArrayList<SharedPreferencesImpl>()
+
+        // one at a time inside this process (a file lock is per process) and, with the lock file, across processes
+        private val processLock = ReentrantLock()
 
         init {
             Runtime.getRuntime().addShutdownHook(Thread { flushAll() })
+            poller.scheduleWithFixedDelay({
+                val list = synchronized(instances) { instances.toList() }
+                for (p in list) runCatching { p.refreshFromDisk() }
+            }, 1500, 1000, TimeUnit.MILLISECONDS)
         }
 
         /** Write every pending change to disk (called on exit) */
@@ -48,28 +77,55 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
             val list = synchronized(instances) { instances.toList() }
             for (p in list) p.writeToDiskIfDirty()
         }
+
+        private fun stampOf(f: File): Stamp = if (f.isFile) Stamp(f.lastModified(), f.length()) else NO_FILE
     }
 
     init {
         synchronized(instances) { instances.add(this) }
     }
 
+    /** Runs [block] with the file shared by all processes of the app locked (when the lock cannot be had it runs without) */
+    private fun <T> exclusive(block: () -> T): T {
+        processLock.lock()
+        var channel: FileChannel? = null
+        var held: java.nio.channels.FileLock? = null
+        try {
+            try {
+                val dir = file.parentFile?.parentFile ?: file.parentFile
+                dir?.mkdirs()
+                channel = FileChannel.open(File(dir, ".prefs.lock").toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+                held = channel.lock()
+            } catch (_: Throwable) {
+            }
+            return block()
+        } finally {
+            runCatching { held?.release() }
+            runCatching { channel?.close() }
+            processLock.unlock()
+        }
+    }
+
     private fun ensureLoaded() {
         if (loaded) return
+        val (loadedMap, stamp) = exclusive { load() to stampOf(file) }
         lock.write {
             if (loaded) return
-            map = load()
+            map = loadedMap
+            diskStamp = stamp
             loaded = true
         }
     }
 
-    private fun load(): MutableMap<String, Any?> {
+    /** A `.bak` is what older versions left when they were stopped while writing: it is only worth something when the file itself is gone */
+    private fun settleOldBackup() {
         val backup = File(file.path + ".bak")
-        if (backup.exists()) {
-            // A crash happened while writing, the backup is the last good state
-            file.delete()
-            backup.renameTo(file)
-        }
+        if (!backup.exists()) return
+        if (!file.exists()) backup.renameTo(file) else backup.delete()
+    }
+
+    private fun load(): MutableMap<String, Any?> {
+        settleOldBackup()
         if (!file.exists()) return HashMap()
         return try {
             FileInputStream(file).use { stream -> parse(stream) }
@@ -81,6 +137,17 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
             } catch (_: Throwable) {
             }
             HashMap()
+        }
+    }
+
+    /** The file as it is now, null when it is not there or cannot be read (nothing is changed on the disk) */
+    private fun readIfReadable(): MutableMap<String, Any?>? {
+        settleOldBackup()
+        if (!file.exists()) return null
+        return try {
+            FileInputStream(file).use { stream -> parse(stream) }
+        } catch (t: Throwable) {
+            null
         }
     }
 
@@ -162,33 +229,104 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
         return w.toString()
     }
 
+    private fun writeFile(snapshot: Map<String, Any?>) {
+        file.parentFile?.mkdirs()
+        val tmp = File(file.path + ".tmp")
+        tmp.writeText(serialize(snapshot), Charsets.UTF_8)
+        // The file is never missing, not even for an instant. It used to be renamed away and the new one renamed in; a sync extension (Ultima)
+        // that listed shared_prefs in between found no profile `rebuild_preference`, took it for deleted, recorded a tombstone and wiped the
+        // extension list, the accounts and the library here and on the phone. Replacing is one step (or, when Windows refuses it because
+        // another program has the file open, an overwrite in place).
+        try {
+            java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: Exception) {
+            file.outputStream().use { out -> tmp.inputStream().use { it.copyTo(out) } }
+            tmp.delete()
+        }
+    }
+
+    private fun applyDelta(target: MutableMap<String, Any?>, clear: Boolean, del: Set<String>, put: Map<String, Any>) {
+        if (clear) target.clear()
+        for (k in del) target.remove(k)
+        target.putAll(put)
+    }
+
+    /** The keys whose value differs between the two maps */
+    private fun differing(old: Map<String, Any?>, new: Map<String, Any?>): List<String?> {
+        val keys = HashSet<String>(old.keys).also { it.addAll(new.keys) }
+        return keys.filter { old.containsKey(it) != new.containsKey(it) || old[it] != new[it] }
+    }
+
     @Synchronized
     private fun writeToDiskIfDirty() {
-        val gen: Long
-        val snapshot: Map<String, Any?>
-        lock.read {
-            gen = dirtyGeneration
-            if (gen == writtenGeneration) return
-            snapshot = HashMap(map)
-        }
+        val delta = lock.write {
+            if (pendingPut.isEmpty() && pendingDel.isEmpty() && !pendingClear) null
+            else Delta(pendingClear, HashSet(pendingDel), HashMap(pendingPut)).also {
+                pendingPut.clear()
+                pendingDel.clear()
+                pendingClear = false
+            }
+        } ?: return
+        var written = false
+        var changedByOthers: List<String?> = emptyList()
         try {
-            file.parentFile?.mkdirs()
-            val backup = File(file.path + ".bak")
-            val tmp = File(file.path + ".tmp")
-            tmp.writeText(serialize(snapshot), Charsets.UTF_8)
-            if (file.exists()) {
-                backup.delete()
-                file.renameTo(backup)
+            exclusive {
+                file.parentFile?.mkdirs()
+                if (stampOf(file) != diskStamp) {
+                    // another process wrote the file since this one looked: what it has is the base, this process's changes go on top
+                    val theirs = readIfReadable()
+                    if (theirs != null) {
+                        changedByOthers = lock.write {
+                            val merged: MutableMap<String, Any?> = HashMap(theirs)
+                            applyDelta(merged, delta.clear, delta.del, delta.put)
+                            // changes made while this write was prepared stay pending and are applied again at the next one
+                            applyDelta(merged, pendingClear, pendingDel, pendingPut)
+                            val changed = differing(map, merged)
+                            map = merged
+                            changed
+                        }
+                    }
+                }
+                writeFile(lock.read { HashMap(map) })
+                diskStamp = stampOf(file)
+                written = true
             }
-            if (!tmp.renameTo(file)) {
-                tmp.copyTo(file, overwrite = true)
-                tmp.delete()
-            }
-            backup.delete()
-            writtenGeneration = gen
         } catch (t: Throwable) {
             android.util.Log.e("SharedPreferences", "Failed to write ${file.name}: ${t.message}")
         }
+        if (!written) {
+            // keep the changes for the next try
+            lock.write {
+                if (delta.clear) pendingClear = true
+                for ((k, v) in delta.put) if (!pendingDel.contains(k) && !pendingPut.containsKey(k)) pendingPut[k] = v
+                for (k in delta.del) if (!pendingPut.containsKey(k)) pendingDel.add(k)
+            }
+        }
+        notifyListeners(changedByOthers)
+    }
+
+    /** Takes over what another process wrote to the file (the timer calls this every second) */
+    private fun refreshFromDisk() {
+        if (!loaded || stampOf(file) == diskStamp) return
+        var changed: List<String?> = emptyList()
+        synchronized(this) {
+            exclusive {
+                if (stampOf(file) == diskStamp) return@exclusive
+                val theirs = readIfReadable()
+                if (theirs != null) {
+                    changed = lock.write {
+                        val merged: MutableMap<String, Any?> = HashMap(theirs)
+                        // what this process changed and has not written yet is still its own
+                        applyDelta(merged, pendingClear, pendingDel, pendingPut)
+                        val diff = differing(map, merged)
+                        map = merged
+                        diff
+                    }
+                }
+                diskStamp = stampOf(file)
+            }
+        }
+        notifyListeners(changed)
     }
 
     private fun scheduleWrite() {
@@ -301,12 +439,17 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
                             map.clear()
                             changed.add(null)
                         }
+                        pendingClear = true
+                        pendingPut.clear()
+                        pendingDel.clear()
                         clear = false
                     }
                     for (k in removed) {
                         if (map.containsKey(k)) {
                             map.remove(k)
                             changed.add(k)
+                            pendingDel.add(k)
+                            pendingPut.remove(k)
                         }
                     }
                     for ((k, v) in modified) {
@@ -315,16 +458,19 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
                             if (map.containsKey(k)) {
                                 map.remove(k)
                                 changed.add(k)
+                                pendingDel.add(k)
+                                pendingPut.remove(k)
                             }
                         } else if (map[k] != v || !map.containsKey(k)) {
                             map[k] = v
                             changed.add(k)
+                            pendingPut[k] = v
+                            pendingDel.remove(k)
                         }
                     }
                     modified.clear()
                     removed.clear()
                 }
-                if (changed.isNotEmpty()) dirtyGeneration++
             }
             return changed
         }

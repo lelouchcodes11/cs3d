@@ -42,6 +42,8 @@ object WindowGeometry {
     }.getOrNull()
 
     private fun save() {
+        // only the first window remembers its place; the others are put beside it
+        if (MultiInstance.number > 1) return
         val b = lastFloating ?: return
         runCatching {
             val p = Properties()
@@ -62,7 +64,13 @@ object WindowGeometry {
             val r = Rectangle(b.x, b.y, b.width, b.height)
             b.width >= 400 && b.height >= 300 && areas.any { a -> a.intersection(r).let { it.width >= 200 && it.height >= 150 } }
         } == true
-        if (saved != null && visible) {
+        if (saved != null && visible && MultiInstance.number > 1 && !saved.second) {
+            // another window: the same size as the first, a little down and to the right of it
+            val b = saved.first
+            val shift = 40 * (MultiInstance.number - 1)
+            return WindowState(position = WindowPosition((b.x + shift).dp, (b.y + shift).dp), size = DpSize(b.width.dp, b.height.dp))
+        }
+        if (saved != null && visible && MultiInstance.number == 1) {
             val b = saved.first
             lastFloating = b
             maximized = saved.second

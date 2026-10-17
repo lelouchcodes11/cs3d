@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.lagradost.desktop.runtime.ui.AndroidViewHost
+import com.lagradost.desktop.runtime.web.CloudflareGate
 import com.lagradost.desktop.runtime.ui.drawAndroidDrawable
 
 /**
@@ -113,12 +115,23 @@ fun AndroidDialogHost(dialog: Dialog) {
         // extensions) can be taller than the window: it scrolls inside it, so its lower buttons stay reachable
         // (bottom sheets too: StreamHubOne's "Scraping & Video" sheet is a phone-tall column, its lower half was cut off by the window)
         val scrolls = wantH != ViewGroup.LayoutParams.MATCH_PARENT && !hasScrollingView(decor)
-        Box(box, propagateMinConstraints = width != null) {
+        // a page in a dialog (an extension's Cloudflare check) that has no Cancel of its own gets a row with one under it: the user can always close
+        // it while it works (not on top of the page: the web view is a layer of its own that Compose cannot draw over)
+        val needsCancel = remember(dialog) { CloudflareGate.hasWebView(decor) && CloudflareGate.findCancel(decor) == null }
+        val content: @Composable () -> Unit = {
             if (scrolls) {
                 Box(Modifier.verticalScroll(rememberScrollState()), propagateMinConstraints = width != null) { AndroidViewHost(decor) }
             } else {
                 AndroidViewHost(decor)
             }
+        }
+        Box(box, propagateMinConstraints = width != null) {
+            if (needsCancel) androidx.compose.foundation.layout.Column {
+                Box(Modifier.weight(1f, fill = false)) { content() }
+                androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End) {
+                    com.lagradost.desktop.ui.fluent.Button("Cancel", { CloudflareGate.cancelBrowserDialog(decor) { dialog.cancel() } })
+                }
+            } else content()
         }
     }
 }

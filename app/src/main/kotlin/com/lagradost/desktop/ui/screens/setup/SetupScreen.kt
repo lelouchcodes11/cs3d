@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.setup
 
+import com.lagradost.desktop.ui.fluent.hairBorder
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -86,7 +88,7 @@ fun SetupScreen() {
     Box(Modifier.fillMaxSize().background(c.bg), contentAlignment = Alignment.Center) {
         Column(
             Modifier.widthIn(max = 760.dp).fillMaxWidth().fillMaxHeight(0.92f).padding(24.dp)
-                .shadow(40.dp, RoundedCornerShape(FluentShapes.overlay)).background(c.layer, RoundedCornerShape(FluentShapes.overlay)).border(androidx.compose.ui.unit.Dp.Hairline, c.stroke, RoundedCornerShape(FluentShapes.overlay)),
+                .shadow(40.dp, RoundedCornerShape(FluentShapes.overlay)).background(c.layer, RoundedCornerShape(FluentShapes.overlay)).hairBorder(c.stroke, RoundedCornerShape(FluentShapes.overlay)),
         ) {
             // progress dots
             Row(Modifier.fillMaxWidth().padding(24.dp, 20.dp, 24.dp, 0.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
