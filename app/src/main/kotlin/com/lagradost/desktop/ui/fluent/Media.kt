@@ -148,8 +148,7 @@ fun PosterCard(
         Column(
             modifier
                 .let { if (width != null) it.width(width) else it.fillMaxWidth() }
-                .hoverable(source)
-                .focusRing(source, shape)
+                // fluentClickable adds the hover tracking and the focus ring itself (they were added a second time here: two more nodes and a second focus collector per card)
                 .fluentClickable(source, true, shape, Role.Button, onClick),
         ) {
             Box(

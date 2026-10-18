@@ -69,6 +69,7 @@ object Icons {
     const val Rewind = "\uEB9E"
     const val FastForward = "\uEB9D"
     const val Subtitles = "\uE7F0"
+    const val Font = "\uE8D2"
     const val Audio = "\uE8D6"
     const val Speed = "\uEC4A"
     const val Aspect = ""

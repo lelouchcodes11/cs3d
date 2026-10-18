@@ -21,17 +21,39 @@ object AndroidResourceImages {
     private val MISSING = Any()
 
     /** @return an [ImageVector], a Skia [Image] or null */
-    fun load(id: Int, density: Density): Any? {
+    fun load(id: Int, density: Density, quiet: Boolean = false): Any? {
         val cached = cache[id]
         if (cached != null) return cached.takeIf { it !== MISSING }
         val result = try {
             loadUncached(id, density)
         } catch (t: Throwable) {
-            Log.w(TAG, "Could not load drawable ${AndroidRuntime.context.resources.getResourceName(id)}: $t")
+            // the preload tries every drawable of the app, also the library's that no page of this app shows: those are not worth a line in the log
+            if (!quiet) Log.w(TAG, "Could not load drawable ${AndroidRuntime.context.resources.getResourceName(id)}: $t")
             null
         }
         cache[id] = result ?: MISSING
         return result
+    }
+
+    /**
+     * Loads every vector drawable of the app into the cache, on a thread of its own (about 370 files, a second of one core): the first time a page asks
+     * for its icons (Settings has some hundred of them, and the search composes all of them at the first key) they are there, instead of being parsed one
+     * by one inside the frame (the first key typed into the settings search froze the window for half a second).
+     */
+    fun preloadVectors(density: Density) {
+        Thread {
+            val started = System.currentTimeMillis()
+            var loaded = 0
+            runCatching {
+                for (field in R.drawable::class.java.fields) {
+                    val id = runCatching { field.getInt(null) }.getOrNull() ?: continue
+                    if (cache.containsKey(id)) continue
+                    load(id, density, quiet = true)
+                    loaded++
+                }
+            }
+            Log.i(TAG, "$loaded drawables loaded in the background in ${System.currentTimeMillis() - started} ms")
+        }.apply { isDaemon = true; name = "drawable-preload"; priority = Thread.MIN_PRIORITY }.start()
     }
 
     private fun loadUncached(id: Int, density: Density): Any? {

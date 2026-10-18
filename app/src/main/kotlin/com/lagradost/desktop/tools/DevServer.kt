@@ -8,6 +8,7 @@ import com.lagradost.desktop.ui.BackHandlers
 import com.lagradost.desktop.ui.DesktopUiHost
 
 import com.sun.jna.Memory
+import androidx.compose.ui.unit.dp
 import com.sun.jna.Native
 import com.sun.jna.platform.win32.GDI32
 import com.sun.jna.platform.win32.User32
@@ -320,6 +321,25 @@ object DevServer {
                     + "foreground=$fg (${String(buf).trim { it == '\u0000' }.take(40)}) isMain=${fg == hwnd}\n"
                     + "lastActivePopup=${userDbg.GetLastActivePopup(hwnd.pointer)} overlay=$overlay overlayVisible=${overlay?.let { u.IsWindowVisible(it) }} overlayEx=${exStyle(overlay)}\n"
                     + "owner of overlay=${overlay?.let { userDbg.GetWindow(it.pointer, 4) }}" + "\nmainEnabled=${u.IsWindowEnabled(hwnd)} overlayModality=${(java.awt.Window.getWindows().firstOrNull { it is java.awt.Dialog && it.isShowing && it.isUndecorated } as? java.awt.Dialog)?.modalityType}")
+            }
+            "/profileeditor" -> {
+                // dev: the "Edit profile" window of the first profile (or a made-up one); /profileeditor?sheet=Characters|Anime|Movies shows that group big instead
+                if (q["sheet"] != null) {
+                    com.lagradost.desktop.ui.fluent.Overlays.show(
+                        com.lagradost.desktop.ui.fluent.Overlays.Dialog("Characters", close = "Close", width = 760.dp) {
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                                for (ch in com.lagradost.desktop.ui.shell.avatarCharacters.filter { c -> q["sheet"] == "1" || c.group.startsWith(q["sheet"]!!, true) }) {
+                                    com.lagradost.desktop.ui.shell.ProfileAvatar(null, 110.dp, look = com.lagradost.desktop.ui.shell.ProfileLook(com.lagradost.desktop.ui.shell.AvatarStyle.Character, ch.bg, ch.id), animated = false)
+                                }
+                            }
+                        },
+                    )
+                } else {
+                    val account = runCatching { com.lagradost.cloudstream3.utils.DataStoreHelper.getAccounts(com.lagradost.desktop.DesktopBootstrap.activity).firstOrNull() }.getOrNull()
+                        ?: com.lagradost.cloudstream3.utils.DataStoreHelper.Account(keyIndex = 0, name = "Test", defaultImageIndex = 0)
+                    com.lagradost.desktop.ui.shell.showProfileEditor(account)
+                }
+                ok(ex)
             }
             "/winrects" -> {
                 // dev: where the windows are right now, fast (no waiting): the main window, the native controls window and their visibility
@@ -819,6 +839,24 @@ object DevServer {
                     "non-heap used " + mb(mx.nonHeapMemoryUsage.used) + " / committed " + mb(mx.nonHeapMemoryUsage.committed) + "\n" +
                     "classes " + cl.loadedClassCount + ", threads " + th.threadCount + "\n" + "buffers: " + direct)
             }
+            "/edtprofile" -> {
+                // dev: what the UI thread spends its busy time on: /edtprofile?start=1 ... do something ... /edtprofile?stop=1&top=40
+                if (q["start"] != null) { com.lagradost.desktop.tools.EdtSampler.start(q["ms"]?.toLongOrNull() ?: 4L, q["thread"]?.ifBlank { null }); ok(ex, "sampling") }
+                else if (q["threads"] != null) ok(ex, com.lagradost.desktop.tools.EdtSampler.threads(q["top"]?.toIntOrNull() ?: 14))
+                else if (q["jank"] != null) ok(ex, com.lagradost.desktop.tools.EdtSampler.jank(q["s"]?.toIntOrNull() ?: 10, q["jank"]?.toIntOrNull() ?: 50, q["top"]?.toIntOrNull() ?: 14))
+                else ok(ex, com.lagradost.desktop.tools.EdtSampler.stop(q["top"]?.toIntOrNull() ?: 40))
+            }
+            "/gpubench" -> {
+                // dev: first-draw cost of a row of posters: /gpubench?mode=row|bare&n=12&reps=3
+                com.lagradost.desktop.tools.GpuBench.holdMs = q["hold"]?.toLongOrNull() ?: 0L
+                val runs = kotlinx.coroutines.runBlocking { com.lagradost.desktop.tools.GpuBench.run(q["mode"] ?: "row", q["n"]?.toIntOrNull() ?: 12, q["reps"]?.toIntOrNull() ?: 3) }
+                ok(ex, runs.joinToString("\n") { f -> "max=" + (f.maxOrNull() ?: 0) + " >33=" + f.count { it > 33 } + " >50=" + f.count { it > 50 } + " stall=" + f.sumOf { maxOf(0L, it - 17) } + " ms | " + f.take(14).joinToString(" ") })
+            }
+            "/composetrace" -> {
+                // dev: composition cost per composable: /composetrace?start=1 ... do something ... /composetrace?stop=1&top=40
+                if (q["start"] != null) { com.lagradost.desktop.tools.ComposeTrace.start(); ok(ex, "tracing") }
+                else ok(ex, com.lagradost.desktop.tools.ComposeTrace.stop(q["top"]?.toIntOrNull() ?: 40))
+            }
             "/framestats" -> ok(ex, com.lagradost.desktop.tools.FrameStats.report(q["s"]?.toInt() ?: 10) + (q["worst"]?.toIntOrNull()?.let { "\n" + com.lagradost.desktop.tools.FrameStats.worst(q["s"]?.toInt() ?: 10, it) } ?: ""))
             "/videostats" -> {
                 // dev: how the video frames keep up (render thread) and what mpv says about timing
@@ -1009,6 +1047,14 @@ object DevServer {
                     "results=${list.size} first=${list.take(3).map { it.name }}\n" + (list.getOrNull(n)?.let { "apply[$n]: " + s.applyOnlineSubtitle(it) } ?: "no result $n")
                 }
                 ok(ex, out)
+            }
+            "/mpvtest" -> {
+                // dev: hand a link to mpv the way the mpv action does: /mpvtest?url=https://...mp4&exe=C:/path/mpv.exe&ref=https://site/&sub=1 (no exe: the chosen or found mpv)
+                val ref = q["ref"]
+                val link = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.utils.newExtractorLink("test", "test", q["url"]!!) { if (ref != null) headers = mapOf("Referer" to ref, "Cookie" to "a=b") } }
+                val exe = q["exe"]?.let { java.io.File(it) } ?: com.lagradost.desktop.player.ExternalPlayers.mpvPath()
+                val outcome = com.lagradost.desktop.player.ExternalPlayers.openInMpv(link, "CloudStream test", emptyList(), q["at"]?.toDouble(), exe, q["x"]?.split('|').orEmpty())
+                ok(ex, "ok=${outcome.ok} ${outcome.message ?: ""} mpv=$exe")
             }
             "/vlctest" -> {
                 // dev: hand a link to VLC the way the VLC action does: /vlctest?url=https://...mp4 (VLC opens; it quits itself after 4 s)

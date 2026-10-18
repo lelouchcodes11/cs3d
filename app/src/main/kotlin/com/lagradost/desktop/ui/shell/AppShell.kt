@@ -256,6 +256,7 @@ fun AppShell() {
             }
         }
         ToastLayer()
+        if (com.lagradost.desktop.tools.FrameStats.enabled) com.lagradost.desktop.tools.GpuBenchLayer()
         com.lagradost.desktop.ui.CloudflareSolveBar()
     }
 }
@@ -428,15 +429,20 @@ private suspend fun awaitCalmFrames() {
 private fun ScreenWarmup() {
     if (System.getProperty("cloudstream.warmup") == "false") return
     var step by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
     LaunchedEffect(Unit) {
         com.lagradost.desktop.ui.Startup.revealed.await()
-        // the pages are composed off screen to warm them: with little free memory that work is what makes the window stall, so it is left out
-        if (lowOnMemory()) return@LaunchedEffect
         // not while the extensions are still loading and updating (several seconds of heavy work in parallel, the pages would only add to it)
         val pm = com.lagradost.cloudstream3.plugins.PluginManager
         val giveUp = System.currentTimeMillis() + 60_000
         while (!(pm.loadedLocalPlugins && pm.loadedOnlinePlugins) && System.currentTimeMillis() < giveUp) delay(500)
         delay(3000)
+        // the icons of every page, parsed on a thread of its own: cheap in memory, so also when memory is short
+        com.lagradost.desktop.ui.AndroidResourceImages.preloadVectors(density)
+        // the player's native library (a 39 MB DLL and its bindings) loads here too: the first video loaded it on the UI thread, about 100 ms of the first frame of the player
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.lagradost.desktop.player.Mpv.INSTANCE } }
+        // the pages are composed off screen to warm them: with little free memory that work is what makes the window stall, so it is left out
+        if (lowOnMemory()) return@LaunchedEffect
         for (i in 0 until 5) {
             if (Navigator.current.route is Route.Player || lowOnMemory()) break
             // only while the window is calm: a page composed while the extensions are loading (or Chromium is starting) would add its own freeze

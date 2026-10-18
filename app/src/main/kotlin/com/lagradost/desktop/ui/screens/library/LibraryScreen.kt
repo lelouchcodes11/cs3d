@@ -154,7 +154,7 @@ fun LibraryScreen() {
                 header = {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(Modifier.padding(bottom = 0.dp)) {
-                            com.lagradost.desktop.ui.fluent.PageHeader("Library", subtitle = "${if (kind == Kind.All) "${allTitles.size} titles" else "${items.size} of ${allTitles.size} titles · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}")
+                            com.lagradost.desktop.ui.fluent.PageHeader("Library", subtitle = "${if (kind == Kind.All) "${allTitles.size} titles" else "${items.size} of ${allTitles.size} titles · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = { Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart) })
                             Box(Modifier.height(18.dp))
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)

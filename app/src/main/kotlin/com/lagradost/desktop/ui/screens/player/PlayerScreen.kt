@@ -604,7 +604,7 @@ private fun androidx.compose.foundation.layout.BoxScope.SkipLayer(s: PlayerSessi
         com.lagradost.cloudstream3.utils.videoskip.SkipType.Intro -> true
         else -> false
     }
-    val above by androidx.compose.animation.core.animateDpAsState(if (visible) 150.dp else 44.dp, glide(420))
+    val above by androidx.compose.animation.core.animateDpAsState(if (visible) 128.dp else 44.dp, glide(420))
     val enter = fadeIn(glide(300)) + androidx.compose.animation.slideInVertically(glide(460)) { it / 2 }
     val exit = fadeOut(tween(140)) + androidx.compose.animation.slideOutVertically(tween(160)) { it / 3 }
     // the last stamp stays while the button fades out

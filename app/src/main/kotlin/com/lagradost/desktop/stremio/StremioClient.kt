@@ -50,7 +50,7 @@ object StremioClient {
         val now = System.currentTimeMillis()
         if (ttlMs > 0) cache[url]?.takeIf { now - it.at < ttlMs }?.let { return runCatching { JSONObject(it.body) }.getOrNull() }
         return try {
-            val r = app.get(url, timeout = timeoutSec, headers = mapOf("Accept" to "application/json"))
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.get(url, timeout = timeoutSec, headers = mapOf("Accept" to "application/json")).also { runCatching { it.text } } }
             if (!r.isSuccessful) {
                 Log.w(TAG, "HTTP ${r.code} from ${url.substringBefore('?').take(120)}")
                 return null
@@ -71,7 +71,7 @@ object StremioClient {
     suspend fun manifest(manifestUrl: String): StremioManifest? {
         val url = manifestUrl
         return try {
-            val r = app.get(url, timeout = 15, headers = mapOf("Accept" to "application/json"))
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.get(url, timeout = 15, headers = mapOf("Accept" to "application/json")).also { runCatching { it.text } } }
             if (!r.isSuccessful) throw IllegalStateException("HTTP ${r.code}")
             StremioManifest.parse(r.text).also { if (it.id.isBlank() && it.name == "Add-on") throw IllegalStateException("not an add-on manifest") }
         } catch (t: Throwable) {

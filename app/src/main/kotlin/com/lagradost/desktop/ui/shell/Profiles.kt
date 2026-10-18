@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.lagradost.desktop.ui.fluent.Tooltip
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -65,28 +67,11 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** How a profile's picture is drawn: a stock/own picture, or one of the animated looks */
-enum class AvatarStyle(val label: String) { Picture("Picture"), Aurora("Aurora"), Orb("Orb"), Pulse("Pulse"), Wave("Waves"), Stars("Stars") }
+/** How a profile's picture is drawn: a stock or own picture, or one of the drawn characters (ProfileCharacters.kt) */
+enum class AvatarStyle(val label: String) { Picture("Picture"), Character("Character") }
 
-class AvatarPalette(val a: Color, val b: Color, val c: Color)
-
-val avatarPalettes = listOf(
-    AvatarPalette(Color(0xFF8B7BFF), Color(0xFFFF4FA3), Color(0xFF2A1B6B)), // violet and pink
-    AvatarPalette(Color(0xFF22D3EE), Color(0xFF2DD4BF), Color(0xFF0B3A52)), // ocean
-    AvatarPalette(Color(0xFFFF7A45), Color(0xFFE11D74), Color(0xFF5A1230)), // sunset
-    AvatarPalette(Color(0xFFA3E635), Color(0xFF14B8A6), Color(0xFF0F3B2A)), // matcha
-    AvatarPalette(Color(0xFFFF3B5C), Color(0xFFFF8A3D), Color(0xFF4D0B1B)), // crimson
-    AvatarPalette(Color(0xFFFFC53D), Color(0xFFEF4444), Color(0xFF4A2A06)), // gold
-    AvatarPalette(Color(0xFF88C0D0), Color(0xFFD8E6EE), Color(0xFF243447)), // ice
-    AvatarPalette(Color(0xFFFF79C6), Color(0xFFBD93F9), Color(0xFF2B2250)), // candy
-)
-
-val avatarEmojis = listOf("", "😀", "😎", "🦊", "🐼", "🐯", "🦁", "🐸", "🐙", "🦄", "🔥", "⭐", "🎬", "🍿", "👾", "🎮", "🌙", "💎")
-
-class ProfileLook(val style: AvatarStyle, val palette: Int, val emoji: String)
-
-/** The animated looks are switched off for now (profiles show their normal picture); the drawing code and the editor part stay for later */
-const val ANIMATED_LOOKS = false
+/** [palette] is an index of [avatarBackgrounds], [character] the id of an [AvatarCharacter]; both only matter for the Character style */
+class ProfileLook(val style: AvatarStyle, val palette: Int, val character: String)
 
 /** The look of each profile (the Android profile record has no room for it): one small preference string per profile */
 object ProfileLooks {
@@ -94,132 +79,70 @@ object ProfileLooks {
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
     private fun key(keyIndex: Int) = "desktop_profile_look/$keyIndex"
 
-    /** What is saved for the profile; a profile with no choice yet is animated (Aurora in a colour of its own), unless it has its own picture */
+    /** What is saved for the profile; a profile with no choice yet shows its stock or own picture */
     fun get(account: DataStoreHelper.Account): ProfileLook {
         version
-        if (!ANIMATED_LOOKS) return ProfileLook(AvatarStyle.Picture, 0, "")
         val raw = runCatching { prefs().getString(key(account.keyIndex), null) }.getOrNull()
         if (raw != null) {
             val p = raw.split('|')
             val style = AvatarStyle.entries.firstOrNull { it.name == p.getOrNull(0) }
             if (style != null) return ProfileLook(style, p.getOrNull(1)?.toIntOrNull() ?: 0, p.getOrNull(2).orEmpty())
         }
-        return if (account.customImage != null) ProfileLook(AvatarStyle.Picture, 0, "") else ProfileLook(AvatarStyle.Aurora, Math.floorMod(account.keyIndex, avatarPalettes.size), "")
+        return ProfileLook(AvatarStyle.Picture, 0, "")
     }
 
     fun set(keyIndex: Int, look: ProfileLook) {
-        runCatching { prefs().edit().putString(key(keyIndex), "${look.style.name}|${look.palette}|${look.emoji}").apply() }
+        runCatching { prefs().edit().putString(key(keyIndex), "${look.style.name}|${look.palette}|${look.character}").apply() }
         version++
     }
 }
 
-/** Seconds since the avatar appeared, ticking about 22 times a second while it is drawn animated (the window has focus, animations are on) */
+/**
+ * How far a character is into its little action (0 = at rest): a blink, a wiggle of the ears, a glint. It runs for about a second every few
+ * seconds, at a time of its own for each picture, and only while the window has focus and motion is on. Between the actions nothing changes,
+ * so nothing is redrawn.
+ */
 @Composable
-private fun rememberAvatarClock(animated: Boolean): State<Float> {
-    val t = remember { mutableFloatStateOf(0f) }
+private fun rememberAvatarAction(animated: Boolean, seed: Int): State<Float> {
+    val p = remember { mutableFloatStateOf(0f) }
     val focused = LocalWindowInfo.current.isWindowFocused
     val on = animated && focused && Appearance.motion != Motion.Off && Appearance.animatedProfiles
     LaunchedEffect(on) {
+        p.floatValue = 0f
         if (!on) return@LaunchedEffect
-        val start = withFrameNanosCompat()
+        val rnd = java.util.Random(seed * 7919L + System.nanoTime())
+        delay(500L + rnd.nextInt(2500))
         while (true) {
-            val now = withFrameNanosCompat()
-            t.floatValue = (now - start) / 1e9f
-            delay(45)
+            val start = androidx.compose.runtime.withFrameNanos { it }
+            while (true) {
+                val k = (androidx.compose.runtime.withFrameNanos { it } - start) / 1e9f / 0.95f
+                if (k >= 1f) break
+                p.floatValue = k
+            }
+            p.floatValue = 0f
+            delay(2400L + rnd.nextInt(3800))
         }
     }
-    return t
+    return p
 }
 
-private suspend fun withFrameNanosCompat(): Long = androidx.compose.runtime.withFrameNanos { it }
-
-/** A profile's picture: its own or stock picture, or an animated look (aurora ring, lava-lamp orb, pulse rings, waves, twinkling stars) */
+/** A profile's picture: its own or stock picture, or a character */
 @Composable
 fun ProfileAvatar(account: DataStoreHelper.Account?, size: Dp, modifier: Modifier = Modifier, look: ProfileLook? = null, animated: Boolean = true) {
     val c = Fluent.colors
-    val l = look ?: account?.let { ProfileLooks.get(it) } ?: ProfileLook(AvatarStyle.Aurora, 0, "")
+    val l = look ?: account?.let { ProfileLooks.get(it) } ?: ProfileLook(AvatarStyle.Character, 0, "smile")
     Box(modifier.size(size).clip(CircleShape), contentAlignment = Alignment.Center) {
         if (l.style == AvatarStyle.Picture && account != null) {
             Box(Modifier.size(size).background(c.control)) { UiImageView(account.image, account.name, Modifier.size(size)) }
         } else {
-            val time = rememberAvatarClock(animated)
-            val palette = avatarPalettes[l.palette.coerceIn(0, avatarPalettes.lastIndex)]
-            val seed = account?.keyIndex ?: 0
-            Canvas(Modifier.size(size)) { drawAvatar(if (l.style == AvatarStyle.Picture) AvatarStyle.Aurora else l.style, palette, time.value, seed) }
-            val text = l.emoji.ifBlank { account?.name?.trim()?.firstOrNull()?.uppercase() ?: "?" }
-            FText(
-                text,
-                style = Fluent.type.bodyStrong.copy(fontSize = (size.value * (if (l.emoji.isBlank()) 0.44f else 0.46f)).sp, lineHeight = (size.value * 0.6f).sp, fontWeight = FontWeight.Black, shadow = Shadow(Color(0x66000000), Offset(0f, 1.5f), 5f)),
-                color = Color.White, maxLines = 1, softWrap = false,
-            )
-        }
-    }
-}
-
-private fun DrawScope.drawAvatar(style: AvatarStyle, p: AvatarPalette, t: Float, seed: Int) {
-    val s = size.minDimension
-    val center = Offset(s / 2f, s / 2f)
-    when (style) {
-        AvatarStyle.Aurora -> {
-            drawRect(Brush.radialGradient(listOf(p.c.copy(alpha = 0.55f).compositeOver(Color.Black), p.c), center = center, radius = s * 0.7f))
-            // a ring of the palette that turns, and an inner glow that breathes
-            val ring = s * 0.12f
-            rotate(t * 70f, center) {
-                drawCircle(Brush.sweepGradient(listOf(p.a, p.b, p.a.copy(alpha = 0.15f), p.b, p.a), center), radius = s / 2f - ring / 2f, center = center, style = Stroke(ring))
-            }
-            val glow = 0.30f + 0.12f * sin(t * 1.7f)
-            drawCircle(Brush.radialGradient(listOf(p.a.copy(alpha = glow), Color.Transparent), center = center, radius = s * 0.4f), radius = s * 0.4f, center = center)
-        }
-        AvatarStyle.Orb -> {
-            drawRect(p.c)
-            // three soft blobs that drift around like a lava lamp
-            for (k in 0 until 3) {
-                val ph = k * 2.1f
-                val x = s * (0.5f + 0.26f * cos(t * (0.55f + 0.17f * k) + ph))
-                val y = s * (0.5f + 0.26f * sin(t * (0.70f - 0.11f * k) + ph * 1.3f))
-                val col = when (k) { 0 -> p.a; 1 -> p.b; else -> p.a.copy(alpha = 0.8f) }
-                drawCircle(Brush.radialGradient(listOf(col.copy(alpha = 0.95f), Color.Transparent), center = Offset(x, y), radius = s * 0.52f), radius = s * 0.52f, center = Offset(x, y))
+            val character = avatarCharacter(l.character)
+            val action = rememberAvatarAction(animated, account?.keyIndex ?: character.id.hashCode())
+            val background = avatarBackgrounds[l.palette.coerceIn(0, avatarBackgrounds.lastIndex)]
+            Canvas(Modifier.size(size)) {
+                drawRect(background)
+                character.draw(this, action.value)
             }
         }
-        AvatarStyle.Pulse -> {
-            drawRect(Brush.linearGradient(listOf(p.a, p.b), start = Offset.Zero, end = Offset(s, s)))
-            // rings that grow from the middle and fade
-            for (k in 0 until 3) {
-                val phase = (t * 0.45f + k / 3f) % 1f
-                drawCircle(Color.White.copy(alpha = (1f - phase) * 0.55f), radius = s * (0.12f + phase * 0.42f), center = center, style = Stroke(s * 0.035f))
-            }
-        }
-        AvatarStyle.Wave -> {
-            drawRect(Brush.verticalGradient(listOf(p.c, p.c.copy(alpha = 0.7f).compositeOver(p.a.copy(alpha = 0.25f)))))
-            for (k in 0 until 2) {
-                val path = Path()
-                val base = s * (0.58f + 0.13f * k)
-                val amp = s * (0.07f - 0.02f * k)
-                path.moveTo(0f, s)
-                var x = 0f
-                while (x <= s + 1f) {
-                    path.lineTo(x, base + amp * sin(x / s * 2f * PI.toFloat() * (1.3f + 0.4f * k) + t * (1.6f + 0.7f * k) + k * 1.7f))
-                    x += s / 24f
-                }
-                path.lineTo(s, s)
-                path.close()
-                drawPath(path, (if (k == 0) p.a else p.b).copy(alpha = 0.78f))
-            }
-        }
-        AvatarStyle.Stars -> {
-            drawRect(Brush.linearGradient(listOf(p.c, p.a.copy(alpha = 0.85f).compositeOver(p.c)), start = Offset(0f, 0f), end = Offset(s, s)))
-            rotate(t * 6f, center) {
-                for (i in 0 until 11) {
-                    val a = (i * 2.399f + seed * 0.7f)
-                    val r = s * (0.12f + 0.34f * (((i * 37 + seed * 13) % 100) / 100f))
-                    val tw = 0.25f + 0.75f * abs(sin(t * (0.9f + i * 0.31f) + i))
-                    val pos = Offset(center.x + r * cos(a), center.y + r * sin(a))
-                    drawCircle(Color.White.copy(alpha = tw), radius = s * (0.016f + 0.018f * ((i * 7) % 3)), center = pos)
-                    if (i % 4 == 0) drawCircle(p.b.copy(alpha = tw * 0.35f), radius = s * 0.05f, center = pos)
-                }
-            }
-        }
-        AvatarStyle.Picture -> {}
     }
 }
 
@@ -232,10 +155,10 @@ private class ProfileDraft(val account: DataStoreHelper.Account) {
     var name by mutableStateOf(account.name)
     var style by mutableStateOf(look.style)
     var palette by mutableIntStateOf(look.palette)
-    var emoji by mutableStateOf(look.emoji)
+    var character by mutableStateOf(look.character)
     var custom by mutableStateOf(account.customImage)
     var index by mutableIntStateOf(account.defaultImageIndex)
-    fun asLook() = ProfileLook(style, palette, emoji)
+    fun asLook() = ProfileLook(style, palette, character)
 }
 
 /** Saves a changed profile without switching to it (the engine's own update call selects the profile it saves) */
@@ -265,7 +188,7 @@ private fun pickProfilePicture(keyIndex: Int): String? {
     }.getOrElse { file.absolutePath }
 }
 
-/** The "Edit profile" window: name, animated look (style, colours, emoji) or a picture of your own. Applied with Save. */
+/** The "Edit profile" window: name, a stock picture, a character on a colour of your choice, or a picture of your own. Applied with Save. */
 fun showProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit = {}) {
     val draft = ProfileDraft(account)
     Overlays.show(
@@ -275,74 +198,58 @@ fun showProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit = {}
             onPrimary = {
                 val updated = account.copy(name = draft.name.trim(), customImage = draft.custom, defaultImageIndex = draft.index)
                 updateProfile(updated)
-                if (ANIMATED_LOOKS) ProfileLooks.set(account.keyIndex, draft.asLook())
+                ProfileLooks.set(account.keyIndex, draft.asLook())
                 onSaved()
             },
         ) {
             val c = Fluent.colors
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
                     ProfileAvatar(account.copy(name = draft.name.ifBlank { account.name }, customImage = draft.custom, defaultImageIndex = draft.index), 96.dp, look = draft.asLook())
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextBox(draft.name, { draft.name = it.take(24) }, Modifier.fillMaxWidth(), placeholder = "Profile name", leadingIcon = Icons.Person)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button("Use a picture…", { pickProfilePicture(account.keyIndex)?.let { draft.custom = it; draft.style = AvatarStyle.Picture } }, kind = ButtonKind.Standard, icon = Icons.Folder, height = 32.dp)
-                            if (draft.custom != null) Button("Remove picture", { draft.custom = null; if (draft.style == AvatarStyle.Picture && ANIMATED_LOOKS) draft.style = AvatarStyle.Aurora }, kind = ButtonKind.Subtle, height = 32.dp)
+                            if (draft.custom != null) Button("Remove picture", { draft.custom = null }, kind = ButtonKind.Subtle, height = 32.dp)
+                        }
+                    }
+                }
+                for ((group, list) in avatarCharacters.groupBy { it.group }) {
+                FText(group, style = Fluent.type.bodyStrong, color = c.textSecondary)
+                androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    for (ch in list) {
+                        val on = draft.style == AvatarStyle.Character && draft.character == ch.id
+                        Tooltip(ch.label) {
+                            Box(
+                                Modifier.size(52.dp).clip(CircleShape).border(if (on) 2.5.dp else Dp.Hairline, if (on) c.accent else c.stroke, CircleShape)
+                                    .fluentClickable(rememberInteraction(), true, CircleShape, Role.RadioButton) { draft.style = AvatarStyle.Character; draft.character = ch.id; draft.palette = ch.bg },
+                            ) { ProfileAvatar(null, 52.dp, look = ProfileLook(AvatarStyle.Character, if (on) draft.palette else ch.bg, ch.id), animated = false) }
+                        }
+                    }
+                }
+                }
+                if (draft.style == AvatarStyle.Character) {
+                    FText("Background", style = Fluent.type.bodyStrong, color = c.textSecondary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        avatarBackgrounds.forEachIndexed { i, col ->
+                            val on = draft.palette == i
+                            Box(
+                                Modifier.size(30.dp).clip(CircleShape).background(col, CircleShape)
+                                    .border(if (on) 2.5.dp else 0.dp, if (on) Color.White else Color.Transparent, CircleShape)
+                                    .fluentClickable(rememberInteraction(), true, CircleShape, Role.RadioButton) { draft.palette = i },
+                            )
                         }
                     }
                 }
                 FText("Pictures", style = Fluent.type.bodyStrong, color = c.textSecondary)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     DataStoreHelper.profileImages.forEachIndexed { i, res ->
-                        val on = draft.custom == null && draft.index == i
+                        val on = draft.style == AvatarStyle.Picture && draft.custom == null && draft.index == i
                         Box(
                             Modifier.size(52.dp).clip(CircleShape).border(if (on) 2.5.dp else Dp.Hairline, if (on) c.accent else c.stroke, CircleShape)
                                 .fluentClickable(rememberInteraction(), true, CircleShape, Role.RadioButton) { draft.custom = null; draft.index = i; draft.style = AvatarStyle.Picture },
                         ) { UiImageView(com.lagradost.cloudstream3.utils.UiImage.Drawable(res), "", Modifier.size(52.dp)) }
                     }
-                }
-                if (ANIMATED_LOOKS) {
-                FText("Look", style = Fluent.type.bodyStrong, color = c.textSecondary)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    for (s in AvatarStyle.entries) {
-                        if (s == AvatarStyle.Picture && draft.custom == null) continue
-                        val selected = draft.style == s
-                        val tile = RoundedCornerShape(14.dp)
-                        Column(
-                            Modifier.width(76.dp).clip(tile).fluentClickable(rememberInteraction(), true, tile, Role.RadioButton) { draft.style = s }
-                                .border(if (selected) 2.dp else Dp.Hairline, if (selected) c.accent else c.stroke, tile).padding(vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            ProfileAvatar(account.copy(customImage = draft.custom), 48.dp, look = ProfileLook(s, draft.palette, draft.emoji))
-                            FText(s.label, style = Fluent.type.caption, color = if (selected) c.text else c.textSecondary, maxLines = 1)
-                        }
-                    }
-                }
-                if (draft.style != AvatarStyle.Picture) {
-                    FText("Colours", style = Fluent.type.bodyStrong, color = c.textSecondary)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        avatarPalettes.forEachIndexed { i, p ->
-                            val on = draft.palette == i
-                            Box(
-                                Modifier.size(30.dp).clip(CircleShape).background(Brush.linearGradient(listOf(p.a, p.b)), CircleShape)
-                                    .border(if (on) 2.5.dp else 0.dp, if (on) Color.White else Color.Transparent, CircleShape)
-                                    .fluentClickable(rememberInteraction(), true, CircleShape, Role.RadioButton) { draft.palette = i },
-                            )
-                        }
-                    }
-                    FText("Symbol", style = Fluent.type.bodyStrong, color = c.textSecondary)
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (e in avatarEmojis) {
-                            val on = draft.emoji == e
-                            val shape = RoundedCornerShape(10.dp)
-                            Box(
-                                Modifier.size(36.dp).clip(shape).background(if (on) c.accent.copy(alpha = 0.28f) else c.card, shape).hairBorder(if (on) c.accent else c.stroke, shape)
-                                    .fluentClickable(rememberInteraction(), true, shape, Role.RadioButton) { draft.emoji = e },
-                                contentAlignment = Alignment.Center,
-                            ) { FText(if (e.isEmpty()) "Aa" else e, style = Fluent.type.body, maxLines = 1, softWrap = false) }
-                        }
-                    }
-                }
                 }
             }
         },

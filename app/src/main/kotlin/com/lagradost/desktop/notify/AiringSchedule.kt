@@ -74,7 +74,9 @@ object AiringSchedule {
         return out
     }
 
-    private suspend fun fetch(from: Int, to: Int): List<Airing> {
+    // the reading of each page of the answer blocks its thread: on the UI thread (the page asks from a LaunchedEffect) that was a stall of 250 to 300 ms
+    // when the timetable was opened for the first time
+    private suspend fun fetch(from: Int, to: Int): List<Airing> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val (ids, names) = followed()
         val out = ArrayList<Airing>()
         var page = 1
@@ -104,6 +106,6 @@ object AiringSchedule {
             if (data.optJSONObject("pageInfo")?.optBoolean("hasNextPage") != true) break
             page++
         }
-        return out
+        out
     }
 }

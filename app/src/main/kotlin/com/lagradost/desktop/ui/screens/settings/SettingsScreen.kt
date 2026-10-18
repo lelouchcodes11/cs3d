@@ -3,6 +3,7 @@ package com.lagradost.desktop.ui.screens.settings
 import com.lagradost.desktop.ui.fluent.hairBorder
 
 import com.lagradost.desktop.ui.fluent.smoothWheel
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -127,8 +128,19 @@ fun SettingsScreen(route: Route.Settings, entryId: Long? = null) {
             Column(Modifier.fillMaxSize().smoothWheel(scroll).verticalScroll(scroll).padding(bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current), horizontalAlignment = Alignment.CenterHorizontally) {
                 Column(Modifier.widthIn(max = 940.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
                     LegacyContent {
-                        Column(Modifier.fillMaxWidth()) {
-                            if (query.isNotBlank()) SearchResults(query) else PageContent(page)
+                        // a page comes in with a short fade (the old one goes at once: composing two settings pages at the same time would be a stall of its own);
+                        // typing in the search keeps the same "search" target, so the results do not fade on every key
+                        val shown: Any = if (query.isNotBlank()) "search" else page
+                        androidx.compose.animation.AnimatedContent(
+                            shown,
+                            transitionSpec = {
+                                androidx.compose.animation.fadeIn(com.lagradost.desktop.ui.fluent.FluentMotion.tweenInAfter(180, 40)) togetherWith androidx.compose.animation.ExitTransition.None using androidx.compose.animation.SizeTransform(clip = false) { _, _ -> androidx.compose.animation.core.snap() }
+                            },
+                            label = "settings page",
+                        ) { target ->
+                            Column(Modifier.fillMaxWidth()) {
+                                if (target == "search") SearchResults(query) else PageContent(target as Page)
+                            }
                         }
                     }
                     Box(Modifier.height(32.dp))

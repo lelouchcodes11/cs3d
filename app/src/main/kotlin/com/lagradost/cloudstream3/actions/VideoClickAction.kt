@@ -26,10 +26,11 @@ import java.util.concurrent.Callable
 import java.util.concurrent.FutureTask
 
 object VideoClickActionHolder {
-    // desktop: VLC and the default browser are the only external players (the Android app packages do not exist here)
+    // desktop: VLC, mpv and the default browser are the only external players (the Android app packages do not exist here)
     val allVideoClickActions = atomicListOf<VideoClickAction>(
         PlayInBrowserAction(),
         com.lagradost.desktop.player.DesktopVlcAction(),
+        com.lagradost.desktop.player.DesktopMpvAction(),
         // added by plugins
         // ...
     )

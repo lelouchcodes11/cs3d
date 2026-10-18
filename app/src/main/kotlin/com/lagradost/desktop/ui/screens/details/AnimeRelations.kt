@@ -47,7 +47,7 @@ object AnimeRelations {
             "{ Media($args, type: ANIME) { id relations { edges { relationType(version: 2) node { id type format status seasonYear title { romaji english } coverImage { extraLarge large } averageScore genres } } } } }"
         val body = mutableMapOf<String, Any>("query" to query)
         if (aniId == null && malId == null) body["variables"] = mapOf("search" to clean(title))
-        val json = JSONObject(app.post("https://graphql.anilist.co", json = body, timeout = 20).text)
+        val json = JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.post("https://graphql.anilist.co", json = body, timeout = 20).text })
         val edges = json.optJSONObject("data")?.optJSONObject("Media")?.optJSONObject("relations")?.optJSONArray("edges")
         val list = buildList {
             if (edges != null) for (i in 0 until edges.length()) {
@@ -101,7 +101,7 @@ object AnimeRelations {
             "{ Media($args, type: ANIME) { id recommendations(sort: RATING_DESC, perPage: 18) { nodes { rating mediaRecommendation { id type format seasonYear title { romaji english } coverImage { extraLarge large } averageScore genres } } } } }"
         val body = mutableMapOf<String, Any>("query" to query)
         if (aniId == null && malId == null) body["variables"] = mapOf("search" to clean(title))
-        val json = JSONObject(app.post("https://graphql.anilist.co", json = body, timeout = 20).text)
+        val json = JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.post("https://graphql.anilist.co", json = body, timeout = 20).text })
         val nodes = json.optJSONObject("data")?.optJSONObject("Media")?.optJSONObject("recommendations")?.optJSONArray("nodes")
         val list = buildList {
             if (nodes != null) for (i in 0 until nodes.length()) {

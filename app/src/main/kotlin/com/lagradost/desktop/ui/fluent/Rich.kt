@@ -63,7 +63,8 @@ fun PageHeader(title: String, modifier: Modifier = Modifier, subtitle: String? =
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             FText(title, style = Fluent.type.title.copy(fontSize = 34.sp, lineHeight = 42.sp, fontWeight = FontWeight.Bold), maxLines = 1)
-            if (subtitle != null) FText(subtitle, color = c.textSecondary, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
+            // two lines before it is cut: a page with tiles beside its title (Extensions) had its sentence end in dots
+            if (subtitle != null) FText(subtitle, color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 2.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { trailing() }
     }

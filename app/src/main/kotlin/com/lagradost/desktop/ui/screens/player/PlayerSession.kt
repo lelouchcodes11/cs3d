@@ -1644,8 +1644,8 @@ class PlayerSession(
 
     // ------------------------------------------------------------------ transport
 
-    /** Hands the playing link to VLC or the browser; the picture here stops (VLC starts where it was) */
-    fun openExternal(vlc: Boolean) {
+    /** Hands the playing link to VLC, mpv or the browser; the picture here stops (the other player starts where it was) */
+    fun openExternal(target: com.lagradost.desktop.player.ExternalPlayers.Target) {
         val link = (if (playingTorrent) resolvedTorrent else null) ?: selectedLink?.first
         if (link == null) { Toasts.show("This source can not be handed to another player", false); return }
         val name = listOfNotNull(title, episodeLabel).joinToString(" - ")
@@ -1653,9 +1653,15 @@ class PlayerSession(
         val subs = vm.state.subtitles.toList()
         pause()
         scope.launch(Dispatchers.IO) {
-            val outcome = if (vlc) com.lagradost.desktop.player.ExternalPlayers.openInVlc(link, name, subs, at) else com.lagradost.desktop.player.ExternalPlayers.openInBrowser(link)
+            val players = com.lagradost.desktop.player.ExternalPlayers
+            val outcome = when (target) {
+                com.lagradost.desktop.player.ExternalPlayers.Target.Vlc -> players.openInVlc(link, name, subs, at)
+                com.lagradost.desktop.player.ExternalPlayers.Target.Mpv -> players.openInMpv(link, name, subs, at)
+                com.lagradost.desktop.player.ExternalPlayers.Target.Browser -> players.openInBrowser(link)
+            }
             if (!outcome.ok) {
-                if (vlc && com.lagradost.desktop.player.ExternalPlayers.vlcPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.vlcMissing()
+                if (target == com.lagradost.desktop.player.ExternalPlayers.Target.Vlc && players.vlcPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.vlcMissing()
+                else if (target == com.lagradost.desktop.player.ExternalPlayers.Target.Mpv && players.mpvPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.mpvMissing()
                 else Toasts.show(outcome.message ?: "Could not open the other player", true)
             }
         }

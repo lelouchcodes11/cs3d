@@ -64,7 +64,7 @@ object SupportPrompt {
             Overlays.Dialog(
                 title = "Enjoying CloudStream for Windows?",
                 primary = "★  Star on GitHub",
-                secondary = "♥  Donate",
+                secondary = "♥  Donate (India)",
                 close = "Later",
                 width = 480.dp,
                 onPrimary = { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) },
@@ -72,6 +72,8 @@ object SupportPrompt {
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     FText("It is free, has no ads and is made in spare time. A star on GitHub helps other people find it, and a donation keeps it growing. Thank you!", color = Fluent.colors.textSecondary)
+                    // outside India the Razorpay page does not take the card: Buy Me a Coffee does
+                    Button("Donate from anywhere (Buy Me a Coffee)", { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_INTL_URL) }, icon = Icons.Favorite, height = 34.dp)
                     // news and new versions are on Telegram, chat and help on Discord
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button("Telegram channel", { DesktopPlatform.openExternalBrowser(AppInfo.TELEGRAM_URL) }, icon = Icons.Link, height = 34.dp)

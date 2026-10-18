@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -85,7 +86,8 @@ internal val PlayerSurfaceBorder = Color(0x24FFFFFF)
 private object MenuColors {
     val card = PlayerSurface
     val border = PlayerSurfaceBorder
-    val hover = Color(0x1AFFFFFF)
+    val hover = Color(0x1FFFFFFF)
+    val selected = Color(0x0FFFFFFF)
     val divider = Color(0x14FFFFFF)
     val text = Color.White
     val secondary = Color(0xB3FFFFFF)
@@ -93,12 +95,12 @@ private object MenuColors {
 }
 
 private val MENU_WIDTH = 360.dp
-private val ROW_HEIGHT = 44.dp
+private val ROW_HEIGHT = 40.dp
 
 /** The menu card; [onPage] null closes it. [maxHeight]: the room above the controls */
 @Composable
 internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) -> Unit, maxHeight: Dp, modifier: Modifier = Modifier, fromTop: Boolean = false, originX: Float = 1f) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(18.dp)
     // it comes up out of the button that opened it: a little scale, a soft slide, a fade
     val appear = remember { Animatable(if (Appearance.motion == Motion.Off) 1f else 0f) }
     LaunchedEffect(Unit) { appear.animateTo(1f, glide(300)) }
@@ -161,7 +163,9 @@ private fun speedLabel(v: Float) = if (v == 1f) "Normal" else "${v.toString().re
 
 @Composable
 private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
-    Column(Modifier.verticalScrollIfNeeded()) {
+    Column {
+    // the settings scroll when the window is low; the two lines under them stay where they are, so they are never lost below the fold
+    Column(Modifier.weight(1f, fill = false).verticalScrollIfNeeded()) {
         // the three things a viewer changes most, in the order of the buttons under the picture
         NavRow(Icons.Video, "Video & Audio", listOfNotNull(qualityLabel(s), s.currentAudio()?.let { a -> audioLabel(a, s.audioTracks().indexOfFirst { it.id == a.id }.coerceAtLeast(0)).substringBefore(" • ") }).joinToString(" · ").ifBlank { null }) { onPage(MenuPage.Tracks) }
         NavRow(Icons.Subtitles, "Subtitles", s.currentSubtitle()?.originalName?.trim() ?: "Off") { onPage(MenuPage.Subtitles) }
@@ -174,10 +178,16 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         NavRow(Icons.Anime, "Upscaling", Appearance.upscaler.label.substringBefore(" (").substringBefore(", ")) { onPage(MenuPage.Upscaling) }
         NavRow(Icons.Skip, "Skip intro & credits", if (Appearance.autoSkipStamps) (if (Appearance.autoSkipDelay5s) "Auto (5s)" else "Auto") else "Manual") { onPage(MenuPage.Skip) }
         NavRow(Icons.Language, "Translate on-screen text", ScreenText.version.let { ScreenText.fromName().substringBefore(" (") + " → " + ScreenText.toName().substringBefore(" (") }) { onPage(MenuPage.ScreenText) }
+    }
         Divider()
         ActionRow(Icons.Help, "Keyboard shortcuts") { onPage(null); Shortcuts.show() }
-        ActionRow(Icons.Play, "Open in VLC") { onPage(null); s.openExternal(vlc = true) }
-        ActionRow(Icons.OpenInNewWindow, "Open in browser") { onPage(null); s.openExternal(vlc = false) }
+        // the other players are rarely needed: three chips in one line instead of three rows (the page is taller than a small window as it is)
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 2.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FText("Open in", Modifier.weight(1f), style = Fluent.type.caption, color = MenuColors.tertiary, maxLines = 1, softWrap = false)
+            MenuChip("VLC", false) { onPage(null); s.openExternal(com.lagradost.desktop.player.ExternalPlayers.Target.Vlc) }
+            MenuChip("mpv", false) { onPage(null); s.openExternal(com.lagradost.desktop.player.ExternalPlayers.Target.Mpv) }
+            MenuChip("Browser", false) { onPage(null); s.openExternal(com.lagradost.desktop.player.ExternalPlayers.Target.Browser) }
+        }
     }
 }
 
@@ -442,8 +452,8 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         item { Divider() }
         item { NavRow(Icons.Subtitles, "Second subtitle", s.secondarySubtitle()?.originalName?.trim() ?: "Off") { onPage(MenuPage.SecondSubtitle) } }
         item { NavRow(Icons.Clock, "Delay and size", if (s.subtitleDelayMs != 0L) "${s.subtitleDelayMs} ms" else null) { onPage(MenuPage.SubtitleTiming) } }
-        item { ActionRow(Icons.Edit, "Style…") { onPage(null); openSubtitleStyleDialog(s) } }
-        item { NavRow(Icons.Edit, "Encoding", com.lagradost.desktop.player.SubtitleEncoding.label()) { onPage(null); com.lagradost.desktop.ui.showSubtitleEncodingDialog() } }
+        item { ActionRow(Icons.Font, "Style…") { onPage(null); openSubtitleStyleDialog(s) } }
+        item { NavRow(Icons.Code, "Encoding",com.lagradost.desktop.player.SubtitleEncoding.label()) { onPage(null); com.lagradost.desktop.ui.showSubtitleEncodingDialog() } }
         item { ActionRow(Icons.Folder, "Add a subtitle file…") { onPage(null); s.pickSubtitleFile() } }
         item { ActionRow(Icons.Search, "Search online…") { onPage(null); openSubtitleSearch(s) } }
         item { ActionRow(Icons.Download, "Add the first online result") { onPage(null); s.addFirstOnlineSubtitle() } }
@@ -491,12 +501,13 @@ private fun ChoicePage(labels: List<String>, selected: Int, details: List<String
 // ---- rows ----------------------------------------------------------------------------------------
 
 @Composable
-private fun rowModifier(onClick: () -> Unit, role: Role = Role.Button): Modifier {
+private fun rowModifier(onClick: () -> Unit, role: Role = Role.Button, selected: Boolean = false): Modifier {
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(6.dp)
-    return Modifier.fillMaxWidth().padding(horizontal = 6.dp).clip(shape)
-        .background(if (hovered) MenuColors.hover else Color.Transparent, shape)
+    val shape = RoundedCornerShape(10.dp)
+    // the chosen row has a soft fill of its own, so the choice reads at a glance (the check mark alone was easy to miss in a long list)
+    return Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 0.5.dp).clip(shape)
+        .background(if (hovered) MenuColors.hover else if (selected) MenuColors.selected else Color.Transparent, shape)
         .fluentClickable(source, true, shape, role, onClick)
 }
 
@@ -516,8 +527,8 @@ private fun NavRow(glyph: String, label: String, value: String?, onClick: () -> 
 /** A row of a choice list: a check mark on the chosen one */
 @Composable
 private fun CheckRow(text: String, selected: Boolean, detail: String? = null, indent: Dp = 0.dp, trailing: String? = null, onClick: () -> Unit) {
-    Row(rowModifier(onClick, Role.RadioButton).heightIn(min = ROW_HEIGHT).padding(start = 10.dp + indent, end = 10.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(30.dp)) { if (selected) Icon(Icons.Check, size = 14.dp, tint = MenuColors.text) }
+    Row(rowModifier(onClick, Role.RadioButton, selected).heightIn(min = ROW_HEIGHT).padding(start = 10.dp + indent, end = 10.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(30.dp)) { if (selected) Icon(Icons.Check, size = 14.dp, tint = Fluent.colors.accent) }
         Column(Modifier.weight(1f)) {
             FText(text, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (selected) MenuColors.text else MenuColors.secondary, maxLines = 2)
             if (detail != null) FText(detail, style = Fluent.type.caption, color = MenuColors.tertiary, maxLines = 2)
@@ -580,7 +591,7 @@ private fun Note(text: String) {
 
 @Composable
 private fun Divider() {
-    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(1.dp).background(MenuColors.divider))
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(MenuColors.divider))
 }
 
 /** The root page scrolls when the window is too low for it */

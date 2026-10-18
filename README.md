@@ -11,6 +11,7 @@
   <a href="https://t.me/cs3d_official"><img alt="Join the Telegram channel" src="https://img.shields.io/badge/Telegram-Join%20Channel-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
   <a href="https://discord.gg/u82JU5JDM"><img alt="Join the Discord server" src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
   <a href="https://razorpay.me/@lelouch11"><img alt="Donate with Razorpay" src="https://img.shields.io/badge/Donate-Razorpay-0C2451?style=for-the-badge&logo=razorpay&logoColor=white"></a>
+  <a href="https://buymeacoffee.com/lelouchcodes11"><img alt="Buy me a coffee (international)" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-International-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black"></a>
 </p>
 
 <p align="center">
@@ -183,10 +184,12 @@ See **[CONTRIBUTING.md](CONTRIBUTING.md)** for full setup instructions, project 
 
 ## 💙 Support the Project
 
-CloudStream for Windows is **free, open-source, and ad-free**. If you enjoy using it on your PC, starring the repository on GitHub or making a small donation helps keep development active.
+CloudStream for Windows is **free, open-source, and ad-free**. If you enjoy using it on your PC, starring the repository on GitHub or making a small donation helps keep development active. From India, use Razorpay (UPI and cards); from anywhere else, [buymeacoffee.com/lelouchcodes11](https://buymeacoffee.com/lelouchcodes11) takes international cards.
 
 <p align="center">
   <a href="https://razorpay.me/@lelouch11"><img alt="Donate with Razorpay" src="https://img.shields.io/badge/Donate%20with-Razorpay-0C2451?style=for-the-badge&logo=razorpay&logoColor=white"></a>
+  &nbsp;
+  <a href="https://buymeacoffee.com/lelouchcodes11"><img alt="Buy me a coffee (international)" src="https://img.shields.io/badge/Buy%20Me%20a-Coffee%20(international)-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black"></a>
   &nbsp;
   <a href="https://t.me/cs3d_official"><img alt="Join the Telegram channel" src="https://img.shields.io/badge/Join-Telegram-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
   &nbsp;

@@ -109,9 +109,14 @@ object SettingsGeneralScreen : SearchableSettings {
         }
 
         val default = AllLanguagesName to stringResource(R.string.all_languages_preference)
-        val languages = APIHolder.apis.withLock {
-            APIHolder.apis.map { api -> api.lang }.distinct()
-        }.sortedBy { fromTagToLanguageName(it) ?: it }
+        // desktop: sorted by the language's name once per set of extensions, not on every redraw of the page (asking the name of every language for each
+        // comparison took 60 ms, which every switch and slider of this page paid again)
+        val apiCount = APIHolder.apis.withLock { APIHolder.apis.size }
+        val languages = remember(apiCount) {
+            APIHolder.apis.withLock {
+                APIHolder.apis.map { api -> api.lang }.distinct()
+            }.sortedBy { fromTagToLanguageName(it) ?: it }
+        }
 
         return persistentListOf(
             Preference.PreferenceGroup(title = stringResource(R.string.extension_language), preferenceItems = persistentListOf(

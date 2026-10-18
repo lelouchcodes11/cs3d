@@ -102,7 +102,8 @@ object Tmdb {
         val query = (listOf("api_key" to key, "language" to "en-US") + params).joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v, "UTF-8") }
         val url = "$BASE$path?$query"
         synchronized(cache) { cache[url] }?.let { (at, j) -> if (System.currentTimeMillis() - at < TTL_MS) return j }
-        val text = runCatching { app.get(url, timeout = 20).text }.getOrNull() ?: return null
+        // the body is read where the call runs: on the UI thread (the pages ask from a LaunchedEffect) that was a stall of 40 to 100 ms per answer
+        val text = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.get(url, timeout = 20).text } }.getOrNull() ?: return null
         val j = runCatching { JSONObject(text) }.getOrNull() ?: return null
         if (j.has("status_code") && !j.has("id") && !j.has("results")) return null
         synchronized(cache) { cache[url] = System.currentTimeMillis() to j }

@@ -157,7 +157,7 @@ object ExploreClient {
     private suspend fun tmdb(key: String, movie: Boolean, load: suspend () -> List<TmdbCard>): List<TmdbCard> = cached("tmdb/${if (movie) "m" else "t"}/$key", load)
 
     private suspend fun cinemeta(type: String, sort: String): List<TmdbCard> = cached("cm/$type/$sort") {
-        val json = JSONObject(app.get("https://cinemeta-catalogs.strem.io/$sort/catalog/$type/$sort.json", timeout = 20).text)
+        val json = JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.get("https://cinemeta-catalogs.strem.io/$sort/catalog/$type/$sort.json", timeout = 20).text })
         val metas = json.optJSONArray("metas") ?: return@cached emptyList()
         buildList {
             for (i in 0 until metas.length()) {
@@ -183,7 +183,7 @@ object ExploreClient {
             if (genre != null) append(", genre: \"${genre.replace("\"", "")}\"")
         }
         val query = "{ Page(perPage: 30) { media($filters) { id title { romaji english } coverImage { extraLarge } averageScore seasonYear genres format } } }"
-        val json = JSONObject(app.post("https://graphql.anilist.co", json = mapOf("query" to query), timeout = 20).text)
+        val json = JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.post("https://graphql.anilist.co", json = mapOf("query" to query), timeout = 20).text })
         val media = json.optJSONObject("data")?.optJSONObject("Page")?.optJSONArray("media") ?: return@cached emptyList()
         buildList {
             for (i in 0 until media.length()) {

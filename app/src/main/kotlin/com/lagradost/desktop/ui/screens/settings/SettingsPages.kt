@@ -56,6 +56,7 @@ internal fun playerGroups(): List<SettingGroup> {
     return listOf(
         group("Playback") {
             pref(up.key("player_default_key"), "external vlc mpv open with")
+            mpvItem()
             pref(up.key("autoplay_next_key"), "next episode continue")
             pref(up.key("enable_skip_op_from_database"), "skip intro opening ending credits aniskip")
         },
@@ -174,7 +175,8 @@ internal fun aboutGroups(): List<SettingGroup> {
             card("CloudStream for Windows", "Version ${AppInfo.version}$pre  ·  a native Windows app on the CloudStream ${BuildConfig.VERSION_NAME} engine", "version build")
             link("Join us on Telegram", "News, new versions, help and feedback: t.me/cs3d_official", "chat community support") { DesktopPlatform.openExternalBrowser(AppInfo.TELEGRAM_URL) }
             link("Join us on Discord", "Chat, help and ideas with other users: discord.gg/u82JU5JDM", "chat community support") { DesktopPlatform.openExternalBrowser(AppInfo.DISCORD_URL) }
-            link("Support the project", "CloudStream for Windows is free. If it saves you time, a donation keeps it going: razorpay.me/@lelouch11", "donate") { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) }
+            link("Support the project (India)", "CloudStream for Windows is free. If it saves you time, a donation keeps it going: razorpay.me/@lelouch11 (UPI and cards)", "donate razorpay upi india") { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) }
+            link("Support the project (international)", "From anywhere else: buymeacoffee.com/lelouchcodes11 takes international cards", "donate buy me a coffee international") { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_INTL_URL) }
             link("Source code and releases", "${AppInfo.REPO} on GitHub (GPL-3.0). Report problems and get new versions there.", "github license bug report") { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }
             link("The CloudStream project", "This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.", "upstream credits") { DesktopPlatform.openExternalBrowser("https://github.com/recloudstream/cloudstream") }
             block("Legal notice", null, "disclaimer copyright") { PreferenceCard(Preference.PreferenceItem.InfoPreference(title = stringResource(R.string.legal_notice_text))) }
@@ -195,6 +197,25 @@ internal fun aboutGroups(): List<SettingGroup> {
             link("App data folder", dir.absolutePath, "files location portable") { DesktopPlatform.openFile(dir) }
         },
     )
+}
+
+/** Settings > Player > External mpv: the mpv.exe that "Play in mpv" (Preferred video player, episode menu) and "Open in mpv" (player menu) start */
+@Composable
+private fun GroupBuilder.mpvItem() {
+    val version = com.lagradost.desktop.player.ExternalPlayers.mpvVersion.intValue // read: the row follows the choice
+    val chosen = com.lagradost.desktop.player.ExternalPlayers.chosenMpv()
+    val found = androidx.compose.runtime.remember(version) { com.lagradost.desktop.player.ExternalPlayers.mpvPath() }
+    val about = when {
+        found == null -> "mpv.exe was not found (mpv.io, winget install mpv, scoop install mpv). Choose it here, then pick mpv as the preferred video player or use Open in mpv in the player's menu."
+        chosen.isBlank() -> "Found: ${found.absolutePath}. Pick mpv as the preferred video player, or use Open in mpv in the player's menu."
+        else -> "Your choice: ${found.absolutePath}"
+    }
+    card("External mpv", about, "mpv.exe mpvnet player open with play in") {
+        androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+            if (chosen.isNotBlank()) com.lagradost.desktop.ui.fluent.Button("Find automatically", { com.lagradost.desktop.player.ExternalPlayers.setMpvPath(null) }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle)
+            com.lagradost.desktop.ui.fluent.Button("Choose mpv.exe…", { com.lagradost.desktop.ui.ExternalPlayerHints.chooseMpv() }, icon = com.lagradost.desktop.ui.fluent.Icons.Folder)
+        }
+    }
 }
 
 // ---- rows that are not upstream's -----------------------------------------------------------------------------------------------------------

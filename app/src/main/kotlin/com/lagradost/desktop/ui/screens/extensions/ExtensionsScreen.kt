@@ -119,7 +119,7 @@ fun ExtensionsScreen() {
         Column(Modifier.fillMaxSize().padding(top = TopBarHeight + 12.dp)) {
             // ---- header with numbers
             Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                com.lagradost.desktop.ui.fluent.PageHeader("Extensions", Modifier.weight(1f), subtitle = "Providers come from repositories: add one, then install what you want")
+                com.lagradost.desktop.ui.fluent.PageHeader("Extensions", Modifier.weight(1f), subtitle = "Add a repository, then install the providers you want")
                 stats?.let { s ->
                     if (!compact) {
                         StatTile(Icons.Download, s.downloaded.toString(), "installed")
