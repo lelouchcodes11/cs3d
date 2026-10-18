@@ -2,15 +2,14 @@
 
 ## 1.0.5
 
+**Round 12 (18 October, later)**
 - **Your data can no longer be wiped by a sync extension.** After an update some people found their extensions, repositories, search history and settings gone. The update itself does not touch your data (it lives in `%APPDATA%\CloudStream`); the cause is a sync extension (Ultima): when another device had deleted its copy once, the cloud keeps that "deleted" mark, and the next device that syncs deletes its own data to match, and passes the deletion on to the others. The app now stops it where the data is stored: the extension list and the repositories cannot be removed by an extension, and a bulk deletion (40 % of a file or at least 25 keys within two minutes, in one go or one key at a time) is held back and what had already gone is put back, while new data from the sync is still merged in. A notice says "A sync extension tried to delete ... They were kept", and `logs/app.log` names the caller. Your own "Clear history", "Delete profile", "Clear search history" and restoring a backup still work as before.
-
-## 1.0.4
 
 **Round 11 (18 October)**
 - **Profile pictures like Netflix's**: 43 drawn characters on a flat colour of your choice (10 colours): 20 of our own (Happy, Wink, Cool, Silly, Starstruck, In love, Sleepy, Cat, Fox, Panda, Bear, Bunny, Owl, Penguin, Frog, Robot, Alien, Ghost, Monster, Ninja), 11 from anime (Goku, Naruto, Kakashi, Luffy, Pikachu, Totoro, Doraemon, Gojo, Tanjiro, Anya, Saitama) and 12 from films and series (Darth Vader, Stormtrooper, Yoda, Batman, Joker, Spider-Man, Iron Man, Harry Potter, Minion, Shrek, Wednesday, Squid Game guard). They are small flat drawings made with shapes (`ProfileFamous.kt`), not the studios' artwork. Edit profile > Characters, Anime, Movies and series; the stock pictures and your own picture are still there. Each character does a small action every few seconds (a blink, an ear twitch, a glint on the sunglasses, a heartbeat, a floating Z) at its own time; between the actions the picture stands still, so nothing is redrawn. Appearance's motion setting off keeps them still. The abstract animated looks of an earlier version are gone.
 - **Donate**: Settings > About has a second link for donations from outside India (Buy Me a Coffee, buymeacoffee.com/lelouchcodes11) beside the Razorpay one (now marked India), the daily support window has a button for it, and the README has a badge and a line for it.
 - **Stats** has a button on the Library page too (it stays on History).
-- Version 1.0.4.
+- Version 1.0.5 (it carries everything that was planned for 1.0.4, which was never released as a separate version).
 
 **Round 10 (17 October, night): player look**
 - **New controls bar and seek bar** (the two glass capsules are gone: the controls are flat on a soft shade). The seek bar runs the full width with the time played at its left end and the time left at its right end (a click switches to the total length; when the video ends is in its tooltip), a taller grab area, a line that grows from 4 to 7 dp under the pointer. Under it one row: the transport at the left (previous, back 10 s, a larger 52 dp play button, forward 10 s, next) with the volume beside it (the slider still slides out), the tools at the right (Subtitles and Sources with their names when the window is 1120 dp wide or more, then speed, episodes, picture in picture, settings, full screen). Back and Video & Audio at the top are flat too. Menus and the skip buttons sit a little closer to the bar.
