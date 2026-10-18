@@ -95,6 +95,7 @@ internal fun FloatingTopBar() {
         val rightNeed = if (ShellState.homeSearchOpen && onHome) 640.dp else 404.dp
         val wide = maxWidth / 2 >= rightNeed + 250.dp
         val tight = maxWidth / 2 < rightNeed + 150.dp
+        val narrow = maxWidth < 760.dp
         Row(Modifier.fillMaxSize().padding(start = 14.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!com.lagradost.desktop.platform.WinChrome.windowedBar) {
                 IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("topBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)")
@@ -102,13 +103,14 @@ internal fun FloatingTopBar() {
             }
             brandLogo?.let { androidx.compose.foundation.Image(it, "CloudStream", Modifier.size(26.dp)) }
             Box(Modifier.weight(1f))
+            // a window of half a screen (snapped, or the smallest): the search and reload buttons would sit under the capsule; Ctrl+K and the Search page remain
             if (onHome) {
-                selectedHomeProvider()?.let { ExtensionSearch(it) }
-                ShellState.homeActions?.let { a ->
+                if (!narrow) selectedHomeProvider()?.let { ExtensionSearch(it) }
+                if (!narrow) ShellState.homeActions?.let { a ->
                     IconButton(Icons.Refresh, a.reload, Modifier.noWindowDrag("reload"), tooltip = "Reload the home page", kind = ButtonKind.Subtle, size = 36.dp)
                     Box(Modifier.width(6.dp))
                 }
-                ProviderSelector(Modifier.widthIn(max = 200.dp).noWindowDrag("provider"))
+                ProviderSelector(Modifier.widthIn(max = if (narrow) 150.dp else 200.dp).noWindowDrag("provider"))
                 Box(Modifier.width(8.dp))
             }
             AccountAvatar()

@@ -90,7 +90,10 @@ fun ApplicationScope.NativeWindow() {
         DesktopUiHost.windowState = state
         // a few seconds after the app is on screen: tells about a newer version on GitHub (nothing is installed by the app)
         remember { com.lagradost.desktop.update.UpdateCheck.startAutoCheck() }
-        remember { window.minimumSize = Dimension(760, 520) }
+        // Windows only snaps a window to half or a corner of the screen when the zone is not smaller than the window's minimum size: 760 x 520 (the
+        // pixels of a 150 % display: 1140 x 780) was larger than a half and a corner of a 1920 x 1080 screen, so dragging the window to an edge
+        // or a corner showed no snap. A quarter of the smallest common screen (1366 x 768 at 125 %) fits this.
+        remember { window.minimumSize = Dimension(480, 320) }
         // a content area of a whole number of pixels: no stretched (smeared) 1 px borders at 125 / 150 / 175 % display scaling
         remember { com.lagradost.desktop.platform.EvenPixels.install(window) }
         remember { com.lagradost.desktop.platform.AppIcon.install(window) }

@@ -1078,6 +1078,18 @@ object DevServer {
                 // dev: the AWT windows of the app (class, title, shown, bounds in screen px)
                 ok(ex, java.awt.Window.getWindows().joinToString("\n") { w -> "${w.javaClass.simpleName} '${(w as? java.awt.Dialog)?.title ?: (w as? java.awt.Frame)?.title ?: ""}' shown=${w.isShowing} ${w.bounds.x},${w.bounds.y} ${w.bounds.width}x${w.bounds.height}" })
             }
+            "/cfgate" -> {
+                // dev: what the Cloudflare gate thinks of an extension: /cfgate?api=AnimePahe
+                val gate = com.lagradost.desktop.runtime.web.CloudflareGate
+                val api = com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(q["api"]!!)
+                val host = api?.let { runCatching { java.net.URI(it.mainUrl).host }.getOrNull() }
+                ok(ex, "active=${gate.activeApis()} host=$host apisOfHost=${host?.let { gate.apisOfHost(it) }} apisOfLoader=${api?.let { gate.apisOfLoader(it.javaClass.classLoader) }} inUseHost=${host?.let { gate.inUseHost(it) }} inUseOwner=${api?.let { gate.inUseOwner(it.javaClass) }} allowsSolving=${host?.let { gate.allowsSolving(it) }}")
+            }
+            "/ytstreams" -> {
+                // dev: the YouTube streams the app's own fallback finds for a trailer: /ytstreams?url=https://www.youtube.com/watch?v=<id>
+                val links = kotlinx.coroutines.runBlocking { com.lagradost.desktop.net.YouTubeStreams.links(q["url"]!!) }
+                ok(ex, links.joinToString("\n") { "${it.name} ${it.quality}p audio=${it.audioTracks.size} ${it.url.take(70)}" }.ifBlank { "no streams" })
+            }
             "/playurl" -> {
                 // dev: play a plain link in the player to look at its controls: /playurl?url=https://...mp4&name=Title
                 val link = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.utils.newExtractorLink(q["name"] ?: "Test source", q["name"] ?: "Test source", q["url"]!!) { quality = 1080 } }

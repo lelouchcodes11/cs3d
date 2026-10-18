@@ -287,6 +287,8 @@ object DesktopBootstrap {
         ioSafe { SafeFile.check(act) }
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: before plugins")
 
+        // Cloudflare check windows only for the extension in use (a plugin that checks its site while it loads must not open one)
+        com.lagradost.desktop.net.ActiveProviders.install()
         if (loadPlugins) loadPlugins(act, settingsManager)
 
         ioSafe {

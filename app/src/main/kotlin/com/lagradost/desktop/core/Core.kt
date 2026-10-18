@@ -79,6 +79,9 @@ sealed interface Route {
 
     /** A person from TMDB: photo, biography and the films and series they are in */
     data class Person(val id: Int, val name: String, val image: String?) : Route
+
+    /** The whole cast and crew of a title (TMDB id), with its seasons for the season picker */
+    data class FullCast(val title: String, val tmdbId: Int, val isMovie: Boolean, val seasons: List<Int> = emptyList(), val initialSeason: Int? = null) : Route
     data object Downloads : Route
     data object Extensions : Route
     data class Settings(val page: String? = null) : Route

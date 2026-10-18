@@ -172,7 +172,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     // closed by hand or timed out, is asked for again by the next request, and again.
     private var mChallengeNoted = false
 
-    private fun isChallengeDialog(): Boolean = javaClass.name.let { it.contains("Cloudflare", ignoreCase = true) || it.contains("CFBypass", ignoreCase = true) }
+    private fun isChallengeDialog(): Boolean = javaClass.name.let { it.contains("Cloudflare", ignoreCase = true) || it.contains("CFBypass", ignoreCase = true) || it.contains("CFWebView", ignoreCase = true) }
 
     private object Challenges {
         @Volatile var open = 0
@@ -184,9 +184,9 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     /** A sheet asked for within two minutes of the last one's end is not shown: the extension is told (its onDismiss) that there are no cookies */
     private fun skipRepeatedChallenge(): Boolean {
         if (!isChallengeDialog()) return false
-        val off = !com.lagradost.desktop.runtime.web.CloudflareGate.solversOn
+        val off = !com.lagradost.desktop.runtime.web.CloudflareGate.solversOn || !com.lagradost.desktop.runtime.web.CloudflareGate.inUseOwner(javaClass)
         if (off || Challenges.open == 0 && System.currentTimeMillis() - Challenges.endedAt < Challenges.QUIET_MS) {
-            Log.i("DialogFragment", "${javaClass.simpleName}: " + if (off) "the Cloudflare solvers are off, not shown" else "asked again so soon after the last one, not shown")
+            Log.i("DialogFragment", "${javaClass.simpleName}: " + if (off) "the Cloudflare solvers are off or this is not the extension in use, not shown" else "asked again so soon after the last one, not shown")
             mDismissed = true
             onDismiss(object : DialogInterface {
                 override fun cancel() {}

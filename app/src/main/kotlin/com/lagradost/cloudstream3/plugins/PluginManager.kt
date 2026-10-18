@@ -274,6 +274,9 @@ object PluginManager {
     private val classLoaders: MutableMap<PathClassLoader, BasePlugin> =
         HashMap<PathClassLoader, BasePlugin>()
 
+    /** desktop: the file name of the plugin whose classes [loader] loads (null for the app's own classes) */
+    fun pluginFileOfLoader(loader: ClassLoader?): String? = synchronized(classLoaders) { classLoaders.entries.firstOrNull { it.key === loader }?.value?.filename }
+
     var loadedLocalPlugins = false
         private set
 

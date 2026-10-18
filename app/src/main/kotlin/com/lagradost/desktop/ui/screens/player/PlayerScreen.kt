@@ -9,6 +9,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
@@ -1263,7 +1265,19 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { s.episodes() }
     }
     val listState = rememberLazyListState()
-    LaunchedEffect(items.isNotEmpty()) { items.indexOfFirst { it.current }.takeIf { it >= 0 }?.let { listState.scrollToItem((it - 1).coerceAtLeast(0)) } }
+    // the list is one for every season (a long series has hundreds of episodes): a season at a time, the one that plays first, and a range of
+    // 25 inside a season that is longer than 60 episodes
+    val currentItem = items.firstOrNull { it.current }
+    val seasonNumbers = items.map { it.episode.season ?: 0 }.distinct().sorted()
+    var seasonPick by remember { mutableStateOf<Int?>(null) }
+    var rangePick by remember { mutableStateOf<Int?>(null) }
+    val season = (seasonPick ?: currentItem?.episode?.season ?: 0).takeIf { it in seasonNumbers } ?: seasonNumbers.firstOrNull() ?: 0
+    val inSeason = items.filter { (it.episode.season ?: 0) == season }
+    val rangeSize = 25
+    val ranges = if (inSeason.size > 60) (0 until (inSeason.size + rangeSize - 1) / rangeSize).toList() else emptyList()
+    val range = if (ranges.isEmpty()) 0 else (rangePick ?: inSeason.indexOfFirst { it.current }.takeIf { it >= 0 }?.div(rangeSize) ?: 0).coerceIn(0, ranges.lastIndex)
+    val shown = if (ranges.isEmpty()) inSeason else inSeason.drop(range * rangeSize).take(rangeSize)
+    LaunchedEffect(items.isNotEmpty(), season, range) { shown.indexOfFirst { it.current }.takeIf { it >= 0 }?.let { listState.scrollToItem((it - 1).coerceAtLeast(0)) } ?: listState.scrollToItem(0) }
     // a card that floats at the right edge (it slides in, see the caller)
     val panelShape = RoundedCornerShape(18.dp)
     Column(
@@ -1282,10 +1296,23 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
             )
             IconButton(Icons.Close, onClose, tooltip = "Close", tint = Color.White)
         }
+        // the seasons, and the ranges of a long one, as rows of small pills
+        if (seasonNumbers.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            seasonNumbers.forEach { n -> PanelChip(if (n == 0) "Specials" else "Season $n", n == season) { seasonPick = n; rangePick = null } }
+        }
+        if (ranges.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ranges.forEach { r ->
+                val first = inSeason[r * rangeSize].episode.episode
+                val last = inSeason[(r * rangeSize + rangeSize - 1).coerceAtMost(inSeason.lastIndex)].episode.episode
+                PanelChip("$first–$last", r == range) { rangePick = r }
+            }
+        }
         val currentIdx = items.indexOfFirst { it.current }
         val uncoveredIds = remember { mutableStateListOf<Int>() }
         LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
-            itemsIndexed(items) { index, item ->
+            itemsIndexed(shown) { _, item ->
+                // the place in the whole list (the episodes ahead of the one that plays are the ones covered, whatever season is shown)
+                val index = item.index
                 val ep = item.episode
                 val source = rememberInteraction()
                 val hovered by source.collectIsHoveredAsState()
@@ -1531,4 +1558,16 @@ private fun TorrentPill(s: PlayerSession, modifier: Modifier) {
             style = Fluent.type.caption, color = Color(0xE6FFFFFF), maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
+}
+
+/** A small pill of the episode list (a season, a range of episodes): white when it is the one shown */
+@Composable
+private fun PanelChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(50)
+    Box(
+        Modifier.clip(shape).background(if (selected) Color(0xFFF2F2F2) else if (hovered) Color(0x33FFFFFF) else Color(0x1FFFFFFF), shape)
+            .hoverable(source).fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 14.dp, vertical = 6.dp),
+    ) { FText(text, style = Fluent.type.caption, color = if (selected) Color(0xFF111111) else Color.White, maxLines = 1, softWrap = false) }
 }

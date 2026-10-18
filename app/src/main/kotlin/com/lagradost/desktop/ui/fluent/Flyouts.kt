@@ -371,6 +371,8 @@ object Overlays {
         val width: Dp = 440.dp,
         /** A click on the dimmed area around the card closes it (menus that apply each choice at once) */
         val dismissOnOutside: Boolean = false,
+        /** No card: the body fills the window over the dimmed area (a picture viewer); Esc and the body's own buttons close it */
+        val fullscreen: Boolean = false,
         val body: @Composable (dismiss: () -> Unit) -> Unit,
     )
 
@@ -426,7 +428,8 @@ fun DialogLayer() {
             },
             contentAlignment = Alignment.Center,
         ) {
-            if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.97f + 0.03f * a; scaleX = s; scaleY = s }.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) { ContentDialogCard(shown) }
+            if (shown != null && shown.fullscreen) Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }) { shown.body { Overlays.dismiss(shown) } }
+            else if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.97f + 0.03f * a; scaleX = s; scaleY = s }.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) { ContentDialogCard(shown) }
         }
     }
 }

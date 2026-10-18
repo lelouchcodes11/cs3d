@@ -109,7 +109,7 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
         if (mShowing) return
         dispatchOnCreate(null)
         // Settings > General > Cloudflare solvers: off, a page in a dialog (an extension's challenge window) is not shown
-        if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseBrowserDialog(mWindow.getDecorView()) { cancel() }) return
+        if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseBrowserDialog(mWindow.getDecorView(), javaClass) { cancel() }) return
         onStart()
         mLifecycle.currentState = Lifecycle.State.RESUMED
         mShowing = true

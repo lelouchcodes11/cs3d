@@ -60,9 +60,40 @@ object CloudflareGate {
         }
     }
 
-    /** Whether a page may be opened to pass the check of [host]: the solvers are on and the user did not just cancel that site's */
+    // ---- only the extension in use: a plugin that checks its site while it loads (AnimePahe does, at every start of the app) must not put a
+    // Cloudflare window on the screen of someone who is on another extension. The app tells which extensions are in use and which plugin / site belongs to whom.
+
+    /** Set by the app: the names of the extensions the user is working with now (the one on Home, the title pages that are open); null: all of them (a search in all extensions) */
+    @Volatile var activeApis: () -> Set<String>? = { null }
+
+    /** Set by the app: the names of the extensions of the plugin whose classes [loader] loaded */
+    @Volatile var apisOfLoader: (ClassLoader?) -> Set<String> = { emptySet() }
+
+    /** Set by the app: the names of the extensions whose site is [host] */
+    @Volatile var apisOfHost: (String) -> Set<String> = { emptySet() }
+
+    private var lastNotInUseLog = 0L
+
+    private fun inUse(apis: Set<String>, what: String): Boolean {
+        // not an extension's own request (a video host, an extractor, a class of the app): nothing to judge it by
+        if (apis.isEmpty()) return true
+        val active = runCatching { activeApis() }.getOrNull() ?: return true
+        if (apis.any { it in active }) return true
+        val now = System.currentTimeMillis()
+        if (now - lastNotInUseLog > 10_000) { lastNotInUseLog = now; Log.i(TAG, "the Cloudflare check of $what is not shown: ${apis.joinToString()} is not the extension in use (${active.joinToString()})") }
+        return false
+    }
+
+    /** Whether the extension that owns [host] is one the user is using */
+    fun inUseHost(host: String): Boolean = inUse(runCatching { apisOfHost(host) }.getOrDefault(emptySet()), host)
+
+    /** Whether the extension that owns the plugin class [owner] is one the user is using */
+    fun inUseOwner(owner: Class<*>?): Boolean = inUse(runCatching { apisOfLoader(owner?.classLoader) }.getOrDefault(emptySet()), owner?.name ?: "a dialog")
+
+    /** Whether a page may be opened to pass the check of [host]: the solvers are on, the extension is in use and the user did not just cancel that site's */
     fun allowsSolving(host: String): Boolean {
         if (!solversOn) return false
+        if (!inUseHost(host)) return false
         val at = cancelledHosts[host] ?: return true
         return System.currentTimeMillis() - at > CANCELLED_MS
     }
@@ -100,9 +131,9 @@ object CloudflareGate {
      * the solvers are off, and when such dialogs keep coming (a check that cannot be passed opens, closes and opens again on every request).
      * True when the dialog was refused (it must not be shown).
      */
-    fun refuseBrowserDialog(content: View?, cancel: () -> Unit): Boolean {
+    fun refuseBrowserDialog(content: View?, owner: Class<*>? = null, cancel: () -> Unit): Boolean {
         if (!hasWebView(content)) return false
-        if (solversOn && !keepsOpening()) return false
+        if (solversOn && inUseOwner(owner) && !keepsOpening()) return false
         Log.i(TAG, "a page in a dialog was asked for and is not shown")
         cancelBrowserDialog(content, cancel)
         return true

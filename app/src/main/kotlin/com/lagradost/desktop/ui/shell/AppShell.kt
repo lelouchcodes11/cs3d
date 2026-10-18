@@ -481,6 +481,7 @@ private fun PageBody(entry: Entry) {
         Route.Home -> HomeScreen()
         is Route.Search -> SearchScreen(r)
         is Route.Person -> com.lagradost.desktop.ui.screens.person.PersonScreen(r)
+        is Route.FullCast -> com.lagradost.desktop.ui.screens.details.FullCastScreen(r)
         Route.History -> com.lagradost.desktop.ui.screens.history.HistoryScreen()
         Route.Library -> LibraryScreen()
         Route.Schedule -> com.lagradost.desktop.ui.screens.schedule.ScheduleScreen()
@@ -501,6 +502,7 @@ private fun titleOf(route: Route): String? = when (route) {
     is Route.Search -> null
     // these pages have a big header of their own
     is Route.Person -> null
+    is Route.FullCast -> null
     Route.History -> null
     Route.Library -> null
     Route.Schedule -> null

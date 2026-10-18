@@ -586,7 +586,9 @@ class ResultViewModel2 : ViewModel() {
 
         fun seasonToTxt(seasonData: SeasonData?, season: Int?): UiText? {
             if (season == 0) {
-                return txt(R.string.no_season)
+                // desktop: season 0 is what the databases call the specials; "No Season" said nothing of what was in it. Only a list of seasons
+                // is ever labelled (a title with a single list has no picker), so a 0 beside other seasons is the specials.
+                return seasonData?.name?.let { txt(it) } ?: txt("Specials")
             }
 
             // If displaySeason is null then only show the name!

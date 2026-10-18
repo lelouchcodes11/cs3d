@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.6
+
+**Title pages**
+- **Cast & crew like Ayu's app**: a row of the cast and a row of the crew (directors, creators, writers, producers, each card tagged with the job), a season picker, *View all* and a full cast page with a search box. The photos are rectangles now.
+- **Details tab**: the facts in two columns (status, dates, runtime, age rating, country, language, seasons, rating, budget, revenue), logo tiles for studios and networks, and where it streams.
+- **Screenshots** open large; the arrow keys step through them and Esc closes. **Reviews** use the whole width.
+- **Trailers play in the app**: when the usual way fails, the stream is asked for the way YouTube's own phone app does, and every trailer address is tried before the browser is opened.
+- **Specials**: a season 0 says "Specials" instead of "No Season".
+- A title page that takes long (StreamPlay) says so after a few seconds and offers *Try again* and *Back*.
+
+**Player**
+- **Episode list**: season buttons, a range of 25 for long seasons, and an eye button that shows or hides the episodes ahead. Covered episodes keep their titles unless *Hide the titles as well* is on (that switch did nothing before).
+- The window with the controls is always put over the video, and the app writes it to its log, to help with the report of controls that were missing.
+
+**Windows and lists**
+- **Snap to halves and corners works**: the window can be made as small as 480 × 320 (it was 760 × 520, too big to snap on a 1080p screen at 150 %), and the top bar fits a narrow window.
+- **Catalog rows** can be held and dragged with the mouse, and glide a little after you let go.
+- **Right-click a title in a catalog**: it lifts to the middle with the library actions (add to library, favourites, play, open).
+- The **Installed** list of the extensions shows each extension's icon.
+
+**Cloudflare**
+- AnimePahe's Cloudflare window no longer comes up when the app starts with another extension on Home. A check window is only shown for the extension you are using.
+
 ## 1.0.5
 
 **Your data cannot be wiped by a sync extension any more**

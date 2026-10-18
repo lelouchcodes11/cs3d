@@ -9,7 +9,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.animation.core.animateDecay
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -191,7 +193,10 @@ fun PosterCard(
             if (sub != null) FText(sub, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
         }
     }
-    if (menu != null) ContextMenuArea(menu) { body() } else body()
+    // a title of an extension gets the library menu unless the page that shows it brings its own; a TMDB title belongs to no extension (no library entry)
+    if (menu != null) ContextMenuArea(menu) { body() }
+    else if (item !is com.lagradost.desktop.tmdb.TmdbCard && item.url.isNotBlank() && item.apiName.isNotBlank()) CatalogCardMenu(item) { body() }
+    else body()
 }
 
 @Composable
@@ -252,10 +257,26 @@ fun <T> Shelf(
         if (state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 0) state.animateScrollToItem(0)
     }
     var width by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0) }
+    // the row can be held and dragged with the mouse (a touch screen does that by itself, a mouse only had the wheel and the arrows); a short
+    // movement is still a click on the card, and the row carries on a little after the button is let go
+    val dragState = androidx.compose.foundation.gestures.rememberDraggableState { delta -> state.dispatchRawDelta(-delta) }
+    val drag = Modifier.draggable(
+        dragState, androidx.compose.foundation.gestures.Orientation.Horizontal,
+        onDragStopped = { velocity ->
+            scope.launch {
+                var last = 0f
+                androidx.compose.animation.core.AnimationState(0f, -velocity).animateDecay(androidx.compose.animation.core.exponentialDecay(frictionMultiplier = 1.4f)) {
+                    val step = value - last
+                    last = value
+                    if ((step > 0f && !state.canScrollForward) || (step < 0f && !state.canScrollBackward)) cancelAnimation() else state.dispatchRawDelta(step)
+                }
+            }
+        },
+    )
     Box(modifier.fillMaxWidth().hoverable(source).onSizeChanged { width = it.width }) {
         LazyRow(
             // a row with no gutter (chips) is cut at its own edge: the cut end fades into the page instead of showing half a chip
-            modifier = if (gutter == 0.dp) Modifier.scrollEdgeFade(state) else Modifier,
+            modifier = (if (gutter == 0.dp) Modifier.scrollEdgeFade(state) else Modifier).then(drag),
             state = state,
             contentPadding = PaddingValues(horizontal = gutter),
             horizontalArrangement = Arrangement.spacedBy(spacing),

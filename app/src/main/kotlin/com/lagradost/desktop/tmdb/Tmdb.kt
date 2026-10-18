@@ -32,6 +32,9 @@ class TmdbCard(
 }
 
 class TmdbPerson(val id: Int, val name: String, val role: String?, val image: String?)
+
+/** A person of the crew: [group] is the heading of the cast and crew page they are listed under ("Directors", "Writers", "Music" ...), [job] what they did */
+class TmdbCrew(val id: Int, val name: String, val job: String, val group: String, val image: String?)
 class TmdbReview(val author: String, val rating: Double?, val text: String, val date: String?)
 class TmdbProvider(val name: String, val logo: String?)
 
@@ -42,6 +45,9 @@ class TmdbInfo(
     val backdrops: List<String>, val cast: List<TmdbPerson>, val directors: List<Pair<Int, String>>, val writers: List<Pair<Int, String>>,
     val trailerKey: String?, val reviews: List<TmdbReview>, val providers: List<TmdbProvider>, val similar: List<TmdbCard>,
     val collection: Pair<Int, String>?, val imdbId: String?, val seasons: Int?, val episodes: Int?, val networks: List<Pair<Int, String>>,
+    val crew: List<TmdbCrew> = emptyList(),
+    /** Where it was made, the language it was made in, what it cost and earned (a film), and the logos of its studios and networks by id */
+    val country: String? = null, val language: String? = null, val budget: Long? = null, val revenue: Long? = null, val logos: Map<Int, String> = emptyMap(),
 )
 
 class TmdbPersonInfo(
@@ -200,6 +206,43 @@ object Tmdb {
     suspend fun byMaker(id: Int, company: Boolean, movie: Boolean): List<TmdbCard> =
         list("/discover/${if (movie) "movie" else "tv"}", movie, (if (company) "with_companies" else "with_networks") to id.toString(), "sort_by" to "popularity.desc")
 
+    /** The crew by what they did: one heading per kind of work, the people of a heading in the order TMDB lists them (most important first) */
+    private fun crewGroup(job: String): String? = when {
+        job == "Director" || job == "Co-Director" || job == "Series Director" -> "Directors"
+        job in setOf("Creator", "Series Composition") -> "Creators"
+        job in setOf("Writer", "Screenplay", "Story", "Novel", "Author", "Teleplay", "Original Story", "Characters", "Script", "Original Concept") -> "Writers"
+        job.contains("Producer", true) && !job.contains("Associate", true) && !job.contains("Co-", true) && !job.contains("Line", true) -> "Producers"
+        job in setOf("Original Music Composer", "Music", "Composer", "Theme Song Performance", "Songs", "Music Supervisor") -> "Music"
+        job in setOf("Director of Photography", "Cinematography") -> "Cinematography"
+        job in setOf("Editor", "Film Editor") -> "Editing"
+        job in setOf("Production Design", "Art Direction", "Character Designer", "Character Design", "Animation Director", "Chief Animation Director", "Original Character Design", "Key Animation") -> "Design and animation"
+        else -> null
+    }
+
+    /** The `crew` array of a film's credits, a series' aggregate credits (jobs with episode counts) or a season's credits */
+    private fun parseCrew(crew: JSONArray?): List<TmdbCrew> = if (crew == null) emptyList() else (0 until crew.length()).map { crew.getJSONObject(it) }.flatMap { o ->
+        // a series lists the jobs of a person under "jobs" (with the number of episodes), a film has the one "job"
+        val jobs = o.optJSONArray("jobs")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) }.sortedByDescending { it.optInt("episode_count") }.map { it.optString("job") } }
+            ?: listOf(o.optString("job"))
+        jobs.filter { it.isNotBlank() }.mapNotNull { job -> crewGroup(job)?.let { g -> TmdbCrew(o.optInt("id"), o.optString("name"), job, g, poster(o.optString("profile_path"), "w185")) } }
+    }.filter { it.id > 0 && it.name.isNotBlank() }
+        // a person with two jobs under the same heading is shown once, with both jobs
+        .groupBy { it.group to it.id }.values.map { same -> TmdbCrew(same[0].id, same[0].name, same.map { it.job }.distinct().take(2).joinToString(", "), same[0].group, same.firstNotNullOfOrNull { it.image }) }
+        .groupBy { it.group }.flatMap { (_, people) -> people.take(12) }
+
+    private fun parseCast(arr: JSONArray?, limit: Int): List<TmdbPerson> = if (arr == null) emptyList() else (0 until arr.length()).map { arr.getJSONObject(it) }.take(limit).map {
+        TmdbPerson(it.optInt("id"), it.optString("name"), (it.optString("character").ifBlank { it.optJSONArray("roles")?.optJSONObject(0)?.optString("character").orEmpty() }).takeIf { s -> s.isNotBlank() }, poster(it.optString("profile_path"), "w185"))
+    }
+
+    /** A title by its TMDB id (the full cast page opens with the id of the title page it came from) */
+    suspend fun byId(id: Int, movie: Boolean): TmdbInfo? = load(id, movie)
+
+    /** The cast and crew of one season of a series (season 0: the specials) */
+    suspend fun seasonCredits(tvId: Int, season: Int): Pair<List<TmdbPerson>, List<TmdbCrew>>? {
+        val j = json("/tv/$tvId/season/$season/credits") ?: return null
+        return parseCast(j.optJSONArray("cast"), 60) to parseCrew(j.optJSONArray("crew"))
+    }
+
     private suspend fun load(id: Int, movie: Boolean): TmdbInfo? {
         val kind = if (movie) "movie" else "tv"
         val append = (if (movie) "credits" else "aggregate_credits") + ",images,videos,reviews,recommendations,external_ids,watch/providers," + if (movie) "release_dates" else "content_ratings"
@@ -212,6 +255,7 @@ object Tmdb {
         val cast = credits?.optJSONArray("cast")?.let { a ->
             (0 until a.length()).map { a.getJSONObject(it) }.take(40).map { TmdbPerson(it.optInt("id"), it.optString("name"), (it.optString("character").ifBlank { it.optJSONArray("roles")?.optJSONObject(0)?.optString("character").orEmpty() }).takeIf { s -> s.isNotBlank() }, poster(it.optString("profile_path"), "w185")) }
         }.orEmpty()
+        val crewList = parseCrew(crew)
         val images = j.optJSONObject("images")
         val logo = images?.optJSONArray("logos")?.let { a ->
             val all = (0 until a.length()).map { a.getJSONObject(it) }
@@ -263,6 +307,16 @@ object Tmdb {
             collection = col, imdbId = j.optJSONObject("external_ids")?.optString("imdb_id")?.takeIf { it.startsWith("tt") } ?: j.optString("imdb_id").takeIf { it.startsWith("tt") },
             seasons = j.optInt("number_of_seasons").takeIf { it > 0 }, episodes = j.optInt("number_of_episodes").takeIf { it > 0 },
             networks = idNames(j.optJSONArray("networks")),
+            crew = crewList,
+            country = (j.optJSONArray("origin_country")?.optString(0)?.takeIf { it.isNotBlank() } ?: j.optJSONArray("production_countries")?.optJSONObject(0)?.optString("iso_3166_1")?.takeIf { it.isNotBlank() })
+                ?.let { java.util.Locale("", it).getDisplayCountry(java.util.Locale.ENGLISH).takeIf { n -> n.isNotBlank() } },
+            language = j.optString("original_language").takeIf { it.isNotBlank() }?.let { java.util.Locale(it).getDisplayLanguage(java.util.Locale.ENGLISH).takeIf { n -> n.isNotBlank() } },
+            budget = j.optLong("budget").takeIf { it > 0 }, revenue = j.optLong("revenue").takeIf { it > 0 },
+            logos = HashMap<Int, String>().also { m ->
+                for (key in listOf("production_companies", "networks")) j.optJSONArray(key)?.let { arr ->
+                    for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { o -> poster(o.optString("logo_path"), "w185")?.let { m[o.optInt("id")] = it } }
+                }
+            },
         )
     }
 
