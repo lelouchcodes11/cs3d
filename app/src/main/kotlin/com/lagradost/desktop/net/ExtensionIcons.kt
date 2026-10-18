@@ -50,7 +50,10 @@ object ExtensionIcons {
         }
     }
 
+    private var lastRefresh = 0L
+
     private fun refreshInstalled() {
+        lastRefresh = System.currentTimeMillis()
         runCatching {
             for (p in PluginManager.getPluginsOnline()) p.url?.let { fileToUrl[p.filePath] = it }
         }
@@ -61,7 +64,17 @@ object ExtensionIcons {
         version.intValue // read: redraws when icons arrive
         val api = APIHolder.getApiFromNameNull(apiName) ?: return null
         val plugin = api.sourcePlugin ?: return null
-        val url = fileToUrl[plugin] ?: run { refreshInstalled(); fileToUrl[plugin] } ?: return null
+        return iconForFile(plugin)
+    }
+
+    /**
+     * The icon url of the installed plugin file [filePath]. The Installed page of the extensions lists the plugins from what is on the disk,
+     * which has no icon; the repositories know it by the address the plugin was downloaded from.
+     */
+    fun iconForFile(filePath: String): String? {
+        version.intValue // read: redraws when icons arrive
+        // a plugin that is not from a repository (a local file) stays unknown: ask the plugin list again at most every 3 s, not at every draw
+        val url = fileToUrl[filePath] ?: run { if (System.currentTimeMillis() - lastRefresh > 3_000) refreshInstalled(); fileToUrl[filePath] } ?: return null
         return byUrl[url]?.let { sharper(it) }
     }
 

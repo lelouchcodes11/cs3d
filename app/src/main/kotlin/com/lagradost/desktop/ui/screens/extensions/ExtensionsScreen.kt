@@ -100,6 +100,8 @@ fun ExtensionsScreen() {
     LaunchedEffect(Unit) {
         ext.loadRepositories()
         ext.loadStats()
+        // the icons of the installed plugins (the Installed page has none of its own)
+        com.lagradost.desktop.net.ExtensionIcons.start()
     }
     val repoList = repos.orEmpty()
     LaunchedEffect(repoList.size) {
@@ -308,7 +310,10 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.size(52.dp).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
                 Icon(Icons.Extensions, size = 22.dp, tint = c.textTertiary)
-                p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")?.let { RemoteImage(it, null, null, Modifier.size(52.dp), ContentScale.Crop) }
+                // the Installed page lists what is on the disk, which has no icon: the repositories' icon of the same plugin is used
+                val iconUrl = p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")
+                    ?: if (local) com.lagradost.desktop.net.ExtensionIcons.iconForFile(p.url) else null
+                iconUrl?.let { RemoteImage(it, null, null, Modifier.size(52.dp), ContentScale.Crop) }
             }
             Column(Modifier.weight(1f)) {
                 FText(p.name, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)

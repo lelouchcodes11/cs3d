@@ -1273,6 +1273,13 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
     ) {
         Row(Modifier.fillMaxWidth().padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
             FText("Episodes", Modifier.weight(1f), style = Fluent.type.subtitle, color = Color.White)
+            // the stills of the episodes ahead are blurred while spoilers are hidden: the list used to look as if its data was missing
+            IconButton(
+                if (Appearance.hideSpoilers) Icons.Hide else Icons.Eye,
+                { Appearance.hideSpoilers = !Appearance.hideSpoilers; Appearance.save() },
+                tooltip = if (Appearance.hideSpoilers) "Spoilers hidden: click to show the episodes ahead" else "Spoilers shown: click to hide the episodes ahead",
+                tint = Color.White,
+            )
             IconButton(Icons.Close, onClose, tooltip = "Close", tint = Color.White)
         }
         val currentIdx = items.indexOfFirst { it.current }
@@ -1320,7 +1327,8 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
                             if (ep.season != null) append("S${ep.season} · ")
                             append("Episode ${ep.episode}")
                         }, style = Fluent.type.caption, color = Color(0xCCFFFFFF), maxLines = 1)
-                        val title = if (isCovered) "Episode ${ep.episode}" else (ep.name ?: "Episode ${ep.episode}")
+                        // the title of a covered episode stays (Settings > Appearance > "Hide the titles as well" covers it too)
+                        val title = if (isCovered && Appearance.hideSpoilerTitles) "Episode ${ep.episode}" else ep.name?.takeIf { it.isNotBlank() } ?: "Episode ${ep.episode}"
                         FText(title, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 2)
                     }
                     // a spoiler that was shown can be covered again

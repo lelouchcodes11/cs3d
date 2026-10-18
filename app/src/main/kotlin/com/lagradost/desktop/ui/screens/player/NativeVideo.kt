@@ -248,6 +248,7 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
     // timer is only a safety net.
     LaunchedEffect(canvas) {
         var lastX = Int.MIN_VALUE; var lastY = 0; var lastW = 0; var lastH = 0
+        val openedAt = System.currentTimeMillis()
         val wake = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
         val listener = object : java.awt.event.ComponentAdapter() {
             override fun componentMoved(e: java.awt.event.ComponentEvent?) { wake.trySend(Unit) }
@@ -264,13 +265,34 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
                         if (at.x != lastX || at.y != lastY) { state.position = WindowPosition(at.x.dp, at.y.dp); lastX = at.x; lastY = at.y }
                         if (canvas.width != lastW || canvas.height != lastH) { state.size = DpSize(canvas.width.dp, canvas.height.dp); lastW = canvas.width; lastH = canvas.height }
                         // in place: let the window take its bounds, then show it
-                        if (!placed && lastW > 0 && lastH > 0) { delay(80); placed = true }
+                        if (!placed && lastW > 0 && lastH > 0) {
+                            delay(80); placed = true
+                            android.util.Log.i("NativeVideo", "controls window placed ${System.currentTimeMillis() - openedAt} ms after the page opened (${lastW}x$lastH at $lastX,$lastY)")
+                        }
                         // the window itself must have the bounds of the video: after a maximise, a snap or a move to another display the
                         // state said the right thing and the window kept its old size (the controls then covered only a part of the picture)
                         if (placed) shown[0]?.let { w ->
                             if (lastW > 0 && lastH > 0 && (w.x != at.x || w.y != at.y || w.width != lastW || w.height != lastH)) w.setBounds(at.x, at.y, lastW, lastH)
                         }
                         NativeVideo.fitChildren()
+                    }
+                    // Never leave the page without its controls: a controls window that is still not placed after 1.5 s (the video panel is not
+                    // shown or has no size yet) is put over the app window's client area, and the loop above corrects it as soon as the video's
+                    // own place is known. Without it the video played with nothing to click and no title bar, and only the taskbar could end it.
+                    if (!placed && System.currentTimeMillis() - openedAt > 1_500) {
+                        val top = javax.swing.SwingUtilities.getWindowAncestor(canvas)
+                        if (top != null && top.isShowing && top.width > 0 && top.height > 0) {
+                            val origin = top.locationOnScreen
+                            val ins = top.insets
+                            val x = origin.x + ins.left; val y = origin.y + ins.top
+                            val w = top.width - ins.left - ins.right; val h = top.height - ins.top - ins.bottom
+                            if (w > 0 && h > 0) {
+                                state.position = WindowPosition(x.dp, y.dp); state.size = DpSize(w.dp, h.dp)
+                                lastX = x; lastY = y; lastW = w; lastH = h
+                                android.util.Log.w("NativeVideo", "controls window not placed after 1.5 s (canvas showing=${canvas.isShowing}, size=${canvas.width}x${canvas.height}): placed over the window ${w}x$h at $x,$y")
+                                delay(80); placed = true
+                            }
+                        }
                     }
                 }
                 // a drag sends many events: look at most every 8 ms; with none, every quarter of a second (every frame until the window is placed)
