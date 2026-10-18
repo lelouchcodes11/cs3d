@@ -200,8 +200,19 @@ object BackupUtils {
         )
     }
 
+    /** Restoring a backup file is the user's own bulk change: the guard against sync wipes (WipeGuard) holds nothing back in it */
     @WorkerThread
     fun restore(
+        context: Context?,
+        backupFile: BackupFile,
+        restoreSettings: Boolean,
+        restoreDataStore: Boolean,
+    ) {
+        com.lagradost.desktop.runtime.WipeGuard.allow { restoreNow(context, backupFile, restoreSettings, restoreDataStore) }
+    }
+
+    @WorkerThread
+    private fun restoreNow(
         context: Context?,
         backupFile: BackupFile,
         restoreSettings: Boolean,

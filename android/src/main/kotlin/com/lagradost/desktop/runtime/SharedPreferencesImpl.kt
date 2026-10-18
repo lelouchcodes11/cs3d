@@ -40,6 +40,9 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
     private val pendingDel = HashSet<String>()
     private var pendingClear = false
 
+    // the deletions of the last minutes, for the guard against a bulk wipe
+    private val removals = WipeGuard.Window()
+
     // the file as this process last read or wrote it: another process writing it shows as a difference
     @Volatile
     private var diskStamp = NO_FILE
@@ -432,9 +435,29 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
         private fun commitToMemory(): List<String?> {
             ensureLoaded()
             val changed = ArrayList<String?>()
+            var kept = 0
+            var total = 0
             lock.write {
                 synchronized(this) {
+                    // what this change would take away; the guard (WipeGuard) holds back a bulk deletion that is not the user's own
+                    var keep: Set<String> = emptySet()
+                    var restore: Map<String, Any?> = emptyMap()
+                    if (WipeGuard.enabled && !WipeGuard.allowed()) {
+                        val wouldRemove = HashSet<String>()
+                        if (clear) wouldRemove.addAll(map.keys)
+                        for (k in removed) if (map.containsKey(k)) wouldRemove.add(k)
+                        for ((k, v) in modified) if (v == null && map.containsKey(k)) wouldRemove.add(k)
+                        // a key that is put again is replaced, not removed
+                        for ((k, v) in modified) if (v != null) wouldRemove.remove(k)
+                        if (wouldRemove.isNotEmpty()) {
+                            total = map.size
+                            val verdict = removals.decide(System.currentTimeMillis(), map, wouldRemove)
+                            keep = verdict.keep
+                            restore = verdict.restore
+                        }
+                    }
                     if (clear) {
+                        val survivors = if (keep.isEmpty()) emptyMap() else map.filterKeys { it in keep }
                         if (map.isNotEmpty()) {
                             map.clear()
                             changed.add(null)
@@ -442,9 +465,12 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
                         pendingClear = true
                         pendingPut.clear()
                         pendingDel.clear()
+                        for ((k, v) in survivors) if (v != null) { map[k] = v; pendingPut[k] = v }
+                        kept += survivors.size
                         clear = false
                     }
                     for (k in removed) {
+                        if (k in keep) { if (map.containsKey(k)) kept++; continue }
                         if (map.containsKey(k)) {
                             map.remove(k)
                             changed.add(k)
@@ -455,6 +481,7 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
                     for ((k, v) in modified) {
                         // Like Android, putting null removes the key
                         if (v == null) {
+                            if (k in keep) { kept++; continue }
                             if (map.containsKey(k)) {
                                 map.remove(k)
                                 changed.add(k)
@@ -468,10 +495,21 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
                             pendingDel.remove(k)
                         }
                     }
+                    // what the same bulk deletion took out a moment ago comes back
+                    for ((k, v) in restore) {
+                        if (v != null && !map.containsKey(k)) {
+                            map[k] = v
+                            changed.add(k)
+                            pendingPut[k] = v
+                            pendingDel.remove(k)
+                            kept++
+                        }
+                    }
                     modified.clear()
                     removed.clear()
                 }
             }
+            if (kept > 0) WipeGuard.report(file.nameWithoutExtension, kept, total.coerceAtLeast(kept))
             return changed
         }
 

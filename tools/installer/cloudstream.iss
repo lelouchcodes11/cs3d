@@ -1,5 +1,5 @@
 ; Inno Setup script: a per-user installer that does not use Windows Installer to install (msiexec is only used to REMOVE an earlier MSI copy).
-; Build: ISCC.exe /DAppVersion=1.0.4 /DPayload="<dir of the app image>" /DOutDir="<out dir>" tools\installer\cloudstream.iss
+; Build: ISCC.exe /DAppVersion=1.0.5 /DPayload="<dir of the app image>" /DOutDir="<out dir>" tools\installer\cloudstream.iss
 ; The payload is the same image the MSI is made from (app\build\installer\CloudStream after ./gradlew :app:installerMsi).
 ; Data stays in %APPDATA%\CloudStream: it is never part of the payload and never removed by the uninstaller.
 ;
@@ -14,7 +14,7 @@
 ;   /DAppIdValue=  /DAppNameValue=  /DMsiUpgradeCode=  /DAppExe=  /DShortcutName=  /DLegacyDataTarget=
 
 #ifndef AppVersion
-  #define AppVersion "1.0.4"
+  #define AppVersion "1.0.5"
 #endif
 #ifndef Payload
   #define Payload "..\..\app\build\installer\CloudStream"

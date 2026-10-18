@@ -322,6 +322,18 @@ object DevServer {
                     + "lastActivePopup=${userDbg.GetLastActivePopup(hwnd.pointer)} overlay=$overlay overlayVisible=${overlay?.let { u.IsWindowVisible(it) }} overlayEx=${exStyle(overlay)}\n"
                     + "owner of overlay=${overlay?.let { userDbg.GetWindow(it.pointer, 4) }}" + "\nmainEnabled=${u.IsWindowEnabled(hwnd)} overlayModality=${(java.awt.Window.getWindows().firstOrNull { it is java.awt.Dialog && it.isShowing && it.isUndecorated } as? java.awt.Dialog)?.modalityType}")
             }
+            "/wipe" -> {
+                // dev: does to the data store what a sync extension did on 14, 16 and 18 Oct, to see that WipeGuard holds: /wipe?mode=clear|singles|plugins
+                val prefs = com.lagradost.desktop.runtime.AndroidRuntime.context.getSharedPreferences("rebuild_preference", 0)
+                val before = prefs.all.size
+                when (q["mode"] ?: "clear") {
+                    "singles" -> for (k in prefs.all.keys.toList()) prefs.edit().remove(k).apply()
+                    "plugins" -> prefs.edit().remove("PLUGINS_KEY").remove("REPOSITORIES_KEY").apply()
+                    else -> prefs.edit().clear().apply()
+                }
+                Thread.sleep(600)
+                ok(ex, "keys before=$before after=${prefs.all.size} PLUGINS_KEY=${prefs.contains("PLUGINS_KEY")} REPOSITORIES_KEY=${prefs.contains("REPOSITORIES_KEY")}")
+            }
             "/profileeditor" -> {
                 // dev: the "Edit profile" window of the first profile (or a made-up one); /profileeditor?sheet=Characters|Anime|Movies shows that group big instead
                 if (q["sheet"] != null) {

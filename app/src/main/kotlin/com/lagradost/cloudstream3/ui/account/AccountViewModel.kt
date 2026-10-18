@@ -70,7 +70,7 @@ class AccountViewModel : ViewModel() {
         account: DataStoreHelper.Account,
         context: Context
     ) {
-        removeKeys(account.keyIndex.toString())
+        com.lagradost.desktop.runtime.WipeGuard.allow { removeKeys(account.keyIndex.toString()) }
 
         val currentAccounts = getAccounts(context).toMutableList()
 
@@ -126,4 +126,4 @@ class AccountViewModel : ViewModel() {
             MainActivity.reloadAccountEvent(true)
         }
     }
-}
+}

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5
+
+- **Your data can no longer be wiped by a sync extension.** After an update some people found their extensions, repositories, search history and settings gone. The update itself does not touch your data (it lives in `%APPDATA%\CloudStream`); the cause is a sync extension (Ultima): when another device had deleted its copy once, the cloud keeps that "deleted" mark, and the next device that syncs deletes its own data to match, and passes the deletion on to the others. The app now stops it where the data is stored: the extension list and the repositories cannot be removed by an extension, and a bulk deletion (40 % of a file or at least 25 keys within two minutes, in one go or one key at a time) is held back and what had already gone is put back, while new data from the sync is still merged in. A notice says "A sync extension tried to delete ... They were kept", and `logs/app.log` names the caller. Your own "Clear history", "Delete profile", "Clear search history" and restoring a backup still work as before.
+
 ## 1.0.4
 
 **Round 11 (18 October)**

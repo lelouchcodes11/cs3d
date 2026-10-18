@@ -563,6 +563,8 @@ object UpdateCheck {
             DesktopPlatform.openExternalBrowser(release.pageUrl)
             return
         }
+        // one more copy of the settings, history and extension list right before anything is replaced (and the one outside the data folder)
+        runCatching { com.lagradost.desktop.platform.PrefsBackup.snapshotNow("before updating to ${release.label}") }
         val dir = updateDir()
         val log = File(dir, "update.log")
         fun cmdPath(f: String) = f.replace("%", "%%")

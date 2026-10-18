@@ -588,7 +588,7 @@ class SearchFragment : BaseFragment<FragmentSearchBinding>(
                             DialogInterface.OnClickListener { _, which ->
                                 when (which) {
                                     DialogInterface.BUTTON_POSITIVE -> {
-                                        removeKeys("$currentAccount/$SEARCH_HISTORY_KEY")
+                                        com.lagradost.desktop.runtime.WipeGuard.allow { removeKeys("$currentAccount/$SEARCH_HISTORY_KEY") }
                                         searchViewModel.updateHistory()
                                     }
 

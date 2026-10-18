@@ -173,6 +173,10 @@ object DesktopBootstrap {
         act.startFragmentHost()
         DesktopLifecycle.install(act)
         com.lagradost.desktop.platform.PrefsBackup.maybeBackup("start")
+        // a sync extension that tries to empty the data store is stopped in SharedPreferencesImpl (WipeGuard); the person is told
+        com.lagradost.desktop.runtime.WipeGuard.onBlocked = { _, kept, _ ->
+            runCatching { com.lagradost.desktop.ui.Toasts.show("A sync extension tried to delete $kept of your saved items (extensions, library, history). They were kept.", false) }
+        }
         return act
     }
 

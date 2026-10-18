@@ -530,7 +530,8 @@ object DataStoreHelper {
 
     fun deleteAllResumeStateIds() {
         val folder = "$currentAccount/$RESULT_RESUME_WATCHING"
-        removeKeys(folder)
+        // the user's own "clear history": a bulk deletion the guard against sync wipes lets through
+        com.lagradost.desktop.runtime.WipeGuard.allow { removeKeys(folder) }
     }
 
     fun deleteBookmarkedData(id: Int?) {
