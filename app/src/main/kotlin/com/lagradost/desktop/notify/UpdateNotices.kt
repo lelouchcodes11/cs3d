@@ -154,7 +154,7 @@ object UpdateNotices {
         if (!inFront) {
             val n = android.app.Notification()
             n.title = saved.name
-            n.text = "Episode $episode is out"
+            n.text = com.lagradost.desktop.i18n.Tr.t("Episode $episode is out")
             Notifications.post("subscription", id, n)
         }
     }

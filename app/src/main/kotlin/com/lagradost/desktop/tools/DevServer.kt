@@ -1420,6 +1420,23 @@ object DevServer {
                     Runtime.getRuntime().exit(0)
                 }.start()
             }
+            "/i18n" -> {
+                // dev: the texts shown without a translation in the language of the app (/i18n), or switch the language first (/i18n?lang=tr)
+                q["lang"]?.let { tag -> onEdt { com.lagradost.cloudstream3.CommonActivity.setLocale(com.lagradost.desktop.DesktopBootstrap.activity, tag) } }
+                // &res=default_account: what the Android string of that name says in this language
+                q["res"]?.let { name ->
+                    if (name == "@account") {
+                        val ds = com.lagradost.cloudstream3.utils.DataStoreHelper
+                        return ok(ex, "default=${ds.getDefaultAccount(com.lagradost.desktop.DesktopBootstrap.activity).name} current=${ds.getCurrentAccount()?.name} key=${ds.selectedKeyIndex} accounts=${ds.accounts.map { it.keyIndex.toString() + ':' + it.name }}")
+                    }
+                    val text = runCatching {
+                        val id = com.lagradost.cloudstream3.R.string::class.java.getField(name).getInt(null)
+                        com.lagradost.desktop.DesktopBootstrap.activity.getString(id)
+                    }.getOrElse { "error: $it" }
+                    return ok(ex, "$name = $text")
+                }
+                ok(ex, com.lagradost.desktop.i18n.Tr.code + " rtl=" + com.lagradost.desktop.i18n.Tr.rtl + "\n" + com.lagradost.desktop.i18n.Tr.misses.joinToString("\n"))
+            }
             "/quit" -> {
                 ok(ex)
                 EventQueue.invokeLater {

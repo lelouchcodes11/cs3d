@@ -38,7 +38,7 @@ object Shortcuts {
         "E" to "Episode list",
         "," to "Slower (0.25x steps)",
         "." to "Faster (0.25x steps)",
-        "Home" to "Back to the start",
+        "Home200B" to "Back to the start",
         "0 – 9" to "Jump to 0 % … 90 % of the video",
         "F1" to "This list",
     )

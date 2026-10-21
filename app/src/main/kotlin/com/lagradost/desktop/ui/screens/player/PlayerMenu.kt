@@ -327,7 +327,7 @@ private fun TracksPage(s: PlayerSession) {
 
 @Composable
 private fun SectionLabel(text: String) {
-    FText(text.uppercase(), Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp), style = Fluent.type.caption.copy(letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold), color = MenuColors.tertiary, maxLines = 1)
+    FText(com.lagradost.desktop.i18n.Tr.upper(text), Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp), style = Fluent.type.caption.copy(letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold), color = MenuColors.tertiary, maxLines = 1)
 }
 
 @Composable

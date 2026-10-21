@@ -88,6 +88,8 @@ class Upstream(list: List<Preference>) {
 
 /** Every word of [query] is somewhere in the item (or in its group and page names) */
 fun SettingItem.matches(words: List<String>, groupTitle: String, pageTitle: String): Boolean {
-    val hay = "$title ${about.orEmpty()} $keywords $groupTitle $pageTitle".lowercase()
+    // what the page shows in the language of the app is searched as well as the English text and the keywords
+    val tr = com.lagradost.desktop.i18n.Tr
+    val hay = tr.lower("$title ${about.orEmpty()} $keywords $groupTitle $pageTitle ${tr.t(title)} ${tr.t(about.orEmpty())} ${tr.t(groupTitle)} ${tr.t(pageTitle)}")
     return words.all { it in hay }
 }

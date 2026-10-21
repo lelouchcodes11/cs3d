@@ -228,7 +228,15 @@ fun HomeScreen() {
                                 val ranked = chart != null && !row.list.isHorizontalImages
                                 com.lagradost.desktop.ui.fluent.RichSectionHeader(
                                     name, Modifier.padding(horizontal = gutter),
-                                    onSeeAll = { Navigator.go(Route.Section(name, row.list.list)) },
+                                    onSeeAll = {
+                                        // the row's own pages go on in the full list: the next page is asked for as the list is scrolled to its end
+                                        val more: (suspend () -> Pair<List<SearchResponse>, Boolean>)? = if (!row.hasNext) null else ({
+                                            val expanded = vm.expandAndReturn(name)
+                                            // null: the row is being extended by the shelf at this moment; the list so far, asked again shortly
+                                            (expanded?.list?.list ?: row.list.list).toList() to (expanded?.hasNext ?: true)
+                                        })
+                                        Navigator.go(Route.Section(name, row.list.list.toList(), more))
+                                    },
                                 )
                                 Box(Modifier.height(12.dp))
                                 val landscape = row.list.isHorizontalImages

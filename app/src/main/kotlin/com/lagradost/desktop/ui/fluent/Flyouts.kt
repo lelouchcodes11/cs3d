@@ -369,6 +369,8 @@ object Overlays {
         val onSecondary: () -> Unit = {},
         val onClose: () -> Unit = {},
         val width: Dp = 440.dp,
+        /** The most the body may be tall (a list that scrolls inside it); it is also kept inside the window */
+        val bodyMax: Dp = 520.dp,
         /** A click on the dimmed area around the card closes it (menus that apply each choice at once) */
         val dismissOnOutside: Boolean = false,
         /** No card: the body fills the window over the dimmed area (a picture viewer); Esc and the body's own buttons close it */
@@ -414,7 +416,7 @@ fun DialogLayer() {
         // the card rises and grows into place
         val appear = remember(shown) { androidx.compose.animation.core.Animatable(0f) }
         androidx.compose.runtime.LaunchedEffect(shown) { appear.animateTo(1f, FluentMotion.tweenIn(180)) }
-        Box(
+        androidx.compose.foundation.layout.BoxWithConstraints(
             Modifier.fillMaxSize().background(c.scrim.copy(alpha = (c.scrim.alpha * 1.4f).coerceAtMost(0.75f))).pointerInput(shown) {
                 awaitPointerEventScope {
                     while (true) {
@@ -428,21 +430,26 @@ fun DialogLayer() {
             },
             contentAlignment = Alignment.Center,
         ) {
+            val windowWidth = maxWidth
+            val windowHeight = maxHeight
             if (shown != null && shown.fullscreen) Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }) { shown.body { Overlays.dismiss(shown) } }
-            else if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.97f + 0.03f * a; scaleX = s; scaleY = s }.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) { ContentDialogCard(shown) }
+            else if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.97f + 0.03f * a; scaleX = s; scaleY = s }.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) { ContentDialogCard(shown, windowWidth, windowHeight) }
         }
     }
 }
 
 @Composable
-private fun ContentDialogCard(d: Overlays.Dialog) {
+private fun ContentDialogCard(d: Overlays.Dialog, windowWidth: Dp, windowHeight: Dp) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.overlay)
     val dismiss = { Overlays.dismiss(d) }
+    // never wider than the window, and a list never taller than what is left of it under the title and above the buttons
+    val width = minOf(d.width, (windowWidth - 48.dp).coerceAtLeast(280.dp))
+    val bodyMax = minOf(d.bodyMax, (windowHeight - 250.dp).coerceAtLeast(200.dp))
     Column(
         Modifier
             .padding(24.dp)
-            .width(d.width)
+            .width(width)
             .shadow(48.dp, shape, clip = false)
             .background(c.flyout, shape)
             .hairBorder(if (c.dark) Color(0x66757575) else Color(0x33000000), shape)
@@ -453,7 +460,7 @@ private fun ContentDialogCard(d: Overlays.Dialog) {
                 FText(d.title, style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 3)
                 Box(Modifier.height(14.dp))
             }
-            Box(Modifier.heightIn(max = 520.dp)) { d.body(dismiss) }
+            Box(Modifier.heightIn(max = bodyMax)) { d.body(dismiss) }
         }
         if (d.primary != null || d.secondary != null || d.close != null) {
             Row(

@@ -124,7 +124,8 @@ fun main(args: Array<String>) {
     // free memory that is paging, which looks like the window hanging. 160 MB holds the pictures of several screens.
     runCatching {
         coil3.SingletonImageLoader.setSafe { context ->
-            coil3.ImageLoader.Builder(context).memoryCache { coil3.memory.MemoryCache.Builder().maxSizeBytes(160L * 1024 * 1024).build() }.build()
+            coil3.ImageLoader.Builder(context).memoryCache { coil3.memory.MemoryCache.Builder().maxSizeBytes(160L * 1024 * 1024).build() }
+                .components { add(com.lagradost.desktop.ui.components.ImageQuality.upgrade); add(com.lagradost.desktop.ui.components.ImageQuality.decoder) }.build()
         }
     }
     // a native video window (see NativeVideo) is a window of its own: Compose must not copy the Swing paint of it

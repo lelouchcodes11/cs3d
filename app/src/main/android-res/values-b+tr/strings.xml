@@ -763,4 +763,27 @@
     <string name="start_paused_settings_des">Kaynak seçerken zorlanmayı azalt</string>
     <string name="subs_edge">Kenar</string>
     <string name="background">Arka plan</string>
+    <string name="compressor">Sıkıştırıcı</string>
+    <string name="compressor_setting">Dinamik Aralık Sıkıştırıcı</string>
+    <string name="compressor_setting_summary">Oynatıcıda sıkıştırıcı denetimlerini göster (yüksek ve kısık sesi dengelemeye yardım eder)</string>
+    <string name="compressor_on">Açık</string>
+    <string name="compressor_on_format">Açık · %1$d dB / +%2$d dB</string>
+    <string name="compressor_off">Kapalı</string>
+    <string name="compressor_preset_light">Hafif</string>
+    <string name="compressor_preset_dialog">Diyalog Güçlendirme</string>
+    <string name="compressor_preset_heavy">Güçlü</string>
+    <string name="compressor_threshold_label">Eşik: %d dB</string>
+    <string name="compressor_makeup_label">Kazanç Telafisi: +%d dB</string>
+    <string name="compressor_threshold_hint">%d dB\'den yüksek sesler kısılır</string>
+    <string name="compressor_makeup_hint">Genel ses düzeyini +%d dB artırır</string>
+    <string name="edit_profile_image_url">URL</string>
+    <string name="edit_profile_image_picker">Resim seçici</string>
+    <string name="edit_profile_image_default">Varsayılan resimler</string>
+    <string name="profile_stream">Yayın</string>
+    <string name="auto_status_sync_title">Liste durumunu otomatik güncelle</string>
+    <string name="auto_status_sync_des">Listelerinizden birindeki bir başlığı (Planlandı, Beklemede, Bırakıldı) başlatınca İzleniyor\'a, son bölümü bitince Tamamlandı\'ya taşır; giriş yaptığınız hizmetlerde</string>
+    <string name="auto_status_sync_all_title">Oynattığım her başlığı ekle</string>
+    <string name="auto_status_sync_all_des">Henüz hiçbir listede olmayan başlıkları da başlatınca İzleniyor\'a koyar. Kapalıyken: yalnızca zaten bir listede olan başlıklara dokunulur.</string>
+    <string name="cloudflare_solvers_title">Cloudflare denetimlerini geç</string>
+    <string name="cloudflare_solvers_des">Bazı siteler tarayıcıdan bot olmadığını kanıtlamasını ister; uygulama bunun için bir sayfa açar. Kapalıyken: hiçbir sayfa açılmaz ve bu siteler yüklenmez.</string>
 </resources>

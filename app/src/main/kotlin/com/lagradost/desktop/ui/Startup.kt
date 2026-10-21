@@ -73,7 +73,7 @@ fun StartupReveal(content: @Composable () -> Unit) {
         return
     }
     val c = Fluent.colors
-    val logo = remember { runCatching { BitmapPainter(Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")!!.use { loadImageBitmap(it) }) }.getOrNull() }
+    val logo = remember { runCatching { BitmapPainter(Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")!!.use { loadImageBitmap(it) }, filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium) }.getOrNull() }
     val leave = remember { Animatable(0f) } // 0 -> 1: the loader fades away, the app settles in
     var gone by remember { mutableStateOf(false) }
     var showLine by remember { mutableStateOf(false) }

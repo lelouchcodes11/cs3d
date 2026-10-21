@@ -104,7 +104,7 @@ fun UiImageView(
 
 
 private val appLogo by lazy {
-    runCatching { androidx.compose.ui.graphics.painter.BitmapPainter(Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")!!.use { androidx.compose.ui.res.loadImageBitmap(it) }) }.getOrNull()
+    runCatching { androidx.compose.ui.graphics.painter.BitmapPainter(Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")!!.use { androidx.compose.ui.res.loadImageBitmap(it) }, filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium) }.getOrNull()
 }
 
 /** The app's logo as a painter (null if the resource is missing) */

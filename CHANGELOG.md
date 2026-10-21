@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+**Arabic and Turkish, complete**
+- **The new screens were English whatever the app language was.** Home, Library, Explore, Schedule, Stats, Extensions, the title page, the player's menus and buttons, the settings pages and their texts, dialogs and messages had no translation system at all: only the older Android parts changed language, so a page was half Turkish, half English. All of them (about 1,400 texts) are now translated into **Arabic and Turkish**, with the right plural forms (Arabic has six) and word order, genres, crew jobs, countries and theme names included. Other languages show English there until a column is added to `i18n/strings.tsv` (how: `tools/i18n/README.md`).
+- **Arabic is laid out from the right**: pages, rows, menus and dialogs are mirrored; arrows and chevrons turn round; the tab bars and the page list at the top keep working (the highlighted tab is the right one); sliders fill from the right. The video player keeps its usual left-to-right time line and buttons. Lines follow the direction of their own first letter, so an English title inside an Arabic page keeps its "!" and "?" at its end. Numbers are written 0 to 9 everywhere (Arabic used to mix in Arabic-Indic digits).
+- **Turkish capitals**: "i" becomes "İ" in headings and day names. The settings search finds texts in the language of the app as well as the English ones.
+- The 23 Android texts that were never translated (compressor, profile pictures, list status, Cloudflare) are translated in both languages; the legal notice in About is translated.
+- The tray menu and the new-episode notification follow the app language.
+
+**Sharper pictures everywhere**
+- **Posters, banners, icons and logos were drawn pixelated.** The picture loader shrank every large image by keeping one pixel in several (a 2000 × 3000 poster in a 340 px card), which left stair-stepped edges and white speckles, and stretched small ones into a mosaic. Pictures are now reduced with a proper filter (box average, then bicubic) and enlarged smoothly. This covers cards, the Home banner, title pages, extension icons, cast photos and episode stills.
+- **Small pictures ask for the larger size.** When an extension sends the small version of a TMDB picture (185 px wide for a card that is 340 px on a 150 % screen) or of a Stremio poster, the address is changed to the size the place needs; if that one does not exist the original is used.
+- The app's own logo (title bar, start screen, first-run page) is reduced with mip-mapped filtering, too.
+
+**Lists**
+- **See all shows every page.** A catalog (Popular, Top rated ...) or a search result opened with *View all* showed only the first page (20 or 30 titles). It now asks the extension for the next pages as you reach the end of the list ("210+ titles", a progress ring at the foot) until the extension has no more.
+- **Play in mpv / VLC / Copy link ... : a real list of sources.** The list was a narrow box with one cut-off line per source. It is wide now, shows the whole name (two lines), the site, the kind of stream (HLS, DASH, direct file, torrent), the size, the seeders, the host and the quality, can be searched and sorted (Best, Quality, Size, Seeders) like the player's own list. Other choice lists are wider with two-line rows, and no dialog is wider or taller than the window.
+
 ## 1.0.6
 
 **Title pages**

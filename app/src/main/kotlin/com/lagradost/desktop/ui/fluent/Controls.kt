@@ -111,10 +111,18 @@ fun FText(
     textAlign: TextAlign? = null,
     softWrap: Boolean = true,
 ) {
+    // a line follows the direction of its own first letter (an English title inside an Arabic page keeps its "!" at its end); in a right-to-left
+    // page a line without an alignment of its own is flush right, so English and Arabic lines stand on the same edge
+    val rtlPage = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     BasicText(
-        text,
+        // the screens are written in English; this is the one place where their words become the language of the app
+        com.lagradost.desktop.i18n.Tr.t(text),
         modifier,
-        style = style.copy(color = color, textAlign = textAlign ?: TextAlign.Unspecified),
+        style = style.copy(
+            color = color,
+            textAlign = textAlign ?: if (rtlPage && style.textAlign == TextAlign.Unspecified) TextAlign.Right else TextAlign.Unspecified,
+            textDirection = if (style.textDirection == androidx.compose.ui.text.style.TextDirection.Unspecified) androidx.compose.ui.text.style.TextDirection.Content else style.textDirection,
+        ),
         maxLines = maxLines,
         overflow = overflow,
         softWrap = softWrap,
@@ -618,8 +626,10 @@ fun Slider(
     val fraction = ((value - valueRange.start) / span).coerceIn(0f, 1f)
     // a white knob that grows a little under the pointer: the same as the player's seek bar (one look for every bar)
     val thumb by animateDpAsState(if (dragging || hovered) 16.dp else 14.dp, tween(83))
+    // in a right-to-left language the bar fills from the right: the pointer's x is counted from there
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     fun setFromX(x: Float) {
-        var v = valueRange.start + (x / width).coerceIn(0f, 1f) * span
+        var v = valueRange.start + ((if (rtl) width - x else x) / width).coerceIn(0f, 1f) * span
         if (steps != null && steps > 0f) v = (v / steps).roundToInt() * steps
         onValueChange(v.coerceIn(valueRange.start, valueRange.endInclusive))
     }

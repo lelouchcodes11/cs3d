@@ -225,7 +225,7 @@ private fun DayButton(day: LocalDate, today: Boolean, on: Boolean, count: Int?, 
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
         FText(
-            if (today) "TODAY" else day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()).uppercase(),
+            if (today) "TODAY" else com.lagradost.desktop.i18n.Tr.upper(day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())),
             style = Fluent.type.caption.copy(letterSpacing = 1.sp, fontWeight = FontWeight.SemiBold), color = soft, maxLines = 1, softWrap = false,
         )
         FText(day.dayOfMonth.toString(), style = Fluent.type.title.copy(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold), color = fg, maxLines = 1)

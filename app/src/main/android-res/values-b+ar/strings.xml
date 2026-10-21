@@ -766,4 +766,27 @@
     <string name="start_paused_settings">استئناف المقاطع الموقوفة</string>
     <string name="start_paused_settings_des">تقليل الضغط عند اختيار مصادر</string>
     <string name="background">خلفية النص</string>
+    <string name="compressor">الضاغط</string>
+    <string name="compressor_setting">ضاغط المدى الديناميكي</string>
+    <string name="compressor_setting_summary">إظهار عناصر التحكم بالضاغط في المشغّل (يساعد على موازنة الصوت العالي والخافت)</string>
+    <string name="compressor_on">مفعّل</string>
+    <string name="compressor_on_format">مفعّل · %1$d ديسيبل / +%2$d ديسيبل</string>
+    <string name="compressor_off">متوقف</string>
+    <string name="compressor_preset_light">خفيف</string>
+    <string name="compressor_preset_dialog">تعزيز الحوار</string>
+    <string name="compressor_preset_heavy">قوي</string>
+    <string name="compressor_threshold_label">العتبة: %d ديسيبل</string>
+    <string name="compressor_makeup_label">رفع الكسب: +%d ديسيبل</string>
+    <string name="compressor_threshold_hint">تُخفَّض الأصوات الأعلى من %d ديسيبل</string>
+    <string name="compressor_makeup_hint">يرفع مستوى الصوت الكلي بمقدار +%d ديسيبل</string>
+    <string name="edit_profile_image_url">الرابط</string>
+    <string name="edit_profile_image_picker">اختيار صورة</string>
+    <string name="edit_profile_image_default">الصور الافتراضية</string>
+    <string name="profile_stream">بث</string>
+    <string name="auto_status_sync_title">تحديث حالة القائمة تلقائياً</string>
+    <string name="auto_status_sync_des">ينقل العمل الموجود في إحدى قوائمك (أخطط لمشاهدته، في الانتظار، مهمل) إلى «أشاهده» عند بدء مشاهدته، وإلى «مكتمل» عند انتهاء حلقته الأخيرة، في الخدمات التي سجّلت الدخول إليها</string>
+    <string name="auto_status_sync_all_title">إضافة كل عمل أشغّله</string>
+    <string name="auto_status_sync_all_des">يضع أيضاً الأعمال غير الموجودة في أي قائمة بعد في «أشاهده» عند بدء مشاهدتها. عند الإيقاف: لا يُمَسّ إلا ما هو موجود في إحدى قوائمك.</string>
+    <string name="cloudflare_solvers_title">اجتياز فحوص Cloudflare</string>
+    <string name="cloudflare_solvers_des">تطلب بعض المواقع من المتصفح إثبات أنه ليس روبوتاً؛ ويفتح التطبيق صفحة لذلك. عند الإيقاف: لا تُفتح أي صفحة ولن تُحمَّل تلك المواقع.</string>
 </resources>

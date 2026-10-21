@@ -1,0 +1,1412 @@
+# Texts of the desktop screens in each language. First line: the language codes; then English text, a tab, the translation of each language
+# (empty = not translated: the English text is shown). {0} {1}: pieces cut out of the text; {0,plural,one{# a}other{# b}}: plural forms; \n = new line.
+en	ar	tr
+Create a client (any name), set its Redirect URL to the address below and paste its ID, a number.	أنشئ تطبيق عميل (بأي اسم)، واضبط عنوان إعادة التوجيه (Redirect URL) على العنوان الموضح أدناه، ثم الصق المعرّف (ID) وهو رقم.	Bir istemci oluşturun (adı fark etmez), Yönlendirme URL'sini aşağıdaki adrese ayarlayın ve kimliğini (bir sayı) yapıştırın.
+Create ID: App Type "other", Redirect URL as below, the rest as you like. Paste the Client ID. The Client Secret is only for an App Type "web" client ("Client authentication failed" at sign-in means it is needed).	أنشئ المعرّف: نوع التطبيق "other"، وعنوان إعادة التوجيه كما هو أدناه، وباقي الحقول كما تشاء. الصق معرّف العميل (Client ID). سر العميل (Client Secret) مطلوب فقط لتطبيق من نوع "web" (إذا ظهرت عند تسجيل الدخول رسالة "Client authentication failed" فهذا يعني أنه مطلوب).	Kimliği oluşturun: Uygulama türü "other", Yönlendirme URL'si aşağıdaki gibi, gerisi size kalmış. İstemci Kimliğini (Client ID) yapıştırın. İstemci Sırrı (Client Secret) yalnızca "web" türündeki bir istemci için gerekir (girişte "Client authentication failed" görüyorsanız gereklidir).
+New app, Redirect URI as below. Paste the Client ID (the PIN sign-in needs only that) and the Client Secret (browser sign-in).	تطبيق جديد، وعنوان إعادة التوجيه (Redirect URI) كما هو أدناه. الصق معرّف العميل (Client ID) (تسجيل الدخول برمز PIN يحتاج هذا فقط) وسر العميل (Client Secret) (لتسجيل الدخول عبر المتصفح).	Yeni uygulama, Yönlendirme URI'si aşağıdaki gibi. İstemci Kimliğini (PIN ile giriş yalnızca bunu ister) ve İstemci Sırrını (tarayıcıyla giriş) yapıştırın.
+Sign-in keys	مفاتيح تسجيل الدخول	Giriş anahtarları
+Save	حفظ	Kaydet
+Sign-in keys saved	تم حفظ مفاتيح تسجيل الدخول	Giriş anahtarları kaydedildi
+AniList, MyAnimeList and Simkl need an API client of your own: this app has none built in (that is why their sign-in page said "Client authentication failed"). Register one on each service you use with the redirect URL shown (the browser comes back to this app on that address), paste its keys here, then sign in from Accounts.	تحتاج AniList وMyAnimeList وSimkl إلى عميل API خاص بك: لا يتضمن التطبيق عميلاً جاهزاً (ولهذا ظهرت في صفحة تسجيل الدخول رسالة "Client authentication failed"). سجّل عميلاً في كل خدمة تستخدمها بعنوان إعادة التوجيه الظاهر (يعود المتصفح إلى هذا التطبيق عبر ذلك العنوان)، ثم الصق مفاتيحه هنا وسجّل الدخول من الحسابات.	AniList, MyAnimeList ve Simkl'in size ait bir API istemcisine ihtiyacı var: bu uygulamada hazır olarak yok (giriş sayfalarının "Client authentication failed" demesinin nedeni bu). Kullandığınız her hizmette gösterilen yönlendirme URL'siyle bir istemci kaydedin (tarayıcı bu adresten uygulamaya döner), anahtarlarını buraya yapıştırın, sonra Hesaplar'dan giriş yapın.
+Redirect URL: {0}	عنوان إعادة التوجيه: {0}	Yönlendirme URL'si: {0}
+ (one is built in)	 (يوجد واحد مدمج)	 (biri yerleşik)
+Open developer page	فتح صفحة المطورين	Geliştirici sayfasını aç
+Copy redirect	نسخ عنوان إعادة التوجيه	Yönlendirme adresini kopyala
+Redirect copied	تم نسخ عنوان إعادة التوجيه	Yönlendirme adresi kopyalandı
+Signed in to {0}	تم تسجيل الدخول إلى {0}	{0} hesabına giriş yapıldı
+Could not sign in to {0}. Check the details and try again.	تعذّر تسجيل الدخول إلى {0}. تحقق من البيانات وحاول مرة أخرى.	{0} hesabına giriş yapılamadı. Bilgileri kontrol edip tekrar deneyin.
+Could not sign in to {0}: {1}	تعذّر تسجيل الدخول إلى {0}: {1}	{0} hesabına giriş yapılamadı: {1}
+Sign in to {0}	تسجيل الدخول إلى {0}	{0} hesabına giriş yap
+User name	اسم المستخدم	Kullanıcı adı
+Email	البريد الإلكتروني	E-posta
+Server	الخادم	Sunucu
+Password or API key	كلمة المرور أو مفتاح API	Parola veya API anahtarı
+Password	كلمة المرور	Parola
+Made your SubDL account with Google? Leave the e-mail empty and paste your API key (subdl.com, Panel, API) in the password field.	هل أنشأت حساب SubDL عبر Google؟ اترك حقل البريد الإلكتروني فارغاً والصق مفتاح API (من subdl.com ← Panel ← API) في حقل كلمة المرور.	SubDL hesabınızı Google ile mi oluşturdunuz? E-posta alanını boş bırakın ve API anahtarınızı (subdl.com, Panel, API) parola alanına yapıştırın.
+Use your user name, not your e-mail. Searching and downloading subtitles also work without an account.	استخدم اسم المستخدم لا بريدك الإلكتروني. يمكن البحث عن الترجمات وتنزيلها دون حساب أيضاً.	E-postanızı değil kullanıcı adınızı kullanın. Altyazı arama ve indirme hesap olmadan da çalışır.
+Sign in	تسجيل الدخول	Giriş yap
+Create an account	إنشاء حساب	Hesap oluştur
+Passing the Cloudflare check of {0}…	جارٍ اجتياز فحص Cloudflare لموقع {0}…	{0} için Cloudflare denetimi geçiliyor…
+Not set: results come in the order the extensions answer	غير محدد: تأتي النتائج بترتيب استجابة الإضافات	Ayarlanmadı: sonuçlar eklentilerin yanıt verme sırasına göre gelir
+{0} on top: 	في الأعلى: {0} 	En üstte: {0}
+Extension priority	أولوية الإضافات	Eklenti önceliği
+Done	تم	Tamam
+The extensions on top come first in the search results and at the head of the list on Home. Put the ones you use most first.	تأتي الإضافات التي في الأعلى أولاً في نتائج البحث وفي رأس القائمة في الرئيسية. ضع الأكثر استخداماً في المقدمة.	Üstteki eklentiler arama sonuçlarında ve Ana sayfadaki listenin başında gelir. En çok kullandıklarınızı öne koyun.
+On top ({0})	في الأعلى ({0})	En üstte ({0})
+Down	لأسفل	Aşağı
+Take off the list	إزالة من القائمة	Listeden çıkar
+Pick the extensions to put on top	اختر الإضافات التي تريد وضعها في الأعلى	Üste koyacağınız eklentileri seçin
+Add more	إضافة المزيد	Daha fazla ekle
+Find an extension	ابحث عن إضافة	Eklenti bul
+Every extension is on the list	كل الإضافات في القائمة	Tüm eklentiler listede
+No extension matches	لا توجد إضافة مطابقة	Eşleşen eklenti yok
+VLC was not found	لم يتم العثور على VLC	VLC bulunamadı
+Install VLC (videolan.org) and try again, or choose another player.	ثبّت VLC (من videolan.org) وحاول مرة أخرى، أو اختر مشغلاً آخر.	VLC'yi kurun (videolan.org) ve tekrar deneyin ya da başka bir oynatıcı seçin.
+Get VLC	تنزيل VLC	VLC'yi indir
+mpv was not found	لم يتم العثور على mpv	mpv bulunamadı
+Get mpv	تنزيل mpv	mpv'yi indir
+Choose mpv.exe…	اختيار mpv.exe…	mpv.exe seç…
+Close	إغلاق	Kapat
+Install mpv (mpv.io, or winget install mpv, or scoop install mpv) and try again, or tell the app where mpv.exe is. Settings > Player > External mpv does the same.	ثبّت mpv (من mpv.io، أو عبر winget install mpv، أو scoop install mpv) وحاول مرة أخرى، أو أخبر التطبيق بمكان mpv.exe. الإعدادات > المشغّل > mpv الخارجي تفعل الشيء نفسه.	mpv'yi kurun (mpv.io, ya da winget install mpv, ya da scoop install mpv) ve tekrar deneyin ya da uygulamaya mpv.exe'nin yerini söyleyin. Ayarlar > Oynatıcı > Harici mpv de aynısını yapar.
+Choose mpv.exe	اختيار mpv.exe	mpv.exe seç
+Floating bar	شريط عائم	Yüzen çubuk
+Floating dock	شريط تطبيقات عائم	Yüzen dock
+Left	يسار	Sol
+Right	يمين	Sağ
+Top	أعلى	Üst
+Bottom dock	شريط سفلي	Alt dock
+Expand on hover	يتوسع عند التمرير فوقه	Üzerine gelince genişlesin
+Icons only	أيقونات فقط	Yalnızca simgeler
+Always expanded	موسّع دائماً	Her zaman genişletilmiş
+Compact	مضغوط	Kompakt
+Standard	قياسي	Standart
+Comfortable	مريح	Rahat
+Small	صغير	Küçük
+Medium	متوسط	Orta
+Large	كبير	Büyük
+Ambient (artwork colours)	محيطي (ألوان الصورة)	Ortam (kapak renkleri)
+Solid	موحد	Düz
+Pure black (OLED)	أسود نقي (OLED)	Saf siyah (OLED)
+Full	كامل	Tam
+Reduced	مخفّض	Azaltılmış
+Off	إيقاف	Kapalı
+Modern (floating bar)	عصري (شريط عائم)	Modern (yüzen çubuk)
+Classic (full width)	كلاسيكي (بعرض كامل)	Klasik (tam genişlik)
+White (default)	أبيض (افتراضي)	Beyaz (varsayılan)
+Solid colour	لون موحد	Düz renk
+Tinted glass	زجاج ملون	Renkli cam
+Subtle	خفيف	Hafif
+Balanced	متوازن	Dengeli
+Rich	غني	Zengin
+Software (SW)	برمجي (SW)	Yazılım (SW)
+Decoded by the app. For speakers and headphones.	يفك التطبيق ترميزه. لمكبرات الصوت وسماعات الرأس.	Uygulama tarafından çözülür. Hoparlörler ve kulaklıklar için.
+Hardware (HW)	عتادي (HW)	Donanım (HW)
+Dolby Digital and DTS are decoded by your AV receiver or TV (HDMI or optical).	يتولى جهاز الاستقبال AV أو التلفاز فك ترميز Dolby Digital وDTS (عبر HDMI أو البصري).	Dolby Digital ve DTS, AV alıcınız veya TV'niz tarafından çözülür (HDMI ya da optik).
+Hardware+ (HW+)	عتادي+ (HW+)	Donanım+ (HW+)
+Also Dolby Digital Plus, Dolby TrueHD and DTS-HD (HDMI receivers).	ويشمل Dolby Digital Plus وDolby TrueHD وDTS-HD (أجهزة استقبال HDMI).	Ayrıca Dolby Digital Plus, Dolby TrueHD ve DTS-HD (HDMI alıcılar).
+The sound as it is.	الصوت كما هو.	Ses olduğu gibi.
+Light	خفيف	Hafif
+Gently evens out loud and quiet parts.	يوازن برفق بين الأجزاء العالية والهادئة.	Yüksek ve sessiz bölümleri hafifçe dengeler.
+Dialogue boost	تعزيز الحوار	Diyalog güçlendirme
+Loud scenes come down, speech comes up.	تنخفض المشاهد الصاخبة ويرتفع الكلام.	Gürültülü sahneler kısılır, konuşma yükselir.
+Heavy	قوي	Güçlü
+The strongest: for the night or small speakers.	الأقوى: للّيل أو مكبرات الصوت الصغيرة.	En güçlüsü: gece için ya da küçük hoparlörler için.
+mpv's plain bilinear scaling. The lightest on the graphics card.	تحجيم mpv الثنائي الخطي البسيط. الأخف على بطاقة الرسوميات.	mpv'nin düz çift doğrusal ölçeklemesi. Ekran kartına en hafif olanı.
+Sharp (Spline36)	حاد (Spline36)	Keskin (Spline36)
+A sharper filter than the default. Any graphics card.	مرشح أكثر حدة من الافتراضي. يعمل على أي بطاقة رسوميات.	Varsayılandan daha keskin bir filtre. Her ekran kartında çalışır.
+High quality (EWA Lanczos)	جودة عالية (EWA Lanczos)	Yüksek kalite (EWA Lanczos)
+The best of mpv's own filters, with the least ringing. A mid-range graphics card.	أفضل مرشحات mpv نفسها وبأقل قدر من الهالات. لبطاقة رسوميات متوسطة.	mpv'nin kendi filtrelerinin en iyisi, en az halka etkisiyle. Orta seviye ekran kartı için.
+FSR + CAS (AMD)	FSR + CAS (AMD)	FSR + CAS (AMD)
+FidelityFX Super Resolution enlarges any picture, CAS sharpens one shown at its own size. Light, for films and series too.	تعمل FidelityFX Super Resolution على تكبير أي صورة، وتعمل CAS على زيادة حدة الصورة المعروضة بحجمها الأصلي. خفيف، ويناسب الأفلام والمسلسلات أيضاً.	FidelityFX Super Resolution her görüntüyü büyütür, CAS kendi boyutunda gösterileni keskinleştirir. Hafif; film ve diziler için de uygun.
+Anime4K · Mode A	Anime4K · النمط A	Anime4K · Mod A
+Anime in good quality (clean 1080p or 720p): restores the lines and enlarges them with neural filters.	أنمي بجودة جيدة (1080p أو 720p نظيف): يستعيد الخطوط ويكبّرها بمرشحات عصبية.	İyi kalitede anime (temiz 1080p veya 720p): çizgileri onarır ve sinir ağı filtreleriyle büyütür.
+Anime4K · Mode B	Anime4K · النمط B	Anime4K · Mod B
+Anime that is soft, blurry or slightly compressed: a gentler restore, then the same enlarging.	أنمي ناعم أو ضبابي أو مضغوط قليلاً: استعادة ألطف ثم التكبير نفسه.	Yumuşak, bulanık ya da hafif sıkıştırılmış anime: daha nazik bir onarım, ardından aynı büyütme.
+Anime4K · Mode C	Anime4K · النمط C	Anime4K · Mod C
+Low resolution or noisy anime (480p, old DVD rips): removes the noise while enlarging.	أنمي منخفض الدقة أو مشوّش (480p، نسخ DVD قديمة): يزيل التشويش أثناء التكبير.	Düşük çözünürlüklü ya da gürültülü anime (480p, eski DVD kopyaları): büyütürken gürültüyü giderir.
+Anime4K · Mode A, high quality	Anime4K · النمط A، جودة عالية	Anime4K · Mod A, yüksek kalite
+Mode A with the largest networks. Needs a strong graphics card; it drops frames on a weak one.	النمط A بأكبر الشبكات. يحتاج بطاقة رسوميات قوية؛ وتُفقد فيه إطارات على البطاقة الضعيفة.	Mod A, en büyük ağlarla. Güçlü bir ekran kartı ister; zayıf kartta kare atlar.
+Removed “{0}” from your library	تمت إزالة «{0}» من مكتبتك	“{0}” kütüphanenizden kaldırıldı
+“{0}” is now in {1}	«{0}» أصبح الآن في {1}	“{0}” artık {1} içinde
+Removed “{0}” from your favourites	تمت إزالة «{0}» من المفضلة	“{0}” favorilerinizden kaldırıldı
+Added “{0}” to your favourites	تمت إضافة «{0}» إلى المفضلة	“{0}” favorilerinize eklendi
+Play	تشغيل	Oynat
+Open title page	فتح صفحة العمل	Başlık sayfasını aç
+In your library: {0}	في مكتبتك: {0}	Kütüphanenizde: {0}
+Add to library	إضافة إلى المكتبة	Kütüphaneye ekle
+Remove from library	إزالة من المكتبة	Kütüphaneden kaldır
+Remove from favourites	إزالة من المفضلة	Favorilerden kaldır
+Add to favourites	إضافة إلى المفضلة	Favorilere ekle
+Movie	فيلم	Film
+Cartoon	رسوم متحركة	Çizgi film
+Live	مباشر	Canlı
+See all	عرض الكل	Tümünü gör
+TV series	مسلسلات	Diziler
+Anime movies	أفلام أنمي	Anime filmleri
+Cartoons	رسوم متحركة	Çizgi filmler
+Asian dramas	دراما آسيوية	Asya dizileri
+Documentaries	أفلام وثائقية	Belgeseller
+Live streams	بث مباشر	Canlı yayınlar
+Torrents	تورنت	Torrentler
+Others	أخرى	Diğer
+Audiobooks	كتب صوتية	Sesli kitaplar
+Custom media	وسائط مخصصة	Özel medya
+Audio	صوت	Ses
+Podcasts	بودكاست	Podcast'ler
+Back (Alt+Left)	رجوع (Alt+Left)	Geri (Alt+Sol ok)
+Close navigation	إغلاق التنقل	Gezintiyi kapat
+Open navigation	فتح التنقل	Gezintiyi aç
+View all	عرض الكل	Tümünü gör
+Classic (Default)	كلاسيكي (الافتراضي)	Klasik (Varsayılan)
+Default dark look	المظهر الداكن الافتراضي	Varsayılan koyu görünüm
+Slate	أردوازي	Arduvaz
+Cool slate & blue	أردوازي بارد وأزرق	Soğuk arduvaz ve mavi
+Graphite	جرافيت	Grafit
+Neutral carbon & zinc	كربوني محايد وزنك	Nötr karbon ve çinko
+One Dark	One Dark	One Dark
+Atom dark grey & sky	رمادي داكن ذري وسماوي	Atom koyu grisi ve gök mavisi
+Tokyo Night	Tokyo Night	Tokyo Night
+Deep navy & soft blue	كحلي عميق وأزرق ناعم	Derin lacivert ve yumuşak mavi
+Warm charcoal & mauve	فحمي دافئ وأرجواني فاتح	Sıcak kömür grisi ve eflatun
+Soft indigo & cornflower	نيلي ناعم وأزرق ذرة	Yumuşak çivit ve peygamberçiçeği mavisi
+Arctic slate & frost	أردوازي قطبي وصقيعي	Kutup arduvazı ve ayaz
+Dark slate & purple	أردوازي داكن وأرجواني	Koyu arduvaz ve mor
+Warm retro earth & amber	ترابي عتيق دافئ وكهرماني	Sıcak retro toprak ve kehribar
+Muted pine & soft rose	صنوبري خافت ووردي ناعم	Soluk çam ve yumuşak gül
+ Woodland green & sage	 أخضر الغابات والمريمية	 Orman yeşili ve adaçayı
+Sumi ink & wave blue	حبر سومي وأزرق الموج	Suiboku mürekkebi ve dalga mavisi
+Deep midnight & warm gold	منتصف ليل عميق وذهبي دافئ	Derin gece yarısı ve sıcak altın
+Warm charcoal & yellow	فحمي دافئ وأصفر	Sıcak kömür grisi ve sarı
+Midnight	منتصف الليل	Gece yarısı
+Dark indigo & violet	نيلي داكن وبنفسجي	Koyu çivit ve mor
+Crimson	قرمزي	Kızıl
+Dark burgundy & crimson	عنابي داكن وقرمزي	Koyu bordo ve kızıl
+Ocean	المحيط	Okyanus
+Deep navy & ocean blue	كحلي عميق وأزرق المحيط	Derin lacivert ve okyanus mavisi
+Emerald	زمردي	Zümrüt
+Dark forest & emerald	غابة داكنة وزمردي	Koyu orman ve zümrüt
+Espresso	إسبريسو	Espresso
+Dark roast & warm amber	تحميص داكن وكهرماني دافئ	Koyu kavrum ve sıcak kehribar
+This page is being rebuilt as a native Windows page.	يجري إعادة بناء هذه الصفحة كصفحة أصلية لنظام Windows.	Bu sayfa yerel bir Windows sayfası olarak yeniden oluşturuluyor.
+Who is watching?	من يشاهد؟	Kim izliyor?
+Profiles	الملفات الشخصية	Profiller
+Profile name	اسم الملف الشخصي	Profil adı
+Create	إنشاء	Oluştur
+Add profile	إضافة ملف شخصي	Profil ekle
+Edit	تعديل	Düzenle
+CloudStream ({0})	CloudStream ({0})	CloudStream ({0})
+Icons	الأيقونات	Simgeler
+Reload the home page	إعادة تحميل الصفحة الرئيسية	Ana sayfayı yeniden yükle
+Profile	الملف الشخصي	Profil
+Close the search (Esc)	إغلاق البحث (Esc)	Aramayı kapat (Esc)
+Search in {0} (Ctrl+K)	بحث في {0} (Ctrl+K)	{0} içinde ara (Ctrl+K)
+Search in {0}…   (Ctrl+K)	بحث في {0}…   (Ctrl+K)	{0} içinde ara…   (Ctrl+K)
+Search all extensions…   (Ctrl+K)	بحث في كل الإضافات…   (Ctrl+K)	Tüm eklentilerde ara…   (Ctrl+K)
+Happy	سعيد	Mutlu
+Wink	غمزة	Göz kırpan
+Cool	رائع	Havalı
+Silly	مرح	Komik
+Starstruck	مبهور	Hayran
+In love	واقع في الحب	Âşık
+Sleepy	نعسان	Uykulu
+Cat	قط	Kedi
+Fox	ثعلب	Tilki
+Panda	باندا	Panda
+Bear	دب	Ayı
+Bunny	أرنب	Tavşan
+Owl	بومة	Baykuş
+Penguin	بطريق	Penguen
+Frog	ضفدع	Kurbağa
+Robot	روبوت	Robot
+Alien	كائن فضائي	Uzaylı
+Ghost	شبح	Hayalet
+Monster	وحش	Canavar
+Ninja	نينجا	Ninja
+Goku	غوكو	Goku
+Naruto	ناروتو	Naruto
+Kakashi	كاكاشي	Kakashi
+Luffy	لوفي	Luffy
+Pikachu	بيكاتشو	Pikachu
+Totoro	توتورو	Totoro
+Doraemon	دورايمون	Doraemon
+Gojo	غوجو	Gojo
+Tanjiro	تانجيرو	Tanjiro
+Anya	آنيا	Anya
+Saitama	سايتاما	Saitama
+Darth Vader	دارث فيدر	Darth Vader
+Movies and series	أفلام ومسلسلات	Filmler ve diziler
+Stormtrooper	جندي العاصفة	Stormtrooper
+Yoda	يودا	Yoda
+Batman	باتمان	Batman
+Joker	جوكر	Joker
+Spider-Man	سبايدرمان	Örümcek Adam
+Iron Man	الرجل الحديدي	Demir Adam
+Harry Potter	هاري بوتر	Harry Potter
+Minion	مينيون	Minyon
+Shrek	شريك	Shrek
+Wednesday	ويدنزداي	Wednesday
+Squid Game guard	حارس لعبة الحبار	Squid Game gardiyanı
+Picture	صورة	Resim
+Character	شخصية	Karakter
+Choose a picture	اختيار صورة	Resim seç
+Edit profile	تعديل الملف الشخصي	Profili düzenle
+Use a picture…	استخدام صورة…	Resim kullan…
+Remove picture	إزالة الصورة	Resmi kaldır
+Choose a source	اختيار مصدر	Kaynak seç
+Pinned · {0}	المثبّتة · {0}	Sabitlenenler · {0}
+Extensions · {0}	الإضافات · {0}	Eklentiler · {0}
+Stremio add-ons · {0}	إضافات Stremio · {0}	Stremio eklentileri · {0}
+No extension matches “{0}”	لا توجد إضافة تطابق «{0}»	“{0}” ile eşleşen eklenti yok
+A different extension each time	إضافة مختلفة في كل مرة	Her seferinde farklı bir eklenti
+Enjoying CloudStream for Windows?	هل يعجبك CloudStream لنظام Windows؟	CloudStream for Windows'u beğendiniz mi?
+★  Star on GitHub	★  نجمة على GitHub	★  GitHub'da yıldızla
+♥  Donate (India)	♥  تبرّع (الهند)	♥  Bağış yap (Hindistan)
+It is free, has no ads and is made in spare time. A star on GitHub helps other people find it, and a donation keeps it growing. Thank you!	التطبيق مجاني وبلا إعلانات ويُطوَّر في وقت الفراغ. نجمة على GitHub تساعد الآخرين على اكتشافه، والتبرع يبقيه ينمو. شكراً لك!	Ücretsiz, reklamsız ve boş zamanlarda geliştiriliyor. GitHub'daki bir yıldız başkalarının onu bulmasına yardım eder, bir bağış da büyümesini sürdürür. Teşekkürler!
+Donate from anywhere (Buy Me a Coffee)	تبرّع من أي مكان (Buy Me a Coffee)	Her yerden bağış yap (Buy Me a Coffee)
+Telegram channel	قناة Telegram	Telegram kanalı
+Discord server	خادم Discord	Discord sunucusu
+Automatic is right for most files. When the letters of a subtitle show as squares or strange signs, pick the set it was made in (for an old Japanese file Shift JIS, for a Russian one Windows-1251 ...).	الاختيار التلقائي مناسب لمعظم الملفات. إذا ظهرت حروف الترجمة مربعات أو رموزاً غريبة فاختر المجموعة التي أُنشئ بها الملف (مثلاً Shift JIS لملف ياباني قديم، وWindows-1251 لملف روسي ...).	Otomatik çoğu dosya için doğrudur. Bir altyazının harfleri kare ya da garip işaretler olarak görünürse, yapıldığı karakter kümesini seçin (eski bir Japonca dosya için Shift JIS, Rusça için Windows-1251 ...).
+{0}+ titles	{0}+ عنوان	{0}+ başlık
+{0} titles	{0,plural,zero{لا عناوين}one{عنوان واحد}two{عنوانان}few{# عناوين}many{# عنواناً}other{# عنوان}}	{0} başlık
+{0} title	{0,plural,zero{لا عناوين}one{عنوان واحد}two{عنوانان}few{# عناوين}many{# عنواناً}other{# عنوان}}	{0} başlık
+All downloads	كل التنزيلات	Tüm indirmeler
+Titles saved on this PC	الأعمال المحفوظة على هذا الجهاز	Bu bilgisayarda kayıtlı başlıklar
+Refresh	تحديث	Yenile
+{0} downloaded  ·  {1} free on this drive	تم تنزيل {0}  ·  والمتاح {1} على هذا القرص	{0} indirildi  ·  bu sürücüde {1} boş
+No downloads yet	لا توجد تنزيلات بعد	Henüz indirme yok
+Use the download action of an episode or movie to keep it offline.	استخدم إجراء التنزيل في حلقة أو فيلم لحفظه للمشاهدة دون إنترنت.	Bir bölümü ya da filmi çevrimdışı saklamak için indirme eylemini kullanın.
+{0} episodes  ·  {1}	{0,plural,one{حلقة واحدة}two{حلقتان}few{# حلقات}many{# حلقة}other{# حلقة}}  ·  {1}	{0} bölüm  ·  {1}
+{0} episode  ·  {1}	{0,plural,one{حلقة واحدة}two{حلقتان}few{# حلقات}many{# حلقة}other{# حلقة}}  ·  {1}	{0} bölüm  ·  {1}
+Pause	إيقاف مؤقت	Duraklat
+Delete	حذف	Sil
+Downloading… {0}%	جارٍ التنزيل… {0}%	İndiriliyor… %{0}
+Extensions	الإضافات	Eklentiler
+Add a repository, then install the providers you want	أضف مستودعاً ثم ثبّت المصادر التي تريدها	Bir depo ekleyin, sonra istediğiniz sağlayıcıları kurun
+Update all	تحديث الكل	Tümünü güncelle
+Add repository	إضافة مستودع	Depo ekle
+REPOSITORIES	المستودعات	DEPOLAR
+Installed	المثبّتة	Yüklü
+Everything downloaded or loaded locally	كل ما تم تنزيله أو تحميله محلياً	İndirilen ya da yerelden yüklenen her şey
+Stremio add-ons	إضافات Stremio	Stremio eklentileri
+Add-ons, streams and torrents	الإضافات والبث والتورنت	Eklentiler, yayınlar ve torrentler
+No repositories yet. Add one with its URL (or a short code), then install the providers you want.	لا توجد مستودعات بعد. أضف واحداً بعنوانه (أو برمز مختصر)، ثم ثبّت المصادر التي تريدها.	Henüz depo yok. Adresiyle (ya da kısa koduyla) bir tane ekleyin, sonra istediğiniz sağlayıcıları kurun.
+Add-ons, their sources and subtitles, torrent streaming	الإضافات ومصادرها وترجماتها وبث التورنت	Eklentiler, kaynakları ve altyazıları, torrent yayını
+Installed extensions	الإضافات المثبّتة	Yüklü eklentiler
+{0} extensions	{0,plural,zero{لا إضافات}one{إضافة واحدة}two{إضافتان}few{# إضافات}many{# إضافة}other{# إضافة}}	{0} eklenti
+{0} extension	{0,plural,zero{لا إضافات}one{إضافة واحدة}two{إضافتان}few{# إضافات}many{# إضافة}other{# إضافة}}	{0} eklenti
+Filter extensions	تصفية الإضافات	Eklentileri filtrele
+Install all	تثبيت الكل	Tümünü kur
+No extensions installed	لا توجد إضافات مثبّتة	Yüklü eklenti yok
+No extensions found	لم يتم العثور على إضافات	Eklenti bulunamadı
+Pick a repository on the left and install providers.	اختر مستودعاً من القائمة وثبّت المصادر.	Soldan bir depo seçin ve sağlayıcıları kurun.
+This repository is empty, still loading, or filtered out.	هذا المستودع فارغ أو لا يزال قيد التحميل أو تم استبعاده بالتصفية.	Bu depo boş, hâlâ yükleniyor ya da filtre dışında kaldı.
+Repository copied	تم نسخ المستودع	Depo kopyalandı
+Remove repository	إزالة المستودع	Depoyu kaldır
+  ·  by {0}	  ·  بواسطة {0}	  ·  {0} tarafından
+Could not open settings: {0}	تعذّر فتح الإعدادات: {0}	Ayarlar açılamadı: {0}
+Extension settings	إعدادات الإضافة	Eklenti ayarları
+Uninstall	إلغاء التثبيت	Kaldır
+Installing…	جارٍ التثبيت…	Kuruluyor…
+Install	تثبيت	Kur
+Remove repository?	إزالة المستودع؟	Depo kaldırılsın mı?
+“{0}” and the extensions installed from it will be removed.	سيتم حذف «{0}» والإضافات المثبّتة منه.	“{0}” ve ondan kurulan eklentiler kaldırılacak.
+Remove	إزالة	Kaldır
+Add	إضافة	Ekle
+Enter a repository URL or short code	أدخل عنوان مستودع أو رمزه المختصر	Bir depo URL'si ya da kısa kodu girin
+That does not look like a repository URL	لا يبدو هذا عنوان مستودع	Bu bir depo URL'sine benzemiyor
+No repository was found at that address	لم يتم العثور على مستودع في هذا العنوان	Bu adreste depo bulunamadı
+Repository added, but it lists no extensions	تمت إضافة المستودع لكنه لا يحتوي على أي إضافات	Depo eklendi ama hiçbir eklenti listelemiyor
+Added “{0}” with {1} extensions	تمت إضافة «{0}» مع {1,plural,one{إضافة واحدة}two{إضافتين}few{# إضافات}many{# إضافة}other{# إضافة}}	“{0}” {1} eklentiyle eklendi
+Paste the address of a CloudStream repository (repo.json or its short code).	الصق عنوان مستودع CloudStream (repo.json أو رمزه المختصر).	Bir CloudStream deposunun adresini (repo.json ya da kısa kodu) yapıştırın.
+Name (optional)	الاسم (اختياري)	Ad (isteğe bağlı)
+Remove from history	إزالة من السجل	Geçmişten kaldır
+Nothing started yet	لم تبدأ مشاهدة أي شيء بعد	Henüz hiçbir şey başlamadı
+{0} titles you started and have not finished	{0,plural,one{عنوان واحد بدأته ولم تنهِه}two{عنوانان بدأتهما ولم تنهِهما}few{# عناوين بدأتها ولم تنهِها}many{# عنواناً بدأتها ولم تنهِها}other{# عنوان بدأتها ولم تنهِها}}	Başlayıp bitirmediğiniz {0} başlık
+{0} title you started and have not finished	عنوان واحد بدأته ولم تنهِه	Başlayıp bitirmediğiniz {0} başlık
+Stats	الإحصائيات	İstatistikler
+Clear history	مسح السجل	Geçmişi temizle
+Clear the history?	مسح السجل؟	Geçmiş temizlensin mi?
+Every title is taken off this list and off Continue watching. Your library and favourites stay.	ستُزال كل الأعمال من هذه القائمة ومن "متابعة المشاهدة". تبقى مكتبتك ومفضلتك كما هي.	Tüm başlıklar bu listeden ve "İzlemeye devam et"ten çıkarılır. Kütüphaneniz ve favorileriniz kalır.
+Clear	مسح	Temizle
+Your history is empty	سجلك فارغ	Geçmişiniz boş
+Titles you start watching show up here so you can pick them up again.	تظهر هنا الأعمال التي بدأت مشاهدتها لتتمكن من متابعتها لاحقاً.	İzlemeye başladığınız başlıklar, kaldığınız yerden devam edebilmeniz için burada görünür.
+Browse titles	تصفح الأعمال	Başlıklara göz at
+Customise Home	تخصيص الرئيسية	Ana sayfayı özelleştir
+Reset	إعادة ضبط	Sıfırla
+Choose which rows of {0} appear on Home and in what order.	اختر صفوف {0} التي تظهر في الرئيسية وبأي ترتيب.	{0} için Ana sayfada hangi satırların hangi sırayla görüneceğini seçin.
+Move up	نقل لأعلى	Yukarı taşı
+Move down	نقل لأسفل	Aşağı taşı
+Continue watching	متابعة المشاهدة	İzlemeye devam et
+Remove from list	إزالة من القائمة	Listeden kaldır
+Customise Home rows	تخصيص صفوف الرئيسية	Ana sayfa satırlarını özelleştir
+{0} h {1} min left	متبقي {0} س و{1} د	{0} sa {1} dk kaldı
+{0} min left	متبقي {0} د	{0} dk kaldı
+Browse	تصفح	Göz at
+NONE	بلا	YOK
+From {0}	من {0}	{0} kaynağından
+Customise Home: choose and order the rows	تخصيص الرئيسية: اختيار الصفوف وترتيبها	Ana sayfayı özelleştir: satırları seçin ve sıralayın
+Reload home page	إعادة تحميل الصفحة الرئيسية	Ana sayfayı yeniden yükle
+Your library	مكتبتك	Kütüphaneniz
+The home page could not be loaded	تعذّر تحميل الصفحة الرئيسية	Ana sayfa yüklenemedi
+Nothing to show yet	لا يوجد ما يُعرض بعد	Henüz gösterilecek bir şey yok
+Install an extension repository, then pick a provider at the top right.	ثبّت مستودع إضافات، ثم اختر مصدراً من أعلى الشاشة.	Bir eklenti deposu kurun, sonra sağ üstten bir sağlayıcı seçin.
+Open Extensions	فتح الإضافات	Eklentileri aç
+Watch now	شاهد الآن	Şimdi izle
+More info	مزيد من المعلومات	Daha fazla bilgi
+All titles	كل الأعمال	Tüm başlıklar
+TV shows	البرامج التلفزيونية	TV programları
+All	الكل	Tümü
+The library could not be loaded	تعذّر تحميل المكتبة	Kütüphane yüklenemedi
+Unknown error	خطأ غير معروف	Bilinmeyen hata
+Open another list	فتح قائمة أخرى	Başka bir liste aç
+Search all extensions	البحث في كل الإضافات	Tüm eklentilerde ara
+Library	المكتبة	Kütüphane
+{0} of {1} titles · {2}	{0} من {1,plural,one{# عنوان}two{# عنوانين}few{# عناوين}many{# عنواناً}other{# عنوان}} · {2}	{0} / {1} başlık · {2}
+Search your library	ابحث في مكتبتك	Kütüphanenizde ara
+Show: {0}	عرض: {0}	Göster: {0}
+No anime in this list	لا يوجد أنمي في هذه القائمة	Bu listede anime yok
+No movies in this list	لا توجد أفلام في هذه القائمة	Bu listede film yok
+No TV shows in this list	لا توجد برامج تلفزيونية في هذه القائمة	Bu listede dizi yok
+The other titles of this list are under “All”.	بقية أعمال هذه القائمة ضمن «الكل».	Bu listenin diğer başlıkları “Tümü” altında.
+Show all	عرض الكل	Tümünü göster
+Nothing here yet	لا يوجد شيء هنا بعد	Burada henüz bir şey yok
+Use “Add to library” on a title to collect it in this list.	استخدم «إضافة إلى المكتبة» في أي عمل لجمعه في هذه القائمة.	Bir başlığı bu listede toplamak için “Kütüphaneye ekle”yi kullanın.
+This page could not be loaded	تعذّر تحميل هذه الصفحة	Bu sayfa yüklenemedi
+TMDB did not answer. Check the connection and try again.	لم يستجب TMDB. تحقق من الاتصال وحاول مرة أخرى.	TMDB yanıt vermedi. Bağlantıyı kontrol edip tekrar deneyin.
+Known for	اشتهر بـ	Tanınan işleri
+Filmography	الأعمال الفنية	Filmografi
+{0} titles, newest first	{0,plural,one{عنوان واحد}two{عنوانان}few{# عناوين}many{# عنواناً}other{# عنوان}}، الأحدث أولاً	{0} başlık, en yenisi başta
+ (aged {0})	 (العمر {0})	 ({0} yaşında)
+Born {0}	تاريخ الميلاد: {0}	Doğum: {0}
+date not fixed yet	الموعد لم يُحدَّد بعد	tarih henüz belli değil
+in {0} days	بعد {0,plural,one{يوم واحد}two{يومين}few{# أيام}many{# يوماً}other{# يوم}}	{0} gün sonra
+in {0} weeks	بعد {0,plural,one{أسبوع واحد}two{أسبوعين}few{# أسابيع}many{# أسبوعاً}other{# أسبوع}}	{0} hafta sonra
+in {0} months	بعد {0,plural,one{شهر واحد}two{شهرين}few{# أشهر}many{# شهراً}other{# شهر}}	{0} ay sonra
+Today	اليوم	Bugün
+Tomorrow	غداً	Yarın
+today	اليوم	bugün
+tomorrow	غداً	yarın
+on {0}	يوم {0}	{0} günü
+On streaming	على المنصات	Yayın platformlarında
+TV & streaming	التلفاز والبث	TV ve yayın platformları
+The releases could not be loaded	تعذّر تحميل الإصدارات	Yayınlar yüklenemedi
+Check the connection and try again.	تحقق من الاتصال وحاول مرة أخرى.	Bağlantıyı kontrol edip tekrar deneyin.
+Everywhere	في كل مكان	Her yerde
+Films and series come from TMDB, which is switched off (Settings > Appearance > Title information); only anime is listed.	تأتي الأفلام والمسلسلات من TMDB وهو معطّل (الإعدادات > المظهر > معلومات العمل)؛ لا يُعرض سوى الأنمي.	Filmler ve diziler TMDB'den gelir ve o kapalı (Ayarlar > Görünüm > Başlık bilgileri); yalnızca anime listelenir.
+Nothing announced here yet	لم يُعلن عن شيء هنا بعد	Burada henüz duyurulan bir şey yok
+Try another filter, or reload in a little while.	جرّب مرشحاً آخر، أو أعد التحميل بعد قليل.	Başka bir filtre deneyin ya da biraz sonra yeniden yükleyin.
+Films in cinemas	أفلام في دور السينما	Sinemadaki filmler
+Opening in your country	تُعرض في بلدك	Ülkenizde vizyonda
+Films coming to streaming	أفلام قادمة إلى المنصات	Yayın platformlarına gelen filmler
+Digital release	الإصدار الرقمي	Dijital yayın
+New series	مسلسلات جديدة	Yeni diziler
+First episodes in the coming weeks	الحلقات الأولى في الأسابيع القادمة	Önümüzdeki haftalarda ilk bölümler
+Seasons and films that start soon	مواسم وأفلام تبدأ قريباً	Yakında başlayan sezonlar ve filmler
+Previous	السابق	Önceki
+Next	التالي	Sonraki
+No new episodes yet	لا توجد حلقات جديدة بعد	Henüz yeni bölüm yok
+Turn on the bell on a title page and the new episodes of that title are listed here. They are looked for every few hours while the app is open.	فعّل الجرس في صفحة عمل لتظهر حلقاته الجديدة هنا. يتم البحث عنها كل بضع ساعات ما دام التطبيق مفتوحاً.	Bir başlık sayfasında zili açın, o başlığın yeni bölümleri burada listelensin. Uygulama açıkken birkaç saatte bir aranır.
+Check now	تحقق الآن	Şimdi denetle
+just now	الآن	az önce
+{0} min ago	منذ {0,plural,one{دقيقة واحدة}two{دقيقتين}few{# دقائق}many{# دقيقة}other{# دقيقة}}	{0} dk önce
+{0} h ago	منذ {0,plural,one{ساعة واحدة}two{ساعتين}few{# ساعات}many{# ساعة}other{# ساعة}}	{0} sa önce
+{0} days ago	منذ {0,plural,one{يوم واحد}two{يومين}few{# أيام}many{# يوماً}other{# يوم}}	{0} gün önce
+Schedule	الجدول	Takvim
+Anime airing, day by day, in your time	الأنمي الذي يُعرض يوماً بيوم، بتوقيتك	Yayındaki animeler, gün gün, sizin saatinizle
+Films in cinemas and on streaming, new series and anime, in the next three months	الأفلام في دور السينما وعلى المنصات، والمسلسلات والأنمي الجديدة، خلال الأشهر الثلاثة القادمة	Sinemadaki ve yayın platformlarındaki filmler, yeni diziler ve animeler, önümüzdeki üç ay
+New episodes of the titles you follow show up here	تظهر هنا الحلقات الجديدة للأعمال التي تتابعها	Takip ettiğiniz başlıkların yeni bölümleri burada görünür
+{0} new	{0} جديد	{0} yeni
+You are up to date	أنت على اطلاع بكل جديد	Her şey güncel
+Mark all read	تحديد الكل كمقروء	Tümünü okundu işaretle
+Anime timetable	جدول الأنمي	Anime programı
+Movies & series	أفلام ومسلسلات	Filmler ve diziler
+Notifications	الإشعارات	Bildirimler
+My list	قائمتي	Listem
+Everything	الكل	Hepsi
+The timetable could not be loaded	تعذّر تحميل الجدول	Program yüklenemedi
+Nothing in your library airs this week. "My list" needs titles you saved, subscribed to or favourited.	لا شيء من مكتبتك يُعرض هذا الأسبوع. "قائمتي" تحتاج إلى أعمال حفظتها أو اشتركت فيها أو أضفتها إلى المفضلة.	Bu hafta kütüphanenizden hiçbir şey yayınlanmıyor. "Listem" için kaydettiğiniz, abone olduğunuz ya da favorilediğiniz başlıklar gerekir.
+Nothing from your list airs {0}	لا شيء من قائمتك يُعرض {0}	Listenizden {0} yayınlanan bir şey yok
+Nothing is scheduled {0}	لا يوجد شيء مجدول {0}	{0} için planlanmış bir şey yok
+Switch to "Everything" to see every show.	بدّل إلى "الكل" لعرض كل البرامج.	Tüm programları görmek için "Hepsi"ne geçin.
+Try another day.	جرّب يوماً آخر.	Başka bir gün deneyin.
+TODAY	اليوم	BUGÜN
+none	لا شيء	yok
+1 episode	حلقة واحدة	1 bölüm
+{0} episodes	{0,plural,one{حلقة واحدة}two{حلقتان}few{# حلقات}many{# حلقة}other{# حلقة}}	{0} bölüm
+{0} episodes  ·  your time ({1})	{0,plural,one{حلقة واحدة}two{حلقتان}few{# حلقات}many{# حلقة}other{# حلقة}}  ·  بتوقيتك ({1})	{0} bölüm  ·  sizin saatiniz ({1})
+{0} episode  ·  your time ({1})	{0,plural,one{حلقة واحدة}two{حلقتان}few{# حلقات}many{# حلقة}other{# حلقة}}  ·  بتوقيتك ({1})	{0} bölüm  ·  sizin saatiniz ({1})
+Reload the timetable	إعادة تحميل الجدول	Programı yeniden yükle
+That was the last episode of today.	كانت تلك آخر حلقة لهذا اليوم.	Bugünün son bölümü buydu.
+Hide the {0} that aired earlier today	إخفاء {0} التي عُرضت في وقت سابق اليوم	Bugün daha önce yayınlanan {0} bölümü gizle
+{0} aired earlier today	عُرضت {0} في وقت سابق اليوم	Bugün daha önce {0} bölüm yayınlandı
+NOW	الآن	ŞİMDİ
+now	الآن	şimdi
+in under a minute	بعد أقل من دقيقة	bir dakikadan kısa süre sonra
+in {0} min	بعد {0} د	{0} dk sonra
+in {0} h	بعد {0} س	{0} sa sonra
+in {0} h {1} min	بعد {0} س و{1} د	{0} sa {1} dk sonra
+in {0} d {1} h	بعد {0} ي و{1} س	{0} g {1} sa sonra
+Short	قصير	Kısa
+In your list	في قائمتك	Listenizde
+Premiere	العرض الأول	Prömiyer
+{0}+ results	{0}+ نتيجة	{0}+ sonuç
+{0} results	{0,plural,zero{لا نتائج}one{نتيجة واحدة}two{نتيجتان}few{# نتائج}many{# نتيجة}other{# نتيجة}}	{0} sonuç
+{0} result	{0,plural,zero{لا نتائج}one{نتيجة واحدة}two{نتيجتان}few{# نتائج}many{# نتيجة}other{# نتيجة}}	{0} sonuç
+{0} more extensions still searching…	{0,plural,one{إضافة واحدة أخرى}two{إضافتان أخريان}few{# إضافات أخرى}many{# إضافة أخرى}other{# إضافة أخرى}} لا تزال تبحث…	{0} eklenti daha hâlâ arıyor…
+{0} more extension still searching…	إضافة واحدة أخرى لا تزال تبحث…	{0} eklenti daha hâlâ arıyor…
+Searching {0}	جارٍ البحث في {0}	{0} aranıyor
+Searched {0} of {1} extensions	تم البحث في {0} من {1} إضافة	{1} eklentiden {0} tanesi arandı
+Searching…	جارٍ البحث…	Aranıyor…
+Results from your extensions	نتائج من إضافاتك	Eklentilerinizden sonuçlar
+By extension	حسب الإضافة	Eklentiye göre
+All results	كل النتائج	Tüm sonuçlar
+Only in {0}	في {0} فقط	Yalnızca {0} içinde
+Apply	تطبيق	Uygula
+Select all	تحديد الكل	Tümünü seç
+Select none	إلغاء التحديد	Hiçbirini seçme
+The star keeps an extension on top: its results come first.	النجمة تُبقي الإضافة في الأعلى: تأتي نتائجها أولاً.	Yıldız bir eklentiyi üstte tutar: sonuçları önce gelir.
+Pinned: its results come first. Click to unpin	مثبّتة: تأتي نتائجها أولاً. انقر لإلغاء التثبيت	Sabit: sonuçları önce gelir. Sabitlemeyi kaldırmak için tıklayın
+Keep on top: its results come first	إبقاء في الأعلى: تأتي نتائجها أولاً	Üstte tut: sonuçları önce gelir
+No results for “{0}”	لا نتائج لـ «{0}»	“{0}” için sonuç yok
+Check the spelling, pick more extensions, or try fewer filters.	تحقق من الإملاء، أو اختر المزيد من الإضافات، أو جرّب مرشحات أقل.	Yazımı kontrol edin, daha fazla eklenti seçin ya da daha az filtre deneyin.
+Filter	تصفية	Filtre
+Search only these kinds of title. None selected means all of them.	ابحث في هذه الأنواع فقط. عدم تحديد أي نوع يعني كلها.	Yalnızca bu başlık türlerinde ara. Hiçbiri seçili değilse hepsi aranır.
+Filter by kind of title	تصفية حسب نوع العمل	Başlık türüne göre filtrele
+Recent searches	عمليات البحث الأخيرة	Son aramalar
+Clear search history?	مسح سجل البحث؟	Arama geçmişi temizlensin mi?
+All recent searches will be removed.	ستتم إزالة كل عمليات البحث الأخيرة.	Tüm son aramalar kaldırılacak.
+Your searches show up here.	تظهر عمليات بحثك هنا.	Aramalarınız burada görünür.
+Search movies, series, anime…	ابحث عن أفلام ومسلسلات وأنمي…	Film, dizi, anime ara…
+Welcome	مرحباً	Hoş geldiniz
+Add extensions	إضافة الإضافات	Eklenti ekle
+Choose content	اختيار المحتوى	İçerik seç
+All set	كل شيء جاهز	Hazır
+Step {0} of {1}	الخطوة {0} من {1}	Adım {0} / {1}
+Skip setup	تخطي الإعداد	Kurulumu atla
+Start watching	ابدأ المشاهدة	İzlemeye başla
+Welcome to CloudStream	مرحباً بك في CloudStream	CloudStream'e hoş geldiniz
+Stream movies, series and anime from the extensions you add. First, pick the language of the app.	شاهد الأفلام والمسلسلات والأنمي من الإضافات التي تضيفها. أولاً، اختر لغة التطبيق.	Eklediğiniz eklentilerden film, dizi ve anime izleyin. Önce uygulamanın dilini seçin.
+Search languages	ابحث عن لغة	Dil ara
+Extensions provide the movies and shows. Add a repository by its address, then install the providers you want.	الإضافات هي التي توفر الأفلام والبرامج. أضف مستودعاً بعنوانه، ثم ثبّت المصادر التي تريدها.	Filmleri ve programları eklentiler sağlar. Bir depoyu adresiyle ekleyin, sonra istediğiniz sağlayıcıları kurun.
+Repository URL or short code	عنوان المستودع أو رمزه المختصر	Depo URL'si ya da kısa kodu
+Repositories: {0}	المستودعات: {0}	Depolar: {0}
+No extensions yet	لا توجد إضافات بعد	Henüz eklenti yok
+{0} of {1} installed	تم تثبيت {0} من {1}	{1} eklentiden {0} tanesi kuruldu
+That does not look like a repository address	لا يبدو هذا عنوان مستودع	Bu bir depo adresine benzemiyor
+Added “{0}”	تمت إضافة «{0}»	“{0}” eklendi
+All languages	كل اللغات	Tüm diller
+Only providers matching these choices are used for the home page and search. You can change this later in Settings.	لا تُستخدم في الصفحة الرئيسية والبحث سوى المصادر المطابقة لهذه الاختيارات. يمكنك تغيير ذلك لاحقاً من الإعدادات.	Ana sayfa ve arama için yalnızca bu seçimlere uyan sağlayıcılar kullanılır. Bunu daha sonra Ayarlar'dan değiştirebilirsiniz.
+Media types	أنواع الوسائط	Medya türleri
+Provider languages	لغات المصادر	Sağlayıcı dilleri
+You are all set	كل شيء جاهز	Her şey hazır
+Press Ctrl+K anywhere to search. Right-click posters and episodes for more actions.	اضغط Ctrl+K في أي مكان للبحث. انقر بالزر الأيمن على الملصقات والحلقات لمزيد من الإجراءات.	Aramak için herhangi bir yerde Ctrl+K'ya basın. Daha fazla eylem için afişlere ve bölümlere sağ tıklayın.
+< 1 min	أقل من دقيقة	< 1 dk
+0 min	0 د	0 dk
+What you watched, in this app	ما شاهدته في هذا التطبيق	Bu uygulamada izlediğiniz
+Reset the stats?	إعادة ضبط الإحصائيات؟	İstatistikler sıfırlansın mı?
+The diary of what you watched (this page) is cleared. Your library, history and tracker lists stay.	سيتم مسح سجل ما شاهدته (هذه الصفحة). تبقى مكتبتك وسجلك وقوائم المتتبّعات كما هي.	İzlediklerinizin günlüğü (bu sayfa) temizlenir. Kütüphaneniz, geçmişiniz ve takipçi listeleriniz kalır.
+Nothing to count yet	لا شيء للعدّ بعد	Henüz sayılacak bir şey yok
+Watch something and its time, genres and studios show up here.	شاهد شيئاً وسيظهر هنا وقته وأنواعه واستوديوهاته.	Bir şey izleyin; süresi, türleri ve stüdyoları burada görünür.
+All time	كل الأوقات	Tüm zamanlar
+includes what you watched before the diary	يشمل ما شاهدته قبل بدء السجل	günlükten önce izlediklerinizi de içerir
+of video	من الفيديو	video
+Last 7 days	آخر 7 أيام	Son 7 gün
+{0} today	{0} اليوم	bugün {0}
+Last 30 days	آخر 30 يوماً	Son 30 gün
+{0} days watched	{0,plural,one{يوم واحد من المشاهدة}two{يومان من المشاهدة}few{# أيام من المشاهدة}many{# يوماً من المشاهدة}other{# يوم من المشاهدة}}	{0} gün izlendi
+Streak	السلسلة المتواصلة	Seri
+{0} titles in the diary	{0,plural,one{عنوان واحد}two{عنوانان}few{# عناوين}many{# عنواناً}other{# عنوان}} في السجل	günlükte {0} başlık
+Activity	النشاط	Etkinlik
+By type	حسب النوع	Türe göre
+Most watched	الأكثر مشاهدة	En çok izlenenler
+Studios	الاستوديوهات	Stüdyolar
+Cast you watch the most	الممثلون الذين تشاهدهم أكثر	En çok izlediğiniz oyuncular
+Languages	اللغات	Diller
+Watched again	شوهد مرة أخرى	Tekrar izlenenler
+{0}× again	{0}× مرة أخرى	{0}× tekrar
+You watch the most on {0}s	تشاهد أكثر يوم {0}	En çok {0} günleri izliyorsunuz
+PREQUEL	الجزء السابق	ÖNCEKİ BÖLÜM
+Prequel	الجزء السابق	Önceki bölüm
+PARENT	الأصل	ANA HİKÂYE
+Parent story	القصة الأصلية	Ana hikâye
+SEQUEL	الجزء التالي	DEVAM
+Sequel	الجزء التالي	Devam
+Side story	قصة جانبية	Yan hikâye
+Spin-off	عمل مشتق	Yan ürün
+ALTERNATIVE	بديل	ALTERNATİF
+Alternative version	نسخة بديلة	Alternatif sürüm
+SUMMARY	ملخص	ÖZET
+Summary	ملخص	Özet
+COMPILATION	تجميعة	DERLEME
+Compilation	تجميعة	Derleme
+CONTAINS	يتضمن	İÇERİR
+Contains	يتضمن	İçerir
+OTHER	أخرى	DİĞER
+Related	ذات صلة	İlgili
+TV short	مسلسل قصير	Kısa dizi
+SPECIAL	خاص	ÖZEL
+Special	خاص	Özel
+MUSIC	موسيقى	MÜZİK
+{0} liked this	أعجب هذا {0}	{0} kişi bunu beğendi
+DIRECTOR	المخرج	YÖNETMEN
+Created by	من إنشاء	Yaratıcı
+CREATOR	المنشئ	YARATICI
+WRITER	الكاتب	YAZAR
+PRODUCER	المنتج	YAPIMCI
+CAMERA	التصوير	KAMERA
+EDITOR	المونتير	KURGU
+DESIGN	التصميم	TASARIM
+All seasons	كل المواسم	Tüm sezonlar
+Specials	حلقات خاصة	Özel bölümler
+Season {0}	الموسم {0}	Sezon {0}
+Executive	تنفيذي	Yönetici
+EXEC PRODUCER	منتج تنفيذي	YÖNETİCİ YAPIMCI
+Specials cast & crew	طاقم وممثلو الحلقات الخاصة	Özel bölümlerin oyuncu ve ekibi
+Season {0} cast & crew	طاقم وممثلو الموسم {0}	Sezon {0} oyuncu ve ekibi
+Cast & crew	الممثلون والطاقم	Oyuncular ve ekip
+Loading…	جارٍ التحميل…	Yükleniyor…
+Directors, creators & producers	المخرجون والمنشئون والمنتجون	Yönetmenler, yaratıcılar ve yapımcılar
+{0} people	{0} شخصاً	{0} kişi
+Search by name or role	ابحث بالاسم أو الدور	Ada ya da göreve göre ara
+Cast	الممثلون	Oyuncular
+No one found	لم يُعثر على أحد	Kimse bulunamadı
+Nothing in the cast or crew matches that.	لا شيء في الممثلين أو الطاقم يطابق ذلك.	Oyuncu ya da ekipte buna uyan bir şey yok.
+Loading details…	جارٍ تحميل التفاصيل…	Ayrıntılar yükleniyor…
+{0} is slow to answer. The page opens as soon as it does.	{0} بطيء في الاستجابة. ستُفتح الصفحة فور استجابته.	{0} yanıt vermekte yavaş. Sayfa yanıt verir vermez açılır.
+Try again	حاول مرة أخرى	Tekrar dene
+Back	رجوع	Geri
+Could not load “{0}”	تعذّر تحميل «{0}»	“{0}” yüklenemedi
+Open in browser	فتح في المتصفح	Tarayıcıda aç
+Finding sources…	جارٍ البحث عن المصادر…	Kaynaklar aranıyor…
+{0} links	{0,plural,one{رابط واحد}two{رابطان}few{# روابط}many{# رابطاً}other{# رابط}}	{0} bağlantı
+{0} link	{0,plural,one{رابط واحد}two{رابطان}few{# روابط}many{# رابطاً}other{# رابط}}	{0} bağlantı
+{0} subtitles	{0,plural,zero{لا ترجمات}one{ترجمة واحدة}two{ترجمتان}few{# ترجمات}many{# ترجمة}other{# ترجمة}}	{0} altyazı
+{0} subtitle	{0,plural,zero{لا ترجمات}one{ترجمة واحدة}two{ترجمتان}few{# ترجمات}many{# ترجمة}other{# ترجمة}}	{0} altyazı
+Play now	شغّل الآن	Şimdi oynat
+Episodes	الحلقات	Bölümler
+Recommended	موصى به	Önerilenler
+More like this	المزيد مثل هذا	Buna benzer daha fazlası
+Gallery	المعرض	Galeri
+Reviews	المراجعات	Yorumlar
+Details	التفاصيل	Ayrıntılar
+Search in {0}	بحث في {0}	{0} içinde ara
+Search in all extensions	بحث في كل الإضافات	Tüm eklentilerde ara
+Open	فتح	Aç
+{0} season packs	{0,plural,one{حزمة موسم واحدة}two{حزمتا موسم}few{# حزم مواسم}many{# حزمة مواسم}other{# حزمة مواسم}}	{0} sezon paketi
+{0} season pack	{0,plural,one{حزمة موسم واحدة}two{حزمتا موسم}few{# حزم مواسم}many{# حزمة مواسم}other{# حزمة مواسم}}	{0} sezon paketi
+{0} seasons	{0,plural,one{موسم واحد}two{موسمان}few{# مواسم}many{# موسماً}other{# موسم}}	{0} sezon
+Spoilers hidden	المحتوى المسرّب مخفي	Spoiler'lar gizli
+Spoilers shown	المحتوى المسرّب ظاهر	Spoiler'lar görünür
+Sort	ترتيب	Sırala
+Episodes could not be loaded	تعذّر تحميل الحلقات	Bölümler yüklenemedi
+No episodes found	لم يتم العثور على حلقات	Bölüm bulunamadı
+Season packs	حزم المواسم	Sezon paketleri
+The whole season as one download (an archive), not single episodes. Open one to see its links.	الموسم كاملاً كتنزيل واحد (أرشيف) وليس حلقات منفردة. افتح واحداً لترى روابطه.	Tüm sezon tek indirme olarak (arşiv), tek tek bölümler değil. Bağlantılarını görmek için birini açın.
+Prequels, sequels and other titles of this story, from AniList. Opening one searches {0}; right-click it to search all extensions.	الأجزاء السابقة واللاحقة وأعمال أخرى من هذه القصة، من AniList. فتح أحدها يبحث في {0}؛ انقر بالزر الأيمن للبحث في كل الإضافات.	Bu hikâyenin öncekileri, devamları ve diğer başlıkları, AniList'ten. Birini açmak {0} içinde arar; tüm eklentilerde aramak için sağ tıklayın.
+What people who liked this also liked, from AniList. Opening one searches {0}.	ما أعجب من أحبوا هذا العمل أيضاً، من AniList. فتح أحدها يبحث في {0}.	Bunu beğenenlerin beğendikleri, AniList'ten. Birini açmak {0} içinde arar.
+On your Planning list	في قائمة "أخطط لمشاهدته"	Planlanan listenizde
+Add to Planning	إضافة إلى "أخطط لمشاهدته"	Planlananlara ekle
+Added to your Planning list on AniList	تمت الإضافة إلى قائمة "أخطط لمشاهدته" في AniList	AniList'teki Planlanan listenize eklendi
+Sign in to AniList in Settings first	سجّل الدخول إلى AniList من الإعدادات أولاً	Önce Ayarlar'dan AniList'e giriş yapın
+SOURCE	المصدر	KAYNAK
+{0} h {1} min	{0} س {1} د	{0} sa {1} dk
+{0} min	{0} د	{0} dk
+CONTINUE	متابعة	DEVAM ET
+UP NEXT	التالي	SIRADAKİ
+Resume	استئناف	Devam et
+Resume {0}	استئناف {0}	{0} devam et
+Play {0}	تشغيل {0}	{0} oynat
+Start over	البدء من جديد	Baştan başla
+Notifications on: you are told about new episodes	الإشعارات مفعّلة: ستصلك تنبيهات بالحلقات الجديدة	Bildirimler açık: yeni bölümlerden haberdar edilirsiniz
+Get notified about new episodes	تلقّي إشعار بالحلقات الجديدة	Yeni bölümler için bildirim al
+You will be told about new episodes	ستصلك تنبيهات بالحلقات الجديدة	Yeni bölümlerden haberdar edileceksiniz
+Notifications turned off	تم إيقاف الإشعارات	Bildirimler kapatıldı
+Watch trailer	مشاهدة الإعلان الترويجي	Fragmanı izle
+More	المزيد	Daha fazla
+Reload sources	إعادة تحميل المصادر	Kaynakları yeniden yükle
+Added to favourites	تمت الإضافة إلى المفضلة	Favorilere eklendi
+Removed from favourites	تمت الإزالة من المفضلة	Favorilerden kaldırıldı
+Unsubscribe from new episodes	إلغاء الاشتراك في الحلقات الجديدة	Yeni bölümlere aboneliği iptal et
+Subscription removed	تم إلغاء الاشتراك	Abonelik kaldırıldı
+Copy link	نسخ الرابط	Bağlantıyı kopyala
+Link copied	تم نسخ الرابط	Bağlantı kopyalandı
+Search for “{0}”	بحث عن «{0}»	“{0}” için ara
+Open on {0}	فتح على {0}	{0} üzerinde aç
+Loading the trailer…	جارٍ تحميل الإعلان الترويجي…	Fragman yükleniyor…
+Show links…	عرض الروابط…	Bağlantıları göster…
+Download	تنزيل	İndir
+Start from beginning	البدء من البداية	Baştan başlat
+Choose how to play…	اختيار طريقة التشغيل…	Nasıl oynatılacağını seç…
+Mark as unwatched	تحديد كغير مُشاهَد	İzlenmedi olarak işaretle
+Mark as watched	تحديد كمُشاهَد	İzlendi olarak işaretle
+Mark all up to here as watched	تحديد كل ما قبل هذه الحلقة كمُشاهَد	Buraya kadar olanların hepsini izlendi işaretle
+Hide spoiler	إخفاء المحتوى المسرّب	Spoiler'ı gizle
+Show spoiler	إظهار المحتوى المسرّب	Spoiler'ı göster
+Spoiler · show	محتوى مسرّب · إظهار	Spoiler · göster
+S{0} · pack	م{0} · حزمة	S{0} · paket
+Pack	حزمة	Paket
+S{0} · E{1}	الموسم {0} · الحلقة {1}	S{0} · E{1}
+Episode {0}	الحلقة {0}	Bölüm {0}
+Filler	حلقة حشو	Dolgu
+Description hidden to avoid spoilers	الوصف مخفي لتجنّب كشف الأحداث	Açıklama, spoiler'ı önlemek için gizlendi
+Tracking on {0}	التتبّع على {0}	{0} üzerinde takip
+No score	بلا تقييم	Puan yok
+One episode less	حلقة أقل	Bir bölüm az
+{0} ep	{0} حلقة	{0} böl.
+One episode more	حلقة أكثر	Bir bölüm fazla
+Not found on these services	لم يُعثر عليه في هذه الخدمات	Bu hizmetlerde bulunamadı
+More like {0}	المزيد مثل {0}	{0} gibi daha fazlası
+{0} titles that people who watch this also watch, in the order of how close they are. Opening one looks for it in your extensions.	{0,plural,one{# عمل}two{# عملان}few{# أعمال}many{# عملاً}other{# عمل}} يشاهدها من يشاهد هذا العمل أيضاً، مرتبة حسب مدى القرب. فتح أحدها يبحث عنه في إضافاتك.	Bunu izleyenlerin izlediği {0} başlık, yakınlık sırasıyla. Birini açmak onu eklentilerinizde arar.
+Auto	تلقائي	Otomatik
+HLS stream	بث HLS	HLS yayını
+DASH stream	بث DASH	DASH yayını
+Direct file	ملف مباشر	Doğrudan dosya
+{0} seeders	{0} بذرة	{0} seeder
+Search {0} sources	ابحث في {0,plural,one{مصدر واحد}two{مصدرين}few{# مصادر}many{# مصدراً}other{# مصدر}}	{0} kaynakta ara
+{0} sources	{0,plural,zero{لا مصادر}one{مصدر واحد}two{مصدران}few{# مصادر}many{# مصدراً}other{# مصدر}}	{0} kaynak
+{0} source	{0,plural,zero{لا مصادر}one{مصدر واحد}two{مصدران}few{# مصادر}many{# مصدراً}other{# مصدر}}	{0} kaynak
+No source matches "{0}"	لا يوجد مصدر يطابق "{0}"	"{0}" ile eşleşen kaynak yok
+No sources	لا توجد مصادر	Kaynak yok
+${0} billion	{0} مليار دولار	{0} milyar $
+${0} million	{0} مليون دولار	{0} milyon $
+Status	الحالة	Durum
+Release date	تاريخ الإصدار	Çıkış tarihi
+First aired	تاريخ أول عرض	İlk yayın
+Runtime	مدة العرض	Süre
+Episode runtime	مدة الحلقة	Bölüm süresi
+{0} per episode	{0} للحلقة	bölüm başına {0}
+Age rating	التصنيف العمري	Yaş sınırı
+Origin country	بلد المنشأ	Menşei ülke
+Original language	اللغة الأصلية	Orijinal dil
+Seasons	المواسم	Sezonlar
+{0} votes	{0} صوت	{0} oy
+Budget	الميزانية	Bütçe
+Revenue	الإيرادات	Hasılat
+Genres	الأنواع	Türler
+Directed by	إخراج	Yönetmen
+Written by	تأليف	Yazan
+Production studios	استوديوهات الإنتاج	Yapım stüdyoları
+Networks	الشبكات	Kanallar
+Streaming in {0}	البث في {0}	{0} içinde yayın
+Collection	المجموعة	Koleksiyon
+Part of {0}	جزء من {0}	{0} serisinin parçası
+Show less	عرض أقل	Daha az göster
+Read more	اقرأ المزيد	Devamını oku
+Slice of Life	حياة يومية	Günlük Yaşam
+Sports	رياضة	Spor
+Supernatural	خارق للطبيعة	Doğaüstü
+Tamil	التاميلية	Tamilce
+Telugu	التيلوغوية	Telugu
+Malayalam	المالايالامية	Malayalam
+Kannada	الكانادية	Kannada
+Bengali	البنغالية	Bengalce
+Marathi	الماراثية	Marathi
+Punjabi	البنجابية	Pencapça
+Filipino	الفلبينية	Filipince
+Trending in {0}	الرائج في {0}	{0} ülkesinde trend olanlar
+Trending {0}in {1}	الرائج {0}في {1}	{1} ülkesinde trend {0}
+New and popular right now	جديد وشائع الآن	Yeni ve şu an popüler
+In cinemas in {0}	في دور السينما في {0}	{0} sinemalarında
+Playing now	يُعرض الآن	Şu an vizyonda
+Most watched in {0}	الأكثر مشاهدة في {0}	{0} ülkesinde en çok izlenenler
+Most watched {0}in {1}	الأكثر مشاهدة {0}في {1}	{1} ülkesinde en çok izlenen {0}
+All time, by number of votes	على مدى كل الأوقات، حسب عدد الأصوات	Tüm zamanlar, oy sayısına göre
+Top rated in {0}	الأعلى تقييماً في {0}	{0} ülkesinde en yüksek puanlılar
+Top rated {0}in {1}	الأعلى تقييماً {0}في {1}	{1} ülkesinde en yüksek puanlı {0}
+Best scores, with enough votes	أفضل الدرجات، مع عدد كافٍ من الأصوات	En iyi puanlar, yeterli oyla
+New in {0}	الجديد في {0}	{0} ülkesinde yeniler
+New {0}in {1}	الجديد {0}في {1}	{1} ülkesinde yeni {0}
+Trending	الرائج	Trend
+Rising this week	يرتفع هذا الأسبوع	Bu hafta yükselenler
+Airing now	يُعرض الآن	Şu an yayında
+Episodes coming out	حلقات قيد الصدور	Yayınlanan bölümler
+RELEASING	قيد الصدور	YAYINDA
+Top rated	الأعلى تقييماً	En yüksek puanlılar
+Highest scores on AniList	أعلى الدرجات على AniList	AniList'te en yüksek puanlar
+Upcoming	قريباً	Yakında
+Not out yet	لم يصدر بعد	Henüz çıkmadı
+Trending today	الرائج اليوم	Bugün trend olanlar
+The most watched films right now	الأفلام الأكثر مشاهدة الآن	Şu an en çok izlenen filmler
+Popular	الشائع	Popüler
+What people are watching	ما يشاهده الناس	İnsanların izledikleri
+Coming soon	قريباً	Çok yakında
+Releasing in the next weeks	يصدر خلال الأسابيع القادمة	Önümüzdeki haftalarda çıkacaklar
+Best of all time	الأفضل على الإطلاق	Tüm zamanların en iyisi
+The most watched series right now	المسلسلات الأكثر مشاهدة الآن	Şu an en çok izlenen diziler
+Airing today	يُعرض اليوم	Bugün yayınlananlar
+New episodes today	حلقات جديدة اليوم	Bugünün yeni bölümleri
+On the air	قيد العرض	Yayında
+Running this week	يُعرض هذا الأسبوع	Bu hafta yayında
+Popular {0}	الشائع {0}	Popüler {0}
+Top rated {0}	الأعلى تقييماً {0}	En yüksek puanlı {0}
+New {0}	الجديد {0}	Yeni {0}
+Explore	استكشاف	Keşfet
+Find something to watch; pick a title and your extensions look for it	اعثر على ما تشاهده؛ اختر عملاً وستبحث إضافاتك عنه	İzleyecek bir şey bulun; bir başlık seçin, eklentileriniz onu arasın
+TMDB is switched off (Settings > Appearance > Title information): most film and series lists are empty	TMDB معطّل (الإعدادات > المظهر > معلومات العمل): معظم قوائم الأفلام والمسلسلات فارغة	TMDB kapalı (Ayarlar > Görünüm > Başlık bilgileri): film ve dizi listelerinin çoğu boş
+Global	عالمي	Küresel
+Local	محلي	Yerel
+Genre	النوع	Tür
+All genres	كل الأنواع	Tüm türler
+Streaming on	البث على	Yayın platformu
+Any service	أي خدمة	Herhangi bir hizmet
+Language	اللغة	Dil
+Any language	أي لغة	Herhangi bir dil
+Clear filters	مسح المرشحات	Filtreleri temizle
+Catalogs from TMDB, AniList and Cinemeta. This product uses the TMDB API but is not endorsed or certified by TMDB.	فهارس من TMDB وAniList وCinemeta. يستخدم هذا المنتج واجهة TMDB البرمجية لكنه غير معتمد أو مصدّق من TMDB.	TMDB, AniList ve Cinemeta kataloglarından. Bu ürün TMDB API'sini kullanır ancak TMDB tarafından onaylanmamış veya sertifikalandırılmamıştır.
+Find to watch	ابحث لتشاهد	İzlemek için bul
+Nothing to show here, or the list could not be loaded.	لا شيء للعرض هنا، أو تعذّر تحميل القائمة.	Burada gösterilecek bir şey yok ya da liste yüklenemedi.
+Search extensions	البحث في الإضافات	Eklentilerde ara
+S{0}	الموسم {0}	S{0}
+E{0}	الحلقة {0}	E{0}
+Opacity	العتامة	Opaklık
+Hex colour (RRGGBB, or AARRGGBB with opacity)	لون سداسي (RRGGBB، أو AARRGGBB مع الشفافية)	Onaltılık renk (RRGGBB veya opaklıklı AARRGGBB)
+White	أبيض	Beyaz
+Yellow	أصفر	Sarı
+Cyan	سماوي	Camgöbeği
+Green	أخضر	Yeşil
+Pink	وردي	Pembe
+Red	أحمر	Kırmızı
+Blue	أزرق	Mavi
+Black	أسود	Siyah
+Gray	رمادي	Gri
+Transparent	شفاف	Saydam
+Black, half see-through	أسود، نصف شفاف	Siyah, yarı saydam
+Black, mostly see-through	أسود، شفاف في معظمه	Siyah, çoğunlukla saydam
+Reset to default	إعادة إلى الافتراضي	Varsayılana sıfırla
+Navigation position	موضع التنقل	Gezinti konumu
+Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.	مكان قائمة الصفحات: كبسولة عائمة في أعلى الصفحة، أو قرص من الأيقونات على اليسار، أو شريط جانبي على أي من الجانبين، أو علامات تبويب في شريط العنوان، أو شريط سفلي.	Sayfa listesinin yeri: sayfanın üstünde yüzen bir kapsül, solda bir simge hapı, iki yandan birinde bir çubuk, başlık çubuğunda sekmeler ya da altta bir dock.
+Hide the dock while scrolling	إخفاء الشريط السفلي أثناء التمرير	Kaydırırken dock'u gizle
+The dock slides away when you scroll a page down and comes back when you scroll up or move the pointer to the bottom edge.	ينزلق الشريط بعيداً عند تمرير الصفحة لأسفل ويعود عند التمرير لأعلى أو تحريك المؤشر إلى الحافة السفلية.	Sayfayı aşağı kaydırınca dock kayarak gider; yukarı kaydırınca ya da imleci alt kenara götürünce geri gelir.
+Side rail	الشريط الجانبي	Yan çubuk
+Show the page names when the pointer is on the rail, never, or all the time.	إظهار أسماء الصفحات عند وجود المؤشر على الشريط، أو أبداً، أو دائماً.	Sayfa adlarını imleç çubuğun üzerindeyken, hiç ya da her zaman göster.
+Corner radius	استدارة الزوايا	Köşe yuvarlaklığı
+Roundness of cards, posters, dialogs and buttons: {0} px	استدارة البطاقات والملصقات والنوافذ والأزرار: {0} بكسل	Kartların, afişlerin, pencerelerin ve düğmelerin yuvarlaklığı: {0} px
+Dialog	نافذة حوار	İletişim kutusu
+Interface size	حجم الواجهة	Arayüz boyutu
+Makes everything larger or smaller than the Windows scale: {0} %	يجعل كل شيء أكبر أو أصغر من مقياس Windows: {0}%	Her şeyi Windows ölçeğinden büyük ya da küçük yapar: %{0}
+Spacing	التباعد	Boşluk
+Room between and around items.	المسافة بين العناصر وحولها.	Öğelerin arası ve çevresi.
+Animations	الحركة	Animasyonlar
+Page transitions and hover effects.	انتقالات الصفحات وتأثيرات التمرير بالمؤشر.	Sayfa geçişleri ve üzerine gelince oluşan efektler.
+Zoom on hover	تكبير عند التمرير	Üzerine gelince büyüt
+Posters and dock items grow a little under the pointer.	تكبر الملصقات وعناصر الشريط قليلاً تحت المؤشر.	Afişler ve dock öğeleri imlecin altında biraz büyür.
+Backdrop	الخلفية	Arka plan
+Ambient tints the window with the colours of the artwork you look at.	"المحيطي" يلوّن النافذة بألوان الصورة التي تنظر إليها.	"Ortam", pencereyi baktığınız kapak görselinin renkleriyle boyar.
+ Pure black is the look of the Classic theme: a colour theme brings its own page colour.	 الأسود النقي هو مظهر السمة الكلاسيكية: السمة الملوّنة تأتي بلون صفحتها الخاص.	 Saf siyah, Klasik temanın görünümüdür: renkli bir tema kendi sayfa rengini getirir.
+See-through bars	أشرطة شفافة	Saydam çubuklar
+Bars, the dock and the open rail let the page show through a little.	تترك الأشرطة والشريط السفلي والشريط الجانبي المفتوح الصفحة تظهر قليلاً من خلالها.	Çubuklar, dock ve açık yan çubuk sayfanın biraz görünmesine izin verir.
+Wallpaper	خلفية الشاشة	Duvar kağıdı
+A picture of your own behind every page, dimmed so the text stays readable.	صورة من اختيارك خلف كل صفحة، معتّمة ليبقى النص مقروءاً.	Her sayfanın arkasında kendi resminiz; metin okunaklı kalsın diye karartılır.
+Choose picture…	اختيار صورة…	Resim seç…
+Wallpaper dimming	تعتيم الخلفية	Duvar kağıdı karartması
+How much of the page colour covers the picture: {0} %	مقدار لون الصفحة الذي يغطي الصورة: {0}%	Sayfa renginin resmi ne kadar kapladığı: %{0}
+Home banner	لافتة الرئيسية	Ana sayfa afişi
+The large rotating banner at the top of Home.	اللافتة الكبيرة المتناوبة في أعلى الرئيسية.	Ana sayfanın üstündeki büyük, dönen afiş.
+Continue watching on Home	متابعة المشاهدة في الرئيسية	Ana sayfada izlemeye devam et
+The row of titles you started (the full list is under See all, in History).	صف الأعمال التي بدأتها (القائمة الكاملة تحت "عرض الكل" في السجل).	Başladığınız başlıkların satırı (tam liste Geçmiş'teki "Tümünü gör" altında).
+Poster size	حجم الملصقات	Afiş boyutu
+Size of the posters in shelves and grids.	حجم الملصقات في الصفوف والشبكات.	Satırlardaki ve ızgaralardaki afişlerin boyutu.
+Hide the title bar when maximized	إخفاء شريط العنوان عند التكبير	Ekranı kaplayınca başlık çubuğunu gizle
+A maximized window shows only the app: the title bar slides in when the pointer touches the top edge of the screen. Full screen always works this way.	تعرض النافذة المكبّرة التطبيق فقط: ينزلق شريط العنوان عند لمس المؤشر الحافة العلوية للشاشة. وضع ملء الشاشة يعمل هكذا دائماً.	Ekranı kaplayan pencere yalnızca uygulamayı gösterir: imleç ekranın üst kenarına değince başlık çubuğu kayarak gelir. Tam ekran her zaman böyle çalışır.
+Several windows	عدة نوافذ	Birden çok pencere
+Starting the app again while it runs opens another window with its own player, so two things can play side by side. All windows share the same data and settings. Off: a second start only brings the first window to the front.	تشغيل التطبيق مرة أخرى أثناء عمله يفتح نافذة أخرى بمشغّلها الخاص، فيمكن تشغيل شيئين جنباً إلى جنب. تشترك كل النوافذ في البيانات والإعدادات نفسها. عند الإيقاف: التشغيل الثاني يُظهر النافذة الأولى فقط.	Uygulama çalışırken yeniden başlatmak kendi oynatıcısıyla başka bir pencere açar; böylece iki şey yan yana oynatılabilir. Tüm pencereler aynı verileri ve ayarları paylaşır. Kapalıyken: ikinci başlatma yalnızca ilk pencereyi öne getirir.
+Native GPU player (beta)	مشغّل GPU الأصلي (تجريبي)	Yerel GPU oynatıcı (beta)
+mpv draws the video with its own GPU renderer, in step with your screen's refresh: the smoothest motion and the least CPU. Still being tested: if the picture or the controls misbehave, switch it off. Applies to the next video.	يرسم mpv الفيديو بمُصيّر GPU الخاص به متزامناً مع معدل تحديث شاشتك: أسلس حركة وأقل استخداماً للمعالج. لا يزال قيد الاختبار: إذا سلكت الصورة أو عناصر التحكم سلوكاً خاطئاً فأوقفه. يسري على الفيديو التالي.	mpv videoyu kendi GPU işleyicisiyle, ekranınızın yenileme hızına uyumlu çizer: en akıcı hareket ve en az işlemci kullanımı. Hâlâ test ediliyor: görüntü ya da denetimler hatalı davranırsa kapatın. Sonraki videoda geçerli olur.
+How the picture is enlarged when it is shown larger than it is: mpv's filters, FSR, or Anime4K for anime (modes A, B, C; they ask a lot of the graphics card). Native GPU player only; also in the player's menu. Anime4K by bloc97, FSR and CAS by AMD, ported by agyild (MIT).	كيفية تكبير الصورة عند عرضها أكبر من حجمها: مرشحات mpv، أو FSR، أو Anime4K للأنمي (الأنماط A وB وC؛ وتتطلب الكثير من بطاقة الرسوميات). للمشغّل الأصلي GPU فقط؛ ومتاح أيضاً في قائمة المشغّل. Anime4K من bloc97، وFSR وCAS من AMD، نقلها agyild (MIT).	Görüntü kendi boyutundan büyük gösterildiğinde nasıl büyütüleceği: mpv'nin filtreleri, FSR ya da anime için Anime4K (A, B, C modları; ekran kartından çok şey ister). Yalnızca yerel GPU oynatıcıda; oynatıcının menüsünde de bulunur. Anime4K: bloc97, FSR ve CAS: AMD, aktaran agyild (MIT).
+Blends the frames of 24 and 25 frames per second video so pans and scrolling credits do not judder on a 60 Hz screen. Turn it off if you prefer the pure frames.	يمزج إطارات الفيديو بمعدل 24 و25 إطاراً في الثانية ليبقى التحريك والتمرير في الشارات سلساً على شاشة 60 هرتز. أوقفه إذا فضّلت الإطارات الأصلية.	24 ve 25 kare/sn videoların karelerini harmanlar; böylece kaydırmalar ve akan jenerikler 60 Hz ekranda takılmaz. Saf kareleri tercih ederseniz kapatın.
+Prefer smooth sources	تفضيل المصادر السلسة	Akıcı kaynakları tercih et
+4K, REMUX and very large files are tried after the lighter ones: they stall on slow hosts and drop frames on a weak graphics card. All of them stay in the Sources list. Off: the highest quality is tried first.	تُجرَّب ملفات 4K وREMUX والكبيرة جداً بعد الأخف منها: فهي تتوقف على المضيفين البطيئين وتفقد إطارات على بطاقة الرسوميات الضعيفة. وتبقى كلها في قائمة المصادر. عند الإيقاف: تُجرَّب الجودة الأعلى أولاً.	4K, REMUX ve çok büyük dosyalar daha hafif olanlardan sonra denenir: yavaş sunucularda takılır, zayıf ekran kartında kare atlar. Hepsi Kaynaklar listesinde kalır. Kapalıyken: önce en yüksek kalite denenir.
+Player controls	عناصر تحكم المشغّل	Oynatıcı denetimleri
+Modern: a floating bar over the picture. Classic: a full-width bar at the bottom.	عصري: شريط عائم فوق الصورة. كلاسيكي: شريط بعرض كامل في الأسفل.	Modern: görüntünün üzerinde yüzen bir çubuk. Klasik: altta tam genişlikte bir çubuk.
+Hide the player controls	إخفاء عناصر تحكم المشغّل	Oynatıcı denetimlerini gizle
+How long after the last mouse movement the controls go away. They stay while the pointer is on them, a button is held or a menu is open. The keyboard shortcuts work either way.	المدة بعد آخر حركة للفأرة قبل اختفاء عناصر التحكم. تبقى ظاهرة ما دام المؤشر عليها أو زر مضغوط أو قائمة مفتوحة. تعمل اختصارات لوحة المفاتيح في الحالتين.	Son fare hareketinden sonra denetimlerin kaybolma süresi. İmleç üzerindeyken, bir düğme basılıyken ya da bir menü açıkken kalırlar. Klavye kısayolları her durumda çalışır.
+Never	أبداً	Asla
+After {0} s	بعد {0} ث	{0} sn sonra
+Seek preview	معاينة شريط التقدّم	Arama önizlemesi
+A picture of the scene above the time when you point at the seek bar, read by a second, light player in the background. Turn it off to save bandwidth on a slow connection.	صورة للمشهد فوق الوقت عند الإشارة إلى شريط التقدّم، يقرؤها مشغّل ثانٍ خفيف في الخلفية. أوقفها لتوفير استهلاك الإنترنت على اتصال بطيء.	Arama çubuğuna işaret ettiğinizde sürenin üstünde sahnenin bir resmi; arka planda ikinci, hafif bir oynatıcı tarafından okunur. Yavaş bağlantıda veri tasarrufu için kapatın.
+Title information from TMDB	معلومات العمل من TMDB	TMDB'den başlık bilgileri
+Logos, backdrops, cast, ratings, reviews, trailers, where a title streams and the Explore lists; anime also get prequels and sequels from AniList. Off: the app never contacts TMDB or AniList for this. This product uses the TMDB API but is not endorsed or certified by TMDB.	الشعارات والخلفيات والممثلون والتقييمات والمراجعات والإعلانات الترويجية ومنصات البث وقوائم استكشاف؛ ويحصل الأنمي أيضاً على الأجزاء السابقة واللاحقة من AniList. عند الإيقاف: لا يتصل التطبيق بـ TMDB أو AniList لهذا الغرض. يستخدم هذا المنتج واجهة TMDB البرمجية لكنه غير معتمد أو مصدّق من TMDB.	Logolar, arka planlar, oyuncular, puanlar, yorumlar, fragmanlar, bir başlığın nerede yayınlandığı ve Keşfet listeleri; animeler ayrıca AniList'ten öncekileri ve devamlarını alır. Kapalıyken: uygulama bunun için TMDB'ye ya da AniList'e hiç bağlanmaz. Bu ürün TMDB API'sini kullanır ancak TMDB tarafından onaylanmamış veya sertifikalandırılmamıştır.
+Country	البلد	Ülke
+Decides the age rating and the streaming services shown on title pages and in the Explore filters.	يحدد التصنيف العمري وخدمات البث المعروضة في صفحات الأعمال ومرشحات استكشاف.	Başlık sayfalarında ve Keşfet filtrelerinde gösterilen yaş sınırını ve yayın hizmetlerini belirler.
+Windows region ({0})	منطقة Windows ({0})	Windows bölgesi ({0})
+Hide spoilers in episode lists	إخفاء المحتوى المسرّب في قوائم الحلقات	Bölüm listelerinde spoiler'ları gizle
+Blurs the still and hides the description of every episode after the one you watch next. The eye on a covered episode shows it.	يطمس الصورة المصغّرة ويخفي وصف كل حلقة بعد التي ستشاهدها تالياً. تُظهرها العين على الحلقة المغطاة.	Sıradaki bölümden sonraki her bölümün görselini bulanıklaştırır ve açıklamasını gizler. Kapalı bölümdeki göz onu gösterir.
+Hide the titles as well	إخفاء العناوين أيضاً	Başlıkları da gizle
+A covered episode is called just "Episode 12" until you reach it.	تُسمّى الحلقة المغطاة "الحلقة 12" فقط إلى أن تصل إليها.	Kapalı bir bölüm, ona gelene kadar yalnızca "Bölüm 12" olarak adlandırılır.
+Electric Blue	أزرق كهربائي	Elektrik Mavisi
+Sky Cyan	سماوي فاتح	Gök Camgöbeği
+Teal	أخضر مزرق	Deniz Yeşili
+Sage Green	أخضر مريمي	Adaçayı Yeşili
+Amber Gold	ذهبي كهرماني	Kehribar Altını
+Warm Orange	برتقالي دافئ	Sıcak Turuncu
+Crimson Red	أحمر قرمزي	Kızıl Kırmızı
+Rose Pink	وردي وردة	Gül Pembesi
+Sakura	ساكورا	Sakura
+Orchid	أوركيد	Orkide
+Purple	بنفسجي	Mor
+Indigo	نيلي	Çivit
+Lavender	خزامي	Lavanta
+Warm Gold	ذهبي دافئ	Sıcak Altın
+Pure White	أبيض نقي	Saf Beyaz
+Reset colours	إعادة ضبط الألوان	Renkleri sıfırla
+App mode	وضع التطبيق	Uygulama modu
+Follow Windows, or always use light or dark surfaces.	اتبع Windows، أو استخدم دائماً أسطحاً فاتحة أو داكنة.	Windows'u izleyin ya da her zaman açık veya koyu yüzeyler kullanın.
+Use system setting	استخدام إعداد النظام	Sistem ayarını kullan
+Dark	داكن	Koyu
+Colour theme	سمة الألوان	Renk teması
+Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.	"الكلاسيكي" يُبقي أسطح OLED السوداء الافتراضية دون تغيير. اختر أي لوحة أخرى لأسطح داكنة مسطحة ولون تمييز مطابق.	Klasik, varsayılan OLED siyah yüzeylere dokunmaz. Düz koyu yüzeyler ve uyumlu bir vurgu rengi için başka bir palet seçin.
+Accent colour	لون التمييز	Vurgu rengi
+Tints switches, sliders, active tabs, focus rings and links. Override the theme's accent or enter any hex colour.	يلوّن المفاتيح والمنزلقات وعلامات التبويب النشطة وحلقات التركيز والروابط. تجاوز لون السمة أو أدخل أي لون سداسي.	Anahtarları, kaydırıcıları, etkin sekmeleri, odak halkalarını ve bağlantıları renklendirir. Temanın vurgusunu değiştirin ya da herhangi bir onaltılık renk girin.
+Windows default	افتراضي Windows	Windows varsayılanı
+Theme default	افتراضي السمة	Tema varsayılanı
+Button, chip & pill colour	لون الأزرار والشرائح والأقراص	Düğme, çip ve hap rengi
+Keep the default crisp white buttons and pills, match the accent colour, or pick any solid colour for primary buttons (Watch now, Play), selected chips and active pills.	أبقِ الأزرار والأقراص البيضاء الحادة الافتراضية، أو طابق لون التمييز، أو اختر أي لون موحد للأزرار الأساسية (شاهد الآن، تشغيل) والشرائح المحددة والأقراص النشطة.	Varsayılan net beyaz düğme ve hapları koruyun, vurgu rengine uydurun ya da birincil düğmeler (Şimdi izle, Oynat), seçili çipler ve etkin haplar için herhangi bir düz renk seçin.
+Live preview	معاينة مباشرة	Canlı önizleme
+Add to list	إضافة إلى قائمة	Listeye ekle
+Button & pill style	نمط الأزرار والأقراص	Düğme ve hap stili
+White (default) keeps primary buttons and pills crisp white unless a custom button colour is chosen. Solid colour and Tinted glass use the button or accent colour.	"الأبيض (الافتراضي)" يُبقي الأزرار والأقراص الأساسية بيضاء حادة ما لم يُختر لون مخصص للأزرار. "اللون الموحد" و"الزجاج الملون" يستخدمان لون الزر أو التمييز.	Beyaz (varsayılan), özel bir düğme rengi seçilmedikçe birincil düğme ve hapları net beyaz tutar. Düz renk ve Renkli cam, düğme ya da vurgu rengini kullanır.
+Coloured navigation highlight	تمييز التنقل الملوّن	Renkli gezinti vurgusu
+Fill the active tab in the floating bar, side rail and dock with your button colour instead of neutral dark glass.	املأ علامة التبويب النشطة في الشريط العائم والجانبي والسفلي بلون زرّك بدل الزجاج الداكن المحايد.	Yüzen çubuktaki, yan çubuktaki ve dock'taki etkin sekmeyi nötr koyu cam yerine düğme renginizle doldurun.
+Surface & border tint	تلوين الأسطح والحدود	Yüzey ve kenarlık tonu
+How strongly cards, menus, controls and borders absorb the theme or accent colour.	مدى امتصاص البطاقات والقوائم وعناصر التحكم والحدود للون السمة أو التمييز.	Kartların, menülerin, denetimlerin ve kenarlıkların tema ya da vurgu rengini ne kadar özümsediği.
+Match accent	مطابقة التمييز	Vurguyla eşleştir
+Choose a wallpaper	اختيار خلفية شاشة	Duvar kağıdı seç
+Network	الشبكة	Ağ
+Window	النافذة	Pencere
+Playback	التشغيل	Oynatma
+Controls	عناصر التحكم	Denetimler
+Cache	ذاكرة التخزين المؤقت	Önbellek
+Theme & colours	السمة والألوان	Tema ve renkler
+Background	الخلفية	Arka plan
+Layout	التخطيط	Düzen
+Title pages	صفحات الأعمال	Başlık sayfaları
+Accounts	الحسابات	Hesaplar
+Lists	القوائم	Listeler
+App updates	تحديثات التطبيق	Uygulama güncellemeleri
+Check for updates	التحقق من وجود تحديثات	Güncellemeleri denetle
+Looks for a newer version on GitHub and updates the app when you say so	يبحث عن إصدار أحدث على GitHub ويحدّث التطبيق عندما تأذن بذلك	GitHub'da daha yeni bir sürüm arar ve siz söyleyince uygulamayı günceller
+Backup	النسخ الاحتياطي	Yedekleme
+Extension update history	سجل تحديثات الإضافات	Eklenti güncelleme geçmişi
+Maintenance	الصيانة	Bakım
+Version {0}{1}  ·  a native Windows app on the CloudStream {2} engine	الإصدار {0}{1}  ·  تطبيق Windows أصلي على محرك CloudStream {2}	Sürüm {0}{1}  ·  CloudStream {2} motoru üzerinde yerel bir Windows uygulaması
+Join us on Telegram	انضم إلينا على Telegram	Telegram'da bize katılın
+News, new versions, help and feedback: t.me/cs3d_official	الأخبار والإصدارات الجديدة والمساعدة والملاحظات: t.me/cs3d_official	Haberler, yeni sürümler, yardım ve geri bildirim: t.me/cs3d_official
+Join us on Discord	انضم إلينا على Discord	Discord'da bize katılın
+Chat, help and ideas with other users: discord.gg/u82JU5JDM	دردشة ومساعدة وأفكار مع مستخدمين آخرين: discord.gg/u82JU5JDM	Diğer kullanıcılarla sohbet, yardım ve fikirler: discord.gg/u82JU5JDM
+Support the project (India)	ادعم المشروع (الهند)	Projeyi destekleyin (Hindistan)
+CloudStream for Windows is free. If it saves you time, a donation keeps it going: razorpay.me/@lelouch11 (UPI and cards)	CloudStream لنظام Windows مجاني. إذا وفّر عليك وقتاً فإن تبرعاً يُبقيه مستمراً: razorpay.me/@lelouch11 (UPI والبطاقات)	CloudStream for Windows ücretsizdir. Size zaman kazandırıyorsa bir bağış onu ayakta tutar: razorpay.me/@lelouch11 (UPI ve kartlar)
+Support the project (international)	ادعم المشروع (دولي)	Projeyi destekleyin (uluslararası)
+From anywhere else: buymeacoffee.com/lelouchcodes11 takes international cards	من أي مكان آخر: buymeacoffee.com/lelouchcodes11 يقبل البطاقات الدولية	Başka her yerden: buymeacoffee.com/lelouchcodes11 uluslararası kartları kabul eder
+Source code and releases	الشيفرة المصدرية والإصدارات	Kaynak kodu ve sürümler
+{0} on GitHub (GPL-3.0). Report problems and get new versions there.	{0} على GitHub (GPL-3.0). أبلغ عن المشكلات واحصل على الإصدارات الجديدة هناك.	{0} GitHub'da (GPL-3.0). Sorunları orada bildirin ve yeni sürümleri orada alın.
+The CloudStream project	مشروع CloudStream	CloudStream projesi
+This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.	هذا التطبيق مبني على محرك CloudStream، وهو تطبيق فيديو مفتوح المصدر (GPL-3.0) لنظام Android.	Bu uygulama, Android için açık kaynaklı (GPL-3.0) bir video uygulaması olan CloudStream'in motoru üzerine kuruludur.
+Legal notice	إشعار قانوني	Yasal uyarı
+Help	المساعدة	Yardım
+The keys of the player: play, seek, volume, full screen, subtitles and more (F1 in the player shows the same list)	مفاتيح المشغّل: التشغيل والتقديم والصوت وملء الشاشة والترجمة وغيرها (F1 في المشغّل يعرض القائمة نفسها)	Oynatıcının tuşları: oynat, ara, ses, tam ekran, altyazı ve daha fazlası (oynatıcıda F1 aynı listeyi gösterir)
+Copy diagnostics	نسخ معلومات التشخيص	Tanılama bilgilerini kopyala
+Puts what a bug report needs on the clipboard: versions, your PC and screens, VPN adapters, the player's output and the latest errors. Passwords and tokens are left out.	يضع في الحافظة ما يحتاجه تقرير الخطأ: الإصدارات وجهازك وشاشاتك ومحوّلات VPN ومخرجات المشغّل وآخر الأخطاء. تُستثنى كلمات المرور والرموز.	Bir hata raporunun gerek duyduğunu panoya koyar: sürümler, bilgisayarınız ve ekranlarınız, VPN bağdaştırıcıları, oynatıcının çıktısı ve son hatalar. Parolalar ve belirteçler dahil edilmez.
+Diagnostics copied ({0} lines): paste them into your message	تم نسخ معلومات التشخيص ({0} سطراً): الصقها في رسالتك	Tanılama bilgileri kopyalandı ({0} satır): iletinize yapıştırın
+Log file	ملف السجل	Günlük dosyası
+The last two runs of the app, for a bug report	آخر تشغيلين للتطبيق، لتقرير الخطأ	Uygulamanın son iki çalışması, hata raporu için
+No log file yet	لا يوجد ملف سجل بعد	Henüz günlük dosyası yok
+Crash log	سجل الأعطال	Çökme günlüğü
+Opens the last crash report, if there is one	يفتح آخر تقرير عطل إن وُجد	Varsa son çökme raporunu açar
+No crash log yet	لا يوجد سجل أعطال بعد	Henüz çökme günlüğü yok
+App data folder	مجلد بيانات التطبيق	Uygulama veri klasörü
+mpv.exe was not found (mpv.io, winget install mpv, scoop install mpv). Choose it here, then pick mpv as the preferred video player or use Open in mpv in the player's menu.	لم يتم العثور على mpv.exe (mpv.io، أو winget install mpv، أو scoop install mpv). اختره هنا، ثم اختر mpv كمشغّل الفيديو المفضل أو استخدم "فتح في mpv" من قائمة المشغّل.	mpv.exe bulunamadı (mpv.io, winget install mpv, scoop install mpv). Buradan seçin, sonra mpv'yi tercih edilen video oynatıcı yapın ya da oynatıcı menüsündeki "mpv'de aç"ı kullanın.
+Found: {0}. Pick mpv as the preferred video player, or use Open in mpv in the player's menu.	تم العثور عليه: {0}. اختر mpv كمشغّل الفيديو المفضل، أو استخدم "فتح في mpv" من قائمة المشغّل.	Bulundu: {0}. mpv'yi tercih edilen video oynatıcı yapın ya da oynatıcı menüsündeki "mpv'de aç"ı kullanın.
+Your choice: {0}	اختيارك: {0}	Seçiminiz: {0}
+External mpv	mpv الخارجي	Harici mpv
+Find automatically	بحث تلقائي	Otomatik bul
+Subtitle encoding	ترميز الترجمة	Altyazı kodlaması
+Dynamic range compressor	ضاغط المدى الديناميكي	Dinamik aralık sıkıştırıcı
+Audio decoder	مفكّك الصوت	Ses çözücü
+General	عام	Genel
+Language, downloads, network and the window	اللغة والتنزيلات والشبكة والنافذة	Dil, indirmeler, ağ ve pencere
+Playback, video, audio, subtitles and controls	التشغيل والفيديو والصوت والترجمة وعناصر التحكم	Oynatma, video, ses, altyazı ve denetimler
+Stremio & torrents	Stremio والتورنت	Stremio ve torrentler
+Appearance	المظهر	Görünüm
+Theme, colours, layout and what the pages show	السمة والألوان والتخطيط وما تعرضه الصفحات	Tema, renkler, düzen ve sayfaların gösterdikleri
+Updates & backup	التحديثات والنسخ الاحتياطي	Güncellemeler ve yedekleme
+App and extension updates, backups	تحديثات التطبيق والإضافات والنسخ الاحتياطية	Uygulama ve eklenti güncellemeleri, yedekler
+Accounts & sync	الحسابات والمزامنة	Hesaplar ve eşitleme
+Sign in to your services, keep your lists up to date, lock the app	سجّل الدخول إلى خدماتك، وحدّث قوائمك، وأقفل التطبيق	Hizmetlerinize giriş yapın, listelerinizi güncel tutun, uygulamayı kilitleyin
+About	حول	Hakkında
+Version, help and links	الإصدار والمساعدة والروابط	Sürüm, yardım ve bağlantılar
+How subtitles look	شكل الترجمة	Altyazıların görünümü
+Search settings	بحث في الإعدادات	Ayarlarda ara
+Nothing matches “{0}”	لا شيء يطابق «{0}»	“{0}” ile eşleşen yok
+1 setting matches “{0}”	إعداد واحد يطابق «{0}»	“{0}” ile eşleşen 1 ayar var
+{0} settings match “{1}”	{0,plural,one{إعداد واحد يطابق}two{إعدادان يطابقان}few{# إعدادات تطابق}many{# إعداداً يطابق}other{# إعداد يطابق}} «{1}»	“{1}” ile eşleşen {0} ayar var
+Try fewer or different words, for example “subtitle”, “cloudflare” or “theme”.	جرّب كلمات أقل أو مختلفة، مثل «ترجمة» أو «cloudflare» أو «سمة».	Daha az ya da farklı sözcükler deneyin, örneğin “altyazı”, “cloudflare” ya da “tema”.
+Settings	الإعدادات	Ayarlar
+Add-ons	إضافات Stremio	Stremio eklentileri
+Add-ons and extensions stay apart: an add-on's titles are played from the add-ons' sources and subtitles, and an extension's titles from that extension.	إضافات Stremio والإضافات العادية تبقى منفصلة: أعمال إضافة Stremio تُشغَّل من مصادر إضافات Stremio وترجماتها، وأعمال الإضافة العادية من تلك الإضافة نفسها.	Stremio eklentileri ile normal eklentiler ayrı kalır: bir Stremio eklentisinin başlıkları Stremio eklentilerinin kaynaklarından ve altyazılarından, normal bir eklentinin başlıkları o eklentiden oynatılır.
+Stremio add-ons are made by other people and are not part of this app or of Stremio. This app is not made by or connected to Stremio; it speaks the open add-on protocol. 	إضافات Stremio يصنعها آخرون وليست جزءاً من هذا التطبيق ولا من Stremio. هذا التطبيق لا يصنعه Stremio ولا يرتبط به؛ إنه يتحدث بروتوكول الإضافات المفتوح. 	Stremio eklentilerini başkaları yapar; bu uygulamanın ya da Stremio'nun parçası değildir. Bu uygulama Stremio tarafından yapılmamıştır ve onunla bağlantılı değildir; açık eklenti protokolünü konuşur.
+Add only add-ons you trust: an add-on sees the title you open.	أضف فقط إضافات Stremio التي تثق بها: ترى الإضافة العمل الذي تفتحه.	Yalnızca güvendiğiniz Stremio eklentilerini ekleyin: bir eklenti açtığınız başlığı görür.
+Added {0}	تمت إضافة {0}	{0} eklendi
+Added {0}. Its sources are torrents: playing one asks to turn on torrent streaming.	تمت إضافة {0}. مصادرها تورنت: التشغيل منها يطلب تفعيل بث التورنت.	{0} eklendi. Kaynakları torrent: birini oynatmak torrent yayınını açmayı ister.
+Could not add it	تعذّرت إضافتها	Eklenemedi
+Add an add-on	إضافة إضافة Stremio	Eklenti ekle
+Adding…	جارٍ الإضافة…	Ekleniyor…
+  (torrents)	  (تورنت)	  (torrent)
+{0} catalogs	{0,plural,one{فهرس واحد}two{فهرسان}few{# فهارس}many{# فهرساً}other{# فهرس}}	{0} katalog
+Adult	للبالغين	Yetişkin
+Needs setup	تحتاج إلى إعداد	Kurulum gerekli
+no answer	لا إجابة	yanıt yok
+Could not be read: {0}. It is tried again at the next start.	تعذّرت قراءتها: {0}. ستُجرَّب مرة أخرى عند التشغيل التالي.	Okunamadı: {0}. Bir sonraki başlangıçta yeniden denenecek.
+This add-on has settings of its own (for example a debrid service): configure it on its page, then add the address it gives you.	لهذه الإضافة إعدادات خاصة بها (مثل خدمة Debrid): اضبطها من صفحتها، ثم أضف العنوان الذي تعطيك إياه.	Bu eklentinin kendi ayarları var (örneğin bir debrid hizmeti): sayfasında yapılandırın, sonra size verdiği adresi ekleyin.
+Configure	ضبط	Yapılandır
+{0} refreshed	تم تحديث {0}	{0} yenilendi
+Remove {0}?	إزالة {0}؟	{0} kaldırılsın mı?
+Keep	إبقاء	Tut
+Its catalogs, sources and subtitles are no longer used. You can add it again at any time.	لن تُستخدم فهارسها ومصادرها وترجماتها بعد الآن. يمكنك إضافتها مجدداً في أي وقت.	Katalogları, kaynakları ve altyazıları artık kullanılmayacak. İstediğiniz zaman yeniden ekleyebilirsiniz.
+Earlier (its sources come first)	أبكر (تأتي مصادرها أولاً)	Daha önce (kaynakları önce gelir)
+Later	لاحقاً	Daha sonra
+Torrent streaming	بث التورنت	Torrent yayını
+Plays the torrent sources of your add-ons (such as Torrentio) and of extensions, while they download. The engine is a separate program that runs on this PC only while a torrent plays.	يشغّل مصادر التورنت من إضافات Stremio لديك (مثل Torrentio) ومن الإضافات العادية أثناء تنزيلها. المحرك برنامج منفصل يعمل على هذا الجهاز فقط أثناء تشغيل تورنت.	Eklentilerinizin (Torrentio gibi) ve uzantıların torrent kaynaklarını indirilirken oynatır. Motor ayrı bir programdır ve bu bilgisayarda yalnızca bir torrent oynarken çalışır.
+Torrent engine (TorrServer)	محرك التورنت (TorrServer)	Torrent motoru (TorrServer)
+unknown version	إصدار غير معروف	bilinmeyen sürüm
+Installed: {0}  ·  {1} MB	مثبّت: {0}  ·  {1} ميغابايت	Kurulu: {0}  ·  {1} MB
+Not installed. It is downloaded once, about 60 MB, from github.com/YouROK/TorrServer.	غير مثبّت. يُنزَّل مرة واحدة، نحو 60 ميغابايت، من github.com/YouROK/TorrServer.	Kurulu değil. Bir kez, yaklaşık 60 MB, github.com/YouROK/TorrServer adresinden indirilir.
+Downloading… {0} %	جارٍ التنزيل… {0}%	İndiriliyor… %{0}
+The last download failed: {0}	فشل آخر تنزيل: {0}	Son indirme başarısız oldu: {0}
+This is the newest version.	هذا هو أحدث إصدار.	Bu en yeni sürüm.
+Newest version: {0}	أحدث إصدار: {0}	En yeni sürüm: {0}
+Checking…	جارٍ التحقق…	Denetleniyor…
+Check for update	التحقق من وجود تحديث	Güncellemeyi denetle
+Update	تحديث	Güncelle
+Torrent engine removed	تمت إزالة محرك التورنت	Torrent motoru kaldırıldı
+Buffer size	حجم المخزن المؤقت	Arabellek boyutu
+How much of the playing torrent is kept ready on the disk. A bigger buffer helps with seeking and slow swarms.	مقدار التورنت قيد التشغيل الذي يُبقى جاهزاً على القرص. المخزن الأكبر يساعد في التقديم والتجمعات البطيئة.	Oynayan torrent'in diskte ne kadarının hazır tutulduğu. Daha büyük bir arabellek aramaya ve yavaş sürülere yardım eder.
+{0} GB	{0} غيغابايت	{0} GB
+{0} MB	{0} ميغابايت	{0} MB
+Only encrypted connections	الاتصالات المشفّرة فقط	Yalnızca şifreli bağlantılar
+Some internet providers slow plain torrent traffic down. Some peers do not support encryption, so fewer are found.	يبطئ بعض مزودي الإنترنت حركة التورنت العادية. لا تدعم بعض الأقران التشفير، لذا يُعثر على عدد أقل منها.	Bazı internet sağlayıcıları düz torrent trafiğini yavaşlatır. Bazı eşler şifrelemeyi desteklemez, bu yüzden daha az eş bulunur.
+Downloaded parts	الأجزاء المنزّلة	İndirilen parçalar
+What the engine keeps of the torrents you played: {0} MB. It is deleted when a torrent is closed; this removes what a crash left behind.	ما يحتفظ به المحرك من التورنت التي شغّلتها: {0} ميغابايت. يُحذف عند إغلاق التورنت؛ وهذا يزيل ما خلّفه عطل.	Motorun oynattığınız torrentlerden sakladıkları: {0} MB. Bir torrent kapatılınca silinir; bu, bir çökmenin geride bıraktığını kaldırır.
+Torrent cache cleared	تم مسح ذاكرة التورنت المؤقتة	Torrent önbelleği temizlendi
+Subtitle renderer	مُصيّر الترجمة	Altyazı işleyicisi
+Universal: every subtitle uses the style below; fonts, colours and positions written in a subtitle are ignored	شامل: كل ترجمة تستخدم النمط أدناه؛ تُتجاهل الخطوط والألوان والمواضع المكتوبة في الترجمة	Evrensel: her altyazı aşağıdaki stili kullanır; altyazıda yazılı yazı tipleri, renkler ve konumlar yok sayılır
+Subtitle's own: styled subtitles (ASS, coloured SRT) keep their fonts, colours and positions; plain ones use the style below	خاص بالترجمة: الترجمات المنسّقة (ASS وSRT الملوّن) تحتفظ بخطوطها وألوانها ومواضعها؛ والعادية تستخدم النمط أدناه	Altyazının kendi stili: biçimlendirilmiş altyazılar (ASS, renkli SRT) yazı tiplerini, renklerini ve konumlarını korur; düz olanlar aşağıdaki stili kullanır
+Universal	شامل	Evrensel
+Subtitle's own	خاص بالترجمة	Altyazının kendi stili
+Undo changes	تراجع عن التغييرات	Değişiklikleri geri al
+Subtitles look like this.\nSecond line of text.	تبدو الترجمات هكذا.\nالسطر الثاني من النص.	Altyazılar böyle görünür.\nMetnin ikinci satırı.
+{0} (Windows)	{0} (Windows)	{0} (Windows)
+{0} (your font)	{0} (خطك)	{0} (sizin yazı tipiniz)
+Font file…	ملف خط…	Yazı tipi dosyası…
+Choose a font file	اختيار ملف خط	Bir yazı tipi dosyası seç
+Version {0} is available (you have {1})	الإصدار {0} متاح (لديك {1})	{0} sürümü mevcut (sizde {1} var)
+Downloading version {0}: 	جارٍ تنزيل الإصدار {0}: 	{0} sürümü indiriliyor:
+Version {0} is downloaded and checked: restart to finish updating	تم تنزيل الإصدار {0} وفحصه: أعد التشغيل لإكمال التحديث	{0} sürümü indirildi ve denetlendi: güncellemeyi bitirmek için yeniden başlatın
+Updating: the app closes and opens again in a moment	جارٍ التحديث: يُغلق التطبيق ويُفتح مجدداً بعد قليل	Güncelleniyor: uygulama kapanır ve birazdan yeniden açılır
+You have the latest version ({0})	لديك أحدث إصدار ({0})	En son sürüme sahipsiniz ({0})
+Could not check: {0}	تعذّر التحقق: {0}	Denetlenemedi: {0}
+Version {0}. Last checked {1}	الإصدار {0}. آخر تحقق {1}	Sürüm {0}. Son denetim {1}
+Version {0}. Looks for a newer release on GitHub	الإصدار {0}. يبحث عن إصدار أحدث على GitHub	Sürüm {0}. GitHub'da daha yeni bir sürüm arar
+Update now	حدّث الآن	Şimdi güncelle
+Download in browser	تنزيل في المتصفح	Tarayıcıda indir
+Restart and update	إعادة التشغيل والتحديث	Yeniden başlat ve güncelle
+Show	عرض	Göster
+Check for updates automatically	التحقق من التحديثات تلقائياً	Güncellemeleri otomatik denetle
+A few seconds after the app is up, and again every few hours while it stays open (never during a video), it asks GitHub ({0}) for the list of releases and tells you when there is a newer one. Nothing is installed without your click, and nothing else is sent.	بعد ثوانٍ قليلة من تشغيل التطبيق، ومجدداً كل بضع ساعات ما دام مفتوحاً (ولا يحدث أثناء فيديو)، يسأل GitHub ({0}) عن قائمة الإصدارات ويخبرك عند وجود إصدار أحدث. لا يُثبَّت شيء دون نقرتك، ولا يُرسَل شيء آخر.	Uygulama açıldıktan birkaç saniye sonra ve açık kaldığı sürece birkaç saatte bir (video sırasında asla), GitHub'dan ({0}) sürüm listesini ister ve daha yenisi olunca size haber verir. Tıklamanız olmadan hiçbir şey kurulmaz ve başka hiçbir şey gönderilmez.
+All releases	كل الإصدارات	Tüm sürümler
+The releases page on GitHub: every version with its notes and files, for a manual download.	صفحة الإصدارات على GitHub: كل إصدار مع ملاحظاته وملفاته، للتنزيل اليدوي.	GitHub'daki sürümler sayfası: her sürüm, notları ve dosyalarıyla, elle indirmek için.
+No extension has been updated yet. Updates found by the automatic check at start, or by Update Plugins, are listed here.	لم يتم تحديث أي إضافة بعد. التحديثات التي يجدها الفحص التلقائي عند البدء أو "تحديث الإضافات" تُسرد هنا.	Henüz hiçbir eklenti güncellenmedi. Başlangıçtaki otomatik denetimin ya da Eklentileri Güncelle'nin bulduğu güncellemeler burada listelenir.
+Back (Esc)	رجوع (Esc)	Geri (Esc)
+Video & Audio	الفيديو والصوت	Video ve ses
+Video and audio tracks (A: next audio)	مسارات الفيديو والصوت (A: الصوت التالي)	Video ve ses parçaları (A: sonraki ses)
+Previous episode (Ctrl+Left)	الحلقة السابقة (Ctrl+Left)	Önceki bölüm (Ctrl+Sol ok)
+Back 10 s (J)	رجوع 10 ث (J)	10 sn geri (J)
+Forward 10 s (L)	تقديم 10 ث (L)	10 sn ileri (L)
+Next episode (Ctrl+Right)	الحلقة التالية (Ctrl+Right)	Sonraki bölüm (Ctrl+Sağ ok)
+Subtitles	الترجمة	Altyazılar
+Subtitles (S: next)	الترجمة (S: التالية)	Altyazılar (S: sonraki)
+Sources	المصادر	Kaynaklar
+Sources: pick another server	المصادر: اختر خادماً آخر	Kaynaklar: başka bir sunucu seç
+Playback speed	سرعة التشغيل	Oynatma hızı
+Episodes (E)	الحلقات (E)	Bölümler (E)
+Picture in picture (I)	صورة داخل صورة (I)	Resim içinde resim (I)
+All settings and keyboard shortcuts	كل الإعدادات واختصارات لوحة المفاتيح	Tüm ayarlar ve klavye kısayolları
+Exit full screen (F)	الخروج من ملء الشاشة (F)	Tam ekrandan çık (F)
+Full screen (F)	ملء الشاشة (F)	Tam ekran (F)
+Time left (click for the total length)	الوقت المتبقي (انقر لعرض المدة الكاملة)	Kalan süre (toplam uzunluk için tıklayın)
+Total length (click for the time left)	المدة الكاملة (انقر لعرض الوقت المتبقي)	Toplam uzunluk (kalan süre için tıklayın)
+  ·  ends {0}	  ·  ينتهي {0}	  ·  {0} bitiyor
+Play / Pause (Space)	تشغيل / إيقاف مؤقت (مسافة)	Oynat / Duraklat (Boşluk)
+PAUSED	متوقف مؤقتاً	DURAKLATILDI
+{0} of {1}   ·   {2} left	{0} من {1}   ·   متبقي {2}	{0} / {1}   ·   {2} kaldı
+Subtitle style	نمط الترجمة	Altyazı stili
+Source	المصدر	Kaynak
+Second subtitle	ترجمة ثانية	İkinci altyazı
+Subtitle delay and size	تأخير الترجمة وحجمها	Altyazı gecikmesi ve boyutu
+Picture size	حجم الصورة	Görüntü boyutu
+Audio output	مخرج الصوت	Ses çıkışı
+Dynamic range	المدى الديناميكي	Dinamik aralık
+Upscaling	التحجيم	Ölçekleme
+Skip intro & credits	تخطي المقدمة والخاتمة	Girişi ve jeneriği atla
+Translate on-screen text	ترجمة النص الظاهر على الشاشة	Ekrandaki metni çevir
+Reload	إعادة تحميل	Yeniden yükle
+Priority	الأولوية	Öncelik
+Normal	عادي	Normal
+Auto (5s)	تلقائي (5 ث)	Otomatik (5 sn)
+Manual	يدوي	Elle
+Keyboard shortcuts	اختصارات لوحة المفاتيح	Klavye kısayolları
+Open in	فتح في	Şununla aç
+Browser	المتصفح	Tarayıcı
+Last used first	المستخدم أخيراً أولاً	Son kullanılan önce
+last used	آخر استخدام	son kullanılan
+More sources are being collected…	يجري جمع المزيد من المصادر…	Daha fazla kaynak toplanıyor…
+{0} hidden by the quality profile	{0} مخفية بواسطة ملف الجودة	{0} kalite profili tarafından gizlendi
+{0}, the only quality of this source	{0}، الجودة الوحيدة لهذا المصدر	{0}, bu kaynağın tek kalitesi
+The only quality of this source	الجودة الوحيدة لهذا المصدر	Bu kaynağın tek kalitesi
+No audio track	لا يوجد مسار صوتي	Ses parçası yok
+Video	الفيديو	Video
+Helps when action scenes are loud and the voices are quiet. Does not apply to the Hardware audio output (the sound is passed on as it is).	يفيد عندما تكون مشاهد الحركة صاخبة والأصوات خافتة. لا يسري على مخرج الصوت العتادي (يُمرَّر الصوت كما هو).	Aksiyon sahneleri gürültülü, sesler kısık olduğunda işe yarar. Donanım ses çıkışında geçerli değildir (ses olduğu gibi aktarılır).
+Needs the native GPU player (Settings > Appearance). Anime4K by bloc97, FSR and CAS by AMD, ported by agyild (MIT).	يحتاج إلى مشغّل GPU الأصلي (الإعدادات > المظهر). Anime4K من bloc97، وFSR وCAS من AMD، نقلها agyild (MIT).	Yerel GPU oynatıcı gerekir (Ayarlar > Görünüm). Anime4K: bloc97, FSR ve CAS: AMD, aktaran agyild (MIT).
+Translate this picture now	ترجمة هذه الصورة الآن	Bu görüntüyü şimdi çevir
+Put the translation away	إخفاء الترجمة	Çeviriyi kaldır
+Reads the writing that is part of the picture (game windows, signs, letters, titles; the subtitles do not have it) and shows it translated over it, where it stands. Press T for the same. Playing or seeking puts it away.	يقرأ الكتابة الموجودة في الصورة نفسها (نوافذ الألعاب واللافتات والرسائل والعناوين؛ ولا تتضمنها الترجمات) ويعرضها مترجمة فوقها في مكانها. اضغط T لتفعل الشيء نفسه. التشغيل أو التقديم يخفيها.	Görüntünün parçası olan yazıyı (oyun pencereleri, tabelalar, mektuplar, başlıklar; altyazılarda yoktur) okur ve çevrilmiş hâlini bulunduğu yerde üstünde gösterir. Aynısı için T'ye basın. Oynatmak ya da aramak onu kaldırır.
+The writing is in	الكتابة بلغة	Yazının dili
+Translate it into	ترجمتها إلى	Şuna çevir
+Auto-skip	تخطٍّ تلقائي	Otomatik atlama
+Automatically skip openings, recaps and credits	تخطي المقدمات والملخصات والخاتمات تلقائياً	Girişleri, özetleri ve jenerikleri otomatik atla
+5-second toggle to skip	مفتاح العدّ التنازلي 5 ثوانٍ قبل التخطي	Atlamak için 5 saniyelik geri sayım anahtarı
+Show a 5s countdown timer before auto-skipping	عرض عدّاد 5 ثوانٍ قبل التخطي التلقائي	Otomatik atlamadan önce 5 sn'lik geri sayım göster
+Online · {0}	عبر الإنترنت · {0}	Çevrimiçi · {0}
+Online	عبر الإنترنت	Çevrimiçi
+Downloaded	منزّلة	İndirilen
+In the video	في الفيديو	Videoda
+{0} files	{0} ملفات	{0} dosya
+File {0}	ملف {0}	Dosya {0}
+Delay and size	التأخير والحجم	Gecikme ve boyut
+Style…	النمط…	Stil…
+Encoding	الترميز	Kodlama
+Add a subtitle file…	إضافة ملف ترجمة…	Altyazı dosyası ekle…
+Search online…	بحث عبر الإنترنت…	Çevrimiçi ara…
+Add the first online result	إضافة أول نتيجة عبر الإنترنت	İlk çevrimiçi sonucu ekle
+Delay	التأخير	Gecikme
+Later: the text comes after the voice	لاحقاً: يأتي النص بعد الصوت	Daha geç: metin sesten sonra gelir
+Saved for all videos	محفوظ لكل الفيديوهات	Tüm videolar için kaydedildi
+Audio {0}	صوت {0}	Ses {0}
+Mono	أحادي	Mono
+Stereo	ستيريو	Stereo
+Add another subtitle first (Subtitles > Search online: tick two results).	أضف ترجمة أخرى أولاً (الترجمة > بحث عبر الإنترنت: حدّد نتيجتين).	Önce başka bir altyazı ekleyin (Altyazılar > Çevrimiçi ara: iki sonucu işaretleyin).
+Where it is shown	مكان العرض	Nerede gösterilsin
+Plain text at the top	نص عادي في الأعلى	Üstte düz metin
+A second language of the dialogue	لغة ثانية للحوار	Diyaloğun ikinci bir dili
+In its own places	في أماكنها الخاصة	Kendi yerlerinde
+Signs & songs: the writing of the picture, translated, stays where it is, with its own look	اللافتات والأغاني: تبقى كتابة الصورة مترجمةً في مكانها وبشكلها الخاص	Tabelalar ve şarkılar: görüntünün yazısı çevrilmiş olarak yerinde, kendi görünümüyle kalır
+Playing	قيد التشغيل	Oynatılıyor
+Paused	متوقف مؤقتاً	Duraklatıldı
+Skip	تخطي	Atla
+Next episode in {0} s	الحلقة التالية بعد {0} ث	Sonraki bölüm {0} sn içinde
+Back to the app (Esc)	العودة إلى التطبيق (Esc)	Uygulamaya dön (Esc)
+{0} peers ({1} seeds)	{0} أقران ({1} بذور)	{0} eş ({1} seed)
+Waiting for the source… {0} s	بانتظار المصدر… {0} ث	Kaynak bekleniyor… {0} sn
+{0} sources found	{0,plural,one{تم العثور على مصدر واحد}two{تم العثور على مصدرين}few{تم العثور على # مصادر}many{تم العثور على # مصدراً}other{تم العثور على # مصدر}}	{0} kaynak bulundu
+{0} source found	تم العثور على مصدر واحد	{0} kaynak bulundu
+still looking	لا يزال البحث مستمراً	hâlâ aranıyor
+Try next source	تجربة المصدر التالي	Sonraki kaynağı dene
+Stop looking	إيقاف البحث	Aramayı durdur
+Play now ({0})	شغّل الآن ({0})	Şimdi oynat ({0})
+Hide sources	إخفاء المصادر	Kaynakları gizle
+Show sources ({0})	عرض المصادر ({0})	Kaynakları göster ({0})
+This video could not be played	تعذّر تشغيل هذا الفيديو	Bu video oynatılamadı
+{0} found	تم العثور على {0}	{0} bulundu
+Reload sources: look for them again	إعادة تحميل المصادر: ابحث عنها مرة أخرى	Kaynakları yeniden yükle: tekrar ara
+Nothing yet…	لا شيء بعد…	Henüz bir şey yok…
+more sources loading…	جارٍ تحميل المزيد من المصادر…	daha fazla kaynak yükleniyor…
+Remaining time (click for total)	الوقت المتبقي (انقر للمدة الكاملة)	Kalan süre (toplam için tıklayın)
+Total duration (click for remaining)	المدة الكاملة (انقر للوقت المتبقي)	Toplam süre (kalan için tıklayın)
+Quality, audio, speed and more	الجودة والصوت والسرعة والمزيد	Kalite, ses, hız ve daha fazlası
+Mute (M) · wheel: volume	كتم الصوت (M) · العجلة: مستوى الصوت	Sessiz (M) · tekerlek: ses düzeyi
+Go to the live picture	الانتقال إلى الصورة المباشرة	Canlı görüntüye git
+LIVE	مباشر	CANLI
+Spoilers hidden: click to show the episodes ahead	المحتوى المسرّب مخفي: انقر لإظهار الحلقات القادمة	Spoiler'lar gizli: öndeki bölümleri göstermek için tıklayın
+Spoilers shown: click to hide the episodes ahead	المحتوى المسرّب ظاهر: انقر لإخفاء الحلقات القادمة	Spoiler'lar görünür: öndeki bölümleri gizlemek için tıklayın
+Search subtitles	بحث عن ترجمات	Altyazı ara
+Title	العنوان	Başlık
+Search	بحث	Ara
+No subtitles found. Try another language or a shorter title.	لم يُعثر على ترجمات. جرّب لغة أخرى أو عنواناً أقصر.	Altyazı bulunamadı. Başka bir dil ya da daha kısa bir başlık deneyin.
+Full dialogue	حوار كامل	Tam diyalog
+Signs & songs / forced	اللافتات والأغاني / القسرية	Tabelalar ve şarkılar / zorunlu
+{0} of {1}	{0} من {1}	{0} / {1}
+Signs & songs	اللافتات والأغاني	Tabelalar ve şarkılar
+Hearing impaired	لضعاف السمع	İşitme engelliler için
+1 selected	محدد: 1	1 seçili
+{0} selected: the first is shown, the second goes beside it as a second subtitle	محدد: {0}؛ تُعرض الأولى وتوضع الثانية بجانبها كترجمة ثانية	{0} seçili: ilki gösterilir, ikincisi yanında ikinci altyazı olarak gösterilir
+Add {0}	إضافة {0}	{0} ekle
+Looking	جارٍ البحث	Aranıyor
+Torrent  ·  {0} peers  ·  {1}	تورنت  ·  {0} أقران  ·  {1}	Torrent  ·  {0} eş  ·  {1}
+  ·  buffer {0} %	  ·  المخزن المؤقت {0}%	  ·  arabellek %{0}
+Fit	ملاءمة	Sığdır
+Stretch	تمديد	Uzat
+Zoom to fill	تكبير للملء	Doldurmak için yakınlaştır
+This PC finds the video heavy: smooth motion off	هذا الجهاز يجد الفيديو ثقيلاً: تم إيقاف الحركة السلسة	Bu bilgisayar videoyu ağır buluyor: akıcı hareket kapatıldı
+This PC finds the video heavy: a lighter picture	هذا الجهاز يجد الفيديو ثقيلاً: صورة أخف	Bu bilgisayar videoyu ağır buluyor: daha hafif görüntü
+This video is heavy for this PC	هذا الفيديو ثقيل على هذا الجهاز	Bu video bu bilgisayar için ağır
+Use the GPU player	استخدم مشغّل GPU	GPU oynatıcıyı kullan
+The GPU player is on: open the video again to use it	مشغّل GPU مفعّل: افتح الفيديو مجدداً لاستخدامه	GPU oynatıcı açık: kullanmak için videoyu yeniden açın
+The picture was made lighter and still does not keep up. The GPU player (Settings > Look > Native GPU player) lets the graphics card do the work and is much lighter on the processor. It takes effect from the next time a video is opened.	جُعلت الصورة أخف ولا يزال التشغيل متعثراً. مشغّل GPU (الإعدادات > المظهر > مشغّل GPU الأصلي) يترك العمل لبطاقة الرسوميات وهو أخف بكثير على المعالج. يسري من المرة القادمة التي يُفتح فيها فيديو.	Görüntü hafifletildi ve hâlâ yetişmiyor. GPU oynatıcı (Ayarlar > Görünüm > Yerel GPU oynatıcı) işi ekran kartına bırakır ve işlemciye çok daha hafiftir. Bir sonraki video açılışında geçerli olur.
+Looking for sources…	جارٍ البحث عن مصادر…	Kaynaklar aranıyor…
+Looking for subtitles…	جارٍ البحث عن ترجمات…	Altyazılar aranıyor…
+Trying another source…	جارٍ تجربة مصدر آخر…	Başka bir kaynak deneniyor…
+That source is not responding.	هذا المصدر لا يستجيب.	Bu kaynak yanıt vermiyor.
+The connection is slow, trying again…	الاتصال بطيء، تتم المحاولة مجدداً…	Bağlantı yavaş, yeniden deneniyor…
+This source is not responding, trying the next one	هذا المصدر لا يستجيب، تتم تجربة التالي	Bu kaynak yanıt vermiyor, sonrakine geçiliyor
+That source is not responding. Trying the next one…	ذلك المصدر لا يستجيب. تتم تجربة التالي…	O kaynak yanıt vermiyor. Sonraki deneniyor…
+That source is not responding. Looking for another one…	ذلك المصدر لا يستجيب. جارٍ البحث عن آخر…	O kaynak yanıt vermiyor. Başkası aranıyor…
+The source stopped responding.	توقف المصدر عن الاستجابة.	Kaynak yanıt vermeyi bıraktı.
+None of the sources could be played.	تعذّر تشغيل أي من المصادر.	Kaynakların hiçbiri oynatılamadı.
+No playable sources were found.	لم يُعثر على مصادر قابلة للتشغيل.	Oynatılabilir kaynak bulunamadı.
+No links found	لم يُعثر على روابط	Bağlantı bulunamadı
+Starting playback…	جارٍ بدء التشغيل…	Oynatma başlatılıyor…
+Source {0} of {1}	المصدر {0} من {1}	Kaynak {0} / {1}
+Torrent streaming is off	بث التورنت متوقف	Torrent yayını kapalı
+This source is a torrent. Turn on torrent streaming in Settings > Stremio & torrents to play it.	هذا المصدر تورنت. فعّل بث التورنت من الإعدادات > Stremio والتورنت لتشغيله.	Bu kaynak bir torrent. Oynatmak için Ayarlar > Stremio ve torrentler'den torrent yayınını açın.
+Buffer	المخزن المؤقت	Arabellek
+The connection was lost, reconnecting…	انقطع الاتصال، تتم إعادة الاتصال…	Bağlantı kesildi, yeniden bağlanılıyor…
+The connection was lost. Reconnecting…	انقطع الاتصال. تتم إعادة الاتصال…	Bağlantı kesildi. Yeniden bağlanılıyor…
+This source keeps stopping, trying the next one	هذا المصدر يتوقف باستمرار، تتم تجربة التالي	Bu kaynak sürekli duruyor, sonrakine geçiliyor
+That source keeps stopping. Trying the next one…	ذلك المصدر يتوقف باستمرار. تتم تجربة التالي…	O kaynak sürekli duruyor. Sonraki deneniyor…
+That source keeps stopping. Looking for another one…	ذلك المصدر يتوقف باستمرار. جارٍ البحث عن آخر…	O kaynak sürekli duruyor. Başkası aranıyor…
+The video stopped before its end and no other source is left.	توقف الفيديو قبل نهايته ولم يبقَ مصدر آخر.	Video bitmeden durdu ve başka kaynak kalmadı.
+That source could not be played.	تعذّر تشغيل ذلك المصدر.	O kaynak oynatılamadı.
+Source failed, trying the next one.\n{0}	فشل المصدر، تتم تجربة التالي.\n{0}	Kaynak başarısız oldu, sonraki deneniyor.\n{0}
+That source did not work. Trying the next one…	ذلك المصدر لم يعمل. تتم تجربة التالي…	O kaynak çalışmadı. Sonraki deneniyor…
+That source did not work. Looking for another one…	ذلك المصدر لم يعمل. جارٍ البحث عن آخر…	O kaynak çalışmadı. Başkası aranıyor…
+Playback failed: {0}	فشل التشغيل: {0}	Oynatma başarısız: {0}
+\nLive events only have a stream while they are on; if this one has not started yet (or its link expired), try again closer to the start time.	\nالبث المباشر للفعاليات متاح فقط أثناء إقامتها؛ إذا لم تبدأ هذه بعد (أو انتهت صلاحية رابطها) فحاول مجدداً قرب موعد البدء.	\nCanlı etkinliklerin yayını yalnızca devam ederken vardır; bu henüz başlamadıysa (ya da bağlantısı geçerliliğini yitirdiyse) başlangıç saatine daha yakın tekrar deneyin.
+ (not the wanted one any more)	 (لم تعد المطلوبة)	 (artık istenen değil)
+Loading subtitles · {0}	جارٍ تحميل الترجمات · {0}	Altyazılar yükleniyor · {0}
+Subtitles on · {0}	الترجمة مفعّلة · {0}	Altyazılar açık · {0}
+Trying another subtitle…	جارٍ تجربة ترجمة أخرى…	Başka bir altyazı deneniyor…
+Couldn't load subtitles · {0}	تعذّر تحميل الترجمات · {0}	Altyazılar yüklenemedi · {0}
+Subtitles off	الترجمة متوقفة	Altyazılar kapalı
+Second subtitle off	الترجمة الثانية متوقفة	İkinci altyazı kapalı
+Second subtitle · 	الترجمة الثانية · 	İkinci altyazı ·
+Downloading subtitles · {0}	جارٍ تنزيل الترجمات · {0}	Altyazılar indiriliyor · {0}
+Couldn't download subtitles · {0}	تعذّر تنزيل الترجمات · {0}	Altyazılar indirilemedi · {0}
+Choose a subtitle file	اختيار ملف ترجمة	Bir altyazı dosyası seç
+Couldn't load subtitles · {0} is not available	تعذّر تحميل الترجمات · {0} غير متاح	Altyazılar yüklenemedi · {0} kullanılamıyor
+{0} gave no subtitle file for {1}	لم يقدّم {0} ملف ترجمة لـ {1}	{0}, {1} için altyazı dosyası vermedi
+Searching subtitles online…	جارٍ البحث عن ترجمات عبر الإنترنت…	Çevrimiçi altyazılar aranıyor…
+No online subtitles found	لم يُعثر على ترجمات عبر الإنترنت	Çevrimiçi altyazı bulunamadı
+Audio track	مسار الصوت	Ses parçası
+{0} · Torrent	{0} · تورنت	{0} · Torrent
+{0} trying the next source after it	{0} تتم تجربة المصدر التالي بعده	{0} ardından sonraki kaynak deneniyor
+{0} Trying the next one…	{0} تتم تجربة التالي…	{0} Sonraki deneniyor…
+{0} No other source worked, going back to the one that was playing.	{0} لم يعمل أي مصدر آخر، تتم العودة إلى ما كان يعمل.	{0} Başka hiçbir kaynak çalışmadı, oynayana geri dönülüyor.
+This source can not be handed to another player	لا يمكن تسليم هذا المصدر إلى مشغّل آخر	Bu kaynak başka bir oynatıcıya verilemiyor
+Could not open the other player	تعذّر فتح المشغّل الآخر	Diğer oynatıcı açılamadı
+Paused to read the picture	توقف مؤقتاً لقراءة الصورة	Görüntüyü okumak için duraklatıldı
+This source can't skip: its server only sends the video from the start. Pick another mirror of it (Pixeldrain, FSL, Instant) to skip.	لا يدعم هذا المصدر القفز: خادمه يرسل الفيديو من البداية فقط. اختر نسخة أخرى منه (Pixeldrain أو FSL أو Instant) لتتمكن من القفز.	Bu kaynak atlayamıyor: sunucusu videoyu yalnızca baştan gönderiyor. Atlamak için bunun başka bir yansısını seçin (Pixeldrain, FSL, Instant).
+Normal speed	سرعة عادية	Normal hız
+Muted	تم الكتم	Sessiz
+Choosing the best subtitles…	جارٍ اختيار أفضل ترجمة…	En iyi altyazılar seçiliyor…
+{0} translated · {1} → {2} · T or play to put away	تمت ترجمة {0} · {1} ← {2} · اضغط T أو شغّل للإخفاء	{0} çevrildi · {1} → {2} · kaldırmak için T'ye basın ya da oynatın
+Open Windows language settings	فتح إعدادات لغة Windows	Windows dil ayarlarını aç
+Play or pause	تشغيل أو إيقاف مؤقت	Oynat ya da duraklat
+Back or forward 10 s (Shift: 30 s); keep it pressed or press again and again: the bubble counts +10 s, +20 s ...	رجوع أو تقديم 10 ثوانٍ (Shift: 30 ثانية)؛ أبقِ المفتاح مضغوطاً أو اضغط مراراً: تعدّ الفقاعة +10 ث، +20 ث ...	10 sn geri ya da ileri (Shift: 30 sn); basılı tutun ya da tekrar tekrar basın: balon +10 sn, +20 sn ... diye sayar
+Back or forward 10 s	رجوع أو تقديم 10 ثوانٍ	10 sn geri ya da ileri
+Previous or next episode (also P  /  N)	الحلقة السابقة أو التالية (وأيضاً P  /  N)	Önceki ya da sonraki bölüm (ayrıca P  /  N)
+↑  /  ↓  ·  mouse wheel	↑  /  ↓  ·  عجلة الفأرة	↑  /  ↓  ·  fare tekerleği
+Volume	مستوى الصوت	Ses düzeyi
+Mute	كتم الصوت	Sessiz
+F  ·  F11  ·  double click	F  ·  F11  ·  نقر مزدوج	F  ·  F11  ·  çift tıklama
+Full screen	ملء الشاشة	Tam ekran
+Leave full screen or picture in picture, close the episode list, go back	الخروج من ملء الشاشة أو صورة داخل صورة، وإغلاق قائمة الحلقات، والرجوع	Tam ekrandan ya da resim içinde resimden çık, bölüm listesini kapat, geri dön
+Picture in picture	صورة داخل صورة	Resim içinde resim
+Next subtitle track (or off)	مسار الترجمة التالي (أو الإيقاف)	Sonraki altyazı parçası (ya da kapalı)
+Next audio track	مسار الصوت التالي	Sonraki ses parçası
+Picture size: fit, fill, zoom	حجم الصورة: ملاءمة، ملء، تكبير	Görüntü boyutu: sığdır, doldur, yakınlaştır
+Translate the writing on the picture (signs, game windows) and show it over the video	ترجمة الكتابة الموجودة في الصورة (لافتات، نوافذ ألعاب) وعرضها فوق الفيديو	Görüntüdeki yazıyı (tabelalar, oyun pencereleri) çevir ve videonun üzerinde göster
+Episode list	قائمة الحلقات	Bölüm listesi
+Slower (0.25x steps)	أبطأ (بخطوات 0.25x)	Daha yavaş (0,25x adımlarla)
+Faster (0.25x steps)	أسرع (بخطوات 0.25x)	Daha hızlı (0,25x adımlarla)
+Back to the start	العودة إلى البداية	Başa dön
+Jump to 0 % … 90 % of the video	الانتقال إلى 0٪ … 90٪ من الفيديو	Videonun %0 … %90'ına atla
+This list	هذه القائمة	Bu liste
+A sync extension tried to delete {0} of your saved items (extensions, library, history). They were kept.	حاولت إضافة مزامنة حذف {0} من العناصر المحفوظة لديك (الإضافات والمكتبة والسجل). تم الاحتفاظ بها.	Bir eşitleme eklentisi kayıtlı öğelerinizden {0} tanesini silmeye çalıştı (eklentiler, kütüphane, geçmiş). Bunlar korundu.
+Previous session crashed, plugins are not loaded (safe mode):\n{0}	تعطّل التشغيل السابق ولم تُحمَّل الإضافات (الوضع الآمن):\n{0}	Önceki oturum çöktü, eklentiler yüklenmedi (güvenli mod):\n{0}
+Series	مسلسلات	Diziler
+Anime	أنمي	Anime
+In cinemas	في دور السينما	Sinemada
+Streaming & TV	البث والتلفاز	Yayın platformları ve TV
+Episode {0} is out	صدرت الحلقة {0}	{0}. bölüm çıktı
+Open CloudStream	فتح CloudStream	CloudStream'i aç
+Exit	خروج	Çıkış
+mpv is not installed	mpv غير مثبّت	mpv kurulu değil
+mpv can not play this kind of link (protected streams). Use the in-app player.	لا يستطيع mpv تشغيل هذا النوع من الروابط (البث المحمي). استخدم مشغّل التطبيق.	mpv bu tür bağlantıları (korumalı yayınlar) oynatamaz. Uygulama içi oynatıcıyı kullanın.
+mpv: {0}	mpv: {0}	mpv: {0}
+mpv did not start: {0}	لم يبدأ mpv: {0}	mpv başlamadı: {0}
+VLC is not installed	VLC غير مثبّت	VLC kurulu değil
+VLC can not play this kind of link (DASH or protected streams). Use the in-app player.	لا يستطيع VLC تشغيل هذا النوع من الروابط (DASH أو البث المحمي). استخدم مشغّل التطبيق.	VLC bu tür bağlantıları (DASH ya da korumalı yayınlar) oynatamaz. Uygulama içi oynatıcıyı kullanın.
+VLC: {0}	VLC: {0}	VLC: {0}
+VLC did not start: {0}	لم يبدأ VLC: {0}	VLC başlamadı: {0}
+The browser could not be opened	تعذّر فتح المتصفح	Tarayıcı açılamadı
+VLC did not start	لم يبدأ VLC	VLC başlamadı
+mpv did not start	لم يبدأ mpv	mpv başlamadı
+Movie and series catalogs and details (the official one)	فهارس وتفاصيل الأفلام والمسلسلات (الإضافة الرسمية)	Film ve dizi katalogları ile ayrıntıları (resmî olan)
+Torrent streams for movies, series and anime. Needs the torrent engine, or a debrid service in its settings.	مصادر تورنت للأفلام والمسلسلات والأنمي. تحتاج إلى محرك التورنت، أو إلى خدمة Debrid في إعداداتها.	Filmler, diziler ve animeler için torrent kaynakları. Torrent motoru ya da ayarlarında bir debrid hizmeti gerekir.
+Subtitles in many languages for movies and series	ترجمات بلغات كثيرة للأفلام والمسلسلات	Filmler ve diziler için birçok dilde altyazı
+Anime catalogs and episodes from Kitsu	فهارس وحلقات الأنمي من Kitsu	Kitsu'dan anime katalogları ve bölümleri
+{0} is already added	{0} مضافة بالفعل	{0} zaten ekli
+That address did not answer with an add-on manifest	هذا العنوان لم يردّ بملف إضافة (manifest)	Bu adres bir eklenti manifestosuyla yanıt vermedi
+Did not answer	لم يردّ	Yanıt vermedi
+Channels	القنوات	Kanallar
+{0} did not answer	{0} لم يردّ	{0} yanıt vermedi
+Not a Stremio title	ليس عملاً من Stremio	Bir Stremio başlığı değil
+No add-on has details for this title	لا توجد إضافة لديها تفاصيل هذا العمل	Hiçbir eklentide bu başlığın ayrıntıları yok
+Portuguese (Brazil)	البرتغالية (البرازيل)	Portekizce (Brezilya)
+Chinese (Traditional)	الصينية (التقليدية)	Çince (Geleneksel)
+Chinese (Simplified)	الصينية (المبسّطة)	Çince (Basitleştirilmiş)
+Spanish (Latin America)	الإسبانية (أمريكا اللاتينية)	İspanyolca (Latin Amerika)
+Spanish (Spain)	الإسبانية (إسبانيا)	İspanyolca (İspanya)
+Serbian	الصربية	Sırpça
+{0}: "{1}" opens a web page ({2}), not a video	{0}: "{1}" يفتح صفحة ويب ({2}) وليس فيديو	{0}: "{1}" bir video değil, web sayfası ({2}) açıyor
+A torrent is downloaded from other people's computers (peers) while it plays, and what you have downloaded is shared with them. The peers can see your IP address; a VPN hides it. Only watch what you are allowed to watch: what you play is your responsibility.	يُنزَّل التورنت من حواسيب أشخاص آخرين (الأقران) أثناء تشغيله، وما نزّلته تتم مشاركته معهم. يمكن للأقران رؤية عنوان IP الخاص بك؛ والـVPN يخفيه. شاهد فقط ما يُسمح لك بمشاهدته: ما تشغّله مسؤوليتك.	Bir torrent, oynatılırken başkalarının bilgisayarlarından (eşler) indirilir ve indirdikleriniz onlarla paylaşılır. Eşler IP adresinizi görebilir; VPN onu gizler. Yalnızca izlemenize izin verilenleri izleyin: oynattığınız şeyin sorumluluğu sizindir.
+For this the app downloads a program once: TorrServer (about 60 MB, open source, github.com/YouROK/TorrServer). It runs on this PC only while a torrent plays, and Windows may ask whether to let it through the firewall.	لهذا ينزّل التطبيق برنامجاً مرة واحدة: TorrServer (نحو 60 ميغابايت، مفتوح المصدر، github.com/YouROK/TorrServer). يعمل على هذا الجهاز فقط أثناء تشغيل تورنت، وقد يسألك Windows هل تسمح له بالمرور عبر جدار الحماية.	Bunun için uygulama bir program indirir (bir kez): TorrServer (yaklaşık 60 MB, açık kaynak, github.com/YouROK/TorrServer). Bu bilgisayarda yalnızca bir torrent oynarken çalışır ve Windows onu güvenlik duvarından geçirip geçirmeyeceğinizi sorabilir.
+Play torrents?	تشغيل التورنت؟	Torrent'ler oynatılsın mı?
+Turn on	تفعيل	Aç
+Turn on and download	تفعيل وتنزيل	Aç ve indir
+Not now	ليس الآن	Şimdi değil
+You can turn this off later in Settings > Stremio & torrents.	يمكنك إيقاف هذا لاحقاً من الإعدادات > Stremio والتورنت.	Bunu daha sonra Ayarlar > Stremio ve torrentler'den kapatabilirsiniz.
+Downloading the torrent engine	جارٍ تنزيل محرك التورنت	Torrent motoru indiriliyor
+Cancel	إلغاء	İptal
+The download failed: {0}	فشل التنزيل: {0}	İndirme başarısız: {0}
+Check the connection and try again from Settings > Stremio & torrents.	تحقق من الاتصال وحاول مرة أخرى من الإعدادات > Stremio والتورنت.	Bağlantıyı kontrol edip Ayarlar > Stremio ve torrentler'den tekrar deneyin.
+Starting…	جارٍ البدء…	Başlatılıyor…
+The torrent engine could not be downloaded	تعذّر تنزيل محرك التورنت	Torrent motoru indirilemedi
+GitHub is limiting requests from this network, try again later	يقيّد GitHub الطلبات من هذه الشبكة، حاول مرة أخرى لاحقاً	GitHub bu ağdan gelen istekleri sınırlıyor, daha sonra tekrar deneyin
+GitHub answered {0}	ردّ GitHub بالرمز {0}	GitHub {0} yanıtı verdi
+no connection	لا يوجد اتصال	bağlantı yok
+CloudStream {0} is the latest version	CloudStream {0} هو أحدث إصدار	CloudStream {0} en son sürüm
+Could not check for updates: {0}	تعذّر التحقق من التحديثات: {0}	Güncellemeler denetlenemedi: {0}
+CloudStream was updated to {0}	تم تحديث CloudStream إلى {0}	CloudStream {0} sürümüne güncellendi
+Update available	يتوفر تحديث	Güncelleme var
+Release page	صفحة الإصدار	Sürüm sayfası
+CloudStream {0}{1} is available. You have {2}.	CloudStream {0}{1} متاح. لديك {2}.	CloudStream {0}{1} mevcut. Sizde {2} var.
+Update now downloads and verifies the update in the app{0}, or choose Download in browser to get the installer directly in your browser. Your settings, accounts and extensions stay.	"حدّث الآن" ينزّل التحديث ويتحقق منه داخل التطبيق{0}، أو اختر "تنزيل في المتصفح" للحصول على المثبّت مباشرة في متصفحك. تبقى إعداداتك وحساباتك وإضافاتك.	"Şimdi güncelle" güncellemeyi uygulamada indirir ve doğrular{0}, ya da yükleyiciyi doğrudan tarayıcınızda almak için "Tarayıcıda indir"i seçin. Ayarlarınız, hesaplarınız ve eklentileriniz kalır.
+This is a development run: open the release page to get the new version.	هذا تشغيل تطويري: افتح صفحة الإصدار للحصول على الإصدار الجديد.	Bu bir geliştirme çalıştırması: yeni sürümü almak için sürüm sayfasını açın.
+This is a portable copy and the release has no portable file for it: download it from the release page and replace the folder, the data folder stays.	هذه نسخة محمولة ولا يتضمن الإصدار ملفاً محمولاً لها: نزّله من صفحة الإصدار واستبدل المجلد، ويبقى مجلد البيانات.	Bu taşınabilir bir kopya ve sürümde onun için taşınabilir dosya yok: sürüm sayfasından indirin ve klasörü değiştirin, veri klasörü kalır.
+The release has no installer for this copy: download it from the release page.	لا يتضمن الإصدار مثبّتاً لهذه النسخة: نزّله من صفحة الإصدار.	Sürümde bu kopya için yükleyici yok: sürüm sayfasından indirin.
+Release page on GitHub	صفحة الإصدار على GitHub	GitHub'daki sürüm sayfası
+Skip this version	تخطي هذا الإصدار	Bu sürümü atla
+Downloading update	جارٍ تنزيل التحديث	Güncelleme indiriliyor
+Hide	إخفاء	Gizle
+CloudStream {0}	CloudStream {0}	CloudStream {0}
+You can hide this and keep using the app; it asks again when the update is ready.	يمكنك إخفاء هذا ومواصلة استخدام التطبيق؛ سيسأل مجدداً عند جهوزية التحديث.	Bunu gizleyip uygulamayı kullanmaya devam edebilirsiniz; güncelleme hazır olunca yeniden sorar.
+Update ready	التحديث جاهز	Güncelleme hazır
+CloudStream {0} is downloaded and checked. The app closes now, installs it and opens again in a moment. Your settings, accounts and extensions stay.	تم تنزيل CloudStream {0} وفحصه. سيُغلق التطبيق الآن ويثبّته ثم يُفتح مجدداً بعد قليل. تبقى إعداداتك وحساباتك وإضافاتك.	CloudStream {0} indirildi ve denetlendi. Uygulama şimdi kapanır, onu kurar ve birazdan yeniden açılır. Ayarlarınız, hesaplarınız ve eklentileriniz kalır.
+CloudStream {0} is downloaded: restart to update from Settings > About	تم تنزيل CloudStream {0}: أعد التشغيل للتحديث من الإعدادات > حول	CloudStream {0} indirildi: güncellemek için Ayarlar > Hakkında'dan yeniden başlatın
+Could not download the update: {0}	تعذّر تنزيل التحديث: {0}	Güncelleme indirilemedi: {0}
+the server answered {0}	ردّ الخادم بالرمز {0}	sunucu {0} yanıtı verdi
+the download is incomplete	التنزيل غير مكتمل	indirme tamamlanmadı
+the download does not match the checksum of the release	التنزيل لا يطابق المجموع الاختباري للإصدار	indirme, sürümün sağlama toplamıyla uyuşmuyor
+The update could not be started. Open the release page to install it by hand.	تعذّر بدء التحديث. افتح صفحة الإصدار لتثبيته يدوياً.	Güncelleme başlatılamadı. Elle kurmak için sürüm sayfasını açın.
+Best	الأفضل	En iyi
+Quality	الجودة	Kalite
+Size	الحجم	Boyut
+Seeders	البذور	Seeder
+India	الهند	Hindistan
+United States	الولايات المتحدة	ABD
+United Kingdom	المملكة المتحدة	Birleşik Krallık
+Canada	كندا	Kanada
+Australia	أستراليا	Avustralya
+Germany	ألمانيا	Almanya
+France	فرنسا	Fransa
+Spain	إسبانيا	İspanya
+Italy	إيطاليا	İtalya
+Netherlands	هولندا	Hollanda
+Brazil	البرازيل	Brezilya
+Mexico	المكسيك	Meksika
+Japan	اليابان	Japonya
+South Korea	كوريا الجنوبية	Güney Kore
+United Arab Emirates	الإمارات العربية المتحدة	Birleşik Arap Emirlikleri
+Saudi Arabia	المملكة العربية السعودية	Suudi Arabistan
+Singapore	سنغافورة	Singapur
+South Africa	جنوب أفريقيا	Güney Afrika
+Turkey	تركيا	Türkiye
+Philippines	الفلبين	Filipinler
+Director	مخرج	Yönetmen
+Co-Director	مخرج مشارك	Yardımcı yönetmen
+Series Director	مخرج المسلسل	Dizi yönetmeni
+Directors	المخرجون	Yönetmenler
+Creator	المنشئ	Yaratıcı
+Series Composition	تأليف السلسلة	Dizi kompozisyonu
+Creators	المنشئون	Yaratıcılar
+Writer	كاتب	Yazar
+Screenplay	سيناريو	Senaryo
+Story	قصة	Hikâye
+Novel	رواية	Roman
+Author	مؤلف	Yazar
+Teleplay	سيناريو تلفزيوني	Televizyon senaryosu
+Original Story	القصة الأصلية	Orijinal hikâye
+Characters	الشخصيات	Karakterler
+Script	نص السيناريو	Senaryo metni
+Original Concept	الفكرة الأصلية	Orijinal fikir
+Writers	الكتّاب	Yazarlar
+Producer	منتج	Yapımcı
+Producers	المنتجون	Yapımcılar
+Original Music Composer	ملحّن الموسيقى الأصلية	Orijinal müzik bestecisi
+Composer	ملحّن	Besteci
+Theme Song Performance	أداء أغنية المقدمة	Tema şarkısı performansı
+Songs	أغانٍ	Şarkılar
+Music Supervisor	مشرف الموسيقى	Müzik süpervizörü
+Director of Photography	مدير التصوير	Görüntü yönetmeni
+Cinematography	التصوير السينمائي	Görüntü yönetimi
+Editor	مونتير	Kurgucu
+Film Editor	مونتير الفيلم	Film kurgucusu
+Editing	المونتاج	Kurgu
+Production Design	تصميم الإنتاج	Yapım tasarımı
+Art Direction	الإخراج الفني	Sanat yönetimi
+Character Designer	مصمم الشخصيات	Karakter tasarımcısı
+Character Design	تصميم الشخصيات	Karakter tasarımı
+Animation Director	مخرج الرسوم المتحركة	Animasyon yönetmeni
+Chief Animation Director	كبير مخرجي الرسوم المتحركة	Baş animasyon yönetmeni
+Original Character Design	التصميم الأصلي للشخصيات	Orijinal karakter tasarımı
+Key Animation	الرسوم المتحركة الرئيسية	Anahtar animasyon
+Design and animation	التصميم والرسوم المتحركة	Tasarım ve animasyon
+Trailer	إعلان ترويجي	Fragman
+Anonymous	مجهول	Anonim
+Action	أكشن	Aksiyon
+Adventure	مغامرة	Macera
+Animation	رسوم متحركة	Animasyon
+Comedy	كوميديا	Komedi
+Crime	جريمة	Suç
+Documentary	وثائقي	Belgesel
+Drama	دراما	Dram
+Family	عائلي	Aile
+Fantasy	فانتازيا	Fantastik
+History	تاريخ	Tarih
+Horror	رعب	Korku
+Mystery	غموض	Gizem
+Romance	رومانسي	Romantik
+Sci-Fi	خيال علمي	Bilim Kurgu
+Thriller	إثارة	Gerilim
+War	حرب	Savaş
+Western	ويسترن	Vahşi Batı
+Action & Adventure	أكشن ومغامرة	Aksiyon ve Macera
+Kids	أطفال	Çocuk
+Reality	تلفزيون الواقع	Gerçeklik
+Sci-Fi & Fantasy	خيال علمي وفانتازيا	Bilim Kurgu ve Fantastik
+War & Politics	حرب وسياسة	Savaş ve Siyaset
+The download failed (HTTP {0})	فشل التنزيل (HTTP {0})	İndirme başarısız oldu (HTTP {0})
+The downloaded file is not the torrent engine	الملف المنزَّل ليس محرك التورنت	İndirilen dosya torrent motoru değil
+The engine could not be saved in {0}	تعذّر حفظ المحرك في {0}	Motor {0} içine kaydedilemedi
+TorrServer {0} installed ({1} MB)	تم تثبيت TorrServer {0} ({1} ميغابايت)	TorrServer {0} kuruldu ({1} MB)
+The torrent engine is not installed. Turn on torrent streaming in Settings > Stremio & torrents.	محرك التورنت غير مثبّت. فعّل بث التورنت من الإعدادات > Stremio والتورنت.	Torrent motoru kurulu değil. Ayarlar > Stremio ve torrentler'den torrent yayınını açın.
+The torrent engine closed right after it started (see {0})	أُغلق محرك التورنت فور بدئه (انظر {0})	Torrent motoru başlar başlamaz kapandı ({0} bölümüne bakın)
+The torrent engine did not start in time	لم يبدأ محرك التورنت في الوقت المناسب	Torrent motoru zamanında başlamadı
+Torrent streaming is off. Turn it on in Settings > Stremio & torrents.	بث التورنت متوقف. فعّله من الإعدادات > Stremio والتورنت.	Torrent yayını kapalı. Ayarlar > Stremio ve torrentler'den açın.
+Starting the torrent engine…	جارٍ تشغيل محرك التورنت…	Torrent motoru başlatılıyor…
+The torrent engine did not accept this source	لم يقبل محرك التورنت هذا المصدر	Torrent motoru bu kaynağı kabul etmedi
+Getting the file list from {0} peers…	جارٍ جلب قائمة الملفات من {0} أقران…	{0} eşten dosya listesi alınıyor…
+Looking for peers…	جارٍ البحث عن أقران…	Eşler aranıyor…
+No peers answered in time ({0} found). The torrent may be dead, or your network blocks torrents.	لم يستجب أي قرين في الوقت المناسب (تم العثور على {0}). قد يكون التورنت ميتاً، أو أن شبكتك تحجب التورنت.	Hiçbir eş zamanında yanıt vermedi ({0} bulundu). Torrent ölmüş olabilir ya da ağınız torrentleri engelliyor.
+This torrent has no video file	هذا التورنت لا يحتوي على ملف فيديو	Bu torrent'te video dosyası yok
+Buffering	جارٍ التخزين المؤقت	Arabelleğe alınıyor
+Streaming	جارٍ البث	Yayınlanıyor
+TMDB rating	تقييم TMDB	TMDB puanı
+available	متاح	mevcut
+installed	مثبّت	yüklü
+Home	الرئيسية	Ana sayfa
+Downloads	التنزيلات	İndirilenler
+Movies	أفلام	Filmler
+Player	المشغّل	Oynatıcı
+Smooth motion	الحركة السلسة	Akıcı hareket
+Getting ready	جارٍ التجهيز	Hazırlanıyor
+Loading extensions	جارٍ تحميل الإضافات	Eklentiler yükleniyor
+Updating extensions	جارٍ تحديث الإضافات	Eklentiler güncelleniyor
+On	مفعّل	Açık
+Which extensions were updated, and when	أي الإضافات تم تحديثها ومتى	Hangi eklentilerin ne zaman güncellendiği
+Any legal issues regarding the content on this application should be taken up with the actual file hosts and providers themselves as we are not affiliated with them.	يجب رفع أي مسائل قانونية تتعلق بالمحتوى في هذا التطبيق إلى مستضيفي الملفات والمزوّدين الفعليين أنفسهم، فنحن لا نرتبط بهم.	Bu uygulamadaki içerikle ilgili her türlü yasal sorun, onlarla bağlantımız olmadığından, gerçek dosya barındırıcılarına ve sağlayıcılarına iletilmelidir.
+In case of copyright infringement, please directly contact the responsible parties or the streaming websites.	في حال انتهاك حقوق النشر، يُرجى التواصل مباشرة مع الجهات المسؤولة أو مواقع البث.	Telif hakkı ihlali durumunda lütfen doğrudan sorumlu taraflarla ya da yayın sitelerine başvurun.
+The app is purely for educational and personal use.	التطبيق مخصص للأغراض التعليمية والاستخدام الشخصي فقط.	Uygulama yalnızca eğitim ve kişisel kullanım içindir.
+Software	برمجي	Yazılım
+Hardware	عتادي	Donanım
+Hardware+	عتادي+	Donanım+

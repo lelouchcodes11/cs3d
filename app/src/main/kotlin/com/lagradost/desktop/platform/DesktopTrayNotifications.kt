@@ -225,9 +225,9 @@ object DesktopTrayNotifications {
         val u = user ?: return
         val menu = u.CreatePopupMenu() ?: return
         try {
-            u.AppendMenuW(menu, MF_STRING, CMD_OPEN.toLong(), com.sun.jna.WString("Open CloudStream"))
+            u.AppendMenuW(menu, MF_STRING, CMD_OPEN.toLong(), com.sun.jna.WString(com.lagradost.desktop.i18n.Tr.t("Open CloudStream")))
             u.AppendMenuW(menu, MF_SEPARATOR, 0, null)
-            u.AppendMenuW(menu, MF_STRING, CMD_EXIT.toLong(), com.sun.jna.WString("Exit"))
+            u.AppendMenuW(menu, MF_STRING, CMD_EXIT.toLong(), com.sun.jna.WString(com.lagradost.desktop.i18n.Tr.t("Exit")))
             val p = IntArray(2)
             u.GetCursorPos(p)
             u.SetForegroundWindow(h) // without it the menu does not close when clicking elsewhere

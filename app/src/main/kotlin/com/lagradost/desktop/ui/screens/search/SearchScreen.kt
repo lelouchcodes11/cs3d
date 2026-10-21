@@ -225,7 +225,13 @@ fun SearchScreen(route: Route.Search) {
                             com.lagradost.desktop.ui.fluent.RichSectionHeader(
                                 name, Modifier.padding(horizontal = gutter),
                                 subtitle = "${list.list.size}${if (list.hasNext) "+" else ""} result${if (list.list.size == 1) "" else "s"}",
-                                onSeeAll = { Navigator.go(Route.Section("$query · $name", list.list)) },
+                                onSeeAll = {
+                                    val more: (suspend () -> Pair<List<com.lagradost.cloudstream3.SearchResponse>, Boolean>)? = if (!list.hasNext) null else ({
+                                        val expanded = vm.expandAndReturn(name)
+                                        (expanded?.list?.list ?: list.list).toList() to (expanded?.hasNext ?: true)
+                                    })
+                                    Navigator.go(Route.Section("$query · $name", list.list.toList(), more))
+                                },
                                 trailing = {
                                     if (isStremio) {
                                         Box(Modifier.padding(end = 12.dp)) {

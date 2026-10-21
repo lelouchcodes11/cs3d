@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.heightIn
 import com.lagradost.desktop.ui.fluent.Chip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -189,25 +190,26 @@ fun DetailsScreen(entry: Entry, route: Route.Details) {
 private fun showSelectPopup(p: SelectPopup) {
     val ctx = DesktopBootstrap.activity
     val title = p.getTitle(ctx)
+    if (p is SelectPopup.SelectLinks) { showLinkPicker(p, title); return }
     val options = p.getOptions(ctx)
     var done = false
     Overlays.show(
         Overlays.Dialog(
-            title = title, close = "Cancel", width = 420.dp,
+            title = title, close = "Cancel", width = 520.dp,
             onClose = { if (!done) { done = true; p.callback(null) } },
         ) { dismiss ->
             LazyColumn(Modifier.fillMaxWidth()) {
                 items(options.size) { i ->
                     val source = rememberInteraction()
                     val hovered by source.collectIsHoveredAsState()
-                    val shape = RoundedCornerShape(4.dp)
+                    val shape = RoundedCornerShape(6.dp)
                     Box(
-                        Modifier.fillMaxWidth().height(40.dp).clip(shape)
+                        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(shape)
                             .background(if (hovered) Fluent.colors.subtleHover else Color.Transparent, shape)
                             .fluentClickable(source, true, shape, Role.Button) { if (!done) { done = true; dismiss(); p.callback(i) } }
-                            .padding(horizontal = 12.dp),
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         contentAlignment = Alignment.CenterStart,
-                    ) { FText(options[i], maxLines = 1) }
+                    ) { FText(options[i], maxLines = 2) }
                 }
             }
         },

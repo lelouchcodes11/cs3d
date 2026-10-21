@@ -38,6 +38,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.lagradost.desktop.ui.fluent.LeftToRight
+import com.lagradost.desktop.ui.fluent.visual
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
@@ -158,6 +160,8 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
     val coloredPill = Appearance.navAccentPill
     val isClassic = Appearance.theme == "classic"
     val pillShape = RoundedCornerShape(19.dp)
+    // laid out left to right in every language (the pill glides to a measured x); in Arabic the items come in the opposite order
+    LeftToRight { rtl ->
     Box(
         // a maximized window has no title bar of its own: the top band answers Windows as a caption (drag, double click) unless a control says otherwise
         modifier
@@ -178,11 +182,15 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            items.forEachIndexed { i, item ->
-                if (i == navItems.size) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(18.dp).background(Color(0x26FFFFFF)))
+            visual(items.size, rtl).forEach { i ->
+                val item = items[i]
+                // the divider stands between the pages and the utility pages, whichever side they are on
+                if (!rtl && i == navItems.size) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(18.dp).background(Color(0x26FFFFFF)))
                 CapsuleItem(item, selected = i == selected, showName = i < navItems.size && (!compact || i == selected), onPlace = { x, w -> spots[i] = x to w })
+                if (rtl && i == navItems.size) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(18.dp).background(Color(0x26FFFFFF)))
             }
         }
+    }
     }
 }
 

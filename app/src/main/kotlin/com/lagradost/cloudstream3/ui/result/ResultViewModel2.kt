@@ -413,6 +413,13 @@ sealed class SelectPopup {
         val options: List<Pair<UiText, Int>>,
         val callback: (Int?) -> Unit
     ) : SelectPopup()
+
+    /** desktop: the sources of an episode, with everything the list shows about each (name, site, quality, type, size, seeders) */
+    data class SelectLinks(
+        val text: UiText,
+        val links: List<ExtractorLink>,
+        val callback: (Int?) -> Unit
+    ) : SelectPopup()
 }
 
 fun SelectPopup.callback(index: Int?) {
@@ -420,6 +427,7 @@ fun SelectPopup.callback(index: Int?) {
     return when (this) {
         is SelectPopup.SelectArray -> callback(ret)
         is SelectPopup.SelectText -> callback(ret)
+        is SelectPopup.SelectLinks -> callback(ret)
     }
 }
 
@@ -428,6 +436,7 @@ fun SelectPopup.transformResult(input: Int?): Int? {
     return when (this) {
         is SelectPopup.SelectArray -> options.getOrNull(input)?.second
         is SelectPopup.SelectText -> input
+        is SelectPopup.SelectLinks -> input
     }
 }
 
@@ -435,6 +444,7 @@ fun SelectPopup.getTitle(context: Context): String {
     return when (this) {
         is SelectPopup.SelectArray -> text.asString(context)
         is SelectPopup.SelectText -> text.asString(context)
+        is SelectPopup.SelectLinks -> text.asString(context)
     }
 }
 
@@ -445,6 +455,7 @@ fun SelectPopup.getOptions(context: Context): List<String> {
         }
 
         is SelectPopup.SelectText -> options.map { it.asString(context) }
+        is SelectPopup.SelectLinks -> links.map { "${it.name} ${Qualities.getStringByInt(it.quality)}" }
     }
 }
 
@@ -1231,16 +1242,15 @@ class ResultViewModel2 : ViewModel() {
         loadLinks(result, isVisible = true, sourceTypes, isCasting = isCasting) { links ->
             // Could not find a better way to do this
             //val context = CloudStreamApp.context
-            postPopup(
-                text,
-                links.links.map { txt("${it.name} ${Qualities.getStringByInt(it.quality)}") }
-                /*.amap {
-                val size =
-                    it.getVideoSize()?.let { size -> " " + formatFileSize(context, size) } ?: ""
-                txt("${it.name} ${Qualities.getStringByInt(it.quality)}$size")
-                }*/) {
-                callback.invoke(links to (it ?: return@postPopup))
-            }
+            // desktop: the list shows each link's own details (see SourcePicker), so the links themselves are handed over
+            _selectPopup.postValue(
+                SelectPopup.SelectLinks(text, links.links) { value ->
+                    viewModelScope.launchSafe {
+                        _selectPopup.postValue(null)
+                        callback.invoke(links to (value ?: return@launchSafe))
+                    }
+                }
+            )
         }
     }
 

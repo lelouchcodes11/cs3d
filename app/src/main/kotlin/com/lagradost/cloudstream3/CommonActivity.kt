@@ -224,10 +224,15 @@ object CommonActivity {
      */
     fun setLocale(context: Context?, languageTag: String?) {
         if (context == null || languageTag == null) return
-        val locale = Locale.forLanguageTag(languageTag)
+        // desktop: numbers are written with the digits 0 to 9 in every language (Arabic would otherwise mix them with Arabic-Indic digits, which come out
+        // of some formats and not of others)
+        val locale = runCatching { Locale.Builder().setLocale(Locale.forLanguageTag(languageTag)).setUnicodeLocaleKeyword("nu", "latn").build() }
+            .getOrElse { Locale.forLanguageTag(languageTag) }
         val resources: Resources = context.resources
         val config = resources.configuration
         Locale.setDefault(locale)
+        // desktop: the screens that are written in English (Tr) change language with it
+        com.lagradost.desktop.i18n.Tr.localeChanged()
         config.setLocale(locale)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)

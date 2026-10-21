@@ -96,8 +96,15 @@ sealed interface Route {
         val startValue: Int? = null,
     ) : Route
 
-    /** A full list ("See all") */
-    data class Section(val title: String, val items: List<SearchResponse>) : Route
+    /**
+     * A full list ("See all"). [more] asks the extension for the next page when it has one: it answers the whole list so far and whether another
+     * page can follow (a catalog of 20 titles is the first page of hundreds)
+     */
+    data class Section(
+        val title: String,
+        val items: List<SearchResponse>,
+        val more: (suspend () -> Pair<List<SearchResponse>, Boolean>)? = null,
+    ) : Route
 
     /** First run wizard */
     data object Setup : Route

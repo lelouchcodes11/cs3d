@@ -180,7 +180,7 @@ private fun GroupList(groups: List<SettingGroup>, firstGap: Boolean = false) {
 /** Every row of every page whose title, description or name of its group or page has all the words of [query], working where it stands */
 @Composable
 private fun SearchResults(query: String) {
-    val words = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    val words = com.lagradost.desktop.i18n.Tr.lower(query.trim()).split(Regex("\\s+")).filter { it.isNotEmpty() }
     val pages = Page.entries.filter { !it.hidden && it != Page.Subtitles }.map { page ->
         val hits = groupsOf(page).mapNotNull { g ->
             val items = g.items.filter { it.matches(words, g.title, page.title) }

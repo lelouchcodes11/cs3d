@@ -16,9 +16,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import com.lagradost.desktop.ui.fluent.reveal
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.SearchResponse
@@ -43,6 +47,8 @@ fun PosterGrid(
     header: (LazyGridScope.() -> Unit)? = null,
     /** What a click on a card does; null opens its title page */
     onOpen: ((SearchResponse) -> Unit)? = null,
+    /** After the last card (a "loading more" line) */
+    footer: (LazyGridScope.() -> Unit)? = null,
 ) {
     if (onEnd != null) {
         LaunchedEffect(state, items.size) {
@@ -70,16 +76,54 @@ fun PosterGrid(
                 PosterCard(card, { if (onOpen != null) onOpen(card) else openCard(card) }, width = null, showType = showType, menu = menu?.let { m -> { m(card) } })
             }
         }
+        footer?.invoke(this)
     }
     }
 }
 
-/** "See all": one list in a full page grid */
+/** "See all": one list in a full page grid; when the extension has more pages they are asked for as the end of the list comes into view */
 @Composable
 fun SectionPage(route: Route.Section) {
-    PosterGrid(route.items, header = {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            com.lagradost.desktop.ui.fluent.PageHeader(route.title, Modifier.padding(bottom = 8.dp), subtitle = "${route.items.size} titles")
+    var items by androidx.compose.runtime.remember(route) { androidx.compose.runtime.mutableStateOf(route.items) }
+    var hasMore by androidx.compose.runtime.remember(route) { androidx.compose.runtime.mutableStateOf(route.more != null) }
+    var loading by androidx.compose.runtime.remember(route) { androidx.compose.runtime.mutableStateOf(false) }
+    // pages that brought nothing new in a row (an extension that repeats itself, a request that was refused): the list is complete
+    var empty by androidx.compose.runtime.remember(route) { androidx.compose.runtime.mutableStateOf(0) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val loadMore: () -> Unit = {
+        val more = route.more
+        if (more != null && hasMore && !loading) {
+            loading = true
+            scope.launch {
+                try {
+                    val (list, next) = more()
+                    val known = items.mapTo(HashSet()) { it.url + it.apiName }
+                    val grew = list.any { (it.url + it.apiName) !in known }
+                    if (grew) { items = list; empty = 0 } else { empty++; kotlinx.coroutines.delay(600) }
+                    if (!next || empty >= 3) hasMore = false
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    hasMore = false
+                } finally {
+                    loading = false
+                }
+            }
         }
-    })
+    }
+    PosterGrid(
+        items, onEnd = if (route.more != null) loadMore else null,
+        header = {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                com.lagradost.desktop.ui.fluent.PageHeader(route.title, Modifier.padding(bottom = 8.dp), subtitle = "${items.size}${if (hasMore) "+" else ""} titles")
+            }
+        },
+        footer = {
+            if (hasMore) item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                    com.lagradost.desktop.ui.fluent.ProgressRing(size = 28.dp)
+                }
+            }
+        },
+    )
 }

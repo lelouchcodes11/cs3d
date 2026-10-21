@@ -114,9 +114,11 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
     val lineW by animateFloatAsState(target?.second ?: 0f, spec, label = "tabW")
     val density = androidx.compose.ui.platform.LocalDensity.current
     val customBtn = FluentSettings.buttonColorOverride != null || Appearance.buttonStyle != ButtonStyle.White
+    LeftToRight { rtl ->
     Box(modifier.horizontalScroll(rememberScrollState())) {
         Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.Bottom) {
-            tabs.forEachIndexed { i, text ->
+            visual(tabs.size, rtl).forEach { i ->
+                val text = tabs[i]
                 val source = rememberInteraction()
                 val hovered by source.collectIsHoveredAsState()
                 val on = i == selected
@@ -146,6 +148,7 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
                     .background(if (customBtn) c.button else c.text, RoundedCornerShape(1.dp)),
             )
         }
+    }
     }
 }
 
@@ -179,6 +182,7 @@ fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
         }
     }
     val density = androidx.compose.ui.platform.LocalDensity.current
+    LeftToRight { rtl ->
     Box(modifier.background(c.card, shape).hairBorder(c.stroke, shape).padding(4.dp)) {
         if (placed) {
             Box(
@@ -188,7 +192,8 @@ fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            tabs.forEachIndexed { i, text ->
+            visual(tabs.size, rtl).forEach { i ->
+                val text = tabs[i]
                 val source = rememberInteraction()
                 val hovered by source.collectIsHoveredAsState()
                 val on = i == selected
@@ -211,6 +216,7 @@ fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
                 }
             }
         }
+    }
     }
 }
 

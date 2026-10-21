@@ -62,6 +62,9 @@ object ImageLoader {
                 // desktop: no BitmapFactoryDecoder/bitmapConfig (Android-only); resource ids need a fetcher on the JVM
                 add(coil3.ResourceIntFetcher.Factory(context))
                 add(WrappedImageFallback)
+                // desktop: sharp pictures (filtered shrinking, the larger size of an address that has one)
+                add(com.lagradost.desktop.ui.components.ImageQuality.upgrade)
+                add(com.lagradost.desktop.ui.components.ImageQuality.decoder)
             }
             .apply {
                 setupCoilLogger()

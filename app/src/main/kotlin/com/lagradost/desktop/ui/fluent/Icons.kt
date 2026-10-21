@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -14,6 +15,9 @@ import androidx.compose.ui.unit.sp
 
 /** Glyphs of the Segoe Fluent Icons font (Segoe MDL2 Assets on Windows 10 has the same code points) */
 object Icons {
+    /** The glyphs that point left or right and are turned round in a right-to-left language */
+    val pointing: Set<String> = setOf(Back, Forward, ChevronLeft, ChevronRight, ChevronLeftSmall, ChevronRightSmall)
+
     const val Menu = ""
     const val Home = ""
     const val HomeSolid = ""
@@ -123,7 +127,9 @@ fun Icon(
     size: Dp = 16.dp,
     tint: Color = Fluent.colors.text,
 ) {
-    Box(modifier.size(size), contentAlignment = Alignment.Center) {
+    // an arrow that points the way of reading (back, forward, the chevrons of a list row) points the other way in a right-to-left language
+    val mirror = glyph in Icons.pointing && androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    Box(if (mirror) modifier.size(size).graphicsLayer { scaleX = -1f } else modifier.size(size), contentAlignment = Alignment.Center) {
         BasicText(
             glyph,
             style = TextStyle(

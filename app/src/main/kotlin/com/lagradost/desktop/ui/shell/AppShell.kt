@@ -204,12 +204,18 @@ fun AppShell() {
     // (only when "Hide the dock while scrolling" is on in Settings)
     val dockShown by animateFloatAsState(if (Appearance.dockAutoHide && ShellState.dockHidden) 0f else 1f, FluentMotion.tweenIn(220), label = "dockShown")
     LaunchedEffect(Navigator.current.id) { ShellState.dockHidden = false }
+    // Arabic (and the other right-to-left languages): the screens are laid out from the right; the title bar above stays as Windows draws it
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalLayoutDirection provides if (com.lagradost.desktop.i18n.Tr.rtl) androidx.compose.ui.unit.LayoutDirection.Rtl else androidx.compose.ui.unit.LayoutDirection.Ltr,
+    ) {
     Box(Modifier.fillMaxSize().background(c.bg)) {
         ScreenWarmup()
         SupportPrompt.Effect()
         if (Navigator.current.route is Route.Player || Navigator.current.route is Route.Setup) {
-            // the player and the setup wizard own the whole window
-            PageHost()
+            // the player and the setup wizard own the whole window; the player keeps the usual left-to-right order of a video player (time line, buttons)
+            if (Navigator.current.route is Route.Player) androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
+            ) { PageHost() } else PageHost()
         } else {
             AmbientBackdrop()
             val position = Appearance.navPosition
@@ -258,6 +264,7 @@ fun AppShell() {
         ToastLayer()
         if (com.lagradost.desktop.tools.FrameStats.enabled) com.lagradost.desktop.tools.GpuBenchLayer()
         com.lagradost.desktop.ui.CloudflareSolveBar()
+    }
     }
 }
 
@@ -818,7 +825,7 @@ private fun ToastLayer() {
 }
 
 internal val brandLogo by lazy {
-    runCatching { androidx.compose.ui.graphics.painter.BitmapPainter(Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")!!.use { androidx.compose.ui.res.loadImageBitmap(it) }) }.getOrNull()
+    runCatching { androidx.compose.ui.graphics.painter.BitmapPainter(Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")!!.use { androidx.compose.ui.res.loadImageBitmap(it) }, filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium) }.getOrNull()
 }
 
 /** The app's mark at the top of the rail; the name joins it when the rail is open */
