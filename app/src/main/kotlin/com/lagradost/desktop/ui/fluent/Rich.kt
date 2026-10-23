@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
@@ -62,7 +64,7 @@ fun PageHeader(title: String, modifier: Modifier = Modifier, subtitle: String? =
     val c = Fluent.colors
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            FText(title, style = Fluent.type.title.copy(fontSize = 34.sp, lineHeight = 42.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+            FText(Skins.pageTitle(title), style = Fluent.type.title.copy(fontSize = 34.sp, lineHeight = 42.sp, fontWeight = FontWeight.Bold), maxLines = 1)
             // two lines before it is cut: a page with tiles beside its title (Extensions) had its sentence end in dots
             if (subtitle != null) FText(subtitle, color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 2.dp))
         }
@@ -90,7 +92,7 @@ fun SeeAllLink(onClick: () -> Unit, text: String = "View all") {
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val shift by animateDpAsState(if (hovered) 4.dp else 0.dp, FluentMotion.tweenIn(160))
-    val shape = RoundedCornerShape(50)
+    val shape = FluentShapes.pill
     Row(
         Modifier.clip(shape).background(if (hovered) c.subtleHover else Color.Transparent, shape)
             .fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -109,7 +111,7 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
     // where each tab sits (px), so the line can glide between them
     val spots = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateMapOf<Int, Pair<Float, Float>>() }
     val target = spots[selected]
-    val spec = if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap<Float>() else androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 460f)
+    val spec = FluentMotion.springSoft<Float>()
     val lineX by animateFloatAsState(target?.first ?: 0f, spec, label = "tabX")
     val lineW by animateFloatAsState(target?.second ?: 0f, spec, label = "tabW")
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -126,7 +128,7 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
                 Column(
                     Modifier
                         .onPlacedAt { x, w -> spots[i] = x to w }
-                        .fluentClickable(source, true, RoundedCornerShape(4.dp), Role.Tab) { onSelect(i) },
+                        .fluentClickable(source, true, FluentShapes.pill, Role.Tab) { onSelect(i) },
                 ) {
                     Row(verticalAlignment = Alignment.Bottom) {
                         FText(text, style = Fluent.type.subtitle.copy(fontSize = 19.sp, fontWeight = FontWeight.SemiBold), color = tint, maxLines = 1, softWrap = false)
@@ -161,7 +163,7 @@ private fun Modifier.onPlacedAt(onPlace: (Float, Float) -> Unit): Modifier =
 @Composable
 fun PillTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, counts: List<Int?>? = null) {
     val c = Fluent.colors
-    val shape = RoundedCornerShape(50)
+    val shape = FluentShapes.pill
     // where each tab sits (px, inside the row), so the filled pill can glide from one tab to the next instead of jumping
     val spots = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateMapOf<Int, Pair<Float, Float>>() }
     val target = spots[selected]
@@ -279,14 +281,23 @@ fun RankedPoster(rank: Int, width: Dp, content: @Composable () -> Unit) {
  * fills while it is on screen; the rest are narrow slices of their artwork that open a little when the pointer is over them.
  */
 @Composable
-fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int) -> Pair<String?, Map<String, String>?>, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, label: (Int) -> String = { "" }) {
-    val spec = if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap<Dp>() else androidx.compose.animation.core.spring(dampingRatio = 0.82f, stiffness = 360f)
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int) -> Pair<String?, Map<String, String>?>, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, label: (Int) -> String = { "" }, maxWidth: Dp = Dp.Infinity) {
+    val spec = FluentMotion.springSoft<Dp>()
+    // the shape of each picture, once it has loaded (kept for the run: going back to Home does not make the slices jump)
+    val ratios = remember { mutableStateMapOf<String, Float>() }
+    val gap = 8.dp
+    // a landscape picture is a wide slice, a portrait one a narrow slice; when the lot would be wider than the room the hero has, the closed ones narrow down
+    fun base(i: Int): Dp = if ((image(i).first?.let { ratios[it] } ?: 0f) > 1.15f) 100.dp else 54.dp
+    val others = (0 until count).filter { it != selected }.sumOf { base(it).value.toDouble() }.toFloat()
+    val room = (maxWidth - 168.dp - gap * (count - 1)).coerceAtLeast(0.dp)
+    val squeeze = if (others <= 0f || maxWidth == Dp.Infinity) 1f else (room.value / others).coerceIn(0.5f, 1f)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
         for (i in 0 until count) {
             val on = i == selected
             val source = rememberInteraction()
             val hovered by source.collectIsHoveredAsState()
-            val width by animateDpAsState(if (on) 168.dp else if (hovered) 66.dp else 54.dp, spec, label = "stripW")
+            val closed = base(i) * squeeze
+            val width by animateDpAsState(if (on) 168.dp else if (hovered) closed + 12.dp else closed, spec, label = "stripW")
             val dim by animateFloatAsState(if (on) 0f else if (hovered) 0.2f else 0.45f, FluentMotion.tweenIn(220), label = "stripDim")
             val shape = RoundedCornerShape(14.dp)
             val (url, headers) = image(i)
@@ -296,7 +307,7 @@ fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int)
                     .hairBorder(if (on) Color(0x80FFFFFF) else Color(0x24FFFFFF), shape)
                     .fluentClickable(source, true, shape, Role.Button) { onSelect(i) },
             ) {
-                RemoteImage(url, headers, null, Modifier.fillMaxSize(), ContentScale.Crop)
+                RemoteImage(url, headers, null, Modifier.fillMaxSize(), ContentScale.Crop, onSize = { w, h -> if (url != null && h > 0) ratios[url] = w.toFloat() / h })
                 Box(Modifier.fillMaxSize().graphicsLayer { alpha = dim }.background(Color.Black))
                 if (on) {
                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color(0xCC000000))))
@@ -351,7 +362,7 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
     val hovered by source.collectIsHoveredAsState()
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, FluentMotion.tweenIn(120))
-    val shape = RoundedCornerShape(50)
+    val shape = FluentShapes.pill
     val fg = if (primary) c.primaryContent() else Color.White
     val fill: androidx.compose.ui.graphics.Brush = if (primary) {
         c.primaryFill(hovered, pressed)
@@ -382,8 +393,8 @@ fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Un
 fun ArtChip(text: String, accent: Boolean = false) {
     Box(
         // a thin outlined tag (an age rating, a type): no fill, no accent
-        Modifier.hairBorder(Color.White.copy(alpha = if (accent) 0.7f else 0.45f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 7.dp, vertical = 2.dp),
+        Modifier.hairBorder(Color.White.copy(alpha = if (accent) 0.7f else 0.45f), FluentShapes.pill)
+            .padding(horizontal = 9.dp, vertical = 2.dp),
     ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = Color.White.copy(alpha = if (accent) 1f else 0.85f), maxLines = 1, softWrap = false) }
 }
 
@@ -391,4 +402,23 @@ fun ArtChip(text: String, accent: Boolean = false) {
 @Composable
 fun BoxScope.BottomScrim(strength: Float = 0.8f) {
     Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color.Black.copy(alpha = strength))))
+}
+
+/**
+ * A line of news that belongs to the page (a service that is down, a list shown from the last time it loaded), not a toast that goes: a warning
+ * mark, the words, and an optional button on the right.
+ */
+@Composable
+fun NoticeBar(message: String, modifier: Modifier = Modifier, action: String? = null, onAction: () -> Unit = {}) {
+    val c = Fluent.colors
+    val shape = RoundedCornerShape(FluentShapes.card)
+    Row(
+        modifier.fillMaxWidth().background(c.card, shape).hairBorder(c.stroke, shape).padding(start = 16.dp, end = if (action != null) 8.dp else 16.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Warning, size = 16.dp, tint = c.caution)
+        FText(message, Modifier.weight(1f), style = Fluent.type.body, color = c.textSecondary, maxLines = 3)
+        if (action != null) Button(action, onAction, height = 32.dp)
+    }
 }

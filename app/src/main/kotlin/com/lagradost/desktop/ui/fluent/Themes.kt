@@ -25,7 +25,12 @@ class ThemePreset(
     val glowB: Color? = null,
     val accent2: Color? = accent,
     val subtitle: String = "",
-)
+    /** the complete interface that goes with this theme (the Netflix theme of Settings > Appearance > Themes); [Skin.None] for an ordinary colour theme */
+    val skin: Skin = Skin.None,
+) {
+    /** a streaming-service look: its own page colours and layout */
+    val special: Boolean get() = skin != Skin.None
+}
 
 object Themes {
     val classic = ThemePreset(
@@ -132,7 +137,19 @@ object Themes {
         ),
     )
 
-    fun byId(id: String?): ThemePreset = if (id == null) classic else all.firstOrNull { it.id == id } ?: classic
+    /**
+     * The Netflix look as a complete interface: its page colours here (near-black pages with one signature red), its layout in [Skins] (navigation,
+     * billboard, rows, cards, shapes). No name or mark of the service is drawn.
+     */
+    val specials: List<ThemePreset> = listOf(
+        ThemePreset(
+            "netflix", "Netflix", Color(0xFFE50914),
+            Color(0xFF141414), Color(0xFF1A1A1A), Color(0xFF242424), Color(0xFFE5E5E5),
+            subtitle = "Cinema black & red", skin = Skin.Netflix,
+        ),
+    )
+
+    fun byId(id: String?): ThemePreset = if (id == null) classic else all.firstOrNull { it.id == id } ?: specials.firstOrNull { it.id == id } ?: classic
 
     /** The first start (nothing saved) and "Reset to default" get Classic: the plain Windows colours (the other themes are a choice in Settings > Appearance) */
     const val DEFAULT_ID = "classic"

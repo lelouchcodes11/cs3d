@@ -211,7 +211,10 @@ class APIRepository(val api: MainAPI) {
         if (isInvalidData(data)) return false // this makes providers cleaner
         return try {
             withTimeout(getTimeout(api.loadLinksTimeoutMs)) {
-                api.loadLinks(data, isCasting, subtitleCallback, callback)
+                api.loadLinks(data, isCasting, subtitleCallback) { link ->
+                    com.lagradost.desktop.net.LinkRepair.apply(link)
+                    callback(link)
+                }
             }
         } catch (throwable: Throwable) {
             logError(throwable)

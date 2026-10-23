@@ -83,16 +83,16 @@ fun ProviderSelector(modifier: Modifier = Modifier) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.control)
+    val shape = FluentShapes.pill
     Box(modifier) {
         Row(
             Modifier.height(34.dp).widthIn(min = 150.dp).background(if (hovered) c.controlHover else c.control, shape)
-                .hairBorder(if (hovered || open) c.accent.copy(alpha = 0.6f) else c.strokeStrong.copy(alpha = 0.45f), shape)
+                .hairBorder(if (hovered || open) c.text.copy(alpha = if (open) 0.55f else 0.32f) else c.stroke, shape)
                 .fluentClickable(source, true, shape, Role.DropdownList) { open = !open }
                 .padding(start = 8.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (selected != null && selected != random) ExtensionIcon(selected, 22) else Icon(Icons.Globe, size = 16.dp, tint = c.accentText, modifier = Modifier.padding(horizontal = 3.dp))
+            if (selected != null && selected != random) ExtensionIcon(selected, 22) else Icon(Icons.Globe, size = 16.dp, tint = c.textSecondary, modifier = Modifier.padding(horizontal = 3.dp))
             Box(Modifier.width(8.dp))
             FText(selected ?: "Choose a source", Modifier.weight(1f, fill = false), color = if (selected == null) c.textTertiary else c.text, maxLines = 1)
             if (selected != null && APIHolder.getApiFromNameNull(selected) is StremioApi) {
@@ -100,7 +100,7 @@ fun ProviderSelector(modifier: Modifier = Modifier) {
                 StremioBadge()
             }
             Box(Modifier.width(10.dp))
-            Icon(Icons.ChevronDownSmall, size = 12.dp, tint = c.accentText)
+            Icon(Icons.ChevronDownSmall, size = 12.dp, tint = c.textSecondary)
         }
         if (open) {
             Popup(popupPositionProvider = BelowAnchor(6, alignEnd = true), onDismissRequest = { open = false }, properties = PopupProperties(focusable = true)) {
@@ -187,7 +187,7 @@ private fun ExtensionRow(name: String, isRandom: Boolean, selected: Boolean, hig
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.control)
+    val shape = RoundedCornerShape(FluentShapes.row)
     val api = if (isRandom) null else APIHolder.getApiFromNameNull(name)
     val detail = if (isRandom) "A different extension each time"
     else listOfNotNull(
@@ -209,7 +209,7 @@ private fun ExtensionRow(name: String, isRandom: Boolean, selected: Boolean, hig
             if (detail != null) FText(detail, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
         }
         if (api is StremioApi) { StremioBadge(showText = false); Box(Modifier.width(8.dp)) }
-        if (selected) Icon(Icons.Check, size = 14.dp, tint = c.accentText)
+        if (selected) Icon(Icons.Check, size = 14.dp, tint = c.text)
     }
 }
 

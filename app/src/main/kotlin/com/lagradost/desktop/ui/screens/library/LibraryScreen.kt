@@ -69,6 +69,17 @@ private fun saveKind(kind: Kind) {
     runCatching { PreferenceManager.getDefaultSharedPreferences(AndroidRuntime.context).edit().putString(KIND_KEY, kind.name).apply() }
 }
 
+/** What the page says when a list fails: a service's own words when they are short, else one plain sentence (a parser's stack message is no help to read) */
+private fun readableError(raw: String): String {
+    val text = raw.trim()
+    return when {
+        text.isEmpty() -> "Unknown error"
+        text.length > 140 || text.contains("com.lagradost") || text.contains("Instantiation of") || text.contains("Exception") ->
+            "The service answered with something this app could not read. Try again in a moment, or open another list."
+        else -> text
+    }
+}
+
 private fun SearchResponse.isAnimeTitle() = type == TvType.Anime || type == TvType.AnimeMovie || type == TvType.OVA
 
 // a film is a film of any kind but anime; whatever is neither a film nor anime (series, cartoons, dramas, documentaries, live) is a TV show
@@ -129,8 +140,8 @@ fun LibraryScreen() {
                 Box(Modifier.height(12.dp))
                 FText("The library could not be loaded", style = Fluent.type.subtitle)
                 FText(
-                    (apiName?.takeIf { it.isNotBlank() }?.let { "$it: " } ?: "") + res.errorString.ifBlank { "Unknown error" },
-                    color = c.textSecondary, maxLines = 4, modifier = Modifier.padding(horizontal = 40.dp).widthIn(max = 640.dp),
+                    (apiName?.takeIf { it.isNotBlank() }?.let { "$it: " } ?: "") + readableError(res.errorString),
+                    color = c.textSecondary, maxLines = 4, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 40.dp).widthIn(max = 640.dp),
                 )
                 Box(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -154,6 +165,14 @@ fun LibraryScreen() {
                 header = {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(Modifier.padding(bottom = 0.dp)) {
+                            // the service said it is down (AniList was switched off, MyAnimeList in maintenance): the list below is the one saved by the last good answer
+                            apiName?.let { n -> com.lagradost.desktop.net.ServiceOutage.notes[n] }?.let { note ->
+                                com.lagradost.desktop.ui.fluent.NoticeBar(
+                                    note.message + if (allTitles.isNotEmpty()) " This is the list saved the last time it loaded." else "",
+                                    action = "Try again", onAction = { vm.reloadPages(true) },
+                                )
+                                Box(Modifier.height(16.dp))
+                            }
                             com.lagradost.desktop.ui.fluent.PageHeader("Library", subtitle = "${if (kind == Kind.All) "${allTitles.size} titles" else "${items.size} of ${allTitles.size} titles · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = { Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart) })
                             Box(Modifier.height(18.dp))
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

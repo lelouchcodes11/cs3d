@@ -26,10 +26,31 @@ class DashTimeline private constructor(val tracks: List<Track>) {
         private val clock: Clock?,
         /** typical length of a segment, ms */
         val segmentMs: Long,
+        /** timeline tracks: the number or start time of every segment the manifest lists, ascending (for the read-ahead of [DashProxy]) */
+        private val values: LongArray = LongArray(0),
     ) {
         class Clock(val startNumber: Long, val availabilityStartMs: Long, val durationMs: Double)
 
         fun valueOf(rest: String): Long? = pattern.find(rest)?.groupValues?.get(1)?.toLongOrNull()
+
+        /** The numbers or times of the [n] segments after [value] that the manifest lists (or, for a duration template, that exist at [serverNowMs]) */
+        fun following(value: Long, n: Int, serverNowMs: Long): List<Long> {
+            if (clock != null) {
+                val newest = newest(serverNowMs)
+                return (1..n).map { value + it }.filter { it <= newest }
+            }
+            val i = java.util.Arrays.binarySearch(values, value)
+            if (i < 0) return emptyList()
+            return (1..n).mapNotNull { values.getOrNull(i + it) }
+        }
+
+        /** [text] (an address that [valueOf] reads) with [newValue] in place of the number or time in it, in the same width */
+        fun withValue(text: String, newValue: Long): String? {
+            val g = pattern.find(text)?.groups?.get(1) ?: return null
+            val digits = newValue.toString()
+            val padded = if (g.value.length > (g.value.toLongOrNull()?.toString()?.length ?: g.value.length)) digits.padStart(g.value.length, '0') else digits
+            return text.replaceRange(g.range, padded)
+        }
 
         /** The newest segment that is available at [serverNowMs] */
         fun newest(serverNowMs: Long): Long = if (clock == null) lastListed else
@@ -80,6 +101,7 @@ class DashTimeline private constructor(val tracks: List<Track>) {
                             var durations = 0L
                             var count = 0L
                             var openEnded = false
+                            val listed = ArrayList<Long>()
                             for (s in timeline.children("S")) {
                                 s.getAttribute("t").toLongOrNull()?.let { time = it }
                                 val d = s.getAttribute("d").toLongOrNull() ?: continue
@@ -87,6 +109,7 @@ class DashTimeline private constructor(val tracks: List<Track>) {
                                 if (r < 0) { openEnded = true; break }
                                 val n = r + 1
                                 lastTime = time + (n - 1) * d
+                                for (k in 0 until n) listed.add(if (byTime) time + k * d else number + k)
                                 lastNumber = number + n - 1
                                 time += n * d
                                 number += n
@@ -95,7 +118,7 @@ class DashTimeline private constructor(val tracks: List<Track>) {
                             }
                             if (openEnded || count == 0L) continue
                             val segmentMs = durations * 1000 / timescale / count
-                            tracks.add(Track(id, pattern, byTime, if (byTime) lastTime else lastNumber, null, segmentMs))
+                            tracks.add(Track(id, pattern, byTime, if (byTime) lastTime else lastNumber, null, segmentMs, listed.toLongArray()))
                         } else if (!byTime && ast != null) {
                             val duration = attr("duration")?.toLongOrNull()?.takeIf { it > 0 } ?: continue
                             val durationMs = duration * 1000.0 / timescale

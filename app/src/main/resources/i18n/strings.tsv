@@ -833,7 +833,7 @@ App mode	وضع التطبيق	Uygulama modu
 Follow Windows, or always use light or dark surfaces.	اتبع Windows، أو استخدم دائماً أسطحاً فاتحة أو داكنة.	Windows'u izleyin ya da her zaman açık veya koyu yüzeyler kullanın.
 Use system setting	استخدام إعداد النظام	Sistem ayarını kullan
 Dark	داكن	Koyu
-Colour theme	سمة الألوان	Renk teması
+Colour palette	لوحة الألوان	Renk paleti
 Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.	"الكلاسيكي" يُبقي أسطح OLED السوداء الافتراضية دون تغيير. اختر أي لوحة أخرى لأسطح داكنة مسطحة ولون تمييز مطابق.	Klasik, varsayılan OLED siyah yüzeylere dokunmaz. Düz koyu yüzeyler ve uyumlu bir vurgu rengi için başka bir palet seçin.
 Accent colour	لون التمييز	Vurgu rengi
 Tints switches, sliders, active tabs, focus rings and links. Override the theme's accent or enter any hex colour.	يلوّن المفاتيح والمنزلقات وعلامات التبويب النشطة وحلقات التركيز والروابط. تجاوز لون السمة أو أدخل أي لون سداسي.	Anahtarları, kaydırıcıları, etkin sekmeleri, odak halkalarını ve bağlantıları renklendirir. Temanın vurgusunu değiştirin ya da herhangi bir onaltılık renk girin.
@@ -856,7 +856,7 @@ Window	النافذة	Pencere
 Playback	التشغيل	Oynatma
 Controls	عناصر التحكم	Denetimler
 Cache	ذاكرة التخزين المؤقت	Önbellek
-Theme & colours	السمة والألوان	Tema ve renkler
+Theme	السمة	Tema
 Background	الخلفية	Arka plan
 Layout	التخطيط	Düzen
 Title pages	صفحات الأعمال	Başlık sayfaları
@@ -907,7 +907,7 @@ Language, downloads, network and the window	اللغة والتنزيلات وا
 Playback, video, audio, subtitles and controls	التشغيل والفيديو والصوت والترجمة وعناصر التحكم	Oynatma, video, ses, altyazı ve denetimler
 Stremio & torrents	Stremio والتورنت	Stremio ve torrentler
 Appearance	المظهر	Görünüm
-Theme, colours, layout and what the pages show	السمة والألوان والتخطيط وما تعرضه الصفحات	Tema, renkler, düzen ve sayfaların gösterdikleri
+Themes, layout and what the pages show	السمات والتخطيط وما تعرضه الصفحات	Temalar, düzen ve sayfaların gösterdikleri
 Updates & backup	التحديثات والنسخ الاحتياطي	Güncellemeler ve yedekleme
 App and extension updates, backups	تحديثات التطبيق والإضافات والنسخ الاحتياطية	Uygulama ve eklenti güncellemeleri, yedekler
 Accounts & sync	الحسابات والمزامنة	Hesaplar ve eşitleme
@@ -1410,3 +1410,100 @@ The app is purely for educational and personal use.	التطبيق مخصص لل
 Software	برمجي	Yazılım
 Hardware	عتادي	Donanım
 Hardware+	عتادي+	Donanım+
+Dog	كلب	Köpek
+Lion	أسد	Aslan
+Octopus	أخطبوط	Ahtapot
+Unicorn	حصان أحادي القرن	Tek boynuzlu at
+Chick	كتكوت	Civciv
+Whale	حوت	Balina
+Wolf	ذئب	Kurt
+Butterfly	فراشة	Kelebek
+Turtle	سلحفاة	Kaplumbağa
+T-Rex	ديناصور	T-Rex
+Sloth	كسلان	Tembel hayvan
+Grin	ابتسامة عريضة	Sırıtma
+Heart eyes	عيون قلوب	Kalp gözler
+Party	حفلة	Parti
+Nerd	مهووس	İnek
+Thinking	يفكر	Düşünüyor
+Mind blown	مصدوم	Şaşkın
+Devil	شيطان	Şeytan
+Angel	ملاك	Melek
+Cowboy	راعي بقر	Kovboy
+Star struck	منبهر	Hayran
+Smitten	واقع في الحب	Âşık
+Yum	لذيذ	Nefis
+Hot	حار	Sıcak
+Cold	بارد	Soğuk
+Pumpkin	يقطين	Balkabağı
+Skull	جمجمة	Kuru kafa
+Rocket	صاروخ	Roket
+Rainbow	قوس قزح	Gökkuşağı
+Heart	قلب	Kalp
+Crown	تاج	Taç
+Clown	مهرج	Palyaço
+Popcorn	فشار	Patlamış mısır
+Clapperboard	لوح التصوير	Klaket
+Trophy	كأس	Kupa
+Animals	حيوانات	Hayvanlar
+Faces	وجوه	Yüzler
+Fun	مرح	Eğlence
+Animated profile pictures	صور الملفات الشخصية المتحركة	Hareketli profil resimleri
+Drawn characters and creatures that blink and float, plus short scene clips.	شخصيات ومخلوقات مرسومة ترمش وتطفو، مع مقاطع قصيرة من المشاهد.	Göz kırpan ve süzülen çizilmiş karakterler ve yaratıklar, bir de kısa sahne klipleri.
+Heroes	الأبطال	Kahramanlar
+Creatures	المخلوقات	Yaratıklar
+Spooky & Space	مرعب وفضائي	Ürpertici ve Uzay
+Scene clips	مقاطع المشاهد	Sahne klipleri
+Shadow Ninja	نينجا الظل	Gölge Ninja
+Ronin	رونين	Ronin
+Astronaut	رائد فضاء	Astronot
+Wizard	ساحر	Büyücü
+Cyber Runner	عدّاء سيبراني	Siber Koşucu
+Pirate	قرصان	Korsan
+Knight	فارس	Şövalye
+Hacker	هاكر	Hacker
+DJ	دي جي	DJ
+Vampire	مصاص دماء	Vampir
+Tabby Cat	قط مخطط	Tekir Kedi
+Little Dragon	تنين صغير	Küçük Ejderha
+Oni	أوني	Oni
+Fuzzy Monster	وحش مشعر	Tüylü Canavar
+Pixel Invader	غازي البكسل	Piksel İstilacı
+How far back you can go	إلى أي مدى يمكنك الرجوع	Ne kadar geriye gidebilirsin
+My pictures	صوري	Resimlerim
+Open the folder	فتح المجلد	Klasörü aç
+Add pictures…	إضافة صور…	Resim ekle…
+Add pictures (PNG, JPG, WebP, GIF), or put them in the folder and open this window again: they show up here.	أضف صورًا (PNG وJPG وWebP وGIF)، أو ضعها في المجلد وافتح هذه النافذة من جديد: ستظهر هنا.	Resim ekle (PNG, JPG, WebP, GIF) ya da klasöre koyup bu pencereyi yeniden aç: burada görünürler.
+Special themes	سمات خاصة	Özel temalar
+Cinema black & red	أسود سينمائي وأحمر	Sinema siyahı ve kırmızı
+Ask public DNS about blocked names	اسأل DNS العام عن الأسماء المحجوبة	Engellenen adları genel DNS'e sor
+When your DNS (1.1.1.2, a family or school filter, your ISP) refuses the address of a streaming site, ask public resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9) instead. Fixes sources that fail with unknown host. Off: only your own DNS is trusted.	عندما يرفض DNS الخاص بك (1.1.1.2 أو مرشح عائلي أو مدرسي أو مزود الإنترنت) عنوان موقع بث، يُسأل عنه مُحللات عامة (1.1.1.1 و8.8.8.8 و9.9.9.9). يصلح المصادر التي تفشل برسالة مضيف غير معروف. عند الإيقاف: يُعتمد على DNS الخاص بك فقط.	DNS'iniz (1.1.1.2, bir aile veya okul filtresi, internet sağlayıcınız) bir yayın sitesinin adresini reddettiğinde bunun yerine genel çözümleyicilere (1.1.1.1, 8.8.8.8, 9.9.9.9) sorulur. Bilinmeyen ana makine hatasıyla başarısız olan kaynakları düzeltir. Kapalı: yalnızca kendi DNS'inize güvenilir.
+Full interface	الواجهة الكاملة	Tam arayüz
+My List	قائمتي	Listem
+New & Popular	الجديد والرائج	Yeni ve Popüler
+Explore All	استكشف الكل	Tümünü keşfet
+More Info	مزيد من المعلومات	Daha fazla bilgi
+The Netflix interface: its navigation, billboard, rows, cards, profile screen and button shapes, with its colours. Every feature of the app stays where it is. No name or logo of the service is drawn.	واجهة Netflix: تنقّلها ولافتة الصفحة الرئيسية وصفوفها وبطاقاتها وشاشة الملفات وأشكال الأزرار، مع ألوانها. كل ميزات التطبيق تبقى في مكانها. لا يُرسم اسم الخدمة ولا شعارها.	Netflix arayüzü: gezinme, afiş, satırlar, kartlar, profil ekranı ve düğme biçimleri, renkleriyle birlikte. Uygulamanın her özelliği yerinde kalır. Hizmetin adı ya da logosu çizilmez.
+A special theme brings its whole interface: its navigation, billboard, rows, cards, profile screen and button shapes (always on a dark page). Off: only its colours are used, the layout stays yours.	السمة الخاصة تأتي بواجهتها كاملة: تنقّلها ولافتة الصفحة الرئيسية والصفوف والبطاقات وشاشة الملفات وأشكال الأزرار (دائمًا على صفحة داكنة). عند الإيقاف: تُستخدم ألوانها فقط ويبقى التخطيط لك.	Özel bir tema arayüzünün tamamını getirir: gezinme, afiş, satırlar, kartlar, profil ekranı ve düğme biçimleri (her zaman koyu bir sayfada). Kapalı: yalnızca renkleri kullanılır, düzen sizde kalır.
+Add to My List	أضف إلى قائمتي	Listeme ekle
+Remove from My List	أزل من قائمتي	Listemden kaldır
+Notifications and new episodes	الإشعارات والحلقات الجديدة	Bildirimler ve yeni bölümler
+Who's watching?	من يشاهد؟	Kim izliyor?
+Manage Profiles:	إدارة الملفات:	Profilleri yönet:
+Manage Profiles	إدارة الملفات	Profilleri Yönet
+MANAGE PROFILES	إدارة الملفات	PROFİLLERİ YÖNET
+DONE	تم	BİTTİ
+Current	الحالي	Geçerli
+Hold Space	اضغط مطولًا على Space	Space'i basılı tut
+Hold click  ·  Hold touch	ضغطة مطولة بالفأرة  ·  لمسة مطولة	Tıkı basılı tut  ·  Dokunmayı basılı tut
+Plays at 2× for as long as you hold it, then the speed is back to normal (a quick press still pauses)	يشغّل بسرعة 2× ما دمت ضاغطًا عليه، ثم تعود السرعة إلى طبيعتها (الضغطة السريعة ما زالت توقف مؤقتًا)	Basılı tuttuğun sürece 2× hızda oynatır, sonra hız normale döner (kısa basış yine duraklatır)
+The same on the picture with the left mouse button or a finger. Not on the buttons, not when paused or live, not in the small window	الأمر نفسه على الصورة بزر الفأرة الأيسر أو بإصبع. ليس على الأزرار، ولا أثناء الإيقاف المؤقت أو البث المباشر، ولا في النافذة الصغيرة	Resimde sol fare tuşuyla ya da parmakla aynısı. Düğmelerde, duraklatılmışken veya canlı yayında, küçük pencerede çalışmaz
+Themes	السمات	Temalar
+Default is this app's own look, in the colours of Settings > Colors. Netflix brings a whole interface: its navigation, billboard, rows, cards, profile screen and button shapes, with its colours. Every feature of the app stays where it is. No name or logo of the service is drawn.	الافتراضية هي مظهر هذا التطبيق نفسه، بألوان الإعدادات > الألوان. أما Netflix فتأتي بواجهة كاملة: تنقّلها ولافتة الصفحة الرئيسية وصفوفها وبطاقاتها وشاشة الملفات وأشكال الأزرار، مع ألوانها. كل ميزات التطبيق تبقى في مكانها. لا يُرسم اسم الخدمة ولا شعارها.	Varsayılan, bu uygulamanın kendi görünümüdür; renkleri Ayarlar > Renkler'den gelir. Netflix ise arayüzün tamamını getirir: gezinme, afiş, satırlar, kartlar, profil ekranı ve düğme biçimleri, renkleriyle birlikte. Uygulamanın her özelliği yerinde kalır. Hizmetin adı ya da logosu çizilmez.
+Default	الافتراضية	Varsayılan
+Dark, with white buttons	داكنة، بأزرار بيضاء	Koyu, beyaz düğmelerle
+Colors	الألوان	Renkler
+Colour palettes, the accent colour and the colour of buttons, chips and pills	لوحات الألوان ولون التمييز ولون الأزرار والشرائح والأقراص	Renk paletleri, vurgu rengi ve düğmelerin, çiplerin ve hapların rengi
+Colour palettes, the accent colour and the colour of buttons	لوحات الألوان ولون التمييز ولون الأزرار	Renk paletleri, vurgu rengi ve düğmelerin rengi
+Palette, accent & buttons	اللوحة والتمييز والأزرار	Palet, vurgu ve düğmeler
+The Netflix theme has its own colours. Picking a palette here switches back to the Default theme.	لسمة Netflix ألوانها الخاصة. اختيار لوحة هنا يعيدك إلى السمة الافتراضية.	Netflix temasının kendi renkleri vardır. Burada bir palet seçmek Varsayılan temaya döndürür.

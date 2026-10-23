@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.details
 
+import com.lagradost.desktop.ui.fluent.hoverEdge
+
 import com.lagradost.desktop.ui.fluent.hairBorder
 
 import androidx.compose.foundation.background
@@ -170,7 +172,7 @@ private fun ViewAllCard(count: Int, onClick: () -> Unit) {
     Column(Modifier.width(CastTileWidth).hoverable(source).fluentClickable(source, true, shape, Role.Button, onClick)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(shape).background(if (hovered) c.cardHover else c.card)
-                .hairBorder(if (hovered) c.accent else c.stroke, shape),
+                .hairBorder(if (hovered) c.hoverEdge else c.stroke, shape),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {

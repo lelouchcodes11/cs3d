@@ -96,9 +96,49 @@ object WebCookies {
         }, 1, TimeUnit.SECONDS)
     }
 
+    // Cloudflare ties a clearance cookie to the connection it was issued to (the address it came from). After the network changed (another Wi-Fi, a VPN or Cloudflare
+    // WARP switched on or off) the stored one is refused, and an extension's solver that looks in the jar finds it at once, takes it for a solved check, retries and is
+    // blocked again, for ever (AnimePahe: "Clearance cookie found" and 403 straight after, 2026-10-22). So the clearance cookies go when the network is not the one they
+    // were issued on; the check is a local one (no request) and runs at most every 20 s.
+    private val networkFile: File get() = File(AndroidRuntime.dataDir, "web/network.txt")
+    private var network: String? = null
+    private var networkCheckedAt = 0L
+
+    /** The interface and subnet the default route uses (a UDP "connect" sends nothing), or null when there is none */
+    private fun currentNetwork(): String? = runCatching {
+        java.net.DatagramSocket().use { s ->
+            s.connect(java.net.InetAddress.getByName("1.1.1.1"), 53)
+            val local = s.localAddress
+            val ni = java.net.NetworkInterface.getByInetAddress(local) ?: return@use null
+            val prefix = ni.interfaceAddresses.firstOrNull { it.address == local }?.networkPrefixLength?.toInt() ?: return@use null
+            val bytes = local.address
+            val masked = bytes.indices.joinToString(".") { i -> ((bytes[i].toInt() and 0xFF) and (if (i * 8 + 8 <= prefix) 0xFF else if (i * 8 >= prefix) 0 else (0xFF shl (8 - (prefix - i * 8))) and 0xFF)).toString() }
+            "${ni.displayName}|$masked/$prefix"
+        }
+    }.getOrNull()
+
+    private fun checkNetwork() {
+        val now = System.currentTimeMillis()
+        synchronized(lock) {
+            if (now - networkCheckedAt < 20_000) return
+            networkCheckedAt = now
+        }
+        val current = currentNetwork() ?: return
+        val before = network ?: runCatching { networkFile.takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
+        network = current
+        if (before == current) return
+        runCatching { networkFile.parentFile.mkdirs(); networkFile.writeText(current) }
+        if (before == null) return // the first run: nothing to compare with
+        val clearance = synchronized(lock) { cookies.values.filter { it.name == "cf_clearance" } }
+        if (clearance.isEmpty()) return
+        Log.i(TAG, "the network changed ($before -> $current): ${clearance.size} Cloudflare clearance cookie(s) dropped")
+        for (c in clearance) put(c.copy(expires = 0L))
+    }
+
     /** Every cookie that has not expired */
     fun all(): List<WebCookie> {
         ensureLoaded()
+        checkNetwork()
         val now = System.currentTimeMillis()
         return synchronized(lock) { cookies.values.filter { !it.expired(now) } }
     }

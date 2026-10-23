@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import com.lagradost.desktop.ui.fluent.tabletVerticalScroll as verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -308,8 +308,12 @@ object UpdateCheck {
      * again every half hour while the app stays open (the same limit applies, and nothing is shown during a video).
      * Fails silently, a missing connection is not worth a message at start.
      */
+    private var autoCheckJob: Job? = null
+
     fun startAutoCheck() {
-        scope.launch {
+        // started twice (a window that is made again), it would check twice as often and show the dialog twice
+        if (autoCheckJob?.isActive == true) return
+        autoCheckJob = scope.launch {
             Startup.revealed.await()
             announceUpdated()
             delay(4000)
@@ -463,8 +467,20 @@ object UpdateCheck {
     }
 
     /** Only the repository's own release files are downloaded (a test build with its own update address may use any) */
-    private fun trusted(url: String): Boolean =
-        apiOverride != null || url.startsWith("https://github.com/${AppInfo.REPO}/releases/download/", ignoreCase = true)
+    private fun trusted(url: String): Boolean = apiOverride != null || trustedRepositoryDownload(url)
+
+    /**
+     * A release file of the repository on github.com, nothing else: https, the host exactly (not `github.com.evil.test`, no `user@` in front of it), no port, no
+     * query or fragment, and no `..` that would climb out of the release folder to another repository's files. (A plain `startsWith` accepted the last two.)
+     * Taken from the e-cloudstream fork.
+     */
+    internal fun trustedRepositoryDownload(url: String): Boolean = runCatching {
+        val uri = java.net.URI(url)
+        uri.scheme == "https" && uri.host == "github.com" && uri.port == -1 && uri.userInfo == null &&
+            uri.rawQuery == null && uri.rawFragment == null &&
+            uri.rawPath.startsWith("/${AppInfo.REPO}/releases/download/") &&
+            uri.path.split('/').none { it == "." || it == ".." }
+    }.getOrDefault(false)
 
     fun cancelDownload() {
         downloadJob?.cancel()

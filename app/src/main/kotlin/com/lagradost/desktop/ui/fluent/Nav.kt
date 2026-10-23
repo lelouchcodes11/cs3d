@@ -85,7 +85,7 @@ private fun NavButton(
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.control)
+    val shape = FluentShapes.pill
     val body = @Composable {
         Box(Modifier.padding(horizontal = 4.dp, vertical = 2.dp).fillMaxWidth().height(42.dp)) {
             Row(
@@ -95,7 +95,7 @@ private fun NavButton(
                     .clip(shape)
                     .background(
                         when {
-                            selected -> c.accent.copy(alpha = if (c.dark) 0.14f else 0.1f)
+                            selected -> c.controlHover
                             hovered && enabled -> c.subtleHover
                             else -> androidx.compose.ui.graphics.Color.Transparent
                         }, shape,
@@ -104,7 +104,7 @@ private fun NavButton(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-                    Icon(glyph, size = 18.dp, tint = if (!enabled) c.textDisabled else if (selected) c.accentText else c.text)
+                    Icon(glyph, size = 18.dp, tint = if (!enabled) c.textDisabled else c.text)
                 }
                 if (expanded && label.isNotEmpty()) {
                     FText(label, Modifier.padding(end = 12.dp), style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (enabled) c.text else c.textDisabled, maxLines = 1, softWrap = false)

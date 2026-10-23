@@ -1,0 +1,5 @@
+The characters of the picker's groups Heroes, Creatures and Spooky & Space are not files: they are drawn by the app's own code
+(ui/shell/AvatarArt.kt and AvatarArtMore.kt), original to this project.
+
+The *.webp files in this folder are the "Scene clips": short clips of the anime, series and films they are named after. The characters
+and the footage belong to their respective owners; they are not part of this project's own artwork.

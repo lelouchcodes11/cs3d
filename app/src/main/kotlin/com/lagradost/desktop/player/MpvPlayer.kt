@@ -1,5 +1,7 @@
 package com.lagradost.desktop.player
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
@@ -232,9 +234,10 @@ open class MpvPlayer : IPlayer {
     // false from the moment a file is asked for until its first picture is on screen (PLAYBACK_RESTART)
     @Volatile
     private var firstFrameLogged = true
-    // the user (or a dialog) paused on purpose; everything else - opening, a reload, a source switch - plays
-    @Volatile
-    private var userPaused = false
+    // the user (or a dialog) paused on purpose; everything else - opening, a reload, a source switch - plays.
+    // Observable: the play / pause button reads it (a stream that is still buffering reports "buffering" whether or not it is paused, so the
+    // button's own state does not change on a keyboard pause; only a mouse click, which redrew the button anyway, showed the new icon)
+    private var userPaused by androidx.compose.runtime.mutableStateOf(false)
 
     /** The viewer asked for a pause (mpv may also be paused for other reasons: the cache ran dry, the end of the file) */
     val pausedByUser: Boolean get() = userPaused
@@ -331,12 +334,14 @@ open class MpvPlayer : IPlayer {
             // display-resample + interpolation timed frames to the screen's refresh instead, but the refresh a child window sees is jittery
             // (mpv measured ~54 Hz, jitter 0.46 on a 60 Hz screen): 66 dropped and 155 mistimed frames in 40 s of 24p; audio timing: none
             Log.i(TAG, "native video window 0x${java.lang.Long.toHexString(wid)}")
-            for ((k, v) in listOf("wid" to wid.toString(), "vo" to "gpu", "gpu-api" to "d3d11", "hwdec" to "auto-safe",
+            for ((k, v) in listOf("wid" to wid.toString(), "vo" to (if (System.getProperty("cloudstream.novo") != null) "null" else "gpu"), "gpu-api" to "d3d11", "hwdec" to "auto-safe",
                 "osc" to "no", "osd-level" to "0", "input-default-bindings" to "no", "input-vo-keyboard" to "no", "input-media-keys" to "no", "media-controls" to "no", "input-cursor" to "no", "cursor-autohide" to "no", "keepaspect" to "yes", "background-color" to "#000000"))
                 mpv.mpv_set_option_string(ctx, k, v)
             // the upscaling mode of the settings (Off leaves mpv's own defaults alone)
             com.lagradost.desktop.ui.fluent.Appearance.upscaler.takeIf { it != com.lagradost.desktop.ui.fluent.Upscaler.Off }
                 ?.let { for ((k, v) in Upscaling.settings(it)) mpv.mpv_set_option_string(ctx, k, v) }
+            // testing: -Dcloudstream.mpvopts=force-window=immediate,d3d11-flip=no sets more mpv options of the native window
+            System.getProperty("cloudstream.mpvopts")?.split(',')?.forEach { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { mpv.mpv_set_option_string(ctx, it[0], it[1]) } }
         } else {
             mpv.mpv_set_option_string(ctx, "vo", if (headless) "null" else "libmpv")
             // decoded frames are read back for the software renderer
@@ -604,9 +609,11 @@ open class MpvPlayer : IPlayer {
             "paused-for-cache" -> {
                 if (data != null && format == Mpv.MPV_FORMAT_FLAG) {
                     val bufferingFlag = data.getInt(0)
+                    val stallStarted = bufferingSince
                     isBuffering = (bufferingFlag != 0)
                     mainHandler.removeCallbacks(liveStallCheck)
                     if (isBuffering) { bufferingSince = System.currentTimeMillis(); mainHandler.postDelayed(liveStallCheck, LIVE_STALL_MS) } else bufferingSince = 0L
+                    if (!isBuffering && stallStarted > 0) noteStall(System.currentTimeMillis() - stallStarted)
                     isPlaying = !isPaused && !isBuffering && !isEnded
                     updateStatus()
                 }
@@ -798,6 +805,9 @@ open class MpvPlayer : IPlayer {
         return (getMpvPropertyString("demuxer-start-time")?.toDoubleOrNull() ?: 0.0) > 1.0e9
     }
 
+    /** The stream being opened is a live one (the playlist server has read its manifest and it has no end): it may take a while to open, see PlayerSession.watchStalls */
+    fun opensLive(): Boolean = playingAddress?.let { DashProxy.isLive(it) || HlsProxy.isLive(it) } == true
+
     /** The buffered stretch (time-pos seconds) that playback can move in; null when mpv does not say */
     fun liveRange(): Pair<Double, Double>? {
         val state = getMpvPropertyString("demuxer-cache-state") ?: return null
@@ -844,10 +854,49 @@ open class MpvPlayer : IPlayer {
             val ctx = currentContext
             if (link != null && ctx != null) {
                 lastLiveReopen = System.currentTimeMillis()
+                // a channel whose best quality is more than the connection carries: opened again with a lower one (if there is one), else at the live point
+                if (stepDownQuality()) return@Runnable
                 Log.i(TAG, "live stream waited ${LIVE_STALL_MS / 1000} s for data: opening it again at the live point")
                 loadPlayer(ctx, true, link, currentUri, null, activeSubtitles, preferredSubtitle, true, false)
             }
         }
+    }
+
+    // Quality of a live DASH channel: it plays the best quality and ffmpeg cannot change it in an open stream (see DashQuality), so a channel that keeps
+    // buffering (12 s of stalls in 45 s, or one stall of 12 s) is opened again with the next lower quality as the cap, for as long as this run lasts.
+    private val dashCap = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val stallLog = java.util.ArrayDeque<LongArray>()
+    private var lastQualityStep = 0L
+
+    /** The viewer chose a quality of this stream: no automatic change any more */
+    @Volatile private var qualityLocked = false
+
+    private fun noteStall(ms: Long) {
+        val now = System.currentTimeMillis()
+        val total = synchronized(stallLog) {
+            stallLog.addLast(longArrayOf(now, ms))
+            while (stallLog.isNotEmpty() && now - stallLog.first()[0] > 45_000) stallLog.removeFirst()
+            stallLog.sumOf { it[1] }
+        }
+        if (liveStream && total >= 12_000) stepDownQuality()
+    }
+
+    private fun stepDownQuality(): Boolean {
+        val link = currentLink ?: return false
+        val ctx = currentContext ?: return false
+        val now = System.currentTimeMillis()
+        if (!liveStream || !isDash(link) || qualityLocked || videoChosen || now - lastQualityStep < 60_000) return false
+        val ladder = DashProxy.ladder(playingAddress)
+        if (ladder.size < 2) return false
+        val current = DashProxy.maxBandwidth(playingAddress).takeIf { it > 0 } ?: ladder.last()
+        val next = DashQuality.below(ladder, current) ?: return false
+        dashCap[link.url] = next
+        lastQualityStep = now
+        synchronized(stallLog) { stallLog.clear() }
+        Log.i(TAG, "buffering: the channel is opened again with video up to ${next / 1000} kbit/s (it played up to ${current / 1000})")
+        com.lagradost.desktop.ui.Toasts.show("Slow connection: switching to a lower quality", false)
+        mainHandler.post { loadPlayer(ctx, true, link, currentUri, null, activeSubtitles, preferredSubtitle, !userPaused, false) }
+        return true
     }
 
     /** Not paused by the user, the file is open and mpv is paused anyway: play */
@@ -965,12 +1014,40 @@ open class MpvPlayer : IPlayer {
             postEvent(ErrorEvent(androidx.media3.common.PlaybackException("Unsupported DRM scheme ${drm.uuid}", null, androidx.media3.common.PlaybackException.ERROR_CODE_DRM_SCHEME_UNSUPPORTED)))
             return
         }
-        val keyHex = drm?.key?.let { clearKeyHex(it) }
+        // a ClearKey link with a license address instead of a key (the Tata Play channels): the phone's player asks the server for the key itself, so does the app
+        // (off this thread, then the load starts again with the key in hand, see ClearKeyLicense)
+        var licensed: List<Pair<String, String>>? = null
+        val licenseUrl = drm?.licenseUrl
+        if (drm != null && link != null && drm.key == null && !licenseUrl.isNullOrBlank()) {
+            licensed = ClearKeyLicense.cached(licenseUrl)
+            if (licensed == null) {
+                val sent = buildMap {
+                    if (link.headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) put("User-Agent", defaultUserAgent)
+                    putAll(link.headers)
+                    if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
+                    putAll(drm.keyRequestParameters)
+                }
+                Thread({
+                    val keys = runCatching { ClearKeyLicense.fetch(licenseUrl, link.url.takeIf { isDash(link) && it.startsWith("http", ignoreCase = true) }, sent) }
+                        .onFailure { Log.w(TAG, "license server not asked: ${it.message}") }.getOrDefault(emptyList())
+                    Log.i(TAG, "license server ${licenseUrl.substringBefore('?').takeLast(40)}: ${keys.size} key(s)")
+                    ClearKeyLicense.remember(licenseUrl, keys)
+                    mainHandler.post {
+                        if (generation == loadGeneration && !isReleased) {
+                            if (keys.isEmpty()) postEvent(ErrorEvent(androidx.media3.common.PlaybackException("The license server gave no key (a channel can be blocked on this network)", null, androidx.media3.common.PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED)))
+                            else loadPlayer(context, sameEpisode, link, data, startPosition, subtitles, subtitle, autoPlay, preview)
+                        }
+                    }
+                }, "clearkey-license").apply { isDaemon = true }.start()
+                return
+            }
+        }
+        val keyHex = drm?.key?.let { clearKeyHex(it) } ?: licensed?.firstOrNull()?.second
         if (drm != null && keyHex == null) {
             postEvent(ErrorEvent(androidx.media3.common.PlaybackException("ClearKey link without a key", null, androidx.media3.common.PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED)))
             return
         }
-        val kidHex = drm?.kid?.let { clearKeyHex(it) }
+        val kidHex = drm?.kid?.let { clearKeyHex(it) } ?: licensed?.firstOrNull()?.first?.takeIf { it.isNotEmpty() }
         setMpvProperty(
             "demuxer-lavf-o",
             buildString {
@@ -992,7 +1069,7 @@ open class MpvPlayer : IPlayer {
         setMpvProperty("referrer", "")
         hlsAddress = ""
         // another stream: the best quality is chosen again (the same one reloaded keeps the viewer's choice)
-        if (link?.url != lastQualityUrl) { videoChosen = false; lastQualityUrl = link?.url }
+        if (link?.url != lastQualityUrl) { videoChosen = false; qualityLocked = false; synchronized(stallLog) { stallLog.clear() }; lastQualityUrl = link?.url }
         val url = when {
             link != null -> {
                 setMpvProperty("user-agent", defaultUserAgent)
@@ -1023,7 +1100,7 @@ open class MpvPlayer : IPlayer {
                         putAll(link.headers)
                         if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
                     }
-                    if (isDash(link)) DashProxy.wrap(address, sent) else HlsProxy.wrap(address, sent, videoInterceptor(link)).also { hlsAddress = it }
+                    if (isDash(link)) DashProxy.wrap(address, sent, dashCap[link.url] ?: System.getProperty("cloudstream.dashcap")?.toLongOrNull() ?: 0L) else HlsProxy.wrap(address, sent, videoInterceptor(link)).also { hlsAddress = it }
                 } else address
             }
             data != null -> data.uri.toString()
@@ -1600,9 +1677,8 @@ open class MpvPlayer : IPlayer {
             runCatching { HlsProxy.cancel(addr) }
             runCatching { RangeProxy.cancel(addr) }
         }
-        runCatching { DashProxy.cancelAll() }
-        runCatching { HlsProxy.cancelAll() }
-        runCatching { RangeProxy.cancelAll() }
+        // Only this player's own stream (above): the page of the next video is made before the one that is left is let go of, and cancelling every stream
+        // here cancelled the new video's first requests and took its playlist server away (it then played plain: no live start, no repairs).
 
         // Detach everything from the caller's thread at once; tearing the core down can block for seconds on a
         // stuck network read, which froze the whole window when leaving a video.
@@ -1745,7 +1821,10 @@ open class MpvPlayer : IPlayer {
             videoChosen = true
             setMpvProperty("edition", id.substringAfter(':'))
             mainHandler.postDelayed({ refreshTracks() }, 500)
-        } else setMpvProperty("vid", id)
+        } else {
+            qualityLocked = true
+            setMpvProperty("vid", id)
+        }
     }
 
     /** The viewer picked a quality of this stream: the automatic best choice no longer applies */

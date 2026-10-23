@@ -207,6 +207,9 @@ class GeneralPreferences(preferences: PreferenceStore) {
     /** desktop: pages opened to pass a Cloudflare check (off: none is opened, the request just fails) */
     val cloudflareSolvers = preferences.getBoolean("cloudflare_solvers_key", true)
 
+    /** desktop: names that the system DNS refuses (a filtering resolver: 0.0.0.0 or "no such host") are asked of public resolvers over plain UDP, see PublicDns */
+    val publicDnsFallback = preferences.getBoolean("public_dns_fallback_key", true)
+
     /** This should honesty be refactored to a single setting */
     val downloadPath = preferences.getString("download_path_key", "")
     val downloadPathVisual = preferences.getString("download_path_key_visual", "")

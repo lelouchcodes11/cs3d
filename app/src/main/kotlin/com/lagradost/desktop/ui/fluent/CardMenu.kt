@@ -83,6 +83,17 @@ object CardLibrary {
 
     fun isFavourite(card: SearchResponse): Boolean = DataStoreHelper.getFavoritesData(response(card).getId()) != null
 
+    /** The same for a title whose page data is loaded already (the banner of Home): the list it is on, and putting it on one or taking it off */
+    fun statusOf(load: com.lagradost.cloudstream3.LoadResponse): WatchType = DataStoreHelper.getResultWatchState(load.getId())
+
+    fun setStatus(load: com.lagradost.cloudstream3.LoadResponse, status: WatchType) {
+        val ctx = DesktopBootstrap.activity
+        val name = load.name
+        viewModel.updateWatchStatus(status, ctx, load) { changed ->
+            if (changed) Toasts.show(if (status == WatchType.NONE) "Removed “$name” from your library" else "“$name” is now in ${ctx.getString(status.stringRes)}", false)
+        }
+    }
+
     /** [WatchType.NONE] takes the title off the library */
     fun setStatus(card: SearchResponse, status: WatchType) {
         val ctx = DesktopBootstrap.activity
@@ -138,7 +149,7 @@ private fun PosterActions(card: SearchResponse, from: Rect?, dismiss: () -> Unit
     var target by remember { mutableStateOf<Rect?>(null) }
     LaunchedEffect(target != null) {
         if (target == null) return@LaunchedEffect
-        lift.animateTo(1f, spring(dampingRatio = 0.86f, stiffness = 380f))
+        lift.animateTo(1f, FluentMotion.springSoft())
     }
     LaunchedEffect(Unit) { delay(110); panel.animateTo(1f, tween(FluentMotion.ms(240), easing = FluentMotion.enter)) }
 
@@ -239,7 +250,7 @@ private fun CardMenuRow(text: String, icon: String, destructive: Boolean = false
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.row)
     Row(
         Modifier
             .padding(horizontal = 4.dp)
@@ -262,19 +273,19 @@ private fun StatusChip(text: String, selected: Boolean, onClick: () -> Unit) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.control)
+    val shape = FluentShapes.pill
     Row(
         Modifier
             .fillMaxWidth()
             .height(30.dp)
-            .background(if (selected) c.accent.copy(alpha = if (c.dark) 0.28f else 0.2f) else if (hovered) c.controlHover else c.control, shape)
-            .hairBorder(if (selected) c.accent.copy(alpha = 0.8f) else c.strokeStrong.copy(alpha = 0.35f), shape)
+            .background(if (selected || hovered) c.controlHover else c.control, shape)
+            .hairBorder(if (selected) c.selectedEdge else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Button, onClick)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        if (selected) { Icon(Icons.Check, size = 12.dp, tint = c.accentText); Box(Modifier.width(6.dp)) }
-        FText(text, style = Fluent.type.caption, color = if (selected) c.accentText else c.text, maxLines = 1)
+        if (selected) { Icon(Icons.Check, size = 12.dp, tint = c.text); Box(Modifier.width(6.dp)) }
+        FText(text, style = Fluent.type.caption, color = c.text, maxLines = 1)
     }
 }

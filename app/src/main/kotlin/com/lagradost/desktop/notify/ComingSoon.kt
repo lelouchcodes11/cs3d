@@ -165,7 +165,9 @@ object ComingSoon {
 
     private suspend fun anime(from: LocalDate, to: LocalDate): List<Item> {
         val body = mapOf("query" to ANIME_QUERY, "variables" to mapOf("from" to fuzzy(from), "to" to fuzzy(to)))
-        val data = JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.post("https://graphql.anilist.co", json = body, timeout = 20).text }).optJSONObject("data")?.optJSONObject("Page") ?: return emptyList()
+        val answer = JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.post("https://graphql.anilist.co", json = body, timeout = 20).text })
+        com.lagradost.desktop.net.ServiceOutage.requireData("AniList", answer)
+        val data = answer.optJSONObject("data")?.optJSONObject("Page") ?: return emptyList()
         val arr = data.optJSONArray("media") ?: return emptyList()
         val out = ArrayList<Item>()
         for (i in 0 until arr.length()) {

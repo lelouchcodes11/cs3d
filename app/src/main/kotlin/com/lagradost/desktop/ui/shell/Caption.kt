@@ -10,6 +10,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -148,8 +150,13 @@ private fun CaptionButtons() {
 private fun CaptionButton(glyph: String, id: Int, hoverFill: Color, hoverTint: Color, onClick: () -> Unit = {}) {
     val c = Fluent.colors
     val source = rememberInteraction()
-    val hovered = WinChrome.hover == id
-    val pressed = hovered && WinChrome.pressed == id
+    // In the app's own window Windows reports the pointer over these buttons (WM_NCHITTEST: Snap Layouts, clicks), so WinChrome knows the hover. In
+    // the controls window of the video player (a window of its own over the video, whose messages WinChrome does not see) the pointer reaches Compose
+    // like anywhere else: the buttons did not light up there.
+    val ownHover by source.collectIsHoveredAsState()
+    val ownPress by source.collectIsPressedAsState()
+    val hovered = WinChrome.hover == id || ownHover
+    val pressed = (WinChrome.hover == id && WinChrome.pressed == id) || ownPress
     Box(
         Modifier.size(46.dp, TitleBarHeight)
             .background(if (pressed) hoverFill.copy(alpha = hoverFill.alpha * 0.7f) else if (hovered) hoverFill else Color.Transparent)

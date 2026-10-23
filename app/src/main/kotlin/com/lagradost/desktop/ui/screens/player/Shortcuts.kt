@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.lagradost.desktop.ui.fluent.tabletVerticalScroll as verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -23,6 +23,8 @@ import com.lagradost.desktop.ui.fluent.Overlays
 object Shortcuts {
     val player: List<Pair<String, String>> = listOf(
         "Space  ·  K" to "Play or pause",
+        "Hold Space" to "Plays at 2× for as long as you hold it, then the speed is back to normal (a quick press still pauses)",
+        "Hold click  ·  Hold touch" to "The same on the picture with the left mouse button or a finger. Not on the buttons, not when paused or live, not in the small window",
         "←  /  →" to "Back or forward 10 s (Shift: 30 s); keep it pressed or press again and again: the bubble counts +10 s, +20 s ...",
         "J  /  L" to "Back or forward 10 s",
         "Ctrl + ←  /  →" to "Previous or next episode (also P  /  N)",
@@ -38,7 +40,7 @@ object Shortcuts {
         "E" to "Episode list",
         "," to "Slower (0.25x steps)",
         "." to "Faster (0.25x steps)",
-        "Home200B" to "Back to the start",
+        "Home" to "Back to the start",
         "0 – 9" to "Jump to 0 % … 90 % of the video",
         "F1" to "This list",
     )

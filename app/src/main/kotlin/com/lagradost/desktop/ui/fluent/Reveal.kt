@@ -19,17 +19,17 @@ private val shown = HashSet<Any>()
  * once. Off with Settings > Look > Animations: Off.
  */
 @Composable
-fun Modifier.reveal(key: Any, delayMs: Int = 0, rise: Dp = 26.dp): Modifier {
+fun Modifier.reveal(key: Any, delayMs: Int = 0, rise: Dp = 14.dp): Modifier {
     if (Appearance.motion == Motion.Off) return this
     val first = remember(key) { shown.add(key) }
     if (!first) return this
     val progress = remember(key) { Animatable(0f) }
     LaunchedEffect(key) {
-        delay(delayMs.toLong())
-        progress.animateTo(1f, tween(560, easing = androidx.compose.animation.core.CubicBezierEasing(0.16f, 1f, 0.3f, 1f)))
+        // a cascade longer than a blink is slower than the content it shows: rows follow one another over 120 ms at most
+        delay(delayMs.coerceAtMost(120).toLong()); progress.animateTo(1f, FluentMotion.tweenIn(FluentMotion.BASE + 60))
     }
     return this.graphicsLayer {
         alpha = progress.value
-        translationY = (1f - progress.value) * rise.toPx()
+        translationY = (1f - progress.value) * rise.coerceAtMost(14.dp).toPx()
     }
 }

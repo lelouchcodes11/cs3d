@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 fun PlayPauseMorph(playing: Boolean, size: Dp, tint: Color, modifier: Modifier = Modifier) {
     val k by animateFloatAsState(
         if (playing) 1f else 0f,
-        if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap() else spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = 420f),
+        FluentMotion.springSoft(),
         label = "playPauseMorph",
     )
     Canvas(modifier.size(size)) {
@@ -31,25 +31,25 @@ fun PlayPauseMorph(playing: Boolean, size: Dp, tint: Color, modifier: Modifier =
         val h = this.size.height
         fun p(x: Float, y: Float) = Offset(x * w, y * h)
         fun mix(a: Float, b: Float) = a + (b - a) * k
-        fun quad(play: List<Pair<Float, Float>>, pause: List<Pair<Float, Float>>): Path {
-            val path = Path()
+        // both quads are contours of ONE path: two paths side by side leave a faint line along their shared edge (the antialiased edges of each
+        // cover only part of the pixel), which showed as a dark strip through the play triangle
+        val shape = Path()
+        fun quad(play: List<Pair<Float, Float>>, pause: List<Pair<Float, Float>>) {
             for (i in 0 until 4) {
                 val o = p(mix(play[i].first, pause[i].first), mix(play[i].second, pause[i].second))
-                if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y)
+                if (i == 0) shape.moveTo(o.x, o.y) else shape.lineTo(o.x, o.y)
             }
-            path.close()
-            return path
+            shape.close()
         }
         // play: the triangle (0.30,0.14) (0.30,0.86) (0.82,0.50), cut at x = 0.56 into a left quad and a right triangle
-        val left = quad(
+        quad(
             listOf(0.30f to 0.14f, 0.56f to 0.32f, 0.56f to 0.68f, 0.30f to 0.86f),
             listOf(0.26f to 0.16f, 0.42f to 0.16f, 0.42f to 0.84f, 0.26f to 0.84f),
         )
-        val right = quad(
+        quad(
             listOf(0.56f to 0.32f, 0.82f to 0.50f, 0.82f to 0.50f, 0.56f to 0.68f),
             listOf(0.58f to 0.16f, 0.74f to 0.16f, 0.74f to 0.84f, 0.58f to 0.84f),
         )
-        drawPath(left, tint)
-        drawPath(right, tint)
+        drawPath(shape, tint)
     }
 }

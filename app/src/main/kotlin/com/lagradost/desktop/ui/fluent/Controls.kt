@@ -98,6 +98,12 @@ import kotlin.math.roundToInt
 /** True after the last input was the keyboard: focus rings are only drawn then */
 object InputMode {
     var keyboard by mutableStateOf(false)
+
+    /** The last press was a finger (a real touch event, or a mouse event Windows made from one) */
+    var touchscreen by mutableStateOf(false)
+
+    /** The touch layout: the title bar of a maximised window stays (there is no pointer to bring it back) */
+    val touchUi: Boolean get() = Appearance.touchSwipes == TouchSwipes.On || (Appearance.touchSwipes == TouchSwipes.Auto && touchscreen)
 }
 
 @Composable
@@ -300,7 +306,7 @@ fun ButtonBase(
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val pressed by source.collectIsPressedAsState()
-    val shape = RoundedCornerShape(FluentShapes.control)
+    val shape = FluentShapes.pill
     // the flat fills glide between rest, hover and press instead of switching; a press gives way a little (a spring, so it comes back with a touch of overshoot)
     val flat: Color? = when (kind) {
         ButtonKind.Standard -> when {
@@ -318,20 +324,22 @@ fun ButtonBase(
         }
     }
     val flatNow by animateColorAsState(flat ?: Color.Transparent, FluentMotion.tweenStd(110), label = "buttonFill")
-    val fill: Brush = if (flat != null) SolidColor(flatNow) else if (!enabled) SolidColor(c.controlDisabled) else c.accentBrush(hovered, pressed)
+    // the main action is the same flat white pill as Play and Watch now everywhere (primaryFill follows the Settings > Look > Play button choice)
+    val fill: Brush = if (flat != null) SolidColor(flatNow) else if (!enabled) SolidColor(c.controlDisabled) else c.primaryFill(hovered, pressed)
     val give by androidx.compose.animation.core.animateFloatAsState(
         if (pressed && enabled) 0.965f else 1f,
-        if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap() else androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 780f), label = "buttonGive",
+        FluentMotion.springPress(), label = "buttonGive",
     )
     val content0 = when {
         !enabled -> c.textDisabled
-        kind == ButtonKind.Accent -> c.onButton
-        pressed && kind != ButtonKind.Accent -> c.textSecondary
+        kind == ButtonKind.Accent -> c.primaryContent()
+        pressed -> c.textSecondary
         else -> c.text
     }
     val stroke = when (kind) {
         ButtonKind.Standard -> c.stroke
-        ButtonKind.Accent, ButtonKind.Subtle -> Color.Transparent
+        ButtonKind.Accent -> c.primaryBorder(hovered)
+        ButtonKind.Subtle -> Color.Transparent
     }
     Row(
         modifier
@@ -407,15 +415,15 @@ fun ToggleSwitch(
             pressed -> 17.dp
             hovered -> 14.dp
             else -> 12.dp
-        }, tween(83),
+        }, FluentMotion.tweenStd(FluentMotion.FAST),
     )
-    val x by animateDpAsState(if (checked) 40.dp - 4.dp - knob else 4.dp, tween(167))
+    val x by animateDpAsState(if (checked) 40.dp - 4.dp - knob else 4.dp, FluentMotion.tweenStd(FluentMotion.BASE))
     val fill by animateColorAsState(
         when {
             !enabled -> if (checked) c.controlDisabled else Color.Transparent
             checked -> if (pressed) c.accentPressed else if (hovered) c.accentHover else c.accent
             else -> if (hovered) c.controlHover else c.control
-        }, tween(83),
+        }, FluentMotion.tweenStd(FluentMotion.FAST),
     )
     val shape = RoundedCornerShape(10.dp)
     Box(
@@ -445,7 +453,7 @@ fun CheckBox(
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(FluentShapes.check)
     Row(
         modifier.fluentClickable(source, enabled, shape, Role.Checkbox) { onCheckedChange(!checked) },
         verticalAlignment = Alignment.CenterVertically,
@@ -491,31 +499,26 @@ fun TextBox(
     var focused by remember { mutableStateOf(false) }
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = if (pill) RoundedCornerShape(50) else RoundedCornerShape(FluentShapes.control)
+    // every text box is a pill (a taller multi-line one a rounded rectangle) with a neutral ring when it has the focus: the same ring the keyboard focus uses
+    val shape = if (singleLine || pill) FluentShapes.pill else RoundedCornerShape(FluentShapes.card)
     val fill = when {
         !enabled -> c.controlDisabled
         focused -> if (c.dark) c.flyout else Color.White
         hovered -> c.controlHover
         else -> c.control
     }
+    val ring by androidx.compose.animation.animateColorAsState(if (focused) c.text.copy(alpha = 0.72f) else c.stroke, FluentMotion.tweenStd(FluentMotion.FAST), label = "textBoxRing")
     Box(
         modifier
             .heightIn(min = height)
             .background(fill, shape)
-            .border(if (pill && focused) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, if (pill && focused) c.accent else c.stroke, shape)
-            .hoverable(source)
-            .drawWithContent {
-                drawContent()
-                if (focused && !pill) {
-                    val h = 2.dp.toPx()
-                    drawRect(c.accent, Offset(0f, size.height - h), Size(size.width, h))
-                }
-            },
+            .border(if (focused) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, ring, shape)
+            .hoverable(source),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = if (pill) 16.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             if (leadingIcon != null) {
-                Icon(leadingIcon, size = if (pill) 15.dp else 14.dp, tint = if (focused && pill) c.accentText else c.textSecondary)
+                Icon(leadingIcon, size = 15.dp, tint = if (focused) c.text else c.textSecondary)
                 Box(Modifier.width(8.dp))
             }
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
@@ -625,7 +628,7 @@ fun Slider(
     val span = valueRange.endInclusive - valueRange.start
     val fraction = ((value - valueRange.start) / span).coerceIn(0f, 1f)
     // a white knob that grows a little under the pointer: the same as the player's seek bar (one look for every bar)
-    val thumb by animateDpAsState(if (dragging || hovered) 16.dp else 14.dp, tween(83))
+    val thumb by animateDpAsState(if (dragging || hovered) 16.dp else 14.dp, FluentMotion.tweenStd(FluentMotion.FAST))
     // in a right-to-left language the bar fills from the right: the pointer's x is counted from there
     val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     fun setFromX(x: Float) {
@@ -652,7 +655,7 @@ fun Slider(
                 awaitPointerEventScope {
                     while (true) {
                         val e = awaitPointerEvent()
-                        if (e.type == PointerEventType.Press && e.buttons.isPrimaryPressed && !dragging) {
+                        if (e.type == PointerEventType.Press && e.primaryContactPressed && !dragging) {
                             setFromX(e.changes.first().position.x)
                         }
                         if (e.type == PointerEventType.Release && !dragging) onValueChangeFinished?.invoke()
@@ -690,12 +693,12 @@ fun Divider(modifier: Modifier = Modifier) {
 @Composable
 fun Badge(text: String, modifier: Modifier = Modifier, accent: Boolean = false) {
     val c = Fluent.colors
-    val shape = RoundedCornerShape(4.dp)
+    val shape = FluentShapes.pill
     Box(
         modifier
             .background(if (accent) c.button else c.control, shape)
             .hairBorder(if (accent) Color.Transparent else c.stroke, shape)
-            .padding(horizontal = 6.dp, vertical = 1.dp),
+            .padding(horizontal = 8.dp, vertical = 1.dp),
     ) { FText(text, style = Fluent.type.caption, color = if (accent) c.onButton else c.textSecondary, maxLines = 1) }
 }
 
@@ -730,7 +733,7 @@ fun StremioLogo(size: Dp = 14.dp, modifier: Modifier = Modifier) {
 /** Purple Stremio badge with logo for Stremio add-on providers */
 @Composable
 fun StremioBadge(modifier: Modifier = Modifier, showText: Boolean = true) {
-    val shape = RoundedCornerShape(4.dp)
+    val shape = FluentShapes.pill
     Row(
         modifier
             .background(Color(0xFF8E4EC6).copy(alpha = 0.22f), shape)
@@ -753,7 +756,7 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val pressed by source.collectIsPressedAsState()
-    val shape = RoundedCornerShape(16.dp)
+    val shape = FluentShapes.pill
     Row(
         modifier
             .height(32.dp)

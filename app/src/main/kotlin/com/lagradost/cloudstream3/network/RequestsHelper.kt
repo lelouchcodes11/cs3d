@@ -85,6 +85,8 @@ fun buildDefaultClient(context: Context, ignoreSSL: Boolean = false): OkHttpClie
                 .dns(com.lagradost.desktop.net.UsableAddresses.wrap(it.dns))
                 .eventListenerFactory(com.lagradost.desktop.net.Quarantine.listenerFactory)
                 .addInterceptor(com.lagradost.desktop.net.RetryQuickFailures)
+                // reads what AniList / MyAnimeList / Simkl / Kitsu answer (an outage, a refused sign-in) for the pages to say so; the answer itself is not changed
+                .addInterceptor(com.lagradost.desktop.net.ServiceOutage)
                 .build()
         }
     return baseClient

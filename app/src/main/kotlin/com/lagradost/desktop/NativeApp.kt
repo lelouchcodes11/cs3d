@@ -116,6 +116,14 @@ fun ApplicationScope.NativeWindow() {
                     delay(100)
                 }
             }
+            // finger input: Windows marks the mouse events it makes from touches; the window procedures are only observed, nothing is consumed or made
+            // (the canvas can be recreated: installing again is harmless)
+            LaunchedEffect(window) {
+                while (true) {
+                    if (window.isDisplayable) com.lagradost.desktop.platform.WindowsTouch.install(window)
+                    delay(2000)
+                }
+            }
             // Compose's canvas window can be recreated; it must keep letting the frame decide over the caption area
             LaunchedEffect(window) {
                 while (true) {
@@ -162,7 +170,11 @@ fun ApplicationScope.NativeWindow() {
                         awaitPointerEventScope {
                             while (true) {
                                 val e = awaitPointerEvent(PointerEventPass.Initial)
-                                if (e.type == PointerEventType.Press) InputMode.keyboard = false
+                                if (e.type == PointerEventType.Press) {
+                                    InputMode.keyboard = false
+                                    InputMode.touchscreen = e.changes.any { it.type == androidx.compose.ui.input.pointer.PointerType.Touch } ||
+                                        com.lagradost.desktop.platform.WindowsTouch.lastPrimaryWasTouch
+                                }
                                 // the pointer is over the app, not over a caption button
                                 if (e.type == PointerEventType.Move) com.lagradost.desktop.platform.WinChrome.hover = 0
                             }
@@ -200,6 +212,8 @@ fun ApplicationScope.NativeWindow() {
 /** Window wide shortcuts of the native UI */
 object NativeKeys {
     fun onPreviewKey(e: KeyEvent): Boolean {
+        // Space is held to play at 2x: the player needs to see it let go
+        if (e.type == KeyEventType.KeyUp && e.key == Key.Spacebar) return playerKey(e)
         if (e.type != KeyEventType.KeyDown) return false
         when (e.key) {
             Key.Tab, Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight -> InputMode.keyboard = true
@@ -214,7 +228,7 @@ object NativeKeys {
             e.isAltPressed && e.key == Key.DirectionLeft -> Navigator.back()
             e.isCtrlPressed && (e.key == Key.K || e.key == Key.E) -> {
                 // the floating bar look has no search box in its bar: on Home the one of the extension shown there opens
-                if (Navigator.current.route is com.lagradost.desktop.core.Route.Home && com.lagradost.desktop.ui.fluent.Appearance.navPosition == com.lagradost.desktop.ui.fluent.NavPosition.Floating) ShellState.homeSearchOpen = true
+                if (Navigator.current.route is com.lagradost.desktop.core.Route.Home && (com.lagradost.desktop.ui.fluent.Appearance.navPosition == com.lagradost.desktop.ui.fluent.NavPosition.Floating || com.lagradost.desktop.ui.fluent.Skins.spec != null)) ShellState.homeSearchOpen = true
                 runCatching { ShellState.searchFocus.requestFocus() }
                 true
             }
@@ -248,6 +262,8 @@ private fun paintBackground(window: java.awt.Window, argb: Int) {
     // the window itself and its content pane only: what shows through where the picture does not reach
     window.background = color
     (window as? javax.swing.RootPaneContainer)?.contentPane?.background = color
+    // and the native class brush, which is what Windows erases the window with (white by default) when a child window appears over a part of it
+    if (System.getProperty("cloudstream.noclassbrush") == null) com.lagradost.desktop.ui.screens.player.NativeVideo.paintClassBackground(window, argb)
 }
 
 /**

@@ -1,10 +1,14 @@
 package com.lagradost.desktop.ui.screens.extensions
 
+import com.lagradost.desktop.ui.fluent.selectedEdge
+
+import com.lagradost.desktop.ui.fluent.hoverEdge
+
 import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import com.lagradost.desktop.ui.fluent.tabletVerticalScroll as verticalScroll
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -178,16 +182,33 @@ fun ExtensionsScreen() {
                         }
                     } else {
                         val repo = repoList.firstOrNull { it.url == sel }
-                        Row(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Column(Modifier.weight(1f)) {
+                        // the name and address, then the filter and "Install all": side by side when there is room, one under the other when not (the name had vanished)
+                        val heading = @Composable { m: Modifier ->
+                            Column(m) {
                                 FText(if (sel == INSTALLED) "Installed extensions" else repo?.name ?: "Extensions", style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 1)
                                 FText(repo?.url ?: "${list?.second?.size ?: 0} extensions", style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
                             }
-                            TextBox(
-                                query, { query = it; plugins.search(it.ifBlank { null }) }, Modifier.width(if (compact) 200.dp else 280.dp),
-                                placeholder = "Filter extensions", leadingIcon = Icons.Search,
-                            )
+                        }
+                        val filterBox = @Composable { m: Modifier ->
+                            TextBox(query, { query = it; plugins.search(it.ifBlank { null }) }, m, placeholder = "Filter extensions", leadingIcon = Icons.Search)
+                        }
+                        val installAll = @Composable {
                             if (repo != null) Button("Install all", { PluginsViewModel.downloadAll(ctx, repo, plugins) }, icon = Icons.Download, height = 34.dp)
+                        }
+                        if (compact) {
+                            Column(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                heading(Modifier.fillMaxWidth())
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    filterBox(Modifier.weight(1f))
+                                    installAll()
+                                }
+                            }
+                        } else {
+                            Row(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                heading(Modifier.weight(1f))
+                                filterBox(Modifier.width(280.dp))
+                                installAll()
+                            }
                         }
                         Box(Modifier.height(16.dp))
                         val items = list?.second.orEmpty()
@@ -222,7 +243,7 @@ fun ExtensionsScreen() {
 private fun StatTile(glyph: String, value: String, label: String) {
     val c = Fluent.colors
     Row(Modifier.glass(FluentShapes.card).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(30.dp).background(c.accent.copy(alpha = 0.16f), CircleShape), contentAlignment = Alignment.Center) { Icon(glyph, size = 14.dp, tint = c.accentText) }
+        Box(Modifier.size(30.dp).background(c.control, CircleShape), contentAlignment = Alignment.Center) { Icon(glyph, size = 14.dp, tint = c.textSecondary) }
         Box(Modifier.width(10.dp))
         Column {
             FText(value, style = Fluent.type.bodyStrong.copy(fontSize = 17.sp), maxLines = 1)
@@ -261,21 +282,21 @@ private fun RepoRow(
             MenuItem("Remove repository", Icons.Delete, destructive = true) { confirmRemove(repo) },
         )
     }
-    val bg = if (selected) c.accent.copy(alpha = if (c.dark) 0.18f else 0.13f) else if (hovered) c.cardHover else c.card
+    val bg = if (selected) c.controlHover else if (hovered) c.cardHover else c.card
     ContextMenuArea(menu) {
         Row(
             Modifier.fillMaxWidth()
                 .clip(shape).background(bg, shape)
-                .border(if (selected) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, if (selected) c.accent.copy(alpha = 0.7f) else c.stroke, shape)
+                .border(if (selected) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, if (selected) c.selectedEdge else c.stroke, shape)
                 .fluentClickable(source, true, shape, Role.Tab, onClick)
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(Modifier.size(42.dp).clip(RoundedCornerShape(FluentShapes.small)).background(if (selected) c.accent.copy(alpha = 0.2f) else c.control), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(42.dp).clip(RoundedCornerShape(FluentShapes.small)).background(if (selected) c.controlHover else c.control), contentAlignment = Alignment.Center) {
                 if (customIcon != null) {
                     customIcon()
                 } else {
-                    Icon(fallbackIcon, size = 18.dp, tint = if (selected) c.accentText else c.textSecondary)
+                    Icon(fallbackIcon, size = 18.dp, tint = if (selected) c.text else c.textSecondary)
                     if (iconUrl != null) RemoteImage(iconUrl, null, null, Modifier.size(42.dp), ContentScale.Crop)
                 }
             }
@@ -304,7 +325,7 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
     Column(
         Modifier.fillMaxWidth().height(168.dp).hoverable(source)
             .clip(shape).background(if (hovered) c.cardHover else c.card, shape)
-            .border(if (hovered) 1.dp else androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.accent.copy(alpha = 0.55f) else if (item.isDownloaded) c.accent.copy(alpha = 0.4f) else c.stroke, shape)
+            .border(if (hovered) 1.dp else androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.hoverEdge else if (item.isDownloaded) c.strokeStrong else c.stroke, shape)
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {

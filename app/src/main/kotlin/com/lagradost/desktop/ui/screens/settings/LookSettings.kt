@@ -132,6 +132,9 @@ fun GroupBuilder.layoutItems() {
     card("Spacing", "Room between and around items.", "density compact") {
         ComboBox(Density.entries.toList(), Appearance.density, { it.label }, { Appearance.density = it; changed() }, minWidth = 150.dp)
     }
+    card("Touchscreen swipes", "Auto recognises a finger on a touchscreen: swipe pages up and down and shelves sideways, tap to open. If your touchscreen is not recognised, choose On.", "touch finger swipe tablet scroll") {
+        ComboBox(com.lagradost.desktop.ui.fluent.TouchSwipes.entries.toList(), Appearance.touchSwipes, { it.label }, { Appearance.touchSwipes = it; changed() }, minWidth = 150.dp)
+    }
     card("Animations", "Page transitions and hover effects.", "motion transitions reduce") {
         ComboBox(Motion.entries.toList(), Appearance.motion, { it.label }, { Appearance.motion = it; changed() }, minWidth = 150.dp)
     }
@@ -362,16 +365,78 @@ private fun colorToHex(color: Color): String {
     return "#%02X%02X%02X".format(r, g, b)
 }
 
-/** Settings > Appearance > Theme & colours: themes, accent colours, independent button/pill colours, fill styles and surface tinting */
+/** Choosing a theme or a palette: the accent and button colour of the one before do not follow it */
+private fun pickTheme(p: com.lagradost.desktop.ui.fluent.ThemePreset) {
+    val was = Themes.byId(Appearance.theme)
+    Appearance.theme = p.id
+    if (!p.special) Appearance.palette = p.id
+    FluentSettings.chooseAccent(null)
+    FluentSettings.chooseButtonColor(null)
+    // Netflix's buttons are white (its Play is); leaving it for another theme keeps whatever the user had chosen before: the white default
+    if (p.special || was.special) Appearance.buttonStyle = ButtonStyle.White
+    Appearance.save()
+}
+
+/** Settings > Appearance > Theme: the app mode, and the two themes (Default, and the interface of Netflix). The colours have a page of their own: Settings > Colors */
 @Composable
 fun GroupBuilder.themeItems() {
+    val c = Fluent.colors
+    val shape = RoundedCornerShape(FluentShapes.card)
+    card("App mode", "Follow Windows, or always use light or dark surfaces.") {
+        ComboBox(
+            ThemeMode.entries.toList(),
+            FluentSettings.themeMode,
+            { when (it) { ThemeMode.System -> "Use system setting"; ThemeMode.Light -> "Light"; ThemeMode.Dark -> "Dark" } },
+            { FluentSettings.chooseMode(it) },
+            minWidth = 190.dp,
+        )
+    }
+
+    block("Themes", "Default is this app's own look, in the colours of Settings > Colors. Netflix brings a whole interface: its navigation, billboard, rows, cards, profile screen and button shapes, with its colours. Every feature of the app stays where it is. No name or logo of the service is drawn.", "default netflix streaming interface layout red special profile billboard my list") {
+        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+            val active = Themes.byId(Appearance.theme)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    FText("Themes", style = Fluent.type.bodyStrong)
+                    FText("Default is this app's own look, in the colours of Settings > Colors. Netflix brings a whole interface: its navigation, billboard, rows, cards, profile screen and button shapes, with its colours. Every feature of the app stays where it is. No name or logo of the service is drawn.", style = Fluent.type.caption, color = c.textSecondary)
+                }
+                Badge(if (active.special) active.name else "Default", accent = true)
+            }
+            Box(Modifier.height(14.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val cols = (maxWidth / 168.dp).toInt().coerceIn(2, 5)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val palette = Themes.byId(Appearance.palette)
+                    ThemeTile(
+                        palette, selected = !active.special, modifier = Modifier.weight(1f),
+                        name = "Default", subtitle = if (palette.id == Themes.DEFAULT_ID) "Dark, with white buttons" else palette.name,
+                    ) { if (active.special) pickTheme(palette) }
+                    for (p in Themes.specials) ThemeTile(p, selected = Appearance.theme == p.id, modifier = Modifier.weight(1f)) { pickTheme(p) }
+                    repeat((cols - 1 - Themes.specials.size).coerceAtLeast(0)) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+
+    card("Full interface", "A special theme brings its whole interface: its navigation, billboard, rows, cards, profile screen and button shapes (always on a dark page). Off: only its colours are used, the layout stays yours.") {
+        ToggleSwitch(Appearance.skinLayout, { Appearance.skinLayout = it; Appearance.save() })
+    }
+
+    link("Colors", "Colour palettes, the accent colour and the colour of buttons, chips and pills", "palette accent color colour theme") { SettingsNav.page = "colors" }
+}
+
+/** Settings > Colors: palettes, the accent colour, independent button/pill colours, fill styles and surface tinting */
+@Composable
+fun GroupBuilder.colorItems() {
     val c = Fluent.colors
     fun changed() = Appearance.save()
     action {
             Button(
                 "Reset colours",
                 {
-                    Appearance.theme = "classic"
+                    // the palette goes back to Classic; a special theme keeps its own colours (it is changed on the Appearance page)
+                    Appearance.palette = Themes.DEFAULT_ID
+                    if (!Themes.byId(Appearance.theme).special) Appearance.theme = Themes.DEFAULT_ID
                     Appearance.buttonStyle = ButtonStyle.White
                     Appearance.surfaceTint = SurfaceTint.Balanced
                     Appearance.navAccentPill = false
@@ -386,27 +451,20 @@ fun GroupBuilder.themeItems() {
     }
 
     val shape = RoundedCornerShape(FluentShapes.card)
-    card("App mode", "Follow Windows, or always use light or dark surfaces.") {
-        ComboBox(
-            ThemeMode.entries.toList(),
-            FluentSettings.themeMode,
-            { when (it) { ThemeMode.System -> "Use system setting"; ThemeMode.Light -> "Light"; ThemeMode.Dark -> "Dark" } },
-            { FluentSettings.chooseMode(it) },
-            minWidth = 190.dp,
-        )
-    }
 
-    // 1. Clean Flat Theme Gallery (grid of all 20 themes)
-    block("Colour theme", "Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.", "palette preset catppuccin nord dracula gruvbox slate graphite") {
+    // 1. Clean Flat Colour Gallery (grid of all the palettes)
+    block("Colour palette", "Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.", "theme palette preset catppuccin nord dracula gruvbox slate graphite") {
         Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+            val special = Themes.byId(Appearance.theme).special
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    FText("Colour theme", style = Fluent.type.bodyStrong)
+                    FText("Colour palette", style = Fluent.type.bodyStrong)
                     FText("Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.", style = Fluent.type.caption, color = c.textSecondary)
                 }
-                val activeTheme = Themes.byId(Appearance.theme)
-                Badge(activeTheme.name, accent = true)
+                Badge(Themes.byId(Appearance.palette).name, accent = true)
             }
+            // the palettes belong to the Default theme: while a special one is on, picking one goes back to Default
+            if (special) FText("The ${Themes.byId(Appearance.theme).name} theme has its own colours. Picking a palette here switches back to the Default theme.", style = Fluent.type.caption, color = c.textTertiary, modifier = Modifier.padding(top = 8.dp))
             Box(Modifier.height(14.dp))
             val allThemes = remember { listOf(Themes.classic) + Themes.all }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -415,12 +473,7 @@ fun GroupBuilder.themeItems() {
                     for (rowThemes in allThemes.chunked(cols)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             for (p in rowThemes) {
-                                ThemeTile(p, selected = Appearance.theme == p.id, modifier = Modifier.weight(1f)) {
-                                    Appearance.theme = p.id
-                                    FluentSettings.chooseAccent(null)
-                                    FluentSettings.chooseButtonColor(null)
-                                    changed()
-                                }
+                                ThemeTile(p, selected = !special && Appearance.theme == p.id, modifier = Modifier.weight(1f)) { pickTheme(p) }
                             }
                             repeat(cols - rowThemes.size) {
                                 Spacer(Modifier.weight(1f))
@@ -550,7 +603,7 @@ fun GroupBuilder.themeItems() {
 }
 
 @Composable
-private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: Boolean, modifier: Modifier = Modifier, name: String = p.name, subtitle: String = p.subtitle, onClick: () -> Unit) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
@@ -573,11 +626,12 @@ private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: 
     ) {
         val innerShape = RoundedCornerShape((FluentShapes.card - 3.dp).coerceAtLeast(4.dp))
         Box(
-            Modifier.fillMaxWidth().height(72.dp).clip(innerShape).background(p.bg)
+            Modifier.fillMaxWidth().height(if (p.special) 104.dp else 72.dp).clip(innerShape).background(p.bg)
                 .hairBorder(p.tint.copy(alpha = 0.18f), innerShape)
-                .padding(8.dp),
+                .padding(if (p.special) 0.dp else 8.dp),
         ) {
-            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+            // a special theme shows how its whole interface is laid out; the others show a bar, a banner and two cards
+            if (p.special) SkinPreview(p) else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                 // Mini top navigation bar + active pill (flat solid, no gradients)
                 Row(
                     Modifier.fillMaxWidth(),
@@ -613,7 +667,11 @@ private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: 
                 ) {
                     Column(
                         Modifier.weight(1f)
-                            .background(p.layer, RoundedCornerShape(4.dp))
+                            .background(
+                                // a streaming look shows its signature colour rising from the bottom of the hero, the way their title pages do
+                                if (p.special) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(p.layer, accent.copy(alpha = 0.42f))) else androidx.compose.ui.graphics.SolidColor(p.layer),
+                                RoundedCornerShape(4.dp),
+                            )
                             .hairBorder(p.tint.copy(alpha = 0.16f), RoundedCornerShape(4.dp))
                             .padding(5.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -635,10 +693,10 @@ private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: 
         Box(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
-            FText(p.name, style = if (selected) Fluent.type.bodyStrong else Fluent.type.caption, color = if (selected) c.text else c.textSecondary, maxLines = 1)
+            FText(name, style = if (selected) Fluent.type.bodyStrong else Fluent.type.caption, color = if (selected) c.text else c.textSecondary, maxLines = 1)
         }
-        if (p.subtitle.isNotBlank()) {
-            FText(p.subtitle, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1, modifier = Modifier.padding(start = 14.dp))
+        if (subtitle.isNotBlank()) {
+            FText(subtitle, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1, modifier = Modifier.padding(start = 14.dp))
         }
     }
 }

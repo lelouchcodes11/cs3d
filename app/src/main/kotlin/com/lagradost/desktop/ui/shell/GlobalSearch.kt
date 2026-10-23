@@ -98,7 +98,7 @@ private fun SuggestionRow(text: String, history: Boolean, onClick: () -> Unit) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.row)
     Row(
         Modifier
             .padding(horizontal = 4.dp)

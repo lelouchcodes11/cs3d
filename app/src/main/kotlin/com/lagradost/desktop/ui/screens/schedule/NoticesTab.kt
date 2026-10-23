@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.schedule
 
+import com.lagradost.desktop.ui.fluent.hoverEdge
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -81,7 +83,7 @@ private fun NoticeCard(n: UpdateNotices.Notice) {
     val hovered by source.collectIsHoveredAsState()
     val lift by animateFloatAsState(if (hovered) 1.012f else 1f, FluentMotion.tweenStd(160), label = "noticeLift")
     val shape = RoundedCornerShape(FluentShapes.card)
-    val edge by animateColorAsState(if (hovered) c.accent.copy(alpha = 0.55f) else c.stroke, FluentMotion.tweenStd(160), label = "noticeEdge")
+    val edge by animateColorAsState(if (hovered) c.hoverEdge else c.stroke, FluentMotion.tweenStd(160), label = "noticeEdge")
     Box(
         Modifier.fillMaxWidth().height(112.dp).graphicsLayer { scaleX = lift; scaleY = lift }
             .clip(shape).background(c.card, shape)

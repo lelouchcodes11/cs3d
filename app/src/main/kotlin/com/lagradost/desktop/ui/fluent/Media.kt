@@ -133,14 +133,21 @@ fun PosterCard(
     subtitle: String? = null,
     showType: Boolean = false,
     menu: (() -> List<MenuEntry>)? = null,
+    /** Play on the card's own button (the interface of a special theme shows one); the title page opens when null */
+    onPlay: (() -> Unit)? = null,
 ) {
+    // the interface of a special theme (Netflix) has its own card
+    if (Skins.spec != null) {
+        SkinPosterCard(item, onClick, width, modifier, landscape, subtitle, showType, onPlay, menu)
+        return
+    }
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val zoomOn = Appearance.hoverZoom
     val pressed by source.collectIsPressedAsState()
     // the card rises on a spring when the pointer comes (a little overshoot) and gives way under a press
-    val liftSpec = if (Appearance.motion == Motion.Off) androidx.compose.animation.core.snap<Float>() else androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 520f)
+    val liftSpec = FluentMotion.springSoft<Float>()
     val lift by animateFloatAsState(if (pressed) 0.975f else if (hovered && zoomOn) 1.035f else 1f, liftSpec, label = "lift")
     val glow by animateFloatAsState(if (hovered) 1f else 0f, FluentMotion.tweenIn(220))
     val shape = RoundedCornerShape(FluentShapes.card)
@@ -276,7 +283,7 @@ fun <T> Shelf(
     Box(modifier.fillMaxWidth().hoverable(source).onSizeChanged { width = it.width }) {
         LazyRow(
             // a row with no gutter (chips) is cut at its own edge: the cut end fades into the page instead of showing half a chip
-            modifier = (if (gutter == 0.dp) Modifier.scrollEdgeFade(state) else Modifier).then(drag),
+            modifier = (if (gutter == 0.dp) Modifier.scrollEdgeFade(state) else Modifier).touchScroll(state, androidx.compose.foundation.gestures.Orientation.Horizontal).then(drag),
             state = state,
             contentPadding = PaddingValues(horizontal = gutter),
             horizontalArrangement = Arrangement.spacedBy(spacing),
@@ -287,11 +294,15 @@ fun <T> Shelf(
         }
         val canBack = state.canScrollBackward
         val canForward = state.canScrollForward
-        if (hovered && canBack) ChevronButton(Icons.ChevronLeft, Modifier.align(Alignment.CenterStart).padding(start = 4.dp)) {
-            scope.launch { state.animateScrollBy(-width * 0.8f) }
+        // a special theme's arrows are tall strips over the row's edge (a row of chips, which has no gutter, keeps the round ones)
+        val strips = Skins.spec != null && gutter != 0.dp
+        if (hovered && canBack) {
+            if (strips) SkinShelfArrow(Icons.ChevronLeft, Modifier.align(Alignment.CenterStart)) { scope.launch { state.animateScrollBy(-width * 0.8f) } }
+            else ChevronButton(Icons.ChevronLeft, Modifier.align(Alignment.CenterStart).padding(start = 4.dp)) { scope.launch { state.animateScrollBy(-width * 0.8f) } }
         }
-        if (hovered && canForward) ChevronButton(Icons.ChevronRight, Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)) {
-            scope.launch { state.animateScrollBy(width * 0.8f) }
+        if (hovered && canForward) {
+            if (strips) SkinShelfArrow(Icons.ChevronRight, Modifier.align(Alignment.CenterEnd)) { scope.launch { state.animateScrollBy(width * 0.8f) } }
+            else ChevronButton(Icons.ChevronRight, Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)) { scope.launch { state.animateScrollBy(width * 0.8f) } }
         }
     }
 }

@@ -55,6 +55,9 @@ object DevServer {
         fun GetWindow(h: com.sun.jna.Pointer, cmd: Int): com.sun.jna.Pointer?
     }
     private val userDbg: UserDbg by lazy { Native.load("user32", UserDbg::class.java) }
+    private var mouseListenerOn = false
+    private val mouseCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val mouseLog = java.util.concurrent.ConcurrentLinkedQueue<String>()
 
     fun start(port: Int) {
         val server = try {
@@ -340,8 +343,8 @@ object DevServer {
                     com.lagradost.desktop.ui.fluent.Overlays.show(
                         com.lagradost.desktop.ui.fluent.Overlays.Dialog("Characters", close = "Close", width = 760.dp) {
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
-                                for (ch in com.lagradost.desktop.ui.shell.avatarCharacters.filter { c -> q["sheet"] == "1" || c.group.startsWith(q["sheet"]!!, true) }) {
-                                    com.lagradost.desktop.ui.shell.ProfileAvatar(null, 110.dp, look = com.lagradost.desktop.ui.shell.ProfileLook(com.lagradost.desktop.ui.shell.AvatarStyle.Character, ch.bg, ch.id), animated = false)
+                                for (ch in com.lagradost.desktop.ui.shell.animatedAvatars.filter { c -> q["sheet"] == "1" || c.group.startsWith(q["sheet"]!!, true) }) {
+                                    com.lagradost.desktop.ui.shell.ProfileAvatar(null, 110.dp, look = com.lagradost.desktop.ui.shell.ProfileLook(com.lagradost.desktop.ui.shell.AvatarStyle.Animated, ch.bg, ch.id), animated = true, playing = true)
                                 }
                             }
                         },
@@ -545,6 +548,28 @@ object DevServer {
                 }
                 key(code, modifiers, char)
                 ok(ex)
+            }
+            "/keyhold" -> {
+                // dev: a key held down for ms (with the repeats a held key makes) and then let go: /keyhold?name=SPACE&ms=700
+                val code = KeyEvent::class.java.getField("VK_" + q["name"]!!.uppercase()).getInt(null)
+                val ms = q["ms"]?.toLong() ?: 700L
+                fun send(id: Int) = onEdt {
+                    val comp = keyTarget()
+                    comp.dispatchEvent(KeyEvent(comp, id, System.currentTimeMillis(), 0, code, KeyEvent.CHAR_UNDEFINED))
+                }
+                send(KeyEvent.KEY_PRESSED)
+                val start = System.currentTimeMillis()
+                val end = start + ms
+                var next = start + 500
+                var during = "?"
+                while (System.currentTimeMillis() < end) {
+                    Thread.sleep(10)
+                    if (System.currentTimeMillis() >= next) { send(KeyEvent.KEY_PRESSED); next += 35 }
+                    if (during == "?" && System.currentTimeMillis() - start > ms * 7 / 10) during = com.lagradost.desktop.ui.screens.player.PlayerSession.active?.let { "boosting=${it.boosting} speed=${it.boostSpeed}" } ?: "no player"
+                }
+                send(KeyEvent.KEY_RELEASED)
+                Thread.sleep(150)
+                ok(ex, "during the hold: $during; after: ${com.lagradost.desktop.ui.screens.player.PlayerSession.active?.let { "boosting=${it.boosting} paused=${!it.showsPause}" }}")
             }
             "/type" -> {
                 for (c in q["text"] ?: "") key(KeyEvent.getExtendedKeyCodeForChar(c.code), 0, c)
@@ -946,7 +971,8 @@ object DevServer {
                 val a = runCatching { java.net.InetAddress.getAllByName(host).joinToString { it.hostAddress } }.getOrElse { "FAILED $it" }
                 val b = runCatching { okhttp3.Dns.SYSTEM.lookup(host).joinToString { it.hostAddress } }.getOrElse { "FAILED $it" }
                 val c = runCatching { java.net.ProxySelector.getDefault()?.javaClass?.name + " -> " + java.net.ProxySelector.getDefault()?.select(java.net.URI("https://$host/")).toString() }.getOrElse { "FAILED $it" }
-                ok(ex, "InetAddress: $a\nDns.SYSTEM: $b\nProxySelector: $c\n")
+                val d = runCatching { com.lagradost.cloudstream3.app.baseClient.dns.lookup(host).joinToString { it.hostAddress } }.getOrElse { "FAILED $it" }
+                ok(ex, "InetAddress: $a\nDns.SYSTEM: $b\nThe app's client (with the public DNS fallback): $d\nProxySelector: $c\n")
             }
             "/sublist" -> {
                 // dev: the subtitles the player page offers (name, language, origin, link) and the one that shows
@@ -1074,9 +1100,30 @@ object DevServer {
                 val outcome = com.lagradost.desktop.player.ExternalPlayers.openInVlc(link, "CloudStream test", emptyList(), null, listOf("--play-and-exit", "--run-time=4", "--no-audio"))
                 ok(ex, "ok=${outcome.ok} ${outcome.message ?: ""} vlc=${com.lagradost.desktop.player.ExternalPlayers.vlcPath()}")
             }
+            "/mouseevents" -> {
+                // dev: which windows get REAL mouse events (counts by window class and event kind since the first call; the first call installs the listener): /mouseevents
+                if (!mouseListenerOn) {
+                    mouseListenerOn = true
+                    java.awt.Toolkit.getDefaultToolkit().addAWTEventListener({ ev ->
+                        if (ev is MouseEvent) {
+                            val w = SwingUtilities.getWindowAncestor(ev.component) ?: (ev.component as? java.awt.Window)
+                            val key = "${w?.javaClass?.simpleName ?: "?"}/${w?.focusableWindowState}:${MouseEvent.getMouseModifiersText(0).ifEmpty { "" }}${ev.id}"
+                            mouseCounts.merge(key, 1, Int::plus)
+                            if (true) { mouseLog.add("${System.currentTimeMillis() % 100000} ${ev.id} btn=${ev.button} down=${ev.modifiersEx and 0x400} ${ev.x},${ev.y}"); while (mouseLog.size > 300) mouseLog.poll() }
+                        }
+                    }, java.awt.AWTEvent.MOUSE_EVENT_MASK or java.awt.AWTEvent.MOUSE_MOTION_EVENT_MASK)
+                    return ok(ex, "listening")
+                }
+                if (q["log"] != null) {
+                    val text = mouseLog.joinToString("\n")
+                    if (q["clear"] != null) mouseLog.clear()
+                    return ok(ex, text.ifEmpty { "no events" })
+                }
+                ok(ex, mouseCounts.entries.sortedBy { it.key }.joinToString("\n") { "${it.key} x${it.value}" }.ifEmpty { "no mouse events" })
+            }
             "/windows" -> {
                 // dev: the AWT windows of the app (class, title, shown, bounds in screen px)
-                ok(ex, java.awt.Window.getWindows().joinToString("\n") { w -> "${w.javaClass.simpleName} '${(w as? java.awt.Dialog)?.title ?: (w as? java.awt.Frame)?.title ?: ""}' shown=${w.isShowing} ${w.bounds.x},${w.bounds.y} ${w.bounds.width}x${w.bounds.height}" })
+                ok(ex, java.awt.Window.getWindows().joinToString("\n") { w -> "${w.javaClass.simpleName} '${(w as? java.awt.Dialog)?.title ?: (w as? java.awt.Frame)?.title ?: ""}' shown=${w.isShowing} ${w.bounds.x},${w.bounds.y} ${w.bounds.width}x${w.bounds.height} opacity=${w.opacity} focusable=${w.focusableWindowState}" })
             }
             "/cfgate" -> {
                 // dev: what the Cloudflare gate thinks of an extension: /cfgate?api=AnimePahe
@@ -1092,7 +1139,13 @@ object DevServer {
             }
             "/playurl" -> {
                 // dev: play a plain link in the player to look at its controls: /playurl?url=https://...mp4&name=Title
-                val link = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.utils.newExtractorLink(q["name"] ?: "Test source", q["name"] ?: "Test source", q["url"]!!) { quality = 1080 } }
+                // a ClearKey channel: &kid=<hex>&key=<hex> (and &cookie=...)
+                val link = kotlinx.coroutines.runBlocking {
+                    val sent = buildMap { q["ua"]?.let { put("User-Agent", it) }; q["cookie"]?.let { put("Cookie", it) } }
+                    if (q["key"] != null) com.lagradost.cloudstream3.utils.newDrmExtractorLink(q["name"] ?: "Test source", q["name"] ?: "Test source", q["url"]!!, uuid = com.lagradost.cloudstream3.utils.CLEARKEY_DRM_UUID) {
+                        quality = 1080; headers = sent; kid = q["kid"]; key = q["key"]; q["referer"]?.let { r -> referer = r }
+                    } else com.lagradost.cloudstream3.utils.newExtractorLink(q["name"] ?: "Test source", q["name"] ?: "Test source", q["url"]!!) { quality = 1080; headers = sent; q["referer"]?.let { r -> referer = r } }
+                }
                 onEdt {
                     com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(link), emptyList()), 0, null))
                 }
@@ -1282,6 +1335,12 @@ object DevServer {
                 }.getOrElse { "error: $it" }
                 ok(ex, text)
             }
+            "/setcookie" -> {
+                // dev: put a cookie in the jar like a page or an extension does: /setcookie?url=https://example.com&value=cf_clearance=x;Max-Age=3600 ; prints the jar
+                q["url"]?.let { u -> q["value"]?.let { v -> android.webkit.CookieManager.getInstance().setCookie(u, v) } }
+                Thread.sleep(1500)
+                ok(ex, com.lagradost.desktop.runtime.web.WebCookies.all().joinToString("\n") { it.domain + "|" + it.name + "|" + it.path + "|" + it.value.take(12) })
+            }
             "/cookietest" -> {
                 // dev: what a plugin login sees: a WebView page sets a cookie, onPageFinished reads it with CookieManager.getCookie (UI thread)
                 val url = q["url"] ?: "https://httpbin.org/cookies/set?ui=test${System.currentTimeMillis() % 100000}"
@@ -1360,6 +1419,36 @@ object DevServer {
                     com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(found.second), emptyList()), 0, null))
                 }
                 ok(ex, "playing ${found.first} / ${found.second.name}")
+            }
+            "/repolinks" -> {
+                // dev: the links of the first search hit, collected the way the app collects them (APIRepository.loadLinks: link repairs applied), each with
+                // the answer of a 4 KB range request made with the link's own headers: /repolinks?provider=cinestream&q=Inception&only=MovieBox
+                val providerName = q["provider"]!!.lowercase()
+                val only = q["only"] ?: ""
+                val api = com.lagradost.cloudstream3.APIHolder.apis.firstOrNull { it.name.lowercase().contains(providerName) } ?: return ok(ex, "no provider")
+                val out = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    val hit = api.search(q["q"]!!, 1)?.items?.firstOrNull() ?: return@runBlocking "no search result"
+                    val data = when (val r = api.load(hit.url)) {
+                        is com.lagradost.cloudstream3.MovieLoadResponse -> r.dataUrl
+                        is com.lagradost.cloudstream3.TvSeriesLoadResponse -> r.episodes.firstOrNull()?.data
+                        is com.lagradost.cloudstream3.AnimeLoadResponse -> r.episodes.values.firstOrNull()?.firstOrNull()?.data
+                        else -> null
+                    } ?: return@runBlocking "no data for ${hit.name}"
+                    val links = java.util.Collections.synchronizedList(ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>())
+                    kotlinx.coroutines.withTimeoutOrNull(60_000) { com.lagradost.cloudstream3.ui.APIRepository(api).loadLinks(data, false, {}, { links.add(it) }) }
+                    val sb = StringBuilder("${hit.name}: ${links.size} links\n")
+                    for (l in synchronized(links) { links.filter { it.name.contains(only, true) }.take(12) }) {
+                        val sent = buildMap { putAll(l.headers); if (l.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", l.referer) }
+                        val code = runCatching {
+                            val b = Request.Builder().url(l.url).header("Range", "bytes=0-4095")
+                            for ((k, v) in sent) b.header(k, v)
+                            com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(java.time.Duration.ofSeconds(20)).build().newCall(b.build()).execute().use { it.code.toString() }
+                        }.getOrElse { "ERR ${it.javaClass.simpleName}" }
+                        sb.append("${l.name.take(30)} | ${runCatching { java.net.URI(l.url).host }.getOrNull()} | referer=${sent.entries.firstOrNull { it.key.equals("Referer", true) }?.value} | HTTP $code\n")
+                    }
+                    sb.toString()
+                }
+                ok(ex, out)
             }
             "/playsearch" -> {
                 // dev: search a provider, open the first movie found and play its first link (whose name has `link`): /playsearch?provider=istreamflare&q=Inception&link=IStreamCDN
@@ -1482,6 +1571,8 @@ object DevServer {
                     onEdt { session?.selectSecondarySubtitle(if (n == "off") null else session.subtitles().firstOrNull { it.originalName == n }) }
                 }
                 q["inplace"]?.let { v -> com.lagradost.desktop.ui.screens.player.PlayerSession.active?.let { s -> onEdt { s.setSecondaryInPlace(v == "1") } } }
+                // dev: /player?seekto=<ms> seeks the playing video as a click on the seek bar would (a live channel: inside its window)
+                q["seekto"]?.toLongOrNull()?.let { ms -> val session = com.lagradost.desktop.ui.screens.player.PlayerSession.active; onEdt { session?.seekTo(ms) } }
                 q["hold"]?.let { v -> com.lagradost.desktop.ui.screens.player.PlayerDev.hold = v == "1" }
                 q["menu"]?.let { v -> com.lagradost.desktop.ui.screens.player.PlayerDev.menu = v }
                 q["seekhover"]?.let { v -> com.lagradost.desktop.ui.screens.player.PlayerDev.seekHover = v.toFloatOrNull()?.takeIf { it >= 0f } }

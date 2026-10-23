@@ -133,7 +133,7 @@ private fun SourceRow(row: LinkRow, onClick: () -> Unit) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.row)
     Row(
         Modifier.fillMaxWidth().clip(shape)
             .background(if (hovered) c.subtleHover else Color.Transparent, shape)

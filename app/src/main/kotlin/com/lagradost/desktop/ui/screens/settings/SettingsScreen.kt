@@ -1,6 +1,7 @@
 package com.lagradost.desktop.ui.screens.settings
 
 import com.lagradost.desktop.ui.fluent.hairBorder
+import com.lagradost.desktop.ui.fluent.hoverEdge
 
 import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.animation.togetherWith
@@ -20,7 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import com.lagradost.desktop.ui.fluent.tabletVerticalScroll as verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,6 +44,7 @@ import com.lagradost.desktop.ui.LegacyContent
 import com.lagradost.desktop.ui.fluent.Button
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.FluentMotion
 import com.lagradost.desktop.ui.fluent.FluentScrollbar
 import com.lagradost.desktop.ui.fluent.FluentShapes
 import com.lagradost.desktop.ui.fluent.Icon
@@ -53,10 +55,13 @@ import com.lagradost.desktop.ui.fluent.rememberInteraction
 import com.lagradost.desktop.ui.shell.TopBarHeight
 
 private enum class Page(val id: String, val title: String, val glyph: String, val tint: Long, val about: String, val hidden: Boolean = false) {
+    /** The page Settings opens on: the settings people change most, and a card for every page */
+    Overview("overview", "Overview", Icons.Home, 0xFF8B95A7, "The settings you change most, and every page of them"),
     General("general", "General", Icons.Settings, 0xFF6E7BF2, "Language, downloads, network and the window"),
     Player("player", "Player", Icons.Play, 0xFFE5484D, "Playback, video, audio, subtitles and controls"),
     Stremio("stremio", "Stremio & torrents", Icons.Link, 0xFF8E4EC6, "Add-ons, their sources and subtitles, torrent streaming", hidden = true),
-    Appearance("ui", "Appearance", Icons.Theme, 0xFFD6409F, "Theme, colours, layout and what the pages show"),
+    Appearance("ui", "Appearance", Icons.Personalize, 0xFFD6409F, "Themes, layout and what the pages show"),
+    Colors("colors", "Colors", Icons.Theme, 0xFFAF52DE, "Colour palettes, the accent colour and the colour of buttons"),
     Updates("updates", "Updates & backup", Icons.Update, 0xFF30A46C, "App and extension updates, backups"),
     Accounts("account", "Accounts & sync", Icons.Person, 0xFFF76B15, "Sign in to your services, keep your lists up to date, lock the app"),
     About("about", "About", Icons.Info, 0xFF00A2C7, "Version, help and links"),
@@ -83,18 +88,19 @@ private fun groupsOf(page: Page): List<SettingGroup> = when (page) {
     Page.General -> generalGroups()
     Page.Player -> playerGroups()
     Page.Appearance -> appearanceGroups()
+    Page.Colors -> colorGroups()
     Page.Updates -> updateGroups()
     Page.Accounts -> accountGroups()
     Page.About -> aboutGroups()
     // pages of their own (not lists of rows)
-    Page.Subtitles, Page.Stremio -> emptyList()
+    Page.Subtitles, Page.Stremio, Page.Overview -> emptyList()
 }
 
 @Composable
 fun SettingsScreen(route: Route.Settings, entryId: Long? = null) {
     val c = Fluent.colors
-    val view = remember(entryId) { entryId?.let { SettingsNav.views.getOrPut(it) { SettingsNav.View(route.page ?: Page.General.id) } } ?: SettingsNav.View(route.page ?: Page.General.id) }
-    var page by remember { mutableStateOf(Page.entries.firstOrNull { it.id == view.page } ?: Page.General) }
+    val view = remember(entryId) { entryId?.let { SettingsNav.views.getOrPut(it) { SettingsNav.View(route.page ?: Page.Overview.id) } } ?: SettingsNav.View(route.page ?: Page.Overview.id) }
+    var page by remember { mutableStateOf(Page.entries.firstOrNull { it.id == view.page } ?: Page.Overview) }
     var query by remember { mutableStateOf(view.query) }
     val scroll = rememberScrollState(view.scroll)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -154,12 +160,104 @@ fun SettingsScreen(route: Route.Settings, entryId: Long? = null) {
 @Composable
 private fun PageContent(page: Page) {
     if (page == Page.Subtitles) Button("Player", { SettingsNav.page = "player" }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, icon = Icons.ChevronLeft, modifier = Modifier.padding(bottom = 4.dp))
-    // a plain title: no coloured tile or glow
-    Box(Modifier.padding(bottom = 22.dp, top = 4.dp)) { com.lagradost.desktop.ui.fluent.PageHeader(page.title, subtitle = page.about) }
-    when (page) {
-        Page.Stremio -> StremioPage()
-        Page.Subtitles -> SubtitleStyleEditor()
-        else -> GroupList(groupsOf(page))
+    // the page's colour: a flat tinted square with its icon beside the title, the same square the page has in the list and in front of its rows
+    Row(Modifier.padding(bottom = 22.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        IconBadge(60.dp, Color(page.tint)) { col -> Icon(page.glyph, size = 28.dp, tint = col) }
+        Box(Modifier.weight(1f)) { com.lagradost.desktop.ui.fluent.PageHeader(if (page == Page.Overview) "Settings" else page.title, subtitle = page.about) }
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalSettingsTint provides if (page == Page.Overview) Color.Unspecified else Color(page.tint)) {
+        when (page) {
+            Page.Overview -> OverviewPage()
+            // a service that says it is down (or no longer accepts the sign-in) is said at the top of the page where it is signed in
+            Page.Accounts -> { OutageNotices(); GroupList(groupsOf(page)) }
+            Page.Stremio -> StremioPage()
+            Page.Subtitles -> SubtitleStyleEditor()
+            else -> GroupList(groupsOf(page))
+        }
+    }
+}
+
+@Composable
+private fun OutageNotices() {
+    val notes = com.lagradost.desktop.net.ServiceOutage.notes
+    if (notes.isEmpty()) return
+    Column(Modifier.padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        notes.entries.sortedBy { it.key }.forEach { (_, note) -> com.lagradost.desktop.ui.fluent.NoticeBar(note.message) }
+    }
+}
+
+/** The settings people reach for most, pulled from their own pages (the same rows, so they work and are found by the search exactly alike) */
+@Composable
+private fun quickItems(): List<SettingItem> {
+    val wanted = listOf("App mode", "Animations", "Zoom on hover", "Poster size", "Hide spoilers in episode lists", "Autoplay next episode", "Smooth motion")
+    val all = listOf(Page.Appearance, Page.Player).flatMap { groupsOf(it) }.flatMap { it.items }.filter { it.row }
+    return wanted.mapNotNull { title -> all.firstOrNull { it.title == title } }
+}
+
+@Composable
+private fun OverviewPage() {
+    val c = Fluent.colors
+    val quick = quickItems()
+    if (quick.isNotEmpty()) {
+        FText("Quick settings", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
+        androidx.compose.runtime.CompositionLocalProvider(LocalRowIcons provides false) { RowCard(quick) }
+        Box(Modifier.height(28.dp))
+    }
+    FText("All settings", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth >= 620.dp) 2 else 1
+        // a tile per page; Extensions are managed from the Extensions tab, so that tile leaves the settings
+        val tiles = Page.entries.filter { !it.hidden && it != Page.Overview }.map { OverviewTile(it.title, it.about, it.glyph, Color(it.tint), it) } +
+            OverviewTile("Extensions", "Repositories, installed extensions and Stremio add-ons", Icons.Extensions, Color(0xFF8E4EC6), null)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            tiles.chunked(columns).forEach { rowTiles ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    rowTiles.forEach { t ->
+                        CategoryTile(t.title, t.about, t.glyph, t.tint, Modifier.weight(1f)) { if (t.page != null) SettingsNav.page = t.page.id else Navigator.goTab(Tab.Extensions) }
+                    }
+                    repeat(columns - rowTiles.size) { Box(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+private class OverviewTile(val title: String, val about: String, val glyph: String, val tint: Color, val page: Page?)
+
+/** A page of the settings as a card: its square, its name and what is on it */
+@Composable
+private fun CategoryTile(title: String, about: String, glyph: String, tint: Color, modifier: Modifier, onClick: () -> Unit) {
+    val c = Fluent.colors
+    val source = rememberInteraction()
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(FluentShapes.card)
+    val fill by androidx.compose.animation.animateColorAsState(if (hovered) c.cardHover else c.card, FluentMotion.tweenStd(FluentMotion.FAST), label = "tileFill")
+    Row(
+        modifier.height(84.dp).clip(shape).background(fill, shape).hairBorder(if (hovered) c.hoverEdge else c.stroke, shape)
+            .fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        IconBadge(48.dp, tint) { col -> Icon(glyph, size = 22.dp, tint = col) }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            FText(title, style = Fluent.type.bodyStrong, maxLines = 1)
+            FText(about, style = Fluent.type.caption, color = c.textSecondary, maxLines = 2)
+        }
+        Icon(Icons.ChevronRightSmall, size = 12.dp, tint = if (hovered) c.text else c.textSecondary)
+    }
+}
+
+/** Rows that share one rounded card, a hairline between them */
+@Composable
+private fun RowCard(items: List<SettingItem>) {
+    val c = Fluent.colors
+    val shape = RoundedCornerShape(FluentShapes.card)
+    Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape)) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalRowGroup provides true, LocalReserveIcon provides items.any { it.hasIcon }) {
+            items.forEachIndexed { i, item ->
+                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
+                item.content()
+            }
+        }
     }
 }
 
@@ -171,8 +269,20 @@ private fun GroupList(groups: List<SettingGroup>, firstGap: Boolean = false) {
             FText(g.title, style = Fluent.type.bodyStrong, modifier = Modifier.weight(1f))
             g.action?.invoke()
         }
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            g.items.forEach { it.content() }
+        // plain rows that follow one another share one rounded card, divided by hairlines; a block (a picture grid, a colour picker) stands on its own
+        val parts = buildList<Pair<Boolean, List<SettingItem>>> {
+            var run = mutableListOf<SettingItem>()
+            for (item in g.items) {
+                if (item.row) run += item
+                else {
+                    if (run.isNotEmpty()) { add(true to run); run = mutableListOf() }
+                    add(false to listOf(item))
+                }
+            }
+            if (run.isNotEmpty()) add(true to run)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            parts.forEach { (isRun, items) -> if (isRun) RowCard(items) else items.forEach { it.content() } }
         }
     }
 }
@@ -193,7 +303,7 @@ private fun SearchResults(query: String) {
     if (count == 0) FText("Try fewer or different words, for example “subtitle”, “cloudflare” or “theme”.", color = Fluent.colors.textSecondary)
     pages.forEachIndexed { i, (page, groups) ->
         FText(page.title, style = Fluent.type.caption, color = Fluent.colors.textSecondary, modifier = Modifier.padding(top = if (i == 0) 0.dp else 28.dp, bottom = 2.dp, start = 2.dp))
-        GroupList(groups, firstGap = false)
+        androidx.compose.runtime.CompositionLocalProvider(LocalSettingsTint provides Color(page.tint)) { GroupList(groups, firstGap = false) }
     }
 }
 
@@ -219,17 +329,18 @@ private fun CategoryRow(title: String, glyph: String, tint: Color, selected: Boo
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.card)
+    // the selected page is a lit pill like the one in the top bar (no blue edge mark)
+    val shape = FluentShapes.pill
+    val fill by androidx.compose.animation.animateColorAsState(if (selected) c.controlHover else if (hovered) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(FluentMotion.FAST), label = "settingsNavFill")
     Row(
         Modifier.padding(vertical = 1.dp).fillMaxWidth().height(40.dp).clip(shape)
-            .background(if (selected || hovered) c.subtleHover else Color.Transparent, shape)
+            .background(fill, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick).padding(end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(3.dp, 18.dp).background(if (selected) c.accent else Color.Transparent, RoundedCornerShape(2.dp)))
-        Box(Modifier.width(13.dp))
-        Icon(glyph, size = 16.dp, tint = if (selected) c.text else c.textSecondary)
-        Box(Modifier.width(14.dp))
+        Box(Modifier.width(8.dp))
+        IconBadge(28.dp, tint) { col -> Icon(glyph, size = 15.dp, tint = col) }
+        Box(Modifier.width(12.dp))
         FText(title, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (selected) c.text else c.textSecondary, maxLines = 1)
     }
 }

@@ -24,7 +24,7 @@ import kotlin.math.exp
 /**
  * Wheel scrolling that glides. A mouse wheel notch moves a list by a fixed jump (the page jerks one step per notch); here each notch only adds
  * to a distance still to travel and the list follows it, frame by frame, covering a part of what is left each time (an exponential ease of about
- * 90 ms), so a flick of the wheel is a smooth run and notches in quick succession add up. Sideways wheels, Shift and Ctrl+wheel are left to whoever
+ * 65 ms), so a flick of the wheel is a smooth run and notches in quick succession add up. Sideways wheels, Shift and Ctrl+wheel are left to whoever
  * handles them (a shelf scrolls sideways, Ctrl zooms). Off with Settings > Look > Animations: Off.
  */
 @Composable
@@ -75,6 +75,6 @@ private class WheelGlide(private val state: ScrollableState, private val scope: 
     }
 
     private companion object {
-        const val TAU = 0.09f
+        const val TAU = 0.065f
     }
 }

@@ -8,7 +8,13 @@ import com.mihon.presentation.settings.Preference
  * title, a description and some extra words, so the search can find any of them (and show it, working, in its results) instead of only the rows
  * that happen to be preference definitions.
  */
-class SettingItem(val id: String, val title: String, val about: String?, val keywords: String, val content: @Composable () -> Unit)
+class SettingItem(val id: String, val title: String, val about: String?, val keywords: String, val content: @Composable () -> Unit) {
+    /** A plain row (a [SettingsCard]) that is drawn inside its group's card; a block (a picture grid, a colour picker) stands on its own */
+    var row: Boolean = true
+
+    /** The row has an icon: its group keeps the place of an icon free in the rows that have none, so their text lines up */
+    var hasIcon: Boolean = false
+}
 
 /** A titled run of rows; [action] is a small button beside the title (Reset to default) */
 class SettingGroup(val title: String, val items: List<SettingItem>, val action: (@Composable () -> Unit)? = null)
@@ -29,7 +35,7 @@ class GroupBuilder {
 
     /** A row of its own (a picture grid, a colour picker): the search knows it by [title], [about] and [keywords] */
     fun block(title: String, about: String? = null, keywords: String = "", content: @Composable () -> Unit) {
-        items += SettingItem(title, title, about, keywords, content)
+        items += SettingItem(title, title, about, keywords, content).also { it.row = false }
     }
 
     /** A button beside the group's title */
@@ -41,7 +47,7 @@ class GroupBuilder {
     fun pref(p: Preference.PreferenceItem<*, *>?, keywords: String = "") {
         if (p == null || (!p.enabled && p !is Preference.PreferenceItem.CustomPreference)) return
         val about = p.subtitle?.takeIf { it.isNotBlank() && !it.contains("%s") }
-        items += SettingItem(Upstream.idOf(p), p.title, about, keywords) { PreferenceCard(p) }
+        items += SettingItem(Upstream.idOf(p), p.title, about, keywords) { PreferenceCard(p) }.also { it.row = p !is Preference.PreferenceItem.CustomPreference; it.hasIcon = p.icon != null }
     }
 }
 

@@ -74,6 +74,90 @@ object DashProxy {
     /** "b3/video/00001.m4s" is the file video/00001.m4s under the fourth absolute BaseURL (see [normalize]) */
     private val ROUTED = Regex("""^b(\d+)/""")
 
+    /** A segment fetched ahead of the player's request */
+    private class Cached(val contentType: String?, val body: ByteArray)
+
+    /**
+     * ffmpeg's DASH reader asks for one segment at a time and waits for it, video and sound in turn: on a CDN that answers in a second (a far one, or a
+     * network with a long way to it) each two-second segment costs a round trip of its own plus its download, two of them per two seconds of picture, so
+     * the playback runs short of data and stops to fill its buffer again and again ("too much buffering"; the phone's player fetches the next segments of
+     * the video and of the sound by itself, in parallel). While a live segment is being answered the next [AHEAD] ones of that stream are fetched here, at
+     * the same time, and answered from memory when they are asked for.
+     */
+    private const val AHEAD = 2
+    private const val AHEAD_MAX_BYTES = 16L * 1024 * 1024
+    private val aheadPool by lazy { Executors.newFixedThreadPool(6) { r -> Thread(r, "DashAhead").apply { isDaemon = true } } }
+
+    private fun readAhead(entry: Entry, m: Pair<DashTimeline.Track, Long>, rest: String, rawQuery: String?, routedBase: String?) {
+        if (System.getProperty("cloudstream.noreadahead") != null) return
+        val (track, value) = m
+        val withQuery = rest + (rawQuery?.let { "?$it" } ?: "")
+        for (v in track.following(value, AHEAD, entry.serverNow())) {
+            val next = track.withValue(withQuery, v) ?: continue
+            val nextRest = next.substringBefore('?')
+            val nextQuery = if (next.contains('?')) next.substringAfter('?') else null
+            val url = (routedBase ?: entry.baseDir) + entry.serverPath(nextRest) + ((nextQuery ?: entry.tokenQuery)?.let { "?$it" } ?: "")
+            if (entry.ahead.containsKey(url)) continue
+            if (System.getProperty("cloudstream.dashtrace") != null) Log.i(TAG, "TRACE ahead scheduled ${nextRest.takeLast(30)}")
+            entry.ahead[url] = java.util.concurrent.CompletableFuture.supplyAsync({ runCatching { fetchWhole(entry, url) }.onFailure { Log.w(TAG, "ahead failed: ${it.message}") }.getOrNull() }, aheadPool)
+            entry.aheadOrder.add(url)
+            while (entry.aheadOrder.size > 12) entry.aheadOrder.poll()?.let { entry.ahead.remove(it) }
+        }
+    }
+
+    /** The whole segment at [url] (no Range), or null when the CDN does not answer with it at once (then the player's own request takes the usual way) */
+    private fun fetchWhole(entry: Entry, url: String): Cached? {
+        if (entry.cancelled) return null
+        val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: return null)
+        var userAgent = false
+        for ((k, v) in entry.headers) {
+            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Range", true) || k.equals("Cookie", true)) continue
+            if (k.equals("User-Agent", true)) userAgent = true
+            com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
+        }
+        entry.cookieFor(builder.build().url.host, entry.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value)?.let { builder.header("Cookie", it) }
+        if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
+        val call = client.newCall(builder.build())
+        entry.activeCalls.add(call)
+        try {
+            call.execute().use { r ->
+                if (r.code != 200 || entry.cancelled) { if (System.getProperty("cloudstream.dashtrace") != null) Log.i(TAG, "TRACE ahead answered ${r.code} ${url.takeLast(30)}"); return null }
+                if (r.body.contentLength() > AHEAD_MAX_BYTES) return null
+                for (c in r.headers("Set-Cookie")) entry.remember(r.request.url.host, c)
+                return Cached(r.header("Content-Type"), r.body.bytes())
+            }
+        } finally {
+            entry.activeCalls.remove(call)
+        }
+    }
+
+    /** Answers from a segment fetched ahead (whole, or the part of it a Range request names); false when the request is not one this can answer */
+    private fun serveCached(ex: HttpExchange, hit: Cached): Boolean {
+        val body = hit.body
+        val range = ex.requestHeaders.getFirst("Range")
+        var start = 0L
+        var end = body.size - 1L
+        if (range != null) {
+            val m = Regex("""^bytes=(\d+)-(\d*)$""").find(range.trim()) ?: return false
+            start = m.groupValues[1].toLong()
+            end = m.groupValues[2].toLongOrNull()?.coerceAtMost(body.size - 1L) ?: (body.size - 1L)
+            if (start > end) {
+                ex.sendResponseHeaders(416, -1)
+                return true
+            }
+        }
+        hit.contentType?.let { ex.responseHeaders.add("Content-Type", it) }
+        ex.responseHeaders.add("Accept-Ranges", "bytes")
+        if (range != null) {
+            ex.responseHeaders.add("Content-Range", "bytes $start-$end/${body.size}")
+            ex.sendResponseHeaders(206, end - start + 1)
+        } else {
+            ex.sendResponseHeaders(200, body.size.toLong())
+        }
+        ex.responseBody.write(body, start.toInt(), (end - start + 1).toInt())
+        return true
+    }
+
     private class Entry(val url: String, val headers: Map<String, String>, val name: String) {
         /**
          * The address the relative segment addresses of the manifest are resolved against: where the manifest came from, after its
@@ -133,6 +217,21 @@ object DashProxy {
         @Volatile
         var repeats = 0
 
+        /** Where the player starts in a live manifest (s on its own clock), decided with the first manifest, see [DashLiveStart] */
+        @Volatile
+        var startBound: Double? = null
+
+        @Volatile
+        var startDecided = false
+
+        /** The highest video bandwidth the player is given (0: all), see [DashQuality] */
+        @Volatile
+        var maxBandwidth = 0L
+
+        /** The video bandwidths the manifest lists, lowest first */
+        @Volatile
+        var ladder: List<Long> = emptyList()
+
         @Volatile
         var waits = 0
 
@@ -152,12 +251,18 @@ object DashProxy {
         var cancelled = false
         val activeCalls = java.util.concurrent.CopyOnWriteArrayList<okhttp3.Call>()
 
+        /** Segments fetched ahead of the player's request (whole bodies, by the address they come from), see [readAhead] */
+        val ahead = ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Cached?>>()
+        val aheadOrder = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
         fun cancel() {
             cancelled = true
             for (call in activeCalls) {
                 runCatching { call.cancel() }
             }
             activeCalls.clear()
+            ahead.clear()
+            aheadOrder.clear()
         }
 
         fun serverNow() = System.currentTimeMillis() + clockOffsetMs
@@ -173,6 +278,27 @@ object DashProxy {
             if (entry.timeline == null) Log.i(TAG, "live timeline: ${parsed.tracks.size} streams, segments ${parsed.tracks.first().segmentMs} ms")
             entry.timeline = parsed
         }
+    }
+
+    /** The manifest without the video representations above the cap of this stream (see [DashQuality]); the ladder is read from the whole manifest */
+    private fun capQuality(entry: Entry, bytes: ByteArray): ByteArray {
+        val xml = String(bytes, Charsets.UTF_8)
+        if (entry.ladder.isEmpty()) entry.ladder = DashQuality.videoBandwidths(xml)
+        if (entry.maxBandwidth <= 0L || entry.ladder.size < 2) return bytes
+        return DashQuality.cap(xml, entry.maxBandwidth).toByteArray(Charsets.UTF_8)
+    }
+
+    /** The manifest for the player: a live one is cut at the front so playback starts [DashLiveStart.START_BEHIND_S] s inside the window, see [DashLiveStart] */
+    private fun startInsideWindow(entry: Entry, bytes: ByteArray): ByteArray {
+        if (System.getProperty("cloudstream.dashfullwindow") != null) return bytes
+        val xml = String(bytes, Charsets.UTF_8)
+        if (!entry.startDecided) {
+            entry.startDecided = true
+            entry.startBound = DashLiveStart.boundFor(xml)
+            Log.i(TAG, "live start: ${entry.startBound?.let { "${DashLiveStart.START_BEHIND_S.toInt()} s behind the newest segment" } ?: "the whole listed window (too little listed to cut)"}")
+        }
+        val bound = entry.startBound ?: return bytes
+        return runCatching { DashLiveStart.cut(xml, bound).toByteArray(Charsets.UTF_8) }.getOrDefault(bytes)
     }
 
     /** Where the manifest really came from (after redirects) is where its segments are, and its token and cookies go with them */
@@ -255,6 +381,14 @@ object DashProxy {
         }
     }
 
+    private fun entryOf(address: String?): Entry? = address?.substringAfter("/d/", "")?.substringBefore("/")?.let { entries[it] }
+
+    /** The video bandwidths of the manifest of a [wrap] address, lowest first (empty before it was read) */
+    fun ladder(address: String?): List<Long> = entryOf(address)?.ladder.orEmpty()
+
+    /** The cap of a [wrap] address (0: none) */
+    fun maxBandwidth(address: String?): Long = entryOf(address)?.maxBandwidth ?: 0L
+
     /** Whether a [wrap] address plays a live (dynamic) manifest */
     fun isLive(address: String): Boolean = address.substringAfter("/d/", "").substringBefore("/").let { entries[it]?.live == true }
 
@@ -274,11 +408,11 @@ object DashProxy {
     }
 
     /** Address to give the player instead of [url] (the manifest); segments are asked for next to it */
-    fun wrap(url: String, headers: Map<String, String>): String {
+    fun wrap(url: String, headers: Map<String, String>, maxBandwidth: Long = 0L): String {
         if (entries.size > 50) entries.clear()
         val id = Integer.toHexString(url.hashCode()) + "-" + System.nanoTime().toString(16)
         val name = url.substringBefore('?').substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80).ifEmpty { "manifest.mpd" }
-        entries[id] = Entry(url, headers, name)
+        entries[id] = Entry(url, headers, name).also { it.maxBandwidth = maxBandwidth }
         return "http://127.0.0.1:${server.address.port}/d/$id/$name"
     }
 
@@ -332,6 +466,9 @@ object DashProxy {
         val url = if (isManifest) entry.url else (routed?.first ?: entry.baseDir) + entry.serverPath(rest) + ((ex.requestURI.rawQuery ?: entry.tokenQuery)?.let { "?$it" } ?: "")
         // the segment's place in the live manifest: which stream, which number (or time)
         val matched = if (!isManifest && entry.live) entry.timeline?.match(rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: "")) else null
+        val trace = System.getProperty("cloudstream.dashtrace") != null
+        if (trace && isManifest) Log.i(TAG, "TRACE manifest requested")
+        if (trace && !isManifest) Log.i(TAG, "TRACE req${rest.takeLast(48)} range=${ex.requestHeaders.getFirst("Range")} matched=${matched?.let { "${it.first.id}@${it.second} newest=${it.first.newest(entry.serverNow())}" }}")
         if (matched != null) waitForListing(entry, matched.first.id, matched.second, rest + (ex.requestURI.rawQuery?.let { "?$it" } ?: ""))
         if (entry.cancelled) {
             ex.sendResponseHeaders(503, -1)
@@ -340,10 +477,25 @@ object DashProxy {
         // a segment of a live stream that was sent just now is not sent again, see the notes above
         val key = if (matched != null) "track:" + matched.first.id else if (!isManifest && entry.live) rest.replace(TIMED, "$1").takeIf { it != rest } else null
         if (key != null && entry.last[key] == rest) {
-            if (entry.repeats++ % 25 == 0) Log.i(TAG, "live segment asked for again, refused (${entry.repeats}): ${rest.takeLast(60)}")
+            if (trace || entry.repeats++ % 25 == 0) Log.i(TAG, "live segment asked for again, refused (${entry.repeats}): ${rest.takeLast(60)}")
             Thread.sleep(250)
             ex.sendResponseHeaders(404, -1)
             return
+        }
+        // the next segments of this stream are fetched while this one is answered; one that was fetched ahead is answered from memory
+        // only for a stream the player has read from before: it opens the first segment of every quality (and of every language) and plays one of them,
+        // and fetching ahead for the others would take the bandwidth the one that plays needs
+        if (matched != null && key != null && entry.last[key] != null) readAhead(entry, matched, rest, ex.requestURI.rawQuery, routed?.first)
+        if (matched != null && !ex.requestMethod.equals("HEAD", true)) {
+            val pending = entry.ahead.remove(url)
+            if (pending != null) {
+                val hit = runCatching { pending.get(15, TimeUnit.SECONDS) }.getOrNull()
+                if (hit != null && !entry.cancelled && serveCached(ex, hit)) {
+                    if (trace) Log.i(TAG, "TRACE from memory ${rest.takeLast(30)}")
+                    if (key != null) entry.last[key] = rest
+                    return
+                }
+            }
         }
         var failure: IOException? = null
         var started = false
@@ -368,6 +520,7 @@ object DashProxy {
                         }
                         return@upstream
                     }
+                    if (trace && !isManifest) Log.i(TAG, "TRACE ans ${r.code} ${rest.takeLast(30)} len=${r.body.contentLength()}")
                     if (r.code !in 200..299) {
                         ex.sendResponseHeaders(r.code, -1)
                         return
@@ -382,9 +535,11 @@ object DashProxy {
                             Log.i(TAG, "live manifest: repeated segments are refused")
                         }
                         if (entry.live) learn(entry, bytes, r.header("Date"))
+                        val toPlayer = if (entry.live) startInsideWindow(entry, capQuality(entry, bytes)) else bytes
+                        if (trace) Log.i(TAG, "TRACE manifest answered ${bytes.size} bytes, sent ${toPlayer.size}")
                         ex.responseHeaders.add("Content-Type", r.header("Content-Type") ?: "application/dash+xml")
-                        ex.sendResponseHeaders(200, bytes.size.toLong())
-                        if (!ex.requestMethod.equals("HEAD", true)) ex.responseBody.write(bytes)
+                        ex.sendResponseHeaders(200, toPlayer.size.toLong())
+                        if (!ex.requestMethod.equals("HEAD", true)) ex.responseBody.write(toPlayer)
                         return
                     }
                     r.header("Content-Type")?.let { ex.responseHeaders.add("Content-Type", it) }

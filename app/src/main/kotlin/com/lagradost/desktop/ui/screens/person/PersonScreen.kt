@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
+import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -131,7 +131,7 @@ private fun Header(route: Route.Person, info: TmdbPersonInfo?) {
                 Box(Modifier.height(4.dp))
                 FText(
                     bio.trim(), style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = c.textSecondary, maxLines = if (open) 60 else 8,
-                    modifier = Modifier.widthIn(max = 900.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(4.dp), Role.Button) { open = !open },
+                    modifier = Modifier.widthIn(max = 900.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.row), Role.Button) { open = !open },
                 )
                 if (bio.length > 600) FText(if (open) "Show less" else "Read more", color = c.accentText, style = Fluent.type.caption)
             }

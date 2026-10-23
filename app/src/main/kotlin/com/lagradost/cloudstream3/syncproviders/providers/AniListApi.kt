@@ -642,11 +642,19 @@ class AniListApi : SyncAPI() {
 
     private suspend fun getAniListAnimeListSmart(auth: AuthData): Array<Lists>? {
         return if (requireLibraryRefresh) {
-            val list = getFullAniListList(auth)?.data?.mediaListCollection?.lists?.toTypedArray()
+            // desktop: when AniList does not answer (it was switched off for days in October 2026) the list saved by the last good answer is shown,
+            // not an empty one that looks like lost data; with nothing saved the page gets AniList's own words
+            val saved = getKey<Array<Lists>>(ANILIST_CACHED_LIST, auth.user.id.toString()) as? Array<Lists>
+            val list = try {
+                getFullAniListList(auth)?.data?.mediaListCollection?.lists?.toTypedArray()
+            } catch (e: Throwable) {
+                if (saved == null) throw e
+                null
+            }
             if (list != null) {
                 setKey(ANILIST_CACHED_LIST, auth.user.id.toString(), list)
-            }
-            list
+                list
+            } else saved ?: throw ErrorLoadingException(com.lagradost.desktop.net.ServiceOutage.message(name) ?: "AniList did not answer.")
         } else {
             getKey<Array<Lists>>(
                 ANILIST_CACHED_LIST,

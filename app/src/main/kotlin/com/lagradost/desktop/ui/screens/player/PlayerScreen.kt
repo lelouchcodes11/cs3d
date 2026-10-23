@@ -11,6 +11,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
@@ -30,7 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.lazy.LazyColumn
+import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -72,6 +74,7 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
@@ -81,6 +84,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.isPrimaryPressed
+import com.lagradost.desktop.ui.fluent.primaryContactPressed
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -185,6 +189,9 @@ fun PlayerScreen(entry: Entry, route: Route.Player) {
  * A button that disappeared together with the controls used to leave the focus nowhere and the shortcuts dead
  * until something was clicked.
  */
+/** How long a press on the picture, or Space, is held before the picture plays at 2x */
+private const val HOLD_BOOST_MS = 350L
+
 object PlayerKeys {
     @Volatile
     var handler: ((KeyEvent) -> Boolean)? = null
@@ -215,6 +222,9 @@ object PlayerDev {
 
 @Composable
 private fun PlayerContent(s: PlayerSession) {
+    // the player keeps the Default theme's look whatever the theme is (see Skins.inPlayer); it takes over once the page before has faded out, so that page does not change under its own fade
+    LaunchedEffect(Unit) { delay(260); com.lagradost.desktop.ui.fluent.Skins.inPlayer = true }
+    DisposableEffect(Unit) { onDispose { com.lagradost.desktop.ui.fluent.Skins.inPlayer = false } }
     val c = Fluent.colors
     val focus = remember { FocusRequester() }
     var rootFocused by remember { mutableStateOf(false) }
@@ -244,9 +254,13 @@ private fun PlayerContent(s: PlayerSession) {
     // a native video that fills the window (maximised or full screen): the window's own picture is behind it, so the trim for whole pixels would
     // only leave a one pixel strip at the right and bottom edge that no window covers (see EvenPixels.hold)
     val fillsWindow = native && (fullscreen || com.lagradost.desktop.platform.WinChrome.maximized)
-    DisposableEffect(fillsWindow) {
+    // The trim comes off only when the video's window is there to cover the window's own picture: taking it off changes the size of that picture
+    // (3 px), the window's drawing surface is made again at the new size, and while that was done in the middle of the page opening it showed an
+    // undrawn buffer (the white flash on the first video of a run).
+    val videoCovers = NativeVideo.hostAdded && System.getProperty("cloudstream.nohold") == null
+    DisposableEffect(fillsWindow && videoCovers) {
         val frame = com.lagradost.desktop.ui.DesktopUiHost.window
-        if (fillsWindow && frame != null) com.lagradost.desktop.platform.EvenPixels.hold(frame, true)
+        if (fillsWindow && videoCovers && frame != null) com.lagradost.desktop.platform.EvenPixels.hold(frame, true)
         onDispose { frame?.let { com.lagradost.desktop.platform.EvenPixels.hold(it, false) } }
     }
     // leaving a native video page: the video core goes first, the page is taken apart after it (see PlayerSession.closeThen)
@@ -312,7 +326,52 @@ private fun PlayerContent(s: PlayerSession) {
         return true
     }
 
+    // Space: a tap pauses or plays when it is let go; held for 0.35 s it plays at 2x for as long as it is down (and letting go then does not pause)
+    val spaceDown = remember { BooleanArray(2) } // [0] is down, [1] the hold started the 2x
+    val spaceAt = remember { LongArray(1) }
+    val spaceTimer = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
+    val keyScope = androidx.compose.runtime.rememberCoroutineScope()
+    DisposableEffect(Unit) { onDispose { spaceTimer[0]?.cancel(); s.endBoost() } }
+    fun onSpace(e: KeyEvent): Boolean {
+        when (e.type) {
+            KeyEventType.KeyDown -> {
+                // a key held down repeats: only the first press counts (a press whose release never came, because the focus moved, is over after 1.5 s)
+                val now = System.currentTimeMillis()
+                val repeat = spaceDown[0] && now - spaceAt[0] < 1500
+                spaceAt[0] = now
+                if (repeat) return true
+                if (spaceDown[1]) s.endBoost()
+                spaceDown[0] = true
+                spaceDown[1] = false
+                spaceTimer[0]?.cancel()
+                spaceTimer[0] = keyScope.launch {
+                    delay(HOLD_BOOST_MS)
+                    if (spaceDown[0] && s.showsPause && !s.live) {
+                        spaceDown[1] = true
+                        s.beginBoost()
+                    }
+                }
+            }
+            KeyEventType.KeyUp -> {
+                if (!spaceDown[0]) return true
+                spaceDown[0] = false
+                spaceTimer[0]?.cancel()
+                if (spaceDown[1]) {
+                    spaceDown[1] = false
+                    s.endBoost()
+                } else {
+                    // what the press does decides the mark (it said "Playing" for a press that paused a video that was buffering)
+                    val resumes = s.togglePlay()
+                    s.showHud(if (resumes) Icons.Play else Icons.Pause, if (resumes) "Playing" else "Paused")
+                }
+            }
+            else -> return false
+        }
+        return true
+    }
+
     fun onKey(e: KeyEvent): Boolean {
+        if (e.key == Key.Spacebar && !e.isAltPressed && !e.isCtrlPressed && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()) return onSpace(e)
         if (e.type != KeyEventType.KeyDown) return false
         // a dialog (subtitle style, search) has the keys while it is open
         if (com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty()) return false
@@ -320,7 +379,7 @@ private fun PlayerContent(s: PlayerSession) {
         if (menuPage != null && e.key == Key.Escape) { menuPage = null; return true }
         val big = e.isShiftPressed
         when (e.key) {
-            Key.Spacebar, Key.K -> {
+            Key.K -> {
                 // what the press does decides the mark (it said "Playing" for a press that paused a video that was buffering)
                 val resumes = s.togglePlay()
                 s.showHud(if (resumes) Icons.Play else Icons.Pause, if (resumes) "Playing" else "Paused")
@@ -366,6 +425,20 @@ private fun PlayerContent(s: PlayerSession) {
 
     // the window hands the keys to the newest version of this function
     val latestKey = rememberUpdatedState<(KeyEvent) -> Boolean> { onKey(it) }
+    // A finger held still on the picture plays it at 2x for as long as it stays (Windows gives no mouse press for a still finger, see WindowsTouch.holdListener;
+    // the left mouse button is held in tapGestures). Not on the controls, in the small window, with a menu open or while paused or live.
+    DisposableEffect(Unit) {
+        com.lagradost.desktop.platform.WindowsTouch.holdListener = { start, sx, sy ->
+            if (!start) s.endBoost()
+            else if (s.showsPause && !s.live && !pip && menuPage == null && !showEpisodes && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()) {
+                val origin = (NativeVideo.overlayWindow ?: com.lagradost.desktop.ui.DesktopUiHost.window)?.let { runCatching { it.locationOnScreen }.getOrNull() }
+                val local = origin?.let { androidx.compose.ui.geometry.Offset((sx - it.x).toFloat(), (sy - it.y).toFloat()) }
+                val onControls = local != null && (topBounds?.contains(local) == true || bottomBounds?.contains(local) == true)
+                if (!onControls) s.beginBoost()
+            }
+        }
+        onDispose { com.lagradost.desktop.platform.WindowsTouch.holdListener = null; s.endBoost() }
+    }
     DisposableEffect(Unit) {
         PlayerKeys.handler = { e -> latestKey.value(e) }
         onDispose { PlayerKeys.handler = null }
@@ -374,7 +447,40 @@ private fun PlayerContent(s: PlayerSession) {
     // the native video player (beta): mpv's GPU window below, the controls in a transparent window above it
     // a click pauses / plays at once (detectTapGestures held every single click ~300 ms to rule out a double click, which felt like a lag);
     // the second click of a double click puts the play state back and switches fullscreen, as in a browser's video player
-    val tapGestures = Modifier.pointerInput(Unit) {
+    // Held down on the picture (a finger, or the left mouse button) for 0.35 s: the picture plays at 2x for as long as it is held, and letting go is not a click.
+    // Not while paused (a press that long on a paused picture is a click that plays), not in the small window (a press there drags it), not on a button
+    // (a button takes the press), and not when the pointer moves (a swipe).
+    val holdSuppressesClick = remember { BooleanArray(1) }
+    val holdBoost = Modifier.pointerInput(Unit) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = true)
+            if (!currentEvent.primaryContactPressed || com.lagradost.desktop.platform.WinChrome.pip) return@awaitEachGesture
+            val ended = withTimeoutOrNull(HOLD_BOOST_MS) {
+                while (true) {
+                    val ev = awaitPointerEvent()
+                    val ch = ev.changes.firstOrNull { it.id == down.id } ?: continue
+                    if (!ch.pressed || (ch.position - down.position).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull true
+                }
+                @Suppress("UNREACHABLE_CODE") false
+            }
+            // timed out with the pointer still down and in place
+            if (ended == null && s.showsPause && !s.live) {
+                s.beginBoost()
+                holdSuppressesClick[0] = true
+                try {
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: continue
+                        if (!ch.pressed) break
+                        ch.consume()
+                    }
+                } finally {
+                    s.endBoost()
+                }
+            }
+        }
+    }
+    val tapGestures = holdBoost.pointerInput(Unit) {
         awaitPointerEventScope {
             var lastClick = 0L
             var playingBefore = false
@@ -383,10 +489,12 @@ private fun PlayerContent(s: PlayerSession) {
                 val e = awaitPointerEvent()
                 val change = e.changes.firstOrNull() ?: continue
                 when {
-                    e.type == PointerEventType.Press -> downAt = if (e.buttons.isPrimaryPressed) change.position else null
+                    e.type == PointerEventType.Press -> downAt = if (e.primaryContactPressed) change.position else null
                     e.type == PointerEventType.Release -> {
                         val start = downAt ?: continue
                         downAt = null
+                        // the end of a hold (2x) is not a click
+                        if (holdSuppressesClick[0]) { holdSuppressesClick[0] = false; continue }
                         if (change.isConsumed || (change.position - start).getDistance() > viewConfiguration.touchSlop) continue
                         // the small window was dragged: the pointer is where it was pressed in the window's own terms, which looks like a click
                         if (com.lagradost.desktop.platform.WinChrome.pip && com.lagradost.desktop.platform.WinChrome.pipMoved) continue
@@ -520,6 +628,7 @@ private fun PlayerContent(s: PlayerSession) {
         LaunchedEffect(pip) { if (pip) menuPage = null }
 
         HudOverlay(s, Modifier.align(Alignment.TopCenter).padding(top = if (pip) 14.dp else 56.dp))
+        BoostPill(s, Modifier.align(Alignment.TopCenter).padding(top = if (pip) 14.dp else 56.dp))
         // subtitles: fetching, on, or given up; at the top right, lower while the controls are shown
         if (!pip) {
             val pillTop by androidx.compose.animation.core.animateDpAsState(if (visible) (if (modernChrome) 112.dp else 96.dp) else 24.dp, glide(300))
@@ -1098,10 +1207,10 @@ private fun SeekBar(s: PlayerSession) {
                         when (e.type) {
                             PointerEventType.Move, PointerEventType.Enter -> {
                                 hoverX = x
-                                if (e.buttons.isPrimaryPressed) dragFraction = (x / width).coerceIn(0f, 1f)
+                                if (e.primaryContactPressed) dragFraction = (x / width).coerceIn(0f, 1f)
                             }
                             PointerEventType.Exit -> { hoverX = null }
-                            PointerEventType.Press -> if (e.buttons.isPrimaryPressed) { dragFraction = (x / width).coerceIn(0f, 1f); e.changes.forEach { it.consume() } }
+                            PointerEventType.Press -> if (e.primaryContactPressed) { dragFraction = (x / width).coerceIn(0f, 1f); e.changes.forEach { it.consume() } }
                             PointerEventType.Release -> {
                                 dragFraction?.let { f -> s.seekTo((f * s.durationMs).toLong()) }
                                 dragFraction = null
@@ -1501,6 +1610,24 @@ private fun SubtitlePill(s: PlayerSession, modifier: Modifier) {
                 SubtitleLoadState.Failed -> Icon(Icons.Warning, size = 14.dp, tint = Color(0xFFFFB74D))
             }
             FText(st.text, style = Fluent.type.caption, color = Color(0xE6FFFFFF), maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** While a press on the picture or Space is held: "2×" at the top of the picture */
+@Composable
+private fun BoostPill(s: PlayerSession, modifier: Modifier) {
+    val on = s.boosting
+    var last by remember { mutableStateOf(2f) }
+    if (on) last = s.boostSpeed
+    AnimatedVisibility(on, modifier, enter = fadeIn(tween(90)), exit = fadeOut(tween(180))) {
+        val shape = RoundedCornerShape(50)
+        Row(
+            Modifier.background(PlayerSurface, shape).hairBorder(PlayerSurfaceBorder, shape).padding(start = 14.dp, end = 16.dp).height(38.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(Icons.Speed, size = 16.dp, tint = Color.White)
+            FText(if (last == last.toInt().toFloat()) "${last.toInt()}×" else "$last×", style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1, softWrap = false)
         }
     }
 }

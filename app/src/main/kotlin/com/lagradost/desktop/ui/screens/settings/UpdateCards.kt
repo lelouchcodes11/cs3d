@@ -1,7 +1,7 @@
 package com.lagradost.desktop.ui.screens.settings
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.verticalScroll
+import com.lagradost.desktop.ui.fluent.tabletVerticalScroll as verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.heightIn

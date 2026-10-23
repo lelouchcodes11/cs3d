@@ -36,6 +36,7 @@ object ExtensionHarness {
         "phisher" to "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json",
         "megix" to "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CS.json",
         "cnc" to "https://raw.githubusercontent.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/refs/heads/builds/CNC.json",
+        "raghav" to "https://raw.githubusercontent.com/KSHITIJ8473/raghav/builds/repo.json",
     )
 
     data class ProviderResult(

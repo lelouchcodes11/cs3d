@@ -419,8 +419,13 @@ class PlayerSession(
                 }
                 // a source that has not shown a picture after 20 s is not worth waiting for (it used to be 35 s); one that stops half way gets 25 s
                 // (with another source to go to, 14 s: VegaMovies lists several mirrors and a dead first one cost 20 s each time)
-                val limit = if (startingSource) (if (pickedByHand) 45_000 else if (nextLink() != null) 14_000 else 20_000) else 20_000
+                // A live channel that the playlist server has read (it is live, and its manifest came) is still opening, one stream after the other: WILLOW lists 8 and
+                // took 14 to 18 s on a network with a slow CDN, the 14 / 20 s limit reloaded it every time before it showed a picture, for ever.
+                // (mpv's own state decides, not loadingText: it is already gone while the channel is still opening; once the file is open, liveStream is set and a stall is a stall)
+                val openingLive = player.opensLive() && !player.liveStream
+                val limit = if (openingLive) 45_000 else if (startingSource) (if (pickedByHand) 45_000 else if (nextLink() != null) 14_000 else 20_000) else 20_000
                 if (now - stallSince > limit) {
+                    android.util.Log.i("PlayerSession", "no progress for ${now - stallSince} ms (limit $limit ms, starting=$startingSource, opening live=$openingLive, byHand=$pickedByHand)")
                     stallSince = now
                     onStalled()
                 }
@@ -721,7 +726,7 @@ class PlayerSession(
             vm.forceClearCache = true
             loadingText = null
             val live = (currentMeta as? ResultEpisode)?.tvType?.isLiveStream() == true
-            failure = "Playback failed: $message" + if (live) "\nLive events only have a stream while they are on; if this one has not started yet (or its link expired), try again closer to the start time." else ""
+            failure = "Playback failed: $message" + if (live) "\nLive events only have a stream while they are on; if this one has not started yet (or its link expired), try again closer to the start time." + com.lagradost.desktop.net.VpnHint.noteForLive() else ""
         }
     }
 
@@ -1768,6 +1773,25 @@ class PlayerSession(
         showHud(Icons.Speed, if (value == 1f) "Normal speed" else "$value×")
     }
 
+    /** True while a long press (finger, left mouse button) or Space held down plays the picture faster; letting go puts the speed back */
+    var boosting by mutableStateOf(false); private set
+
+    /** The speed of a hold: 2×, or the speed the viewer chose when that is faster already */
+    val boostSpeed: Float get() = if (speed >= 2f) speed else 2f
+
+    /** The speed of the menu stays as it is: the hold only changes the player's speed for as long as it lasts. Not for a live channel (it would drain its buffer). */
+    fun beginBoost() {
+        if (boosting || live || released) return
+        boosting = true
+        player.setPlaybackSpeed(boostSpeed)
+    }
+
+    fun endBoost() {
+        if (!boosting) return
+        boosting = false
+        player.setPlaybackSpeed(speed)
+    }
+
     fun changeVolume(percent: Int) {
         volume = percent.coerceIn(0, 200)
         if (volume > 0) muted = false
@@ -1881,7 +1905,7 @@ class PlayerSession(
         vm.addSubtitles(subs.toSet())
     }
 
-    fun debugLine(): String = "loading=${loadingText} status=$status failure=${failure?.take(60)} source=${sourceName?.lineSequence()?.firstOrNull()} links=$linksFound more=$loadingMore pos=$positionMs dur=$durationMs volume=$volume mpv[${player.debugState()}]"
+    fun debugLine(): String = "loading=${loadingText} status=$status boosting=$boosting failure=${failure?.take(60)} source=${sourceName?.lineSequence()?.firstOrNull()} links=$linksFound more=$loadingMore pos=$positionMs dur=$durationMs volume=$volume mpv[${player.debugState()}]"
 
     companion object {
         @Volatile

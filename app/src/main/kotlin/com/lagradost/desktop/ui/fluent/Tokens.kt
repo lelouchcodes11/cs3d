@@ -76,13 +76,20 @@ class FluentColors(
     val onButton: Color = onAccent,
 )
 
+/**
+ * The edge of a surface the pointer is over, and of a selected one. Neutral on purpose: the accent colour is for state (progress, switches,
+ * sliders, counts), while hover and selection are drawn the way the top bar and the tabs draw them, in white.
+ */
+val FluentColors.hoverEdge: Color get() = text.copy(alpha = 0.32f)
+val FluentColors.selectedEdge: Color get() = text.copy(alpha = 0.7f)
+
 /** Picks crisp dark or white text depending on the perceived luminance of [bg] */
 fun contrastText(bg: Color): Color {
     val lum = 0.2126f * bg.red + 0.7152f * bg.green + 0.0722f * bg.blue
     return if (lum > 0.56f) Color(0xFF090A0F) else Color.White
 }
 
-private fun fluentColors(dark: Boolean, a: AccentPalette, btnOverride: Color? = null): FluentColors {
+internal fun fluentColors(dark: Boolean, a: AccentPalette, btnOverride: Color? = null): FluentColors {
     val primary = if (dark) a.base else a.dark1
     val btn = btnOverride ?: primary
     val onAcc = if (dark) contrastText(primary) else Color.White
@@ -177,12 +184,28 @@ object FluentFonts {
     }
 }
 
-/** Corner radii, from the user's corner radius ([Appearance.cornerRadius]): read in composition, so a change redraws */
+/**
+ * Corner radii, from the user's corner radius ([Appearance.cornerRadius]): read in composition, so a change redraws.
+ *
+ * One shape language: everything you press or type into (buttons, drop-downs, text boxes, chips, tags, tabs) is a [pill];
+ * everything that holds content (cards, rows, menus, dialogs, posters) is a rounded rectangle from the radii below.
+ */
 object FluentShapes {
-    val control: androidx.compose.ui.unit.Dp get() = (Appearance.cornerRadius * 0.5f).dp
-    val card: androidx.compose.ui.unit.Dp get() = Appearance.cornerRadius.dp
-    val overlay: androidx.compose.ui.unit.Dp get() = (Appearance.cornerRadius * 1.2f).coerceAtMost(28f).dp
-    val small: androidx.compose.ui.unit.Dp get() = (Appearance.cornerRadius * 0.7f).dp
+    /** the corner radius in use: the user's, or the one of the interface of a special theme (Skins) */
+    private val radius: Float get() = Skins.spec?.cardRadius?.toFloat() ?: Appearance.cornerRadius.toFloat()
+    val control: androidx.compose.ui.unit.Dp get() = (radius * 0.5f).dp
+    val card: androidx.compose.ui.unit.Dp get() = radius.dp
+    val overlay: androidx.compose.ui.unit.Dp get() = (radius * 1.2f).coerceAtMost(28f).dp
+    val small: androidx.compose.ui.unit.Dp get() = (radius * 0.7f).dp
+
+    /** a row inside a menu or list: the overlay radius less its 4 dp inset, so the curves are concentric */
+    val row: androidx.compose.ui.unit.Dp get() = (overlay - 4.dp).coerceAtLeast(6.dp)
+
+    /** buttons, drop-downs, text boxes, chips and tags */
+    val pill: androidx.compose.ui.graphics.Shape get() = Skins.pill
+
+    /** the box of a check box (a small square, not a pill) */
+    val check: androidx.compose.ui.unit.Dp = 6.dp
 }
 
 val LocalFluentColors = compositionLocalOf<FluentColors> { error("FluentTheme missing") }
@@ -248,13 +271,15 @@ fun FluentTheme(content: @Composable () -> Unit) {
     }
     val revision = WinTheme.systemRevision
     val mode = FluentSettings.themeMode
-    val dark = when (mode) {
-        ThemeMode.System -> remember(revision) { WinTheme.systemIsDark() }
+    // the interface of a special theme (Netflix, Prime Video, ...) is a dark one whatever the app mode is: its bars and banners are made for a dark page
+    val systemDark = remember(revision) { WinTheme.systemIsDark() }
+    val dark = if (Skins.spec != null) true else when (mode) {
+        ThemeMode.System -> systemDark
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
     val system = remember(revision) { WinTheme.systemAccent() }
-    val preset = Themes.byId(Appearance.theme)
+    val preset = Skins.preset
     // the accent the user picked wins, then the theme's own, then the Windows one
     val override = FluentSettings.accentOverride ?: preset.accent
     val accent = if (override == null) system else AccentPalette(

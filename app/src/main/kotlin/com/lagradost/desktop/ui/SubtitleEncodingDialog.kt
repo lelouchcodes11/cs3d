@@ -65,7 +65,7 @@ fun showSubtitleEncodingDialog(onApplied: () -> Unit = {}) {
                     items(entries) { (name, value) ->
                         val source = rememberInteraction()
                         val hovered by source.collectIsHoveredAsState()
-                        val shape = RoundedCornerShape(6.dp)
+                        val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.row)
                         Row(
                             Modifier.fillMaxWidth().clip(shape).background(if (hovered) c.subtleHover else Color.Transparent, shape)
                                 .fluentClickable(source, true, shape, Role.RadioButton) { picked = value }.padding(horizontal = 10.dp, vertical = 9.dp),

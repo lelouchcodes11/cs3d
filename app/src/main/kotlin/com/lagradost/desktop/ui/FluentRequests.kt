@@ -14,12 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
+import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import com.lagradost.desktop.ui.fluent.tabletVerticalScroll as verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -117,7 +117,7 @@ private fun showSelection(r: DesktopDialogs.Request.Selection) {
                     itemsIndexed(r.items) { index, item ->
                         val source = rememberInteraction()
                         val hovered by source.collectIsHoveredAsState()
-                        val shape = RoundedCornerShape(4.dp)
+                        val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.row)
                         val on = index in selected
                         Row(
                             Modifier.fillMaxWidth().clip(shape).background(if ((on && !instant) || hovered) c.subtleHover else Color.Transparent, shape)

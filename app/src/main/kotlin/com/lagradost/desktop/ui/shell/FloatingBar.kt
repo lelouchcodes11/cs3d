@@ -103,7 +103,8 @@ internal fun FloatingTopBar() {
                 IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("topBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)")
                 Box(Modifier.width(6.dp))
             }
-            brandLogo?.let { androidx.compose.foundation.Image(it, "CloudStream", Modifier.size(26.dp)) }
+            // a window with its title bar above the app already shows the logo there: not twice
+            if (!com.lagradost.desktop.platform.WinChrome.windowedBar) brandLogo?.let { androidx.compose.foundation.Image(it, "CloudStream", Modifier.size(26.dp)) }
             Box(Modifier.weight(1f))
             // a window of half a screen (snapped, or the smallest): the search and reload buttons would sit under the capsule; Ctrl+K and the Search page remain
             if (onHome) {
@@ -130,7 +131,7 @@ internal fun FloatingTopBar() {
  * Ctrl+K opens it too, and it closes when it loses the focus.
  */
 @Composable
-private fun ExtensionSearch(provider: String) {
+internal fun ExtensionSearch(provider: String) {
     if (ShellState.homeSearchOpen) {
         androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { ShellState.searchFocus.requestFocus() } }
         // it closes with its button, Esc, a search, or by itself when it loses the focus with nothing typed
@@ -152,7 +153,7 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
     // where each item sits inside the capsule (px), so the pill can glide between them
     val spots = remember { mutableStateMapOf<Int, Pair<Float, Float>>() }
     val target = spots[selected]
-    val spec = if (Appearance.motion == com.lagradost.desktop.ui.fluent.Motion.Off) androidx.compose.animation.core.snap<Float>() else spring(dampingRatio = 0.78f, stiffness = 420f)
+    val spec = com.lagradost.desktop.ui.fluent.FluentMotion.springSoft<Float>()
     val pillX by animateFloatAsState(target?.first ?: 0f, spec, label = "pillX")
     val pillW by animateFloatAsState(target?.second ?: 0f, spec, label = "pillW")
     val density = LocalDensity.current

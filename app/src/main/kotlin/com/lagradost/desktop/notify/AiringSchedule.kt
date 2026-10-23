@@ -84,6 +84,8 @@ object AiringSchedule {
         while (page <= 14) {
             val body = mapOf("query" to QUERY, "variables" to mapOf("from" to from, "to" to to, "page" to page))
             val json = JSONObject(app.post("https://graphql.anilist.co", json = body, timeout = 20).text)
+            // AniList's own words when it answers without data (it was switched off in October 2026): the page then says so, and no empty timetable is kept as the answer
+            com.lagradost.desktop.net.ServiceOutage.requireData("AniList", json)
             val data = json.optJSONObject("data")?.optJSONObject("Page") ?: break
             val arr = data.optJSONArray("airingSchedules") ?: break
             for (i in 0 until arr.length()) {

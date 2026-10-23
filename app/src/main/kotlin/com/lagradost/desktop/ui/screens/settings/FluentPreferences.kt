@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.widthIn
+import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -87,24 +89,32 @@ fun SettingsCard(
     icon: androidx.compose.ui.graphics.painter.Painter? = null,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
+    /** content under the text instead of beside it (a slider on a narrow window) */
+    below: (@Composable () -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(FluentShapes.card)
-    val base = Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(shape)
-        .background(if (hovered && onClick != null && enabled) c.cardHover else c.card, shape)
-        .hairBorder(c.stroke, shape)
+    val grouped = LocalRowGroup.current
+    val shape = if (grouped) RoundedCornerShape(0.dp) else RoundedCornerShape(FluentShapes.card)
+    val lit = hovered && onClick != null && enabled
+    // in a group the card is the group's (one rounded card, rows divided by a hairline); alone a row is a card of its own
+    val base = if (grouped) Modifier.fillMaxWidth().heightIn(min = 60.dp).background(if (lit) c.subtleHover else Color.Transparent)
+    else Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(shape).background(if (lit) c.cardHover else c.card, shape).hairBorder(c.stroke, shape)
     Row(
         (if (onClick != null && enabled) base.fluentClickable(source, true, shape, Role.Button, onClick) else base).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (icon != null) Image(icon, null, Modifier.size(20.dp), colorFilter = ColorFilter.tint(if (enabled) c.text else c.textDisabled))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // the icon sits in a small tinted square in the colour of its page, like the page's entry in the list: the phone-style (Material) vectors
+        // of the engine's rows and the Windows glyphs of the others then read as one set
+        if (icon != null && LocalRowIcons.current) IconBadge(36.dp) { tint -> Image(icon, null, Modifier.size(18.dp), colorFilter = ColorFilter.tint(if (enabled) tint else c.textDisabled)) }
+        else if (icon == null && LocalRowIcons.current && LocalReserveIcon.current) Box(Modifier.size(36.dp))
+        Column(Modifier.weight(1f).widthIn(min = 120.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             FText(title, color = if (enabled) c.text else c.textDisabled, maxLines = 3)
             if (!subtitle.isNullOrBlank()) FText(subtitle, style = Fluent.type.caption, color = if (enabled) c.textSecondary else c.textDisabled, maxLines = 4)
+            if (below != null) { Box(Modifier.height(8.dp)); below() }
         }
         trailing()
         if (onClick != null) Icon(Icons.ChevronRightSmall, size = 12.dp, tint = c.textSecondary)
@@ -121,8 +131,6 @@ internal fun PreferenceCard(item: Preference.PreferenceItem<*, *>) {
         is Preference.PreferenceItem.SwitchPreference -> {
             val value by item.preference.collectAsState()
             SettingsCard(item.title, item.subtitle, item.icon, onClick = null) {
-                FText(if (value) "On" else "Off", color = c.textSecondary, style = Fluent.type.caption)
-                Box(Modifier.width(8.dp))
                 ToggleSwitch(value, { new -> scope.launch { if (item.onValueChanged(new)) item.preference.set(new) } })
             }
         }
@@ -183,13 +191,20 @@ internal fun PreferenceCard(item: Preference.PreferenceItem<*, *>) {
         }
         is Preference.PreferenceItem.SliderPreference -> {
             val state by item.preference.collectAsState()
-            SettingsCard(item.title, item.subtitle, item.icon) {
+            // beside the text on a wide window, under it on a narrow one (the title was squeezed to a column of letters)
+            androidx.compose.foundation.layout.BoxWithConstraints {
+                val narrow = maxWidth < 600.dp
                 val range = item.valueRange
-                Slider(
-                    value = state.toFloat(), onValueChange = { v -> scope.launch { val n = v.toInt(); if (item.onValueChanged(n)) item.preference.set(n) } },
-                    valueRange = range.first.toFloat()..range.last.toFloat(), steps = range.step.toFloat(), modifier = Modifier.width(220.dp),
-                )
-                FText(item.valueString?.takeIf { it.isNotEmpty() } ?: state.toString(), Modifier.width(64.dp).padding(start = 8.dp), style = Fluent.type.caption, color = c.textSecondary)
+                val controls = @Composable { sliderModifier: Modifier ->
+                    Slider(
+                        value = state.toFloat(), onValueChange = { v -> scope.launch { val n = v.toInt(); if (item.onValueChanged(n)) item.preference.set(n) } },
+                        valueRange = range.first.toFloat()..range.last.toFloat(), steps = range.step.toFloat(), modifier = sliderModifier,
+                    )
+                    FText(item.valueString?.takeIf { it.isNotEmpty() } ?: state.toString(), Modifier.width(64.dp).padding(start = 8.dp), style = Fluent.type.caption, color = c.textSecondary)
+                }
+                SettingsCard(item.title, item.subtitle, item.icon, below = if (narrow) ({ Row(verticalAlignment = Alignment.CenterVertically) { controls(Modifier.weight(1f)) } }) else null) {
+                    if (!narrow) controls(Modifier.width(220.dp))
+                }
             }
         }
         is Preference.PreferenceItem.ColorPreference -> {
@@ -293,3 +308,35 @@ private fun ColorSwatch(argb: Int, size: androidx.compose.ui.unit.Dp, selected: 
  * (inside an older dialog, like the player's style dialog) is out of the composition and its own scope is cancelled.
  */
 private val prefScope = kotlinx.coroutines.MainScope()
+
+/** The colour of the Settings page being drawn (its rows' icon squares take it); unspecified = neutral */
+internal val LocalSettingsTint = androidx.compose.runtime.compositionLocalOf { Color.Unspecified }
+
+/** False where a list of rows borrowed from several pages is shown (the quick settings): their icons would not line up with the rows that have none */
+internal val LocalRowIcons = androidx.compose.runtime.compositionLocalOf { true }
+
+/** True in a group where some rows have an icon: the others keep its place free, so the text of all of them lines up */
+internal val LocalReserveIcon = androidx.compose.runtime.compositionLocalOf { false }
+
+/** True inside a group card: the rows are plain and divided by hairlines, the group draws the card */
+internal val LocalRowGroup = androidx.compose.runtime.compositionLocalOf { false }
+
+/**
+ * A small rounded square in the colour of the page behind an icon (a flat tint: no gradient, no glow). [content] gets the colour the icon should
+ * have: the page colour, lightened on a dark theme so it stays readable.
+ */
+@Composable
+internal fun IconBadge(size: androidx.compose.ui.unit.Dp = 36.dp, tint: Color = LocalSettingsTint.current, content: @Composable (Color) -> Unit) {
+    val c = Fluent.colors
+    val shape = RoundedCornerShape(size * 0.3f)
+    val neutral = tint == Color.Unspecified
+    val iconColor = when {
+        neutral -> c.text
+        c.dark -> androidx.compose.ui.graphics.lerp(tint, Color.White, 0.4f)
+        else -> androidx.compose.ui.graphics.lerp(tint, Color.Black, 0.2f)
+    }
+    Box(
+        Modifier.size(size).background(if (neutral) c.control else tint.copy(alpha = if (c.dark) 0.18f else 0.14f), shape),
+        contentAlignment = Alignment.Center,
+    ) { content(iconColor) }
+}

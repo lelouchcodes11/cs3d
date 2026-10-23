@@ -90,6 +90,7 @@ object Icons {
     const val Eye = ""
     const val Hide = ""
     const val Theme = ""
+    const val Personalize = ""
     const val Language = ""
     const val Paste = ""
     const val Cloud = ""

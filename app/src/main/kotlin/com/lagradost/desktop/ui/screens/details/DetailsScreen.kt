@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
+import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -202,7 +202,7 @@ private fun showSelectPopup(p: SelectPopup) {
                 items(options.size) { i ->
                     val source = rememberInteraction()
                     val hovered by source.collectIsHoveredAsState()
-                    val shape = RoundedCornerShape(6.dp)
+                    val shape = RoundedCornerShape(FluentShapes.row)
                     Box(
                         Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(shape)
                             .background(if (hovered) Fluent.colors.subtleHover else Color.Transparent, shape)
@@ -1007,6 +1007,8 @@ private fun TrackerCard(sync: SyncViewModel) {
     @Suppress("UNUSED_EXPRESSION") version
     val names = sync.synced.value.orEmpty().filter { it.isSynced && it.hasAccount }.map { it.name }
     if (names.isEmpty()) return
+    // a service that says it is down (AniList was switched off for days in October 2026): its words, and no "Save" that would only fail
+    val down = names.mapNotNull { n -> com.lagradost.desktop.net.ServiceOutage.notes[n]?.message }
     val user = sync.userData.value
     val status = (user as? Resource.Success)?.value
     val total = status?.maxEpisodes ?: (sync.metadata.value as? Resource.Success)?.value?.totalEpisodes
@@ -1017,6 +1019,7 @@ private fun TrackerCard(sync: SyncViewModel) {
     ) {
         Column(Modifier.weight(1f)) {
             FText("Tracking on ${names.joinToString(" · ")}", style = Fluent.type.bodyStrong, color = c.textSecondary, maxLines = 1)
+            down.firstOrNull()?.let { FText(it + " Changes are not saved until it answers.", style = Fluent.type.caption, color = c.caution, maxLines = 2) }
         }
         when {
             user is Resource.Loading -> ProgressRing(size = 22.dp, strokeWidth = 2.dp)
@@ -1029,7 +1032,7 @@ private fun TrackerCard(sync: SyncViewModel) {
                     FText("${status.watchedEpisodes ?: 0}${total?.let { " / $it" } ?: ""} ep", Modifier.padding(horizontal = 6.dp), maxLines = 1, softWrap = false)
                     IconButton(Icons.ChevronRightSmall, { sync.setEpisodesDelta(1) }, tooltip = "One episode more", size = 32.dp, iconSize = 12.dp)
                 }
-                Button("Save", { sync.publishUserData() }, kind = ButtonKind.Accent, height = 36.dp)
+                Button("Save", { sync.publishUserData() }, kind = ButtonKind.Accent, enabled = down.size < names.size, height = 36.dp)
             }
             else -> FText("Not found on these services", style = Fluent.type.caption, color = c.textTertiary)
         }

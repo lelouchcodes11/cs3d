@@ -1,6 +1,7 @@
 package com.lagradost.desktop.ui.screens.common
 
 import com.lagradost.desktop.ui.fluent.smoothWheel
+import com.lagradost.desktop.ui.fluent.touchScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,7 +65,7 @@ fun PosterGrid(
     LazyVerticalGrid(
         columns = GridCells.Adaptive(com.lagradost.desktop.ui.fluent.Appearance.posterSize.width),
         state = state,
-        modifier = Modifier.fillMaxSize().smoothWheel(state),
+        modifier = Modifier.fillMaxSize().touchScroll(state).smoothWheel(state),
         contentPadding = PaddingValues(start = 36.dp, end = 36.dp, top = TopBarHeight + 20.dp, bottom = 40.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current),
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),

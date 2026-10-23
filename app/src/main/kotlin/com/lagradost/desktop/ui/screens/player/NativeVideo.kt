@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.player
 
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -7,8 +8,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindow
@@ -39,6 +44,9 @@ object NativeVideo {
 
     /** Persistent set of all native canvas HWNDs ever created for NativeVideo, so WinChrome never subclasses them even during/after teardown */
     private val nativeCanvasHwnds = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+
+    /** The video's window is on the page (it is added a moment after the page opens, see [NativeVideoHost]) and covers the window's own picture */
+    var hostAdded by mutableStateOf(false)
 
     /** The controls window is up: dialogs and messages are drawn there then (the main window's own layer is behind the video) */
     var overlayActive by mutableStateOf(false)
@@ -80,8 +88,36 @@ object NativeVideo {
         }
     }
 
+    private interface SolidBrushApi : com.sun.jna.win32.StdCallLibrary {
+        fun CreateSolidBrush(colorRef: Int): Pointer?
+        fun DeleteObject(h: Pointer): Boolean
+    }
+
+    private val brushApi: SolidBrushApi? by lazy { runCatching { Native.load("gdi32", SolidBrushApi::class.java) }.getOrNull() }
+    private var mainBrush: Pointer? = null
+
+    /**
+     * The background brush of the app window's class is the page colour. A child window that appears (the video's) invalidates the part of the window it
+     * does not cover and Windows erases it with the class brush, which is white, until the window's own Direct3D picture is presented again (one frame): on
+     * the first video of a run that showed as a half-white frame as the page changed (measured with a real-screen capture: left half white, right half
+     * the black video window, the frame before still the Home page, the one after black). In the colour of the page there is nothing to see.
+     */
+    fun paintClassBackground(window: java.awt.Window, argb: Int) {
+        runCatching {
+            val h = Native.getComponentPointer(window) ?: return
+            val r = (argb shr 16) and 0xFF
+            val g = (argb shr 8) and 0xFF
+            val b = argb and 0xFF
+            val brush = brushApi?.CreateSolidBrush((b shl 16) or (g shl 8) or r) ?: return
+            val old = classApi?.SetClassLongPtrW(h, -10, brush) // GCLP_HBRBACKGROUND
+            mainBrush?.let { brushApi?.DeleteObject(it) }
+            mainBrush = brush
+            if (old == null) return
+        }
+    }
+
     /** The window's own background brush is black from its first paint (a new window of the default class is white until something paints it) */
-    fun blackBrush(c: Canvas) {
+    fun blackBrush(c: java.awt.Component) {
         runCatching {
             val h = Native.getComponentPointer(c) ?: return
             val brush = gdiApi?.GetStockObject(4) ?: return // BLACK_BRUSH
@@ -172,6 +208,7 @@ object NativeVideo {
 fun NativeVideoHost(modifier: Modifier, visible: Boolean = true) {
     val canvas = remember {
         Canvas().apply {
+            isVisible = false
             background = java.awt.Color.BLACK
             addHierarchyListener { if (isDisplayable) NativeVideo.blackBrush(this) }
         }
@@ -188,6 +225,21 @@ fun NativeVideoHost(modifier: Modifier, visible: Boolean = true) {
             // Proactively detach the canvas from mpv so VO stops rendering before Canvas peer is destroyed
             MpvPlayer.active?.detachNativeWindow()
         }
+    }
+    // The video window exists from the start (mpv asks for its handle when the page opens, on the UI thread) but is not SHOWN until the page's first
+    // composition is done. On the first video of a run that composition is heavy (the code of the whole player is loaded, 250 ms and more with the UI
+    // thread busy), and a window of its own that is shown in the middle of it stands on the screen unpainted, plain white, until the thread is free
+    // again (measured: the whole window white for 250 to 370 ms in 3 of 5 first videos; a second video was clean).
+    var added by remember { mutableStateOf(false) }
+    LaunchedEffect(canvas) {
+        withFrameNanos { }; withFrameNanos { }
+        delay(100)
+        canvas.isVisible = true
+        added = true
+    }
+    DisposableEffect(added) {
+        NativeVideo.hostAdded = added
+        onDispose { NativeVideo.hostAdded = false }
     }
     // a black panel around the video window (the default one is light grey) and the window's own background brush black (the default one is white):
     // both showed as a bright flash for about 0.4 s when the page opened
@@ -222,6 +274,22 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
     val shown = remember(canvas) { arrayOfNulls<java.awt.Window>(1) }
     DialogWindow(onCloseRequest = {}, state = state, visible = placed, undecorated = true, transparent = true, resizable = false, focusable = focusable) {
         shown[0] = window
+        // a new window of this class is white until something paints it (the first frame of the first video of a run showed it as one half-white frame at the
+        // moment the page changes): its own background brush is black from its first paint, like the video's window
+        remember(window) {
+            window.addHierarchyListener { if (window.isDisplayable) NativeVideo.blackBrush(window) }
+            if (window.isDisplayable) NativeVideo.blackBrush(window)
+        }
+        // NOT here: a fade-in with window.opacity (0 until the first frames, then 1). On the owner's PC (measured 2026-10-22 with real mouse and touch input)
+        // the see-through window was click-through after it: Windows gave every click to the window below, so no button worked and no controls showed. The
+        // white flash of the first video is cured by what NativeVideoHost and EvenPixels.hold do, not by this.
+        // the controls window is what a finger touches over a native video: its input is observed as well
+        LaunchedEffect(window) {
+            while (true) {
+                com.lagradost.desktop.platform.WindowsTouch.install(window)
+                delay(2000)
+            }
+        }
         // a picture of a whole number of pixels at 125 / 150 / 175 %: the 1 px edges of the glass pills and menus are not smeared by a stretch
         remember(window) { com.lagradost.desktop.platform.EvenPixels.install(window) }
         DisposableEffect(Unit) {
@@ -230,10 +298,10 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
             // what froze the app. This is only a layer over the video: a modeless one is all that is needed.
             val d = window
             if (d.modalityType != java.awt.Dialog.ModalityType.MODELESS) {
-                val shown = d.isVisible
-                if (shown) d.isVisible = false
+                val wasVisible = d.isVisible
+                if (wasVisible) d.isVisible = false
                 d.modalityType = java.awt.Dialog.ModalityType.MODELESS
-                if (shown) d.isVisible = true
+                if (wasVisible) d.isVisible = true
             }
             NativeVideo.overlayActive = true
             NativeVideo.overlayWindow = d

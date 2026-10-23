@@ -43,6 +43,7 @@ internal fun generalGroups(): List<SettingGroup> {
         group("Network") {
             pref(up.title(stringResource(R.string.add_site_pref)), "domain mirror bypass blocked site")
             pref(up.key("dns_key"), "doh resolver blocked")
+            pref(publicDnsPreference(), "dns filter 1.1.1.2 unknown host blocked sink 0.0.0.0 anikoto megaplay movieblast")
             pref(up.key("jsdelivr_proxy_key"), "cdn github blocked")
             pref(cloudflarePreference(), "captcha bot challenge solver browser window flash popup turn off disable")
         },
@@ -82,7 +83,7 @@ internal fun playerGroups(): List<SettingGroup> {
 internal fun appearanceGroups(): List<SettingGroup> {
     val up = Upstream(SettingsUIScreen.getPreferences())
     return listOf(
-        group("Theme & colours") { themeItems() },
+        group("Theme") { themeItems() },
         group("Background") { backgroundItems() },
         group("Layout") { layoutItems() },
         group("Home") { homeItems() },
@@ -95,6 +96,10 @@ internal fun appearanceGroups(): List<SettingGroup> {
         },
     )
 }
+
+/** Settings > Colors: the palettes (for the Default theme), the accent colour and the colour of buttons, chips and pills */
+@Composable
+internal fun colorGroups(): List<SettingGroup> = listOf(group("Palette, accent & buttons") { colorItems() })
 
 @Composable
 internal fun accountGroups(): List<SettingGroup> {
@@ -179,6 +184,7 @@ internal fun aboutGroups(): List<SettingGroup> {
             link("Support the project (international)", "From anywhere else: buymeacoffee.com/lelouchcodes11 takes international cards", "donate buy me a coffee international") { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_INTL_URL) }
             link("Source code and releases", "${AppInfo.REPO} on GitHub (GPL-3.0). Report problems and get new versions there.", "github license bug report") { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }
             link("The CloudStream project", "This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.", "upstream credits") { DesktopPlatform.openExternalBrowser("https://github.com/recloudstream/cloudstream") }
+            link("Animated profile pictures", "Drawn characters and creatures that blink and float, plus short scene clips.", "avatar character anime credits") { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }
             block("Legal notice", null, "disclaimer copyright") { PreferenceCard(Preference.PreferenceItem.InfoPreference(title = stringResource(R.string.legal_notice_text))) }
         },
         group("Help") {
@@ -228,6 +234,7 @@ private fun extensionPriorityPreference(): Preference.PreferenceItem.TextPrefere
         title = "Extension priority",
         subtitle = com.lagradost.desktop.ui.extensionPrioritySummary(),
         onClick = { com.lagradost.desktop.ui.showExtensionPriorityDialog() },
+        icon = painterResource(R.drawable.ic_baseline_filter_list_24),
     )
 }
 
@@ -240,6 +247,18 @@ private fun cloudflarePreference(): Preference.PreferenceItem.SwitchPreference {
         title = stringResource(R.string.cloudflare_solvers_title),
         subtitle = stringResource(R.string.cloudflare_solvers_des),
         icon = painterResource(R.drawable.baseline_network_ping_24),
+    )
+}
+
+/** Settings > Network: ask public resolvers about names the system DNS refuses (see net/PublicDns) */
+@Composable
+private fun publicDnsPreference(): Preference.PreferenceItem.SwitchPreference {
+    val settings = rememberAppSettings()
+    return Preference.PreferenceItem.SwitchPreference(
+        preference = settings.general.publicDnsFallback,
+        title = stringResource(R.string.public_dns_fallback_title),
+        subtitle = stringResource(R.string.public_dns_fallback_des),
+        icon = painterResource(R.drawable.dns_24px),
     )
 }
 

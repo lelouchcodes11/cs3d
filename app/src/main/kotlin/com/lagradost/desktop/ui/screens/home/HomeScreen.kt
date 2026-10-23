@@ -28,7 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.lazy.LazyColumn
+import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lagradost.desktop.ui.fluent.watchedFraction
@@ -124,6 +125,12 @@ private fun chartSize(name: String): Int? {
     return when (word) { "five" -> 5; "ten" -> 10; "twenty" -> 20; else -> word.toIntOrNull() }?.takeIf { it in 3..20 }
 }
 
+/** The play button of a card: the title page opens and starts the episode or film at once (a continue-watching entry resumes it, a TMDB title is searched for) */
+fun playCard(card: SearchResponse) {
+    if (card is com.lagradost.desktop.tmdb.TmdbCard || (card is DataStoreHelper.ResumeWatchingResult && !card.isFromDownload && card.id != null)) { openCard(card); return }
+    Navigator.go(Route.Details(card.url, card.apiName, card.name, card.posterUrl, START_ACTION_RESUME_LATEST))
+}
+
 @Composable
 fun HomeScreen() {
     val vm = appVm<HomeViewModel>()
@@ -151,7 +158,16 @@ fun HomeScreen() {
 
     val listState = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val heroHeight = (maxHeight * 0.8f).coerceIn(440.dp, 840.dp)
+        // the interface of a special theme (Netflix) has its own billboard, row titles and spacing
+        val skin = com.lagradost.desktop.ui.fluent.Skins.spec
+        val heroHeight = if (skin != null) skinHeroHeight(maxHeight) else (maxHeight * 0.8f).coerceIn(440.dp, 840.dp)
+        // Netflix lays its first row over the foot of the banner
+        val overlap = if (skin != null) SkinRowOverlap else 0.dp
+        fun Modifier.climb(): Modifier = if (overlap == 0.dp) this else this.layout { measurable, constraints ->
+            val p = measurable.measure(constraints)
+            val up = overlap.roundToPx().coerceAtMost(p.height)
+            layout(p.width, p.height - up) { p.place(0, -up) }
+        }
         val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 160 } }
         TopBarOverlay(scrolled)
         val cardWidth = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width * (if (maxWidth >= 1008.dp) 1.05f else 0.92f)
@@ -165,20 +181,25 @@ fun HomeScreen() {
                 if (!com.lagradost.desktop.ui.fluent.Appearance.homeBanner) {
                     Box(Modifier.height(com.lagradost.desktop.ui.shell.TopBarHeight + 8.dp))
                 } else if (items.isNotEmpty()) {
-                    HomeHero(items, heroHeight, compact = maxWidth < 900.dp, width = maxWidth, scroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE })
+                    val heroScroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE }
+                    if (skin != null) SkinHero(skin, items, heroHeight, maxWidth, heroScroll)
+                    else HomeHero(items, heroHeight, compact = maxWidth < 900.dp, width = maxWidth, scroll = heroScroll)
                 } else if (res == null || res is Resource.Loading) {
                     HeroSkeleton(heroHeight)
                 } else Box(Modifier.height(72.dp))
             }
             // the other looks keep their "Browse" header with the customise and reload buttons
-            if (com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }) item(key = "header") {
+            if (skin == null && com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }) item(key = "header") {
                 HomeHeader(vm, apiName, rowNames)
             }
             val resumeList = resume.orEmpty()
-            if (resumeList.isNotEmpty() && com.lagradost.desktop.ui.fluent.Appearance.homeContinue) {
+            val resumeShown = resumeList.isNotEmpty() && com.lagradost.desktop.ui.fluent.Appearance.homeContinue
+            val bookmarksShown = bookmarks?.second?.isNotEmpty() == true
+            if (resumeShown) {
                 item(key = "resume") {
-                    Column(Modifier.reveal("home/$apiName/resume", 60).padding(bottom = space)) {
-                        com.lagradost.desktop.ui.fluent.RichSectionHeader("Continue watching", Modifier.padding(horizontal = gutter), onSeeAll = { Navigator.go(Route.History) })
+                    Column(Modifier.let { if (resumeShown) it.climb() else it }.reveal("home/$apiName/resume", 60).padding(bottom = space)) {
+                        if (skin != null) com.lagradost.desktop.ui.fluent.SkinRowHeader(skin, "Continue watching", Modifier.padding(horizontal = gutter), onSeeAll = { Navigator.go(Route.History) })
+                        else com.lagradost.desktop.ui.fluent.RichSectionHeader("Continue watching", Modifier.padding(horizontal = gutter), onSeeAll = { Navigator.go(Route.History) })
                         Box(Modifier.height(12.dp))
                         // wide cards: the still of the episode, what is next and how long is left, the source it was watched with, the bar along the bottom is how far you got
                         val resumeWidth = (cardWidth * 1.75f).coerceIn(250.dp, 340.dp)
@@ -206,11 +227,11 @@ fun HomeScreen() {
             val bm = bookmarks
             if (bm != null && bm.second.isNotEmpty()) {
                 item(key = "bookmarks") {
-                    Column(Modifier.reveal("home/$apiName/bookmarks", 120).padding(bottom = space)) {
-                        BookmarksHeader(vm, statusTypes)
+                    Column(Modifier.let { if (!resumeShown) it.climb() else it }.reveal("home/$apiName/bookmarks", 120).padding(bottom = space)) {
+                        BookmarksHeader(vm, statusTypes, skin)
                         Box(Modifier.height(12.dp))
                         Shelf(bm.second, cardWidth, gutter = gutter, spacing = 14.dp, key = { it.url }) { card ->
-                            PosterCard(card, { openCard(card) }, cardWidth)
+                            PosterCard(card, { openCard(card) }, cardWidth, onPlay = { playCard(card) })
                         }
                     }
                 }
@@ -223,12 +244,10 @@ fun HomeScreen() {
                     if (rows.isEmpty()) item(key = "empty") { EmptyHome() }
                     rows.forEachIndexed { rowIndex, (name, row) ->
                         item(key = "row-$name") {
-                            Column(Modifier.reveal("home/$apiName/row-$name", 60 + rowIndex.coerceAtMost(4) * 70).padding(bottom = space)) {
+                            Column(Modifier.let { if (rowIndex == 0 && !resumeShown && !bookmarksShown) it.climb() else it }.reveal("home/$apiName/row-$name", 60 + rowIndex.coerceAtMost(4) * 70).padding(bottom = space)) {
                                 val chart = chartSize(name)
                                 val ranked = chart != null && !row.list.isHorizontalImages
-                                com.lagradost.desktop.ui.fluent.RichSectionHeader(
-                                    name, Modifier.padding(horizontal = gutter),
-                                    onSeeAll = {
+                                val seeAll: () -> Unit = {
                                         // the row's own pages go on in the full list: the next page is asked for as the list is scrolled to its end
                                         val more: (suspend () -> Pair<List<SearchResponse>, Boolean>)? = if (!row.hasNext) null else ({
                                             val expanded = vm.expandAndReturn(name)
@@ -236,8 +255,9 @@ fun HomeScreen() {
                                             (expanded?.list?.list ?: row.list.list).toList() to (expanded?.hasNext ?: true)
                                         })
                                         Navigator.go(Route.Section(name, row.list.list.toList(), more))
-                                    },
-                                )
+                                }
+                                if (skin != null) com.lagradost.desktop.ui.fluent.SkinRowHeader(skin, name, Modifier.padding(horizontal = gutter), onSeeAll = seeAll)
+                                else com.lagradost.desktop.ui.fluent.RichSectionHeader(name, Modifier.padding(horizontal = gutter), onSeeAll = seeAll)
                                 Box(Modifier.height(12.dp))
                                 val landscape = row.list.isHorizontalImages
                                 val w = if (landscape) (cardWidth * 1.6f).coerceIn(230.dp, 300.dp) else cardWidth
@@ -258,7 +278,7 @@ fun HomeScreen() {
                                     }
                                 } else {
                                     Shelf(row.list.list, w, gutter = gutter, spacing = 14.dp, state = state, key = { it.url }) { card ->
-                                        PosterCard(card, { openCard(card) }, w, landscape = landscape)
+                                        PosterCard(card, { openCard(card) }, w, landscape = landscape, onPlay = { playCard(card) })
                                     }
                                 }
                             }
@@ -269,7 +289,7 @@ fun HomeScreen() {
             item(key = "end") {
                 // choosing and ordering the rows: at the foot of the page, not in the top bar (the other looks have it in their Browse header)
                 val customise = com.lagradost.desktop.ui.shell.ShellState.homeActions?.customise
-                val inHeader = com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }
+                val inHeader = skin == null && com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }
                 Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 40.dp), contentAlignment = Alignment.Center) {
                     if (customise != null && !inHeader) Button("Customise Home rows", customise, kind = ButtonKind.Subtle, icon = Icons.Edit, height = 34.dp)
                 }
@@ -319,13 +339,11 @@ private fun HomeHeader(vm: HomeViewModel, apiName: String?, rowNames: List<Strin
 }
 
 @Composable
-private fun BookmarksHeader(vm: HomeViewModel, statusTypes: Pair<Set<WatchType>, Set<WatchType>>?) {
+private fun BookmarksHeader(vm: HomeViewModel, statusTypes: Pair<Set<WatchType>, Set<WatchType>>?, skin: com.lagradost.desktop.ui.fluent.SkinSpec? = null) {
     val ctx = DesktopBootstrap.activityOrNull()
     val selected = statusTypes?.first.orEmpty()
     val types = statusTypes?.second?.sortedBy { it.internalId }.orEmpty()
-    com.lagradost.desktop.ui.fluent.RichSectionHeader(
-        "Your library", Modifier.padding(horizontal = gutter),
-        trailing = {
+    val trailing: @Composable () -> Unit = {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 types.forEach { type ->
                     Chip(
@@ -337,8 +355,9 @@ private fun BookmarksHeader(vm: HomeViewModel, statusTypes: Pair<Set<WatchType>,
                     )
                 }
             }
-        },
-    )
+    }
+    if (skin != null) com.lagradost.desktop.ui.fluent.SkinRowHeader(skin, "Your library", Modifier.padding(horizontal = gutter), trailing = trailing)
+    else com.lagradost.desktop.ui.fluent.RichSectionHeader("Your library", Modifier.padding(horizontal = gutter), trailing = trailing)
 }
 
 // -------------------------------------------------------------------------------------------
@@ -452,6 +471,8 @@ private fun HomeHero(all: List<LoadResponse>, height: Dp, compact: Boolean, widt
                     image = { i -> val it = items[i]; (it.backgroundPosterUrl ?: art[it.url]?.backdrop ?: it.posterUrl) to it.posterHeaders },
                     onSelect = { i -> progress.floatValue = 0f; index = i },
                     label = { i -> items[i].name },
+                    // the hero's text is at the left: the strip takes what is right of it
+                    maxWidth = (width * 0.56f).coerceAtMost(760.dp),
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = gutter, bottom = 34.dp).graphicsLayer { alpha = (1f - scroll() / (height.toPx() * 0.4f)).coerceIn(0f, 1f) },
                 )
             }
@@ -459,8 +480,8 @@ private fun HomeHero(all: List<LoadResponse>, height: Dp, compact: Boolean, widt
     }
 }
 
-private const val HERO_MS = 9000
-private const val HERO_TICK_MS = 120
+internal const val HERO_MS = 9000
+internal const val HERO_TICK_MS = 120
 
 @Composable
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
@@ -468,10 +489,10 @@ private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
 
 /** Backdrop of the hero: still artwork, text scrims, and a fade into the page at the bottom (any backdrop style) */
 @Composable
-private fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null, scroll: () -> Float = { 0f }) {
+internal fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null, scroll: () -> Float = { 0f }, scrims: Boolean = true, fadeStart: Float = 0.6f) {
     val zoom: androidx.compose.runtime.State<Float>? = null
     Box(
-        Modifier.fillMaxSize().fadeIntoPage(),
+        Modifier.fillMaxSize().fadeIntoPage(fadeStart),
     ) {
         val backdrop = item.backgroundPosterUrl ?: tmdbBackdrop
         // the picture trails the page a little (parallax): it is shifted down by a part of the scroll, under the fade at the bottom
@@ -486,12 +507,22 @@ private fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null, scrol
             // sharp poster on the right when the provider has no backdrop
             Box(Modifier.fillMaxSize().padding(end = 96.dp, top = 84.dp, bottom = 150.dp), contentAlignment = Alignment.CenterEnd) {
                 val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.card)
-                RemoteImage(item.posterUrl, item.posterHeaders, null, Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(shape), ContentScale.Crop)
+                // a landscape poster (a live event, a wide key art) stays landscape; only a portrait one is shown tall (cropping it to 2:3 cut its text off)
+                var ratio by remember(item.posterUrl) { mutableStateOf<Float?>(null) }
+                val landscape = (ratio ?: 0f) > 1.15f
+                RemoteImage(
+                    item.posterUrl, item.posterHeaders, null,
+                    if (landscape) Modifier.fillMaxWidth(0.46f).aspectRatio((ratio ?: 1.78f).coerceIn(1.15f, 2.4f)).clip(shape) else Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(shape),
+                    if (landscape) ContentScale.Fit else ContentScale.Crop,
+                    onSize = { w, h -> if (h > 0) ratio = w.toFloat() / h },
+                )
             }
         }
         // scrims: left for the text, top for the title bar
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.95f), 0.38f to Fluent.colors.bg.copy(alpha = 0.7f), 0.7f to Fluent.colors.bg.copy(alpha = 0.2f), 1f to Color.Transparent)))
-        Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
+        if (scrims) {
+            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.95f), 0.38f to Fluent.colors.bg.copy(alpha = 0.7f), 0.7f to Fluent.colors.bg.copy(alpha = 0.2f), 1f to Color.Transparent)))
+            Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
+        }
     }
 }
 

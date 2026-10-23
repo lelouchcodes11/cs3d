@@ -86,10 +86,10 @@ object WinChrome {
     var keepBar by mutableStateOf(false)
 
     /** The caption bar hides itself in full screen and, unless Settings > Look says otherwise, while the window is maximized (not in pip) */
-    val autoHides: Boolean get() = enabled && (fullscreen || (maximized && com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar)) && !pip && !keepBar
+    val autoHides: Boolean get() = enabled && (fullscreen || (maximized && com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar && !com.lagradost.desktop.ui.fluent.InputMode.touchUi)) && !pip && !keepBar
 
     /** The title bar is a row of its own above the app (a window that is not full screen; a maximized one only when it is set to keep it) */
-    val windowedBar: Boolean get() = enabled && !fullscreen && !pip && (!maximized || keepBar || !com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar)
+    val windowedBar: Boolean get() = enabled && !fullscreen && !pip && (!maximized || keepBar || !com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar || com.lagradost.desktop.ui.fluent.InputMode.touchUi)
 
     /** Dev: a pretend pointer position (window px) used instead of the real pointer by [pollReveal] */
     @Volatile

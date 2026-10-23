@@ -82,7 +82,7 @@ fun showExtensionPriorityDialog() {
                     items(others, key = { "o-$it" }) { name ->
                         val source = rememberInteraction()
                         val hovered by source.collectIsHoveredAsState()
-                        val shape = RoundedCornerShape(6.dp)
+                        val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.row)
                         Row(
                             Modifier.fillMaxWidth().clip(shape).background(if (hovered) c.subtleHover else Color.Transparent, shape)
                                 .fluentClickable(source, true, shape, Role.Button) { ExtensionPriority.pin(name) }.padding(horizontal = 10.dp, vertical = 8.dp),

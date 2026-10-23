@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -326,7 +326,7 @@ private fun ResultsHeader(
             }
             return
         }
-        androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        com.lagradost.desktop.ui.fluent.TouchLazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(validTypes, key = { it.name }) { t ->
                 Chip(typeName(t), t in types, onClick = {
                     val next = if (t in types) types - t else types + t
@@ -501,15 +501,15 @@ private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel, v
 private fun SearchField(text: String, onText: (String) -> Unit, focus: androidx.compose.ui.focus.FocusRequester, onSubmit: (String) -> Unit) {
     val c = Fluent.colors
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(50)
-    val border by androidx.compose.animation.animateColorAsState(if (focused) c.accent else c.stroke, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(140))
+    val shape = com.lagradost.desktop.ui.fluent.FluentShapes.pill
+    val border by androidx.compose.animation.animateColorAsState(if (focused) c.text.copy(alpha = 0.72f) else c.stroke, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(com.lagradost.desktop.ui.fluent.FluentMotion.FAST))
     Row(
         Modifier.fillMaxWidth().height(52.dp)
             .clip(shape).background(c.card, shape).border(if (focused) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, border, shape)
             .padding(start = 20.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Search, size = 18.dp, tint = if (focused) c.accentText else c.textSecondary)
+        Icon(Icons.Search, size = 18.dp, tint = if (focused) c.text else c.textSecondary)
         Box(Modifier.width(14.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (text.isEmpty()) FText("Search movies, series, anime…", style = Fluent.type.bodyLarge, color = c.textTertiary, maxLines = 1)
@@ -519,7 +519,7 @@ private fun SearchField(text: String, onText: (String) -> Unit, focus: androidx.
                     .onPreviewKeyEvent { e -> if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && (e.key == androidx.compose.ui.input.key.Key.Enter || e.key == androidx.compose.ui.input.key.Key.NumPadEnter)) { onSubmit(text); true } else false },
                 singleLine = true,
                 textStyle = Fluent.type.bodyLarge.copy(color = c.text),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(c.text),
             )
         }
         // always there (invisible while empty), so the box does not change when typing starts
@@ -535,7 +535,7 @@ private fun HistoryChip(item: SearchHistoryItem, onOpen: () -> Unit, onRemove: (
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(50)
+    val shape = com.lagradost.desktop.ui.fluent.FluentShapes.pill
     Row(
         Modifier.height(36.dp).clip(shape).background(if (hovered) c.cardHover else c.card, shape).hairBorder(c.stroke, shape)
             .hoverable(source).fluentClickable(source, true, shape, Role.Button, onOpen).padding(start = 14.dp, end = 4.dp),

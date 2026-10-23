@@ -44,7 +44,9 @@ object ImageLoader {
             .diskCachePolicy(CachePolicy.ENABLED)
             .networkCachePolicy(CachePolicy.ENABLED)
             .memoryCache {
-                MemoryCache.Builder().maxSizePercent(PlatformContext.INSTANCE, 0.1)//10 % of heap for mem-cache
+                // desktop: the decoded pictures are Skia bitmaps in native memory, which the Java heap size says nothing about: 10 % of a 3.5 GB maximum heap
+                // let them take 350 MB on a PC that often has less than 2 GB free. 160 MB holds some 150 posters and the banners of the page in view.
+                MemoryCache.Builder().maxSizeBytes(160L * 1024 * 1024)
                     .strongReferencesEnabled(false)
                     .build()
             }

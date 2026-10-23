@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.isPrimaryPressed
+import com.lagradost.desktop.ui.fluent.primaryContactPressed
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
@@ -461,10 +462,10 @@ internal fun ModernSeekBar(s: PlayerSession, modifier: Modifier = Modifier.fillM
                         when (e.type) {
                             PointerEventType.Move, PointerEventType.Enter -> {
                                 hoverX = x
-                                if (e.buttons.isPrimaryPressed) dragFraction = (x / width).coerceIn(0f, 1f)
+                                if (e.primaryContactPressed) dragFraction = (x / width).coerceIn(0f, 1f)
                             }
                             PointerEventType.Exit -> hoverX = null
-                            PointerEventType.Press -> if (e.buttons.isPrimaryPressed) { dragFraction = (x / width).coerceIn(0f, 1f); e.changes.forEach { it.consume() } }
+                            PointerEventType.Press -> if (e.primaryContactPressed) { dragFraction = (x / width).coerceIn(0f, 1f); e.changes.forEach { it.consume() } }
                             PointerEventType.Release -> {
                                 dragFraction?.let { f -> s.seekTo((f * s.durationMs).toLong()) }
                                 dragFraction = null

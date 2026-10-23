@@ -4,6 +4,7 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -186,11 +187,17 @@ object Appearance {
     /** Country code for age ratings and streaming services; empty follows the Windows region */
     var tmdbRegion by mutableStateOf("")
 
-    /** Colour theme (see Themes): tinted surfaces and accent */
+    /** The theme (see Themes): Default, with the palette of Settings > Colors, or Netflix (tinted surfaces, accent and interface) */
     var theme by mutableStateOf("classic")
+
+    /** The colour palette of the Default theme (Settings > Colors): kept while a special theme is on, so going back to Default brings it back */
+    var palette by mutableStateOf("classic")
 
     /** Two soft colour glows behind the pages (off by default) */
     var themeGlow by mutableStateOf(false)
+
+    /** A special theme (Netflix) brings its whole interface: navigation, Home, cards, shapes. Off: only its colours (see Skins) */
+    var skinLayout by mutableStateOf(true)
 
     /** A picture of the user's own behind every page (a copy in the data folder; empty = none) and how much of the page colour covers it */
     var wallpaper by mutableStateOf("")
@@ -198,6 +205,9 @@ object Appearance {
 
     /** Profile pictures that move (see Profiles.kt); off keeps them still */
     var animatedProfiles by mutableStateOf(true)
+
+    /** Finger swipes on a touchscreen scroll pages and shelves (Windows hands a finger to the app as a mouse drag; Auto tells the two apart) */
+    var touchSwipes by mutableStateOf(TouchSwipes.Auto)
 
     /** Episode lists: stills and descriptions of episodes you have not reached yet are blurred / hidden, so they cannot spoil the story; titles too when [hideSpoilerTitles] */
     var hideSpoilers by mutableStateOf(true)
@@ -252,11 +262,15 @@ object Appearance {
             seekPreviews = p.getBoolean(PREFIX + "seek_previews", true)
             controlsHideSeconds = p.getInt(PREFIX + "controls_hide_s", 2).coerceIn(0, 30)
             tmdbRegion = p.getString(PREFIX + "tmdb_region", "") ?: ""
-            theme = p.getString(PREFIX + "theme", null) ?: Themes.DEFAULT_ID
+            theme = Themes.byId(p.getString(PREFIX + "theme", null)).id
+            // an ordinary theme is its own palette; with a special one on, the palette saved before it
+            palette = Themes.byId(theme).takeIf { !it.special }?.id ?: Themes.byId(p.getString(PREFIX + "palette", null)).takeIf { !it.special }?.id ?: Themes.DEFAULT_ID
             themeGlow = p.getBoolean(PREFIX + "theme_glow_v2", false)
+            skinLayout = p.getBoolean(PREFIX + "skin_layout", true)
             wallpaper = (p.getString(PREFIX + "wallpaper", "") ?: "").takeIf { java.io.File(it).isFile } ?: ""
             wallpaperDim = p.getFloat(PREFIX + "wallpaper_dim", 0.8f).coerceIn(0.3f, 0.95f)
             animatedProfiles = p.getBoolean(PREFIX + "animated_profiles", true)
+            touchSwipes = enumOf(p.getString(PREFIX + "touch_swipes", null), TouchSwipes.Auto)
             homeBanner = p.getBoolean(PREFIX + "home_banner", true)
             homeContinue = p.getBoolean(PREFIX + "home_continue", true)
             hideSpoilers = p.getBoolean(PREFIX + "hide_spoilers", true)
@@ -307,10 +321,13 @@ object Appearance {
                 .putInt(PREFIX + "controls_hide_s", controlsHideSeconds)
                 .putString(PREFIX + "tmdb_region", tmdbRegion)
                 .putString(PREFIX + "theme", theme)
+                .putString(PREFIX + "palette", palette)
                 .putBoolean(PREFIX + "theme_glow_v2", themeGlow)
+                .putBoolean(PREFIX + "skin_layout", skinLayout)
                 .putString(PREFIX + "wallpaper", wallpaper)
                 .putFloat(PREFIX + "wallpaper_dim", wallpaperDim)
                 .putBoolean(PREFIX + "animated_profiles", animatedProfiles)
+                .putString(PREFIX + "touch_swipes", touchSwipes.name)
                 .putBoolean(PREFIX + "home_banner", homeBanner)
                 .putBoolean(PREFIX + "home_continue", homeContinue)
                 .putBoolean(PREFIX + "hide_spoilers", hideSpoilers)
@@ -320,9 +337,10 @@ object Appearance {
     }
 
     fun reset() {
+        touchSwipes = TouchSwipes.Auto
         navPosition = NavPosition.Floating; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Large; backdrop = Backdrop.Black; buttonStyle = ButtonStyle.White; surfaceTint = SurfaceTint.Balanced; navAccentPill = false; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; tmdbRegion = ""; theme = Themes.DEFAULT_ID; themeGlow = false; hideSpoilers = true; hideSpoilerTitles = false
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; tmdbRegion = ""; theme = Themes.DEFAULT_ID; palette = Themes.DEFAULT_ID; themeGlow = false; skinLayout = true; hideSpoilers = true; hideSpoilerTitles = false
         FluentSettings.chooseAccent(null)
         FluentSettings.chooseButtonColor(null)
         save()
@@ -352,4 +370,15 @@ object FluentMotion {
     fun <T> tweenSoftAfter(base: Int, delayMs: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), delayMillis = delayMs, easing = MotionCurves.easing)
     fun <T> tweenOut(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = exit)
     fun <T> tweenStd(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = standard)
+
+    /** the three durations of the app: a colour or small state change, a control moving, a panel or page */
+    const val FAST = 110
+    const val BASE = 180
+    const val SLOW = 300
+
+    /** feedback under the pointer (a press gives way and comes back): short and a touch springy */
+    fun <T> springPress(): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else spring(dampingRatio = 0.62f, stiffness = 780f)
+
+    /** things that settle (a hover lift, a gliding indicator, a card growing): no visible overshoot, so nothing wobbles */
+    fun <T> springSoft(): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else spring(dampingRatio = 0.86f, stiffness = 380f)
 }

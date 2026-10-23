@@ -15,7 +15,9 @@ fun OkHttpClient.Builder.addGenericDns(url: String, ips: List<String>) = dns(
         // desktop: the lookups get a dispatcher of their own. They are asynchronous calls that the resolver waits for without a
         // timeout; sharing the dispatcher of the main client (64 calls at once), a burst of requests (an extension asking dozens
         // of sites together) filled every slot with calls waiting for a lookup that could not start: all hung for ever.
-        .client(build().newBuilder().dispatcher(okhttp3.Dispatcher()).build())
+        // A DNS answer that takes longer than a few seconds is not coming (a network that blocks the service: curl timed out against 1.1.1.1 after 8 s): the
+        // default 10 s per address of the service (4 addresses) kept every first request to a host waiting for up to 40 s.
+        .client(build().newBuilder().dispatcher(okhttp3.Dispatcher()).connectTimeout(2, java.util.concurrent.TimeUnit.SECONDS).callTimeout(4, java.util.concurrent.TimeUnit.SECONDS).build())
         .url(url.toHttpUrl())
         .bootstrapDnsHosts(
             ips.map { InetAddress.getByName(it) }

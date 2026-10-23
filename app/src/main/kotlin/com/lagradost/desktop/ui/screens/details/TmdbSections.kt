@@ -1,5 +1,7 @@
 package com.lagradost.desktop.ui.screens.details
 
+import com.lagradost.desktop.ui.fluent.hoverEdge
+
 import com.lagradost.desktop.ui.fluent.hairBorder
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -108,7 +110,7 @@ private fun MakerTile(name: String, logo: String?, onClick: () -> Unit) {
     if (logo == null) { MakerChip(name, onClick); return }
     // the logos are made for a light ground (dark marks, transparent): a pale tile shows all of them
     Box(
-        Modifier.size(width = 132.dp, height = 68.dp).clip(shape).background(Color(if (hovered) 0xFFFFFFFF else 0xEEF4F4F4)).hairBorder(if (hovered) c.accent else c.stroke, shape)
+        Modifier.size(width = 132.dp, height = 68.dp).clip(shape).background(Color(if (hovered) 0xFFFFFFFF else 0xEEF4F4F4)).hairBorder(if (hovered) c.hoverEdge else c.stroke, shape)
             .hoverable(source).fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) { RemoteImage(logo, null, name, Modifier.fillMaxSize(), ContentScale.Fit) }

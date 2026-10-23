@@ -601,9 +601,17 @@ class MALApi : SyncAPI() {
 
     private suspend fun getMalAnimeListSmart(auth: AuthData): Array<Data>? {
         return if (requireLibraryRefresh) {
-            val list = getMalAnimeList(auth.token)
-            setKey(MAL_CACHED_LIST, auth.user.id.toString(), list)
-            list
+            // desktop: MyAnimeList in maintenance (or refusing the sign-in) answers without the list; the one saved by the last good answer is
+            // shown instead, and with nothing saved the page gets the service's own words rather than a parser message
+            val saved = getKey<Array<Data>>(MAL_CACHED_LIST, auth.user.id.toString()) as? Array<Data>
+            val list = try {
+                getMalAnimeList(auth.token)
+            } catch (e: Throwable) {
+                saved ?: throw ErrorLoadingException(com.lagradost.desktop.net.ServiceOutage.message(name) ?: e.message ?: "MyAnimeList did not answer.")
+                null
+            }
+            if (list != null) setKey(MAL_CACHED_LIST, auth.user.id.toString(), list)
+            list ?: saved
         } else {
             getKey<Array<Data>>(MAL_CACHED_LIST, auth.user.id.toString()) as? Array<Data>
         }
