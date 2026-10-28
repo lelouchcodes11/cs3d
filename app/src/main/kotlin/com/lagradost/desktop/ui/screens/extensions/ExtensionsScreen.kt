@@ -71,6 +71,7 @@ import com.lagradost.desktop.ui.fluent.Chip
 import com.lagradost.desktop.ui.fluent.ContextMenuArea
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.lightShadow
 import com.lagradost.desktop.ui.fluent.FluentShapes
 import com.lagradost.desktop.ui.fluent.FluentScrollbar
 import com.lagradost.desktop.ui.fluent.Icon
@@ -122,10 +123,17 @@ fun ExtensionsScreen() {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 1000.dp
-        Column(Modifier.fillMaxSize().padding(top = TopBarHeight + 12.dp)) {
+        Column(Modifier.fillMaxSize().padding(top = TopBarHeight + 20.dp)) {
             // ---- header with numbers
+            // in a half-screen window the two buttons left the title ~160 dp ("Расш…" in Russian): they go under it
+            val stacked = this@BoxWithConstraints.maxWidth < 820.dp
+            val actions: @Composable () -> Unit = {
+                // the same as Settings > Updates & backup > Update Plugins: looks at every repository and installs newer versions of what is installed
+                com.lagradost.desktop.ui.fluent.PillButton("Update all", Icons.Refresh, primary = false, onImage = false, onClick = { ioTask { com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_manuallyReloadAndUpdatePlugins(ctx) } }, height = 42.dp)
+                com.lagradost.desktop.ui.fluent.PillButton("Add repository", Icons.Add, primary = true, onClick = { addRepositoryDialog(ext) }, height = 42.dp)
+            }
             Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                com.lagradost.desktop.ui.fluent.PageHeader("Extensions", Modifier.weight(1f), subtitle = "Add a repository, then install the providers you want")
+                com.lagradost.desktop.ui.fluent.PageHeader("Extensions", Modifier.weight(1f), icon = Icons.Extensions, tint = androidx.compose.ui.graphics.Color(0xFFB07CFF), subtitle = "Add a repository, then install the providers you want")
                 stats?.let { s ->
                     if (!compact) {
                         StatTile(Icons.Download, s.downloaded.toString(), "installed")
@@ -133,17 +141,17 @@ fun ExtensionsScreen() {
                         if (s.disabled > 0) StatTile(Icons.Warning, s.disabled.toString(), "disabled")
                     }
                 }
-                // the same as Settings > Updates & backup > Update Plugins: looks at every repository and installs newer versions of what is installed
-                com.lagradost.desktop.ui.fluent.PillButton("Update all", Icons.Refresh, primary = false, onClick = { ioTask { com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_manuallyReloadAndUpdatePlugins(ctx) } }, height = 42.dp)
-                com.lagradost.desktop.ui.fluent.PillButton("Add repository", Icons.Add, primary = true, onClick = { addRepositoryDialog(ext) }, height = 42.dp)
+                if (!stacked) actions()
             }
+            if (stacked) Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) { actions() }
             Box(Modifier.height(22.dp))
             Row(Modifier.fillMaxSize()) {
                 // ---- repositories
                 Column(Modifier.width(if (compact) 250.dp else 320.dp).fillMaxHeight().padding(start = 36.dp, end = 8.dp)) {
                     FText("REPOSITORIES", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, letterSpacing = 1.2.sp), color = c.textTertiary)
                     Box(Modifier.height(10.dp))
-                    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
+                    val repoState = androidx.compose.foundation.lazy.rememberLazyListState()
+                    LazyColumn(Modifier.weight(1f).smoothWheel(repoState), state = repoState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
                         item(key = INSTALLED) {
                             RepoRow("Installed", "Everything downloaded or loaded locally", null, selected == INSTALLED, Icons.Download, { selected = INSTALLED }, null)
                         }
@@ -176,7 +184,7 @@ fun ExtensionsScreen() {
                         val scroll = rememberScrollState()
                         Box(Modifier.fillMaxSize()) {
                             FluentScrollbar(scroll)
-                            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(end = 12.dp, bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
+                            Column(Modifier.fillMaxSize().smoothWheel(scroll).verticalScroll(scroll).padding(end = 12.dp, bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
                                 com.lagradost.desktop.ui.screens.settings.StremioPage()
                             }
                         }
@@ -198,7 +206,11 @@ fun ExtensionsScreen() {
                         if (compact) {
                             Column(Modifier.fillMaxWidth().glass(FluentShapes.overlay).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 heading(Modifier.fillMaxWidth())
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (this@BoxWithConstraints.maxWidth < 760.dp) {
+                                    // half a screen: the filter had ~130 dp beside the button ("Фильтр рас…"), so the button goes under it
+                                    filterBox(Modifier.fillMaxWidth())
+                                    installAll()
+                                } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     filterBox(Modifier.weight(1f))
                                     installAll()
                                 }
@@ -286,7 +298,7 @@ private fun RepoRow(
     ContextMenuArea(menu) {
         Row(
             Modifier.fillMaxWidth()
-                .clip(shape).background(bg, shape)
+                .lightShadow(shape).clip(shape).background(bg, shape)
                 .border(if (selected) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, if (selected) c.selectedEdge else c.stroke, shape)
                 .fluentClickable(source, true, shape, Role.Tab, onClick)
                 .padding(12.dp),
@@ -301,8 +313,9 @@ private fun RepoRow(
                 }
             }
             Column(Modifier.weight(1f)) {
-                FText(name, style = Fluent.type.bodyStrong, maxLines = 1)
-                FText(url, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+                FText(name, style = Fluent.type.bodyStrong, maxLines = 2)
+                // an address stays on one line; a sentence ("Everything downloaded or loaded locally") may take three in the narrow list
+                FText(url, style = Fluent.type.caption, color = c.textTertiary, maxLines = if (url.startsWith("http")) 1 else 3)
             }
             if (repo != null && hovered) IconButton(Icons.Delete, { confirmRemove(repo) }, tooltip = "Remove repository", size = 28.dp, iconSize = 14.dp)
         }
@@ -324,7 +337,7 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
     val hovered by source.collectIsHoveredAsState()
     Column(
         Modifier.fillMaxWidth().height(168.dp).hoverable(source)
-            .clip(shape).background(if (hovered) c.cardHover else c.card, shape)
+            .lightShadow(shape).clip(shape).background(if (hovered) c.cardHover else c.card, shape)
             .border(if (hovered) 1.dp else androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.hoverEdge else if (item.isDownloaded) c.strokeStrong else c.stroke, shape)
             .padding(16.dp),
     ) {
@@ -345,7 +358,8 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
             }, tooltip = "Extension settings", kind = ButtonKind.Standard, size = 34.dp)
         }
         Box(Modifier.height(10.dp))
-        FText(p.description?.takeIf { it.isNotBlank() } ?: (p.tvTypes?.take(5)?.joinToString(" · ") ?: ""), style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.weight(1f))
+        // an installed extension's "description" is its file name on the disk (CNCVerse.-2008229843.cs3): what it offers is more use there
+        FText(p.description?.takeIf { it.isNotBlank() && !it.endsWith(".cs3", true) && !it.endsWith(".jar", true) } ?: (p.tvTypes?.take(5)?.joinToString(" · ") ?: ""), style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.weight(1f))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             p.language?.takeIf { it.isNotBlank() }?.let { Badge(fromTagToLanguageName(it) ?: it) }
             if (p.status == PROVIDER_STATUS_DOWN) Badge("Down")
@@ -371,6 +385,20 @@ private fun confirmRemove(repo: RepositoryData) {
     })
 }
 
+/**
+ * Is a copied text worth putting in the "Add repository" box: the address of a repository file (or of GitHub's raw files, or one that says "repo" or
+ * "cloudstream"), or a short code (letters, digits, no spaces). The box used to take any link and any short text: a page link or a word copied for another
+ * purpose appeared in it.
+ */
+internal fun looksLikeRepository(text: String): Boolean {
+    if (text.isEmpty() || text.any { it.isWhitespace() }) return false
+    if (text.startsWith("http://") || text.startsWith("https://") || text.startsWith("cloudstreamrepo://")) {
+        val t = text.lowercase()
+        return t.endsWith(".json") || "raw.githubusercontent.com" in t || "repo" in t || "cloudstream" in t
+    }
+    return text.length in 3..39 && text.all { it.isLetterOrDigit() || it == '-' || it == '_' || it == '.' }
+}
+
 private fun addRepositoryDialog(ext: ExtensionsViewModel) {
     var name by mutableStateOf("")
     var url by mutableStateOf("")
@@ -380,7 +408,7 @@ private fun addRepositoryDialog(ext: ExtensionsViewModel) {
         if (clip.contains(sep)) {
             name = clip.substringBefore(sep).trim()
             url = clip.substringAfter(sep).trim()
-        } else if (clip.startsWith("http") || clip.length < 40) url = clip.trim()
+        } else if (looksLikeRepository(clip.trim())) url = clip.trim()
     }
     Overlays.show(
         Overlays.Dialog(

@@ -40,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.heightIn
 import com.lagradost.desktop.ui.fluent.Chip
+import com.lagradost.desktop.ui.fluent.FluentMotion
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import com.lagradost.desktop.ui.fluent.shimmer
@@ -102,6 +104,7 @@ import com.lagradost.desktop.ui.fluent.ComboBox
 import com.lagradost.desktop.ui.fluent.ContextMenuArea
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.artScrim
 import com.lagradost.desktop.ui.fluent.FluentShapes
 import com.lagradost.desktop.ui.fluent.Icon
 import com.lagradost.desktop.ui.fluent.IconButton
@@ -224,15 +227,28 @@ private fun LoadingPage(route: Route.Details, retry: () -> Unit) {
     // an extension that takes long to answer (StreamPlay asks several services for a title): after a few seconds the page says so and offers a way out
     var slow by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(6_000); slow = true }
+    // the title page is on its way: the poster it was opened with, soft, and in the middle of it the name, a ring and what is happening (the words that
+    // used to stand at the bottom left, where the finished page keeps its title, were easy to miss)
+    val appear = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, androidx.compose.animation.core.tween(FluentMotion.ms(300))) }
     Box(Modifier.fillMaxSize()) {
-        com.lagradost.desktop.ui.components.SoftImage(route.poster, null, Modifier.fillMaxSize(), alpha = 0.35f)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x66000000), c.layer))))
-        Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            ProgressRing(size = 48.dp)
-            FText(route.name, style = Fluent.type.subtitle, maxLines = 2)
-            FText("Loading details…", color = c.textSecondary)
+        com.lagradost.desktop.ui.components.SoftImage(route.poster, null, Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }, alpha = 0.5f)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x59000000), 0.5f to Color(0x99000000), 1f to c.bg)))
+        Column(
+            Modifier.align(Alignment.Center).padding(horizontal = gutter, vertical = 40.dp).widthIn(max = 640.dp)
+                .graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 14.dp.toPx() },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            ProgressRing(size = 44.dp, strokeWidth = 4.dp)
+            FText(
+                route.name,
+                style = Fluent.type.titleLarge.copy(fontSize = 38.sp, lineHeight = 44.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), Offset(0f, 2f), 16f)),
+                color = if (c.dark) Color.White else c.text, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            FText("Getting the details from ${route.apiName}…", style = Fluent.type.caption, color = if (c.dark) Color(0xB3FFFFFF) else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             if (slow) {
-                FText("${route.apiName} is slow to answer. The page opens as soon as it does.", style = Fluent.type.caption, color = c.textTertiary)
+                FText("${route.apiName} is slow to answer. The page opens as soon as it does.", color = if (c.dark) Color(0xCCFFFFFF) else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button("Try again", retry, icon = Icons.Refresh)
                     Button("Back", { Navigator.back() })
@@ -245,19 +261,26 @@ private fun LoadingPage(route: Route.Details, retry: () -> Unit) {
 @Composable
 private fun FailurePage(route: Route.Details, message: String, retry: () -> Unit) {
     val c = Fluent.colors
-    Column(
-        Modifier.fillMaxSize().padding(gutter), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(Icons.Warning, size = 40.dp, tint = c.caution)
-        Box(Modifier.height(12.dp))
-        FText("Could not load “${route.name}”", style = Fluent.type.subtitle, maxLines = 2)
-        Box(Modifier.height(8.dp))
-        FText(message, color = c.textSecondary, maxLines = 5, modifier = Modifier.widthIn(max = 560.dp))
-        Box(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button("Try again", retry, kind = ButtonKind.Accent, icon = Icons.Refresh)
-            if (route.url.startsWith("http")) Button("Open in browser", { DesktopPlatform.openExternalBrowser(route.url) }, icon = Icons.OpenInNewWindow)
-            Button("Back", { Navigator.back() })
+    // the poster the page was opened with, soft, behind the words (the same picture the loading page had); the words and the buttons stand in the middle
+    Box(Modifier.fillMaxSize()) {
+        com.lagradost.desktop.ui.components.SoftImage(route.poster, null, Modifier.fillMaxSize(), alpha = 0.4f)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x59000000), 0.5f to Color(0x99000000), 1f to c.bg)))
+        Column(
+            Modifier.align(Alignment.Center).padding(horizontal = gutter, vertical = 40.dp).widthIn(max = 640.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.size(56.dp).background(c.card, CircleShape).hairBorder(c.stroke, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Warning, size = 26.dp, tint = c.caution)
+            }
+            FText("Could not load “${route.name}”", style = Fluent.type.titleLarge.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            FText(message, color = c.textSecondary, maxLines = 5, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.widthIn(max = 560.dp))
+            Box(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button("Try again", retry, kind = ButtonKind.Accent, icon = Icons.Refresh)
+                if (route.url.startsWith("http")) Button("Open in browser", { DesktopPlatform.openExternalBrowser(route.url) }, icon = Icons.OpenInNewWindow)
+                Button("Back", { Navigator.back() })
+            }
         }
     }
 }
@@ -452,14 +475,14 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
             }
             item(key = "trackers") { TrackerCard(sync) }
             if (tabs.isNotEmpty()) item(key = "tabs") {
-                // the part under the picture comes up a moment after it (the way NuvioDesktop lets a title page's content in)
+                // the part under the picture comes up a moment after it (a soft landing for the content of a title page)
                 Row(Modifier.reveal("details-tabs/" + route.url, 140).fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     com.lagradost.desktop.ui.fluent.UnderlineTabs(tabs.map { it.label }, tabs.indexOf(shown).coerceAtLeast(0), { tab = tabs[it] }, Modifier.weight(1f))
                     if (shown == DetailsTab.Episodes) {
                         // the season packs an extension lists among the episodes are not counted as episodes
                         val packCount = shownEpisodes.count { isSeasonPack(it) }
                         val text = if (packCount > 0 && shownEpisodes.size > packCount) "${shownEpisodes.size - packCount} episodes · $packCount season pack${if (packCount == 1) "" else "s"}" else count.str()
-                        text?.let { FText(it, color = c.textSecondary) }
+                        text?.let { FText(it, Modifier.padding(horizontal = 16.dp), color = c.textSecondary) }
                     }
                 }
             }
@@ -636,15 +659,16 @@ private fun Header(
             Modifier.fillMaxSize().fadeIntoPage(),
         ) {
             // the picture trails the page a little (parallax), under the fade at the bottom
+            // colour at once (the poster, decoded tiny) until the wide picture has come: on a slow connection the top of the page was black for seconds
+            com.lagradost.desktop.ui.components.SoftImage(poster, d.posterHeaders, Modifier.fillMaxSize(), alpha = 0.6f)
             if (backdrop != null) RemoteImage(backdrop, d.posterHeaders, null, Modifier.fillMaxSize().graphicsLayer { translationY = scroll().coerceAtMost(size.height) * 0.3f }, ContentScale.Crop, alignment = Alignment.TopCenter)
-            else com.lagradost.desktop.ui.components.SoftImage(poster, d.posterHeaders, Modifier.fillMaxSize(), alpha = 0.6f)
             // no backdrop from the extension: the poster stands at the right, sharp, instead of only a blurred tint
             if (backdrop == null && poster != null && wide) {
                 Box(Modifier.fillMaxSize().padding(end = 96.dp, top = 84.dp, bottom = 120.dp), contentAlignment = Alignment.CenterEnd) {
                     RemoteImage(poster, d.posterHeaders, d.title, Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(RoundedCornerShape(FluentShapes.card)), ContentScale.Crop)
                 }
             }
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.94f), 0.45f to Fluent.colors.bg.copy(alpha = 0.55f), 0.8f to Fluent.colors.bg.copy(alpha = 0.1f), 1f to Color.Transparent)))
+            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.artScrim.copy(alpha = 0.94f), 0.45f to Fluent.colors.artScrim.copy(alpha = 0.55f), 0.8f to Fluent.colors.artScrim.copy(alpha = 0.1f), 1f to Color.Transparent)))
             Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
         }
 
@@ -665,8 +689,9 @@ private fun Header(
                 .graphicsLayer { val s = scroll().coerceAtMost(height.toPx()); translationY = s * 0.18f; alpha = (1f - s / (height.toPx() * 0.55f)).coerceIn(0f, 1f) },
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            if (d.logoUrl != null) RemoteImage(d.logoUrl, d.posterHeaders, d.title, Modifier.height(132.dp).widthIn(max = 560.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
-            else FText(d.title, style = Fluent.type.titleLarge.copy(fontSize = 54.sp, lineHeight = 60.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = 3)
+            com.lagradost.desktop.ui.fluent.TitleMark(d.logoUrl, d.posterHeaders, d.title, 132.dp, 560.dp) {
+                FText(d.title, style = Fluent.type.titleLarge.copy(fontSize = 54.sp, lineHeight = 60.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = 3)
+            }
             // line one: when, how long, what it is, the age rating
             val facts = listOfNotNull(d.yearText.str(), d.durationText.str()?.takeIf { it.isNotBlank() } ?: tmdb?.runtime?.let { if (it >= 60) "${it / 60} h ${it % 60} min" else "$it min" }, d.typeText.str())
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -796,6 +821,8 @@ private fun ActionRow(
                 active = sub, size = 50.dp,
             )
         }
+        // download: one tap for the film or the episode Play opens (it was only in the ⋯ menu of an episode); its state and progress show on the button
+        playEpisode?.let { ep -> HeaderDownloadButton(vm, ep, if (ep.tvType.isMovieType()) "this film" else "E${ep.episode}") }
         if (hasTrailer && trailerUrls.isNotEmpty()) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { playTrailer(trailerUrls) }, size = 50.dp)
         Box {
             com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.More, "More", { moreOpen = true }, size = 50.dp)
@@ -866,7 +893,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
     val packInfo = if (pack) packParts(ep.name.orEmpty()) else null
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val lift by androidx.compose.animation.core.animateFloatAsState(if (hovered && com.lagradost.desktop.ui.fluent.Appearance.hoverZoom) 1.03f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(220))
+    val lift by androidx.compose.animation.core.animateFloatAsState(if (hovered && com.lagradost.desktop.ui.fluent.Appearance.hoverZoomOn) 1.03f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(220))
     val glow by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1f else 0f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(200))
     val shape = RoundedCornerShape(FluentShapes.card)
     val progress = if (ep.duration > 0) (ep.position.toFloat() / ep.duration).coerceIn(0f, 1f) else 0f
@@ -877,6 +904,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
             MenuItem("Reload sources", Icons.Refresh) { vm.handleAction(EpisodeClickEvent(ACTION_RELOAD_EPISODE, ep)) },
             MenuSeparator,
             MenuItem("Download", Icons.Download) { vm.handleAction(EpisodeClickEvent(ACTION_DOWNLOAD_EPISODE, ep)) },
+            MenuItem("Download from a source…", Icons.Link) { vm.handleAction(EpisodeClickEvent(com.lagradost.cloudstream3.ui.result.ACTION_DOWNLOAD_MIRROR, ep)) },
         )
     }) else ({
         listOf(
@@ -892,6 +920,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
             MenuItem("Reload sources", Icons.Refresh) { vm.handleAction(EpisodeClickEvent(ACTION_RELOAD_EPISODE, ep)) },
             MenuSeparator,
             MenuItem("Download", Icons.Download) { vm.handleAction(EpisodeClickEvent(ACTION_DOWNLOAD_EPISODE, ep)) },
+            MenuItem("Download from a source…", Icons.Link) { vm.handleAction(EpisodeClickEvent(com.lagradost.cloudstream3.ui.result.ACTION_DOWNLOAD_MIRROR, ep)) },
         )
     })
     // an episode ahead of the viewer can be shown and hidden again from its menu (right click or the three dots)
@@ -967,6 +996,8 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                         ep.score?.let { FText("★ " + it.toString(10, 1), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1) }
                     }
                 }
+                // the download of this episode, in sight (it was only in the menu beside it)
+                EpisodeDownloadButton(vm, ep, if (ep.season != null) "S${ep.season} · E${ep.episode}" else "E${ep.episode}")
                 Box {
                     var open by remember { mutableStateOf(false) }
                     com.lagradost.desktop.ui.fluent.IconButton(Icons.More, { open = true }, tooltip = "More", size = 28.dp, iconSize = 14.dp)

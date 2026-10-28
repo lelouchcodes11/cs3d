@@ -38,6 +38,7 @@ fun HistoryScreen() {
     val items = list.orEmpty()
     PosterGrid(
         items = items,
+        subtitle = { card -> com.lagradost.desktop.ui.screens.home.resumeSubtitle(card) },
         menu = { card ->
             val r = card as? DataStoreHelper.ResumeWatchingResult
             listOf(
@@ -52,7 +53,7 @@ fun HistoryScreen() {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.padding(bottom = 10.dp)) {
                     PageHeader(
-                        "History", subtitle = if (items.isEmpty()) "Nothing started yet" else "${items.size} ${if (items.size == 1) "title" else "titles"} you started and have not finished",
+                        "History", icon = Icons.History, tint = androidx.compose.ui.graphics.Color(0xFF9B7BFF), subtitle = if (items.isEmpty()) "Nothing started yet" else "${items.size} ${if (items.size == 1) "title" else "titles"} you started and have not finished",
                         trailing = {
                             Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart)
                             if (items.isNotEmpty()) Button("Clear history", {

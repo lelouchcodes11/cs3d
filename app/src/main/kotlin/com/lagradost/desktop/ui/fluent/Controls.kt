@@ -116,24 +116,30 @@ fun FText(
     overflow: TextOverflow = TextOverflow.Ellipsis,
     textAlign: TextAlign? = null,
     softWrap: Boolean = true,
+    minLines: Int = 1,
 ) {
     // a line follows the direction of its own first letter (an English title inside an Arabic page keeps its "!" at its end); in a right-to-left
     // page a line without an alignment of its own is flush right, so English and Arabic lines stand on the same edge
     val rtlPage = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    // the screens are written in English; this is the one place where their words become the language of the app
+    val shown = com.lagradost.desktop.i18n.Tr.t(text)
     BasicText(
-        // the screens are written in English; this is the one place where their words become the language of the app
-        com.lagradost.desktop.i18n.Tr.t(text),
+        shown,
         modifier,
         style = style.copy(
             color = color,
             textAlign = textAlign ?: if (rtlPage && style.textAlign == TextAlign.Unspecified) TextAlign.Right else TextAlign.Unspecified,
             textDirection = if (style.textDirection == androidx.compose.ui.text.style.TextDirection.Unspecified) androidx.compose.ui.text.style.TextDirection.Content else style.textDirection,
         ),
+        onTextLayout = if (TextAudit.on) TextAudit.watcher(shown, maxLines)!! else NoTextLayout,
         maxLines = maxLines,
+        minLines = minLines,
         overflow = overflow,
         softWrap = softWrap,
     )
 }
+
+private val NoTextLayout: (androidx.compose.ui.text.TextLayoutResult) -> Unit = {}
 
 @Composable
 fun FText(
@@ -244,6 +250,12 @@ fun FluentColors.accentBrush(hovered: Boolean = false, pressed: Boolean = false)
 
 private fun useDefaultWhitePrimary(): Boolean =
     FluentSettings.buttonColorOverride == null && Appearance.buttonStyle == ButtonStyle.White
+
+/**
+ * The default primary button is the text colour (white on the dark page, near black on the light one). Over a picture (a billboard, a hero) the picture
+ * is dark in both modes, so there it stays white; any other button style keeps its own colours.
+ */
+fun FluentColors.whiteOverArt(): Boolean = !dark && useDefaultWhitePrimary()
 
 /** Primary fill brush for main action buttons (Watch now, Play), selected chips and active pills */
 fun FluentColors.primaryFill(hovered: Boolean = false, pressed: Boolean = false): Brush = when {

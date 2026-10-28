@@ -280,7 +280,7 @@ object Tr {
         }
     }
 
-    /** The CLDR plural category of a whole number (Arabic has six, Turkish and English two) */
+    /** The CLDR plural category of a whole number (Arabic has six, Russian four, French / Portuguese / Hindi count 0 as one, Indonesian and the East Asian languages have none) */
     fun category(language: String, n: Long): String = when (language) {
         "ar" -> when {
             n == 0L -> "zero"
@@ -290,6 +290,13 @@ object Tr {
             n % 100 in 11..99 -> "many"
             else -> "other"
         }
+        "ru", "uk", "be" -> when {
+            n % 10 == 1L && n % 100 != 11L -> "one"
+            n % 10 in 2..4 && n % 100 !in 12..14 -> "few"
+            else -> "many"
+        }
+        "fr", "pt", "hi" -> if (n == 0L || n == 1L) "one" else "other"
+        "id", "ms", "ja", "ko", "zh", "vi", "th" -> "other"
         else -> if (n == 1L) "one" else "other"
     }
 

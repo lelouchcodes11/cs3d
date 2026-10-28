@@ -79,7 +79,7 @@ internal class AppCookieManager : CookieManager() {
     override fun getCookie(url: String?): String? {
         if (url == null) return null
         return try {
-            WebCookies.header(url)
+            WebCookies.freshHeader(url)
         } catch (t: Throwable) {
             null
         }
@@ -107,7 +107,7 @@ internal class AppCookieManager : CookieManager() {
 
     @Deprecated("")
     override fun removeExpiredCookie() {}
-    override fun flush() {}
+    override fun flush() { WebCookies.flush() }
 }
 
 open class WebStorage private constructor() {

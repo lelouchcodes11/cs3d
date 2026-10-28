@@ -6,8 +6,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 /**
- * Motion curves taken from the way NuvioDesktop opens things (reference/nuvio-desktop, PosterOpenMotion and DetailsContentReveal): a long, soft
- * landing for content that arrives, and a fast start with a long tail for things that grow.
+ * Motion curves for opening things: a long, soft landing for content that arrives, and a fast start with a long tail for things that grow.
  */
 object MotionCurves {
     /** content that comes in: leaves at once, settles slowly */

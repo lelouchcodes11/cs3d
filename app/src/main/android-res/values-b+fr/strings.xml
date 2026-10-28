@@ -90,7 +90,7 @@
     <string name="synopsis">Synopsis</string>
     <string name="queued">Liste d\'attente</string>
     <string name="no_subtitles">Pas de sous-titres</string>
-    <string name="action_default">Défault</string>
+    <string name="action_default">Par défaut</string>
     <string name="free_storage">Libre</string>
     <string name="used_storage">Utilisé</string>
     <string name="app_storage">Application</string>
@@ -767,4 +767,15 @@
     <string name="edit_profile_image_url">URL</string>
     <string name="edit_profile_image_picker">Choisir une image</string>
     <string name="edit_profile_image_default">Images par défaut</string>
+    <string name="auto_status_sync_all_des">Ajoute aussi à « En visionnage » les titres qui ne sont dans aucune liste quand vous les lancez. Désactivé : seuls les titres déjà dans une de vos listes sont modifiés.</string>
+    <string name="auto_status_sync_all_title">Ajouter chaque titre que je lance</string>
+    <string name="auto_status_sync_des">Fait passer un titre qui figure dans une de vos listes (À regarder, En pause, Abandonné) à « En visionnage » quand vous le lancez, et à « Terminé » quand son dernier épisode est fini, sur les services auxquels vous êtes connecté</string>
+    <string name="auto_status_sync_title">Mettre à jour le statut des listes automatiquement</string>
+    <string name="cloudflare_solvers_des">Certains sites demandent à un navigateur de prouver qu\'il n\'est pas un robot ; l\'application ouvre une page pour cela. Désactivé : aucune page n\'est jamais ouverte et ces sites ne se chargent simplement pas.</string>
+    <string name="cloudflare_solvers_title">Passer les vérifications Cloudflare</string>
+    <string name="compressor_makeup_label">Gain de compensation : +%d dB</string>
+    <string name="compressor_threshold_hint">Les sons plus forts que %d dB sont atténués</string>
+    <string name="profile_stream">Stream</string>
+    <string name="public_dns_fallback_des">Quand votre DNS (1.1.1.2, un filtre familial ou scolaire, votre fournisseur d\'accès) refuse l\'adresse d\'un site de streaming, interroger à la place des résolveurs publics (1.1.1.1, 8.8.8.8, 9.9.9.9). Corrige les sources qui échouent avec « hôte inconnu ». Désactivé : seul votre propre DNS est utilisé.</string>
+    <string name="public_dns_fallback_title">Interroger un DNS public pour les noms bloqués</string>
 </resources>

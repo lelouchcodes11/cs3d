@@ -24,13 +24,14 @@ import com.lagradost.desktop.ui.fluent.Overlays
 import kotlinx.coroutines.delay
 
 /**
- * Once a day, a few seconds after the app is up, a small window asks for a star on GitHub or a donation. Never on the very first day
- * and never over the player or the setup. There is no way to switch it off: it comes once every day, whatever was clicked before.
+ * Once every four days, a few seconds after the app is up, a small window asks for a star on GitHub or a donation. Never on the very first day
+ * and never over the player or the setup. There is no way to switch it off: it comes again four days later, whatever was clicked before.
  */
 object SupportPrompt {
     private const val NEXT_KEY = "desktop_support_next_at"
     private const val FIRST_KEY = "desktop_first_run_at"
     private const val DAY = 24 * 3_600_000L
+    private const val GAP = 4 * DAY
 
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
 
@@ -43,8 +44,8 @@ object SupportPrompt {
         now >= p.getLong(NEXT_KEY, 0L)
     }.getOrDefault(false)
 
-    /** The next window is a day away, whatever the person does with this one */
-    private fun postponeOneDay() { runCatching { prefs().edit().putLong(NEXT_KEY, System.currentTimeMillis() + DAY).apply() } }
+    /** The next window is four days away, whatever the person does with this one */
+    private fun postpone() { runCatching { prefs().edit().putLong(NEXT_KEY, System.currentTimeMillis() + GAP).apply() } }
 
     private var activeDialog: Overlays.Dialog? = null
 
@@ -75,7 +76,7 @@ object SupportPrompt {
     }
 
     fun show() {
-        postponeOneDay()
+        postpone()
         val d = Overlays.Dialog(
             title = "Enjoying CloudStream for Windows?",
             primary = "★  Star on GitHub",

@@ -48,6 +48,8 @@ internal fun generalGroups(): List<SettingGroup> {
             pref(cloudflarePreference(), "captcha bot challenge solver browser window flash popup turn off disable")
         },
         group("Window") { windowItems() },
+        group("Performance") { performanceItems() },
+        group("Security") { securityItems() },
     )
 }
 
@@ -68,6 +70,7 @@ internal fun playerGroups(): List<SettingGroup> {
         group("Video") { videoItems() },
         group("Audio") {
             pref(audioDecoderPreference(), "hardware software passthrough spdif sound")
+            pref(stableVolumePreference(), "stable volume loudness normalize level equal music dialogue speech night")
             pref(dynamicRangePreference(), "compressor loudness night volume")
         },
         group("Subtitles") {
@@ -175,14 +178,9 @@ internal fun updateGroups(): List<SettingGroup> {
 internal fun aboutGroups(): List<SettingGroup> {
     val dir = AndroidRuntime.dataDir
     return listOf(
-        group("CloudStream for Windows") {
-            val pre = if (AppInfo.isPreRelease) " (pre-release)" else ""
-            card("CloudStream for Windows", "Version ${AppInfo.version}$pre  ·  a native Windows app on the CloudStream ${BuildConfig.VERSION_NAME} engine", "version build")
-            link("Join us on Telegram", "News, new versions, help and feedback: t.me/cs3d_official", "chat community support") { DesktopPlatform.openExternalBrowser(AppInfo.TELEGRAM_URL) }
-            link("Join us on Discord", "Chat, help and ideas with other users: discord.gg/u82JU5JDM", "chat community support") { DesktopPlatform.openExternalBrowser(AppInfo.DISCORD_URL) }
-            link("Support the project (India)", "CloudStream for Windows is free. If it saves you time, a donation keeps it going: razorpay.me/@lelouch11 (UPI and cards)", "donate razorpay upi india") { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) }
-            link("Support the project (international)", "From anywhere else: buymeacoffee.com/lelouchcodes11 takes international cards", "donate buy me a coffee international") { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_INTL_URL) }
-            link("Source code and releases", "${AppInfo.REPO} on GitHub (GPL-3.0). Report problems and get new versions there.", "github license bug report") { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }
+        group("") {
+            // the name, the version and the places to go, as one card with buttons (the rows of Telegram, Discord, support and the source code were four plain lines)
+            block("CloudStream for Windows", "Version ${AppInfo.version}", "version build github source code releases bug report license telegram discord chat community support donate razorpay upi india buy me a coffee international") { AboutHero() }
             link("The CloudStream project", "This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.", "upstream credits") { DesktopPlatform.openExternalBrowser("https://github.com/recloudstream/cloudstream") }
             link("Animated profile pictures", "Drawn characters and creatures that blink and float, plus short scene clips.", "avatar character anime credits") { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }
             block("Legal notice", null, "disclaimer copyright") { PreferenceCard(Preference.PreferenceItem.InfoPreference(title = stringResource(R.string.legal_notice_text))) }
@@ -270,6 +268,22 @@ private fun subtitleEncodingPreference(): Preference.PreferenceItem.TextPreferen
         title = "Subtitle encoding",
         subtitle = SubtitleEncoding.label(),
         onClick = { com.lagradost.desktop.ui.showSubtitleEncodingDialog() },
+    )
+}
+
+/** Stable volume of Settings > Player: the same saved choice as the switch in the player's menu */
+private fun stableVolumePreference(): Preference.PreferenceItem.SwitchPreference {
+    val look = Appearance
+    return Preference.PreferenceItem.SwitchPreference(
+        preference = com.mihon.common.preference.StatePreferenceStore(look.stableVolumeState).field(get = { this }, set = { it }),
+        title = "Stable volume",
+        subtitle = "Keeps music, effects and speech at about the same loudness, so you do not reach for the volume. Does not apply to the Hardware audio output.",
+        onValueChanged = { v ->
+            look.stableVolume = v
+            look.save()
+            com.lagradost.desktop.core.ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyDynamicRange() }
+            true
+        },
     )
 }
 

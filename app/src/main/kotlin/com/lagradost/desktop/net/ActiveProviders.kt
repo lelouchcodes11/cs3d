@@ -18,6 +18,7 @@ object ActiveProviders {
         CloudflareGate.activeApis = ::names
         CloudflareGate.apisOfLoader = ::ofLoader
         CloudflareGate.apisOfHost = ::ofHost
+        CloudflareGate.managingExtensions = ::managing
     }
 
     private fun names(): Set<String>? {
@@ -31,9 +32,15 @@ object ActiveProviders {
         return out
     }
 
+    /** The Extensions or Settings page is on top: a plugin's own settings window is wanted there */
+    private fun managing(): Boolean = Navigator.stack.lastOrNull()?.route.let { it is Route.Extensions || it is Route.Settings }
+
     private fun ofLoader(loader: ClassLoader?): Set<String> {
         val file = PluginManager.pluginFileOfLoader(loader) ?: return emptySet()
-        return APIHolder.allProviders.filter { it.sourcePlugin == file }.map { it.name }.toSet()
+        val own = APIHolder.allProviders.filter { it.sourcePlugin == file }.map { it.name }.toSet()
+        // a plugin whose extensions are not registered yet is still loading: what it asks for now (AnimePahe checks its site there) is nobody's request,
+        // so it counts as an extension that is not in use (an empty answer would mean "not an extension's window: show it")
+        return own.ifEmpty { setOf("plugin:" + java.io.File(file).name) }
     }
 
     private fun ofHost(host: String): Set<String> =

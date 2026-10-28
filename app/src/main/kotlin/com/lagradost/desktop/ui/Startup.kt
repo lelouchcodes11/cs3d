@@ -100,9 +100,8 @@ fun StartupReveal(content: @Composable () -> Unit) {
             val stage = when {
                 setup -> null
                 !pm.loadedLocalPlugins -> "Loading extensions"
-                !pm.loadedOnlinePlugins && now - started < Startup.ONLINE_WAIT_MS -> "Updating extensions"
-                // smooth for 0.6 s (and a few frames drawn): nothing heavy is running on the UI thread any more
-                now - lastJank < 600 || frames < 8 -> "Getting ready"
+                !pm.loadedOnlinePlugins && now - started < Startup.ONLINE_WAIT_MS -> "Updating extensions"                // smooth for 0.5 s (and a few frames drawn): nothing heavy is running on the UI thread any more
+                now - lastJank < 500 || frames < 8 -> "Getting ready"
                 else -> null
             }
             if (stage == null) break
@@ -113,22 +112,21 @@ fun StartupReveal(content: @Composable () -> Unit) {
         android.util.Log.i("Startup", "settled after ${System.currentTimeMillis() - started} ms (local=${com.lagradost.cloudstream3.plugins.PluginManager.loadedLocalPlugins} online=${com.lagradost.cloudstream3.plugins.PluginManager.loadedOnlinePlugins} home=${homeSettled()})")
         Startup.stage = ""
         // a moment for Home to lay out its content under the loader
-        delay(300)
-        leave.animateTo(1f, tween(FluentMotion.ms(480).coerceAtLeast(1), easing = FluentMotion.standard))
+        delay(180)
+        leave.animateTo(1f, tween(FluentMotion.ms(360).coerceAtLeast(1), easing = FluentMotion.standard))
         gone = true
         Startup.revealed.complete(Unit)
     }
     Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier.fillMaxSize().graphicsLayer {
-                val l = leave.value
-                alpha = l
-                val s = 0.985f + 0.015f * l
-                scaleX = s; scaleY = s
-            },
-        ) { content() }
+        // The app is not drawn while the loader is up; when the reveal begins it is drawn as it is (no alpha, no scale: a whole-window layer that
+        // fades in and grows a little was two off-screen passes per frame and soft text, which a weak graphics chip showed as stutter and flicker)
+        // and the loader, a plain colour with the logo, fades away over it
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (leave.value > 0f) 1f else 0f }) { content() }
         if (!gone) {
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - leave.value }.background(c.bg), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxSize().graphicsLayer { alpha = 1f - leave.value; compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha }.background(c.bg),
+                contentAlignment = Alignment.Center,
+            ) {
                 val accent = c.accent
                 val track = c.text.copy(alpha = 0.10f)
                 val motion = rememberInfiniteTransition()

@@ -35,7 +35,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     }
 
     open fun show(manager: FragmentManager, tag: String?) {
-        if (skipRepeatedChallenge()) return
+        if (skipRepeatedChallenge { show(manager, tag) }) return
         mDismissed = false
         mShownByMe = true
         val ft = manager.beginTransaction()
@@ -45,7 +45,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     }
 
     open fun show(transaction: FragmentTransaction, tag: String?): Int {
-        if (skipRepeatedChallenge()) return -1
+        if (skipRepeatedChallenge(null)) return -1
         mDismissed = false
         mShownByMe = true
         transaction.add(this, tag)
@@ -53,7 +53,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     }
 
     open fun showNow(manager: FragmentManager, tag: String?) {
-        if (skipRepeatedChallenge()) return
+        if (skipRepeatedChallenge { showNow(manager, tag) }) return
         mDismissed = false
         mShownByMe = true
         val ft = manager.beginTransaction()
@@ -145,6 +145,33 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
         super.performStart()
         val d = mDialog
         if (d != null && !mDismissed) {
+            // an extension's window that is not the one in use (added to the fragment manager directly, not through show()): never put on the screen
+            val gate = com.lagradost.desktop.runtime.web.CloudflareGate
+            val refuse = if (isChallengeDialog()) !gate.solversOn || !gate.inUseOwner(javaClass) else gate.refuseIdlePopup(javaClass)
+            if (refuse) {
+                // a Cloudflare window of an extension the user is not using yet is held until they do (see skipRepeatedChallenge), not dropped
+                if (isChallengeDialog() && gate.solversOn) {
+                    val held = gate.holdUntilInUse(javaClass, HOLD_MS) { inUse ->
+                        when {
+                            mDismissed || mDialog == null -> {}
+                            // its page runs hidden meanwhile and often passes the check by itself (AnimePahe's does): then there is nothing left to show
+                            inUse && challengeOver() -> { Log.i("DialogFragment", "${javaClass.simpleName}: the held Cloudflare check passed by itself, no window"); dismissAllowingStateLoss() }
+                            inUse -> { Log.i("DialogFragment", "${javaClass.simpleName}: the extension is in use now, the held Cloudflare window is shown"); mDialog?.show(); watchChallenge() }
+                            else -> onDismiss(object : DialogInterface { override fun cancel() {}; override fun dismiss() {} })
+                        }
+                    }
+                    if (held) {
+                        Log.i("DialogFragment", "${javaClass.simpleName}: not the extension in use yet, the Cloudflare window is held until it is (at most ${HOLD_MS / 60_000} minutes)")
+                        return
+                    }
+                }
+                Log.i("DialogFragment", "${javaClass.simpleName} is not shown: the extension is not the one in use")
+                onDismiss(object : DialogInterface {
+                    override fun cancel() {}
+                    override fun dismiss() {}
+                })
+                return
+            }
             d.show()
             if (isChallengeDialog()) watchChallenge()
         }
@@ -174,6 +201,8 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
 
     private fun isChallengeDialog(): Boolean = javaClass.name.let { it.contains("Cloudflare", ignoreCase = true) || it.contains("CFBypass", ignoreCase = true) || it.contains("CFWebView", ignoreCase = true) }
 
+    private val HOLD_MS = 3 * 60_000L
+
     private object Challenges {
         @Volatile var open = 0
         @Volatile var endedAt = 0L
@@ -182,8 +211,36 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     }
 
     /** A sheet asked for within two minutes of the last one's end is not shown: the extension is told (its onDismiss) that there are no cookies */
-    private fun skipRepeatedChallenge(): Boolean {
-        if (!isChallengeDialog()) return false
+    private fun skipRepeatedChallenge(retry: (() -> Unit)?): Boolean {
+        if (isChallengeDialog() && retry != null) {
+            // asked for before the user is using that extension (AnimePahe checks its site while it loads): held until it is in use, then shown. Dropping it at once made
+            // the extension believe the user had dismissed it and refuse to ask again for a while, so the window never came when the user did switch to it
+            val gate = com.lagradost.desktop.runtime.web.CloudflareGate
+            if (gate.solversOn && !gate.inUseOwner(javaClass)) {
+                val held = gate.holdUntilInUse(javaClass, HOLD_MS) { inUse ->
+                    when {
+                        mDismissed -> {} // the extension gave the window up itself meanwhile
+                        inUse -> { Log.i("DialogFragment", "${javaClass.simpleName}: the extension is in use now, the held Cloudflare window is shown"); retry() }
+                        else -> { mDismissed = true; onDismiss(object : DialogInterface { override fun cancel() {}; override fun dismiss() {} }) }
+                    }
+                }
+                if (held) {
+                    Log.i("DialogFragment", "${javaClass.simpleName}: not the extension in use yet, the Cloudflare window is held until it is (at most ${HOLD_MS / 60_000} minutes)")
+                    return true
+                }
+            }
+        }
+        if (!isChallengeDialog()) {
+            // a window of an extension that is not the one in use and that nobody asked for (a donation popup): not shown, the extension is told it was dismissed
+            val gate = com.lagradost.desktop.runtime.web.CloudflareGate
+            if (!gate.refuseIdlePopup(gate.callingPluginClass() ?: javaClass)) return false
+            mDismissed = true
+            onDismiss(object : DialogInterface {
+                override fun cancel() {}
+                override fun dismiss() {}
+            })
+            return true
+        }
         val off = !com.lagradost.desktop.runtime.web.CloudflareGate.solversOn || !com.lagradost.desktop.runtime.web.CloudflareGate.inUseOwner(javaClass)
         if (off || Challenges.open == 0 && System.currentTimeMillis() - Challenges.endedAt < Challenges.QUIET_MS) {
             Log.i("DialogFragment", "${javaClass.simpleName}: " + if (off) "the Cloudflare solvers are off or this is not the extension in use, not shown" else "asked again so soon after the last one, not shown")
@@ -210,6 +267,12 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
         if (v is android.webkit.WebView) return v
         if (v is ViewGroup) for (i in 0 until v.getChildCount()) findWebView(v.getChildAt(i))?.let { return it }
         return null
+    }
+
+    /** The page of the sheet has a real title (not "Just a moment"): the check is over (an empty title: the page has not come up yet, the check is still on) */
+    private fun challengeOver(): Boolean {
+        val title = findWebView(getView())?.getTitle().orEmpty().trim().lowercase()
+        return title.isNotEmpty() && Challenges.TITLES.none { title.contains(it) }
     }
 
     /** The page is no challenge any more (the extension's own check missed it): the sheet is closed after a few quiet seconds, at the latest this way */

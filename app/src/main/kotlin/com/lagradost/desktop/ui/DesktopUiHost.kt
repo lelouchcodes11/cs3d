@@ -51,6 +51,9 @@ class DesktopUiHost : UiHost {
         /** Android dialogs currently shown, rendered by the compose dialog host */
         val androidDialogs = mutableStateListOf<Dialog>()
 
+        /** Dialogs asked for while a page dialog is open (or the other way round): they come up one after the other */
+        private val waiting = ArrayDeque<Dialog>()
+
         /** Back / Esc for the topmost Android dialog: it cancels itself when it is cancelable; true when there was one */
         fun closeTopAndroidDialog(): Boolean {
             val dialog = androidDialogs.lastOrNull { it.isShowing() } ?: return false
@@ -94,9 +97,24 @@ class DesktopUiHost : UiHost {
         Snackbars.remove(bar)
     }
 
-    override fun openUrl(url: String): Boolean = DesktopPlatform.openExternalBrowser(url)
+    override fun openUrl(url: String): Boolean {
+        // an extension may open a web page or a mail address, not a file or a program (Desktop.browse starts the program a file:// address belongs to)
+        val extension = com.lagradost.desktop.sandbox.PluginSandbox.extensionOnStack()
+        if (extension != null) {
+            val scheme = runCatching { java.net.URI(url.trim()).scheme?.lowercase() }.getOrNull()
+            if (scheme != "http" && scheme != "https" && scheme != "mailto") com.lagradost.desktop.sandbox.PluginSandbox.refuse(extension, "open the address $url")
+        }
+        return com.lagradost.desktop.sandbox.SandboxGate.run(java.util.function.Supplier { DesktopPlatform.openExternalBrowser(url) })
+    }
 
     override fun startActivity(intent: Intent): Boolean {
+        // An extension can ask for a page, a file or the clipboard. The app does these for it, and for safe things only: the extension's own rights stop
+        // at the sandbox (see PluginSandbox), so the work is done as the app's own (SandboxGate) after the extension was found out and its request judged below.
+        val extension = com.lagradost.desktop.sandbox.PluginSandbox.extensionOnStack()
+        return com.lagradost.desktop.sandbox.SandboxGate.run(java.util.function.Supplier { startActivityAsApp(intent, extension) })
+    }
+
+    private fun startActivityAsApp(intent: Intent, extension: String?): Boolean {
         Log.d(TAG, "startActivity $intent")
         val action = intent.action
         val data = intent.dataString
@@ -152,7 +170,10 @@ class DesktopUiHost : UiHost {
                     }
                     if (handled) return true
                     if (scheme == "file") {
-                        return DesktopPlatform.openFile(File(intent.data!!.path!!))
+                        val file = File(intent.data!!.path!!)
+                        // a program, a script or a shortcut is run when it is opened: an extension may only ask for passive files (media, subtitles, pictures, documents)
+                        if (extension != null && !com.lagradost.desktop.sandbox.SafeOpen.isPassive(file)) com.lagradost.desktop.sandbox.PluginSandbox.refuse(extension, "open the file ${file.name}")
+                        return DesktopPlatform.openFile(file)
                     }
                 }
             }
@@ -189,14 +210,21 @@ class DesktopUiHost : UiHost {
         EventQueue.invokeLater {
             // desktop: the native UI shows simple Android dialogs (message, buttons, plain lists) as Fluent dialogs
             if (com.lagradost.desktop.core.NativeUi.active && FluentAlerts.show(dialog)) return@invokeLater
-            if (!androidDialogs.contains(dialog)) androidDialogs.add(dialog)
+            if (androidDialogs.contains(dialog) || waiting.contains(dialog)) return@invokeLater
+            // a page in a dialog (a Cloudflare check) is a window of its own that is drawn above everything: it may not share the screen with another
+            // dialog (the donation popup of an extension under it showed through it as a smear), the second one waits for the first
+            if (androidDialogs.isNotEmpty() && (holdsPage(dialog) || androidDialogs.any { holdsPage(it) })) waiting.addLast(dialog) else androidDialogs.add(dialog)
         }
     }
 
+    private fun holdsPage(dialog: Dialog) = com.lagradost.desktop.runtime.web.CloudflareGate.hasWebView(dialog.getWindow().getDecorView())
+
     override fun dismissDialog(dialog: Dialog) {
         EventQueue.invokeLater {
+            waiting.remove(dialog)
             androidDialogs.remove(dialog)
             FluentAlerts.dismiss(dialog)
+            if (androidDialogs.isEmpty()) waiting.removeFirstOrNull()?.let { if (it.isShowing()) androidDialogs.add(it) }
         }
     }
 

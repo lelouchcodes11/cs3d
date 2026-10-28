@@ -37,7 +37,13 @@ open class MpvPlayer : IPlayer {
         private const val STREAM_SUB_SHIFT_MS = 850L
 
         /** A live seek stops this far (s) before the newest buffered picture: a reserve for segments that come late */
-        private const val LIVE_MARGIN_S = 6.0
+        const val LIVE_MARGIN_S = 6.0
+
+        /** A live DASH channel's window is the manifest's when it lists at least this much (s) */
+        const val DVR_MIN_LISTED_S = 45.0
+
+        /** The last seconds of what a live DASH manifest lists (the oldest) are not offered: they drop out while the channel is opened there */
+        const val DVR_START_MARGIN_S = 20.0
 
         /** A live channel waiting this long for data is opened again (ms) */
         private const val LIVE_STALL_MS = 12_000L
@@ -348,8 +354,8 @@ open class MpvPlayer : IPlayer {
             mpv.mpv_set_option_string(ctx, "hwdec", "auto-copy-safe")
         }
         mpv.mpv_set_option_string(ctx, "audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
-        // the compressor of the settings (Off leaves the sound alone)
-        com.lagradost.desktop.ui.fluent.Appearance.dynamicRange.filter.takeIf { it.isNotEmpty() && !headless }?.let { mpv.mpv_set_option_string(ctx, "af", it) }
+        // stable volume and the compressor of the settings (both off leaves the sound alone)
+        com.lagradost.desktop.ui.fluent.Appearance.audioFilter.takeIf { it.isNotEmpty() && !headless }?.let { mpv.mpv_set_option_string(ctx, "af", it) }
         if (headless) mpv.mpv_set_option_string(ctx, "ao", "null")
         mpv.mpv_set_option_string(ctx, "keep-open", "yes")
         mpv.mpv_set_option_string(ctx, "idle", "yes")
@@ -556,6 +562,7 @@ open class MpvPlayer : IPlayer {
                     val posSec = data.getDouble(0)
                     val posMs = (posSec * 1000).toLong()
                     currentPositionMs = posMs
+                    if (dvrPending && liveStream) calibrateDvr(posSec)
                     // time-pos changes every frame; the UI gets position updates about every 250 ms or on jumps
                     if (kotlin.math.abs(posMs - lastPostedPositionMs) >= 250) {
                         postEvent(PositionEvent(PlayerEventSource.Player, lastPostedPositionMs, posMs, currentDurationMs))
@@ -668,7 +675,7 @@ open class MpvPlayer : IPlayer {
         }
     }
 
-    fun debugState(): String = "fileLoaded=$fileLoaded firstFrame=$firstFrameLogged paused=$isPaused buffering=$isBuffering ended=$isEnded startMs=$startPositionMs mpvStart=${getMpvPropertyString("start")} timePos=${getMpvPropertyString("time-pos")} eof=${getMpvPropertyString("eof-reached")} cacheEnd=${getMpvPropertyString("demuxer-cache-time")} url=${currentLink?.url?.take(50)}"
+    fun debugState(): String = "fileLoaded=$fileLoaded duration=${getMpvPropertyString("duration")} proxyEnd=${playingAddress?.let { HlsProxy.liveEndSeconds(it) }} firstFrame=$firstFrameLogged paused=$isPaused buffering=$isBuffering ended=$isEnded startMs=$startPositionMs mpvStart=${getMpvPropertyString("start")} timePos=${getMpvPropertyString("time-pos")} eof=${getMpvPropertyString("eof-reached")} cacheEnd=${getMpvPropertyString("demuxer-cache-time")} url=${currentLink?.url?.take(50)}"
 
     private var lastStatus: CSPlayerLoading = CSPlayerLoading.IsBuffering
     private fun updateStatus() {
@@ -713,8 +720,8 @@ open class MpvPlayer : IPlayer {
     /** A new audio decoder choice (SW / HW / HW+) while a video plays: mpv reopens the sound in place, the position stays */
     fun applyAudioDecoder() = setMpvProperty("audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
 
-    /** A new compressor preset while a video plays: the audio filter chain is replaced (an empty value takes it away), the position stays */
-    fun applyDynamicRange() = setMpvProperty("af", com.lagradost.desktop.ui.fluent.Appearance.dynamicRange.filter)
+    /** A new compressor preset or Stable volume switch while a video plays: the audio filter chain is replaced (an empty value takes it away), the position stays */
+    fun applyDynamicRange() = setMpvProperty("af", com.lagradost.desktop.ui.fluent.Appearance.audioFilter)
 
     /** A new upscaling mode (scaling filters and shader chain) while a video plays: the picture is redrawn with it at once, the position stays */
     fun applyUpscaler() {
@@ -784,6 +791,7 @@ open class MpvPlayer : IPlayer {
     }
 
     override fun seekTo(time: Long, source: PlayerEventSource) {
+        if (liveStream && dvr != null && com.lagradost.desktop.ui.fluent.Appearance.liveWindow) return dvrSeek(time / 1000.0)
         val target = if (liveStream) liveTarget(time / 1000.0) else time / 1000.0
         mpvCommand("seek", String.format(java.util.Locale.ROOT, "%.3f", target), "absolute")
     }
@@ -819,13 +827,124 @@ open class MpvPlayer : IPlayer {
     }
 
     /**
+     * The stretch of a live stream that playback can be moved in, in mpv seconds. A live HLS playlist lists what the channel keeps (20 s on some channels,
+     * 10 minutes on others, whatever the channel says) and ffmpeg's HLS demuxer seeks anywhere in it, so for HLS the window is the playlist's own: it ends
+     * where mpv's duration ends and is as long as the playlist ([HlsProxy.windowSeconds]); it slides on as the channel goes on, new pictures at the end,
+     * old ones dropped at the start. The oldest few seconds ([LIVE_MARGIN_S], at most a tenth of the window) are left out (they drop out while a seek there is being made). For other live streams
+     * (DASH, whose demuxer cannot seek in a live manifest) it is what mpv has buffered, see [liveRange].
+     */
+    fun liveWindow(): Pair<Double, Double>? {
+        val address = playingAddress
+        // a DASH channel that is being opened again at another point has no clock yet: the session keeps the window it had
+        if (dvrPending && address != null && DashProxy.isLive(address)) return null
+        dvr?.let { d ->
+            // a DASH channel: the manifest's whole window, however much of it the player holds (see [Dvr])
+            if (com.lagradost.desktop.ui.fluent.Appearance.liveWindow) {
+                val edge = currentPositionMs / 1000.0 + dvrBehind(d)
+                liveWindowSliding = true
+                // the oldest 20 s are not offered: a seek there opens the channel at the start of what the manifest lists, and those segments drop out while it opens
+                return (edge - (d.listed - DVR_START_MARGIN_S)) to edge
+            }
+        }
+        liveWindowSliding = address != null && HlsProxy.isLive(address) && com.lagradost.desktop.ui.fluent.Appearance.liveWindow && getMpvPropertyString("seekable") == "yes"
+        if (com.lagradost.desktop.ui.fluent.Appearance.liveWindow && address != null && HlsProxy.isLive(address) && getMpvPropertyString("seekable") == "yes") {
+            // the player's duration is only as far as it has read: a channel opened behind its live edge reports a minute where the live edge is minutes on,
+            // so the end is also taken from the playlists themselves (the later of the two)
+            val end = listOfNotNull(getMpvPropertyString("duration")?.toDoubleOrNull(), HlsProxy.liveEndSeconds(address)).maxOrNull()
+            val length = HlsProxy.windowSeconds(address)
+            if (end != null && length != null && end > 0 && length > LIVE_MARGIN_S * 3) return maxOf(0.0, end - length + minOf(LIVE_MARGIN_S, length * 0.1)) to end
+        }
+        val range = liveRange() ?: return null
+        // a DASH channel can only be rewound as far as the player has loaded (its reader cannot seek in a live manifest). The player keeps what it loaded, which can be more
+        // than the channel keeps: the window then slides on at the length the channel keeps (old pictures go off the start as new ones come at the end), as on the phone
+        val kept = if (com.lagradost.desktop.ui.fluent.Appearance.liveWindow && address != null) DashProxy.windowSeconds(address) else 0.0
+        if (kept > LIVE_MARGIN_S * 3 && range.second - range.first > kept) return (range.second - kept) to range.second
+        return range
+    }
+
+    /**
+     * The next live HLS channel that is opened starts this far (s) behind its live edge, or at its oldest picture when it keeps less (0: where its player starts, about
+     * three segments behind). Set by the session for the source of a live channel that was changed; used once. DASH channels always start 30 s behind (DashLiveStart).
+     */
+    @Volatile
+    var liveStartBehindS = 0.0
+
+    /**
+     * A live DASH channel keeps a window of the past (a minute, ten minutes, an hour: what its manifest lists) but ffmpeg's DASH reader cannot seek in a live
+     * manifest, so the player itself only holds a little of it (the part it has read, a bounded amount: [demuxer-max-back-bytes] and a minute ahead). The window
+     * is the manifest's, and a seek inside what the player holds is a plain seek; a seek outside it opens the stream again at that point (the manifest handed to
+     * the player is cut there, see [DashLiveStart]), as the phone's player jumps to another part of a long window.
+     *
+     * How far playback is behind the live edge is worked out from the clock: it was [behind0] at [pos0] (the first picture, the manifest says where it is and
+     * how far the edge is), it grows by the time that passes and shrinks by the stream that is played: behind = behind0 + (time since) - (position - pos0).
+     */
+    private class Dvr(val t0: Long, val pos0: Double, val behind0: Double, val listed: Double)
+
+    @Volatile
+    private var dvr: Dvr? = null
+
+    @Volatile
+    private var dvrPending = false
+
+    /** Counts the times a live channel was opened at a new place (and its clock set): the session waits for it after a seek that opens the channel again */
+    @Volatile
+    var liveLanded = 0
+        private set
+
+    /** The window slides (its start goes off as new pictures come at its end): an HLS playlist or a DASH manifest, not the player's own memory */
+    @Volatile
+    var liveWindowSliding = false
+        private set
+
+    private fun dvrBehind(d: Dvr): Double = d.behind0 + (System.nanoTime() - d.t0) / 1e9 - (currentPositionMs / 1000.0 - d.pos0)
+
+    /** At the first picture of a live DASH channel: where it is behind the edge, from what the manifest says */
+    private fun calibrateDvr(pos: Double) {
+        dvrPending = false
+        if (!com.lagradost.desktop.ui.fluent.Appearance.liveWindow) return
+        val address = playingAddress ?: return
+        if (!DashProxy.isLive(address)) return
+        val first = DashProxy.firstKeptSeconds(address) ?: return
+        val edge = DashProxy.edgeSeconds(address) ?: return
+        val listed = DashProxy.windowSeconds(address)
+        // a manifest that lists less than this is the player's own memory (a minute: the start is 30 s inside it anyway)
+        if (listed < DVR_MIN_LISTED_S) return
+        dvr = Dvr(System.nanoTime(), pos, (edge - first).coerceAtLeast(0.0), listed)
+        liveLanded++
+        Log.i(TAG, "live DVR: the channel keeps ${listed.toInt()} s, the picture begins ${"%.1f".format(edge - first)} s behind its edge")
+    }
+
+    /** A seek in a live DASH channel to [wanted] (the player's clock): inside what the player holds it is a seek, outside it the stream is opened at that point */
+    private fun dvrSeek(wanted: Double) {
+        val d = dvr ?: return
+        val target = liveTarget(wanted)
+        val pos = currentPositionMs / 1000.0
+        val range = liveRange()
+        if (range != null && target >= range.first + 0.5 && target <= range.second - 1.0) {
+            mpvCommand("seek", String.format(java.util.Locale.ROOT, "%.3f", target), "absolute")
+            return
+        }
+        // the manifest gives no picture closer to its start than this (and none closer than 15 s to its edge)
+        val behindWanted = (dvrBehind(d) + (pos - target)).coerceIn(15.0, maxOf(15.0, d.listed - DVR_START_MARGIN_S))
+        Log.i(TAG, "live DVR: ${"%.0f".format(behindWanted)} s behind live is not in the player's memory: opening the channel there")
+        val link = currentLink
+        val ctx = currentContext
+        if (link == null || ctx == null) return
+        liveStartBehindS = behindWanted
+        mainHandler.post { loadPlayer(ctx, true, link, currentUri, null, activeSubtitles, preferredSubtitle, !userPaused, false) }
+    }
+
+    /** The segment length (s) a live HLS channel declares: its player starts about three of them behind the live edge, so that is "live" for it */
+    fun liveSegmentSeconds(): Double? = playingAddress?.let { HlsProxy.targetSeconds(it) }
+
+    /**
      * Where a seek in a live stream may go. ffmpeg cannot seek in live DASH/HLS (its seek answers "not supported"), so mpv can
      * only move inside what it has buffered; a target past that (+1 min on a channel whose buffer is 20 s) left the demuxer
      * stuck for good, and a target right at the end of the buffer played at the live edge with nothing in reserve (stalls,
      * picture and sound drifting apart). The target stays inside the buffer and [LIVE_MARGIN_S] short of its end.
      */
     private fun liveTarget(wanted: Double): Double {
-        val (start, end) = liveRange() ?: return currentPositionMs / 1000.0
+        val (start, end) = liveWindow() ?: return currentPositionMs / 1000.0
         val low = start + 0.3
         val high = maxOf(low, if (end - LIVE_MARGIN_S > low) end - LIVE_MARGIN_S else (start + end) / 2)
         val target = wanted.coerceIn(low, high)
@@ -836,12 +955,12 @@ open class MpvPlayer : IPlayer {
     /** Live: back to the newest picture (as close to the live point as the buffer allows) */
     fun goLive() {
         if (!liveStream) return
-        val range = liveRange() ?: return
+        val range = liveWindow() ?: return
         seekTo((range.second * 1000).toLong(), PlayerEventSource.UI)
     }
 
     /** How far (s) playback is behind the newest buffered picture of a live stream */
-    fun liveLatency(): Double? = if (!liveStream) null else liveRange()?.let { (it.second - currentPositionMs / 1000.0).coerceAtLeast(0.0) }
+    fun liveLatency(): Double? = if (!liveStream) null else liveWindow()?.let { (it.second - currentPositionMs / 1000.0).coerceAtLeast(0.0) }
 
     // a live channel that waits for data for this long is opened again at the live point (a stuck demuxer never recovers)
     @Volatile
@@ -1100,7 +1219,7 @@ open class MpvPlayer : IPlayer {
                         putAll(link.headers)
                         if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
                     }
-                    if (isDash(link)) DashProxy.wrap(address, sent, dashCap[link.url] ?: System.getProperty("cloudstream.dashcap")?.toLongOrNull() ?: 0L) else HlsProxy.wrap(address, sent, videoInterceptor(link)).also { hlsAddress = it }
+                    if (isDash(link)) DashProxy.wrap(address, sent, dashCap[link.url] ?: System.getProperty("cloudstream.dashcap")?.toLongOrNull() ?: 0L, liveStartBehindS.also { liveStartBehindS = 0.0 }) else HlsProxy.wrap(address, sent, videoInterceptor(link), liveStartBehindS.also { liveStartBehindS = 0.0 }).also { hlsAddress = it }
                 } else address
             }
             data != null -> data.uri.toString()
@@ -1123,6 +1242,8 @@ open class MpvPlayer : IPlayer {
             )
         }
         liveStream = false
+        dvr = null
+        dvrPending = true
 
         if (url != null) {
             // the start position is an option of the file that opens next: a seek sent right after loadfile is lost
@@ -1212,7 +1333,8 @@ open class MpvPlayer : IPlayer {
             link = currentLink,
             data = currentUri,
             // before the file opened there is no position yet: carry on from where this load was meant to start
-            startPosition = if (fileLoaded && currentPositionMs > 0) currentPositionMs else startPositionMs,
+            // (a live channel carries on live: a position on its old clock is somewhere in the past of the new one)
+            startPosition = if (liveStream) null else if (fileLoaded && currentPositionMs > 0) currentPositionMs else startPositionMs,
             subtitles = activeSubtitles,
             subtitle = preferredSubtitle,
             autoPlay = !userPaused,

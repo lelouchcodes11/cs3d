@@ -39,8 +39,23 @@ object ExtensionIcons {
             refreshInstalled()
             version.intValue++
             // then the repositories (a request each), only when an installed plugin has no icon yet
-            val missing = fileToUrl.values.any { byUrl[it] == null }
-            if (missing) runCatching {
+            fetchMissing(force = true)
+        }
+    }
+
+    private var lastRepoFetch = 0L
+
+    /**
+     * Asks the repositories for the icons of the installed plugins that have none yet. At the start, and again when a plugin is installed during the run (it
+     * had no icon in the list of extensions until the next start): at most every 20 s, and only when a plugin lacks its icon.
+     */
+    private fun fetchMissing(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastRepoFetch < 20_000) return
+        if (fileToUrl.values.none { byUrl[it] == null }) return
+        lastRepoFetch = now
+        scope.launch {
+            runCatching {
                 for (repo in RepositoryManager.getRepositories()) {
                     RepositoryManager.getRepoPlugins(repo)?.forEach { w -> w.plugin.iconUrl?.takeIf { it.isNotBlank() }?.let { byUrl[w.plugin.url] = it } }
                 }
@@ -75,6 +90,8 @@ object ExtensionIcons {
         version.intValue // read: redraws when icons arrive
         // a plugin that is not from a repository (a local file) stays unknown: ask the plugin list again at most every 3 s, not at every draw
         val url = fileToUrl[filePath] ?: run { if (System.currentTimeMillis() - lastRefresh > 3_000) refreshInstalled(); fileToUrl[filePath] } ?: return null
+        // a plugin installed during this run is not in the icon list yet: the repositories are asked again (not at every draw)
+        if (byUrl[url] == null) fetchMissing()
         return byUrl[url]?.let { sharper(it) }
     }
 

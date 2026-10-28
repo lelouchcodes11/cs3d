@@ -52,6 +52,20 @@ class TrTest {
         assertEquals("many", Tr.category("ar", 111))
         assertEquals("one", Tr.category("tr", 1))
         assertEquals("other", Tr.category("tr", 2))
+        // Russian: 1, 21, 101 one; 2-4, 22-24 few; 0, 5-20, 25-30, 11-14 many
+        assertEquals("one", Tr.category("ru", 21))
+        assertEquals("few", Tr.category("ru", 3))
+        assertEquals("few", Tr.category("ru", 102))
+        assertEquals("many", Tr.category("ru", 0))
+        assertEquals("many", Tr.category("ru", 11))
+        assertEquals("many", Tr.category("ru", 14))
+        assertEquals("many", Tr.category("ru", 25))
+        // French, Portuguese and Hindi count 0 as one; Indonesian has no plural
+        assertEquals("one", Tr.category("fr", 0))
+        assertEquals("other", Tr.category("fr", 2))
+        assertEquals("one", Tr.category("pt", 0))
+        assertEquals("one", Tr.category("hi", 1))
+        assertEquals("other", Tr.category("id", 1))
     }
 
     @Test
@@ -78,19 +92,38 @@ class TrTest {
 
     @Test
     fun theRealCatalogIsConsistent() {
-        for (language in listOf("ar", "tr")) {
+        for (language in listOf("ar", "tr", "es", "hi", "fr", "de", "pt", "ru", "id")) {
             val catalog = assertNotNull(Tr.Catalog.load(language), "no catalog for $language")
             assertTrue(catalog.exact.size > 800, "$language: only ${catalog.exact.size} exact lines")
             assertTrue(catalog.templates.size > 60, "$language: only ${catalog.templates.size} templates")
-            assertEquals("المكتبة".takeIf { language == "ar" } ?: "Kütüphane", catalog.translate("Library"))
+            assertEquals(mapOf("ar" to "المكتبة", "tr" to "Kütüphane", "es" to "Biblioteca", "hi" to "लाइब्रेरी", "fr" to "Bibliothèque", "de" to "Bibliothek", "pt" to "Biblioteca", "ru" to "Библиотека", "id" to "Pustaka")[language], catalog.translate("Library"))
         }
+    }
+
+    @Test
+    fun theSandboxAndPerformanceMessagesAreTranslatedPieceByPiece() {
+        for (language in listOf("ar", "tr", "es", "hi", "fr", "de", "pt", "ru", "id")) {
+            val c = assertNotNull(Tr.Catalog.load(language), "no catalog for $language")
+            for (text in listOf(
+                "Foo was stopped from trying to run the program C:/x/cmd.exe. See Settings > General > Security.",
+                "Stopped: end the app",
+                "Would be stopped: read the file C:/Users/me/a.txt",
+                "This PC: 7.9 GB memory, 8 processor threads.",
+                "In use now: DIRECT3D",
+                "The sandbox is on.",
+                "Controls stay on screen (C to let them hide)",
+            )) assertTrue(c.translate(text) != text, "$language: not translated: $text")
+        }
+        val es = assertNotNull(Tr.Catalog.load("es"))
+        assertEquals("Se impidió que Foo intentara ejecutar el programa C:/x/cmd.exe. Consulta Ajustes > General > Seguridad.", es.translate("Foo was stopped from trying to run the program C:/x/cmd.exe. See Settings > General > Security."))
+        assertEquals("Detenido: cerrar la aplicación", es.translate("Stopped: end the app"))
     }
 
     @Test
     fun everyRowOfTheTableHasTheSamePiecesInEveryLanguage() {
         val text = Tr::class.java.classLoader.getResourceAsStream("i18n/strings.tsv")!!.use { it.readBytes().toString(Charsets.UTF_8) }
         val header = text.lineSequence().first { it.isNotBlank() && !it.startsWith("#") }.split('\t')
-        assertEquals(listOf("en", "ar", "tr"), header.take(3))
+        assertEquals(listOf("en", "ar", "tr", "es", "hi", "fr", "de", "pt", "ru", "id"), header.take(10))
         val index = Regex("""\{(\d+)[,}]""")
         val seen = HashSet<String>()
         var rows = 0

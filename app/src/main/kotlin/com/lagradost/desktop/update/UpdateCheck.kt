@@ -371,7 +371,8 @@ object UpdateCheck {
                 secondary = if (canInstall) "Download in browser" else "Release page",
                 onSecondary = { if (canInstall) downloadInBrowser(release) else DesktopPlatform.openExternalBrowser(release.pageUrl) },
                 close = "Later",
-                width = 520.dp,
+                // 520 dp cut "Download in browser" to "Download in brow..." on the middle button
+                width = 620.dp,
             ) { dismiss -> UpdateBody(release, canInstall, dismiss) },
         )
     }

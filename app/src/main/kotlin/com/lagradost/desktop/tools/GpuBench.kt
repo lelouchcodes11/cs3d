@@ -23,6 +23,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.lagradost.desktop.ui.fluent.hairBorder
 import com.lagradost.cloudstream3.SearchQuality
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
@@ -114,6 +115,43 @@ fun GpuBenchLayer() {
                     val bmp = androidx.compose.runtime.remember(f) { f.inputStream().use { loadImageBitmap(it) } }
                     Image(bmp, null, Modifier.width(190.dp).height(285.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
                 }
+            }
+            // one decoration of a card at a time over the same pictures, to see which first draw costs what: grad = the card's gradient behind the picture,
+            // text = a title and a line under it, icon = the placeholder glyph and a title in the card, border = the top-lit hairline, overlay = the small dark labels
+            "grad", "text", "icon", "border", "overlay" -> Row(Modifier.padding(24.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                val c = com.lagradost.desktop.ui.fluent.Fluent.colors
+                val shape = RoundedCornerShape(8.dp)
+                t.files.forEachIndexed { i, f ->
+                    val bmp = androidx.compose.runtime.remember(f) { f.inputStream().use { loadImageBitmap(it) } }
+                    Column(Modifier.width(190.dp)) {
+                        var box = Modifier.width(190.dp).height(285.dp).clip(shape)
+                        if (t.mode == "grad") box = box.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.cardHover, c.card)))
+                        if (t.mode == "border") box = box.hairBorder(com.lagradost.desktop.ui.fluent.depthEdge(1f), shape)
+                        Box(box) {
+                            if (t.mode == "icon") Column(Modifier.align(androidx.compose.ui.Alignment.Center).padding(horizontal = 14.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                                com.lagradost.desktop.ui.fluent.Icon(com.lagradost.desktop.ui.fluent.Icons.Video, size = 24.dp, tint = c.textDisabled)
+                                com.lagradost.desktop.ui.fluent.FText("Poster $i of a test row", style = com.lagradost.desktop.ui.fluent.Fluent.type.caption, color = c.textTertiary, maxLines = 3)
+                            }
+                            Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
+                            if (t.mode == "overlay") Row(Modifier.align(androidx.compose.ui.Alignment.TopStart).padding(6.dp)) {
+                                Box(Modifier.background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) {
+                                    com.lagradost.desktop.ui.fluent.FText("★ 7.$i", style = com.lagradost.desktop.ui.fluent.Fluent.type.caption, color = Color.White, maxLines = 1, softWrap = false)
+                                }
+                            }
+                        }
+                        if (t.mode == "text") {
+                            com.lagradost.desktop.ui.fluent.FText("Poster $i of a test row", style = com.lagradost.desktop.ui.fluent.Fluent.type.body, color = c.textSecondary, maxLines = 1)
+                            com.lagradost.desktop.ui.fluent.FText("2026 · Sci-Fi", style = com.lagradost.desktop.ui.fluent.Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+                        }
+                    }
+                }
+            }
+            // the real card without a shelf around it (card), and the real shelf with no fade-in on its cards (shelf0: a shelf without a gutter does not reveal)
+            "card" -> Row(Modifier.padding(24.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                t.cards.forEach { card -> PosterCard(card, {}, 190.dp) }
+            }
+            "shelf0" -> Column(Modifier.padding(top = 24.dp)) {
+                Shelf(t.cards, 190.dp, gutter = 0.dp, key = { it.url }) { card -> PosterCard(card, {}, 190.dp) }
             }
             else -> Column(Modifier.padding(top = 24.dp)) {
                 Shelf(t.cards, 190.dp, key = { it.url }) { card -> PosterCard(card, {}, 190.dp) }

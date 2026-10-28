@@ -44,6 +44,7 @@ import com.lagradost.desktop.ui.fluent.ComboBox
 import com.lagradost.desktop.ui.fluent.Density
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.lightShadow
 import com.lagradost.desktop.ui.fluent.FluentMotion
 import com.lagradost.desktop.ui.fluent.FluentSettings
 import com.lagradost.desktop.ui.fluent.FluentShapes
@@ -81,7 +82,7 @@ fun GroupBuilder.layoutItems() {
         "Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.",
         "menu bar dock rail tabs top bottom left right capsule sidebar",
     ) {
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             FText("Navigation position", style = Fluent.type.body)
             FText("Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.", style = Fluent.type.caption, color = c.textSecondary)
             Box(Modifier.height(14.dp))
@@ -102,7 +103,7 @@ fun GroupBuilder.layoutItems() {
     }
     // corner radius with a live sample
     block("Corner radius", "Roundness of cards, posters, dialogs and buttons: ${Appearance.cornerRadius} px", "round rounded corners") {
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     FText("Corner radius", style = Fluent.type.body)
@@ -136,7 +137,7 @@ fun GroupBuilder.layoutItems() {
         ComboBox(com.lagradost.desktop.ui.fluent.TouchSwipes.entries.toList(), Appearance.touchSwipes, { it.label }, { Appearance.touchSwipes = it; changed() }, minWidth = 150.dp)
     }
     card("Animations", "Page transitions and hover effects.", "motion transitions reduce") {
-        ComboBox(Motion.entries.toList(), Appearance.motion, { it.label }, { Appearance.motion = it; changed() }, minWidth = 150.dp)
+        ComboBox(Motion.entries.toList(), Appearance.motionChoice, { it.label }, { Appearance.motion = it; changed() }, minWidth = 150.dp)
     }
     card("Zoom on hover", "Posters and dock items grow a little under the pointer.", "hover") {
         ToggleSwitch(Appearance.hoverZoom, { Appearance.hoverZoom = it; changed() })
@@ -231,8 +232,14 @@ fun GroupBuilder.controlItems() {
     card("Hide the player controls", "How long after the last mouse movement the controls go away. They stay while the pointer is on them, a button is held or a menu is open. The keyboard shortcuts work either way.", "auto hide timeout cursor") {
         ComboBox(listOf(2, 4, 8, 15, 0), Appearance.controlsHideSeconds, { if (it == 0) "Never" else "After $it s" }, { Appearance.controlsHideSeconds = it; changed() }, minWidth = 150.dp)
     }
+    card("Controls safety net", "For a PC where the controls sometimes do not show: they come up when the pointer moves over the video even if the window got no mouse event, the C key shows them and keeps them there, and if the GPU player's controls window can not be seen or clicked the standard player takes over. Turn it off only if it gets in the way.", "controls missing not visible hidden stuck black fail-safe fallback") {
+        ToggleSwitch(Appearance.controlsGuard, { Appearance.controlsGuard = it; changed() })
+    }
     card("Seek preview", "A picture of the scene above the time when you point at the seek bar, read by a second, light player in the background. Turn it off to save bandwidth on a slow connection.", "thumbnail scrub bar") {
         ToggleSwitch(Appearance.seekPreviews, { Appearance.seekPreviews = it; changed() })
+    }
+    card("Live TV window", "A live channel keeps a stretch of the past (20 seconds on some channels, 10 minutes on others). The seek bar is that stretch: the time into it on the left, how long it is on the right, LIVE at the newest picture and how far behind it you are. Turn it off for the plain bar.", "live tv channel rewind timeshift dvr seek bar") {
+        ToggleSwitch(Appearance.liveWindow, { Appearance.liveWindow = it; changed() })
     }
 }
 
@@ -393,7 +400,7 @@ fun GroupBuilder.themeItems() {
     }
 
     block("Themes", "Default is this app's own look, in the colours of Settings > Colors. Netflix brings a whole interface: its navigation, billboard, rows, cards, profile screen and button shapes, with its colours. Every feature of the app stays where it is. No name or logo of the service is drawn.", "default netflix streaming interface layout red special profile billboard my list") {
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             val active = Themes.byId(Appearance.theme)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -454,7 +461,7 @@ fun GroupBuilder.colorItems() {
 
     // 1. Clean Flat Colour Gallery (grid of all the palettes)
     block("Colour palette", "Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.", "theme palette preset catppuccin nord dracula gruvbox slate graphite") {
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             val special = Themes.byId(Appearance.theme).special
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -487,7 +494,7 @@ fun GroupBuilder.colorItems() {
 
     // 2. Accent Colour Picker (Swatches + Custom Hex)
     block("Accent colour", "Tints switches, sliders, active tabs, focus rings and links. Override the theme's accent or enter any hex colour.", "color hex swatch highlight") {
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             var customHex by remember(FluentSettings.accentOverride) {
                 mutableStateOf(FluentSettings.accentOverride?.let { colorToHex(it) } ?: "")
             }
@@ -521,7 +528,7 @@ fun GroupBuilder.colorItems() {
 
     // 3. Independent Button, Chip & Pill Colour Picker (Swatches + Custom Hex)
     block("Button, chip & pill colour", "Keep the default crisp white buttons and pills, match the accent colour, or pick any solid colour for primary buttons (Watch now, Play), selected chips and active pills.", "color hex swatch primary") {
-        Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
             val isDefaultWhite = FluentSettings.buttonColorOverride == null && Appearance.buttonStyle == ButtonStyle.White
             val isMatchAccent = FluentSettings.buttonColorOverride == null && Appearance.buttonStyle != ButtonStyle.White
             var buttonHex by remember(FluentSettings.buttonColorOverride) {
@@ -696,7 +703,8 @@ private fun ThemeTile(p: com.lagradost.desktop.ui.fluent.ThemePreset, selected: 
             FText(name, style = if (selected) Fluent.type.bodyStrong else Fluent.type.caption, color = if (selected) c.text else c.textSecondary, maxLines = 1)
         }
         if (subtitle.isNotBlank()) {
-            FText(subtitle, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1, modifier = Modifier.padding(start = 14.dp))
+            // two lines for every tile ("Deep midnight & warm gold" did not fit one), so the tiles of a row stay as tall as each other
+            FText(subtitle, style = Fluent.type.caption, color = c.textTertiary, maxLines = 2, minLines = 2, modifier = Modifier.padding(start = 14.dp))
         }
     }
 }

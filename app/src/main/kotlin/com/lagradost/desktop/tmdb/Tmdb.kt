@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.app
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
@@ -103,17 +104,83 @@ object Tmdb {
 
     fun poster(path: String?, size: String = "w342") = path?.takeIf { it.isNotBlank() && it != "null" }?.let { IMG + size + it }
 
+    /**
+     * The answers are kept on the disk too (data/cache/tmdb): an answer under 3 days old is used at once (a slow connection: the page does not wait for
+     * TMDB), an older one is used when TMDB does not answer or while a fresh one is fetched for the next time, and every answer lands there.
+     */
+    private object Disk {
+        private const val FRESH_MS = 3L * 24 * 3_600_000L
+        private const val GIVE_UP_MS = 30L * 24 * 3_600_000L
+        private var writes = 0
+
+        private fun dir() = java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "cache/tmdb")
+
+        private fun file(url: String): java.io.File {
+            val noKey = url.replace(Regex("api_key=[^&]+&?"), "")
+            val hash = java.security.MessageDigest.getInstance("SHA-1").digest(noKey.toByteArray()).joinToString("") { "%02x".format(it) }
+            return java.io.File(dir(), "$hash.json")
+        }
+
+        /** the saved answer and how old it is (ms), when there is one that is not older than a month */
+        fun read(url: String): Pair<String, Long>? = runCatching {
+            val f = file(url)
+            if (!f.isFile) return null
+            val age = System.currentTimeMillis() - f.lastModified()
+            if (age > GIVE_UP_MS) null else f.readText() to age
+        }.getOrNull()
+
+        /** lists of what is on now (trending, popular, in cinemas, discover) go stale in a day; a title's page, credits or images hold for days */
+        fun fresh(url: String, age: Long) = age < (if (LISTS.containsMatchIn(url)) 24L * 3_600_000L else FRESH_MS)
+
+        private val LISTS = Regex("/(trending|popular|now_playing|upcoming|airing_today|on_the_air|top_rated|discover)")
+
+        fun write(url: String, text: String) {
+            runCatching {
+                val f = file(url)
+                f.parentFile?.mkdirs()
+                val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+                tmp.writeText(text)
+                java.nio.file.Files.move(tmp.toPath(), f.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                // now and then: no more than ~600 answers (a title's page is ~100 KB), the oldest go first
+                if (++writes % 40 == 0) {
+                    val all = f.parentFile?.listFiles { x -> x.name.endsWith(".json") }.orEmpty()
+                    if (all.size > 600) all.sortedBy { it.lastModified() }.take(all.size - 500).forEach { it.delete() }
+                }
+            }
+        }
+    }
+
+    private val background = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    private fun valid(j: JSONObject) = !(j.has("status_code") && !j.has("id") && !j.has("results"))
+
+    private suspend fun fetch(url: String): JSONObject? {
+        // the body is read where the call runs: on the UI thread (the pages ask from a LaunchedEffect) that was a stall of 40 to 100 ms per answer
+        val text = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.get(url, timeout = 20).text } }.getOrNull() ?: return null
+        val j = runCatching { JSONObject(text) }.getOrNull() ?: return null
+        if (!valid(j)) return null
+        synchronized(cache) { cache[url] = System.currentTimeMillis() to j }
+        Disk.write(url, text)
+        return j
+    }
+
     suspend fun json(path: String, vararg params: Pair<String, String>): JSONObject? {
         if (!enabled) return null
         val query = (listOf("api_key" to key, "language" to "en-US") + params).joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v, "UTF-8") }
         val url = "$BASE$path?$query"
         synchronized(cache) { cache[url] }?.let { (at, j) -> if (System.currentTimeMillis() - at < TTL_MS) return j }
-        // the body is read where the call runs: on the UI thread (the pages ask from a LaunchedEffect) that was a stall of 40 to 100 ms per answer
-        val text = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.get(url, timeout = 20).text } }.getOrNull() ?: return null
-        val j = runCatching { JSONObject(text) }.getOrNull() ?: return null
-        if (j.has("status_code") && !j.has("id") && !j.has("results")) return null
-        synchronized(cache) { cache[url] = System.currentTimeMillis() to j }
-        return j
+        val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Disk.read(url) }
+        val parsed = saved?.let { (text, age) -> runCatching { JSONObject(text) }.getOrNull()?.takeIf { valid(it) }?.let { it to age } }
+        if (parsed != null) {
+            val (j, age) = parsed
+            synchronized(cache) { cache[url] = (System.currentTimeMillis() - age).coerceAtLeast(0L) to j }
+            // one older than the in-memory time to live: fetched again behind the scenes, for the next time
+            if (age >= TTL_MS) background.launch { fetch(url) }
+            if (Disk.fresh(url, age)) return j
+            // older than that: asked first, the old answer when TMDB does not answer
+            return fetch(url) ?: j
+        }
+        return fetch(url)
     }
 
     // ------------------------------------------------------------------ lists (Explore, collections)
@@ -159,6 +226,18 @@ object Tmdb {
         .replace(Regex("(?i)\\b(hindi|tamil|telugu|english|dubbed|dual audio|multi audio|sub|dub|uncut)\\b"), " ")
         .replace(Regex("(?i)\\s*[-:]?\\s*season\\s*\\d+.*$"), "")
         .replace(Regex("\\s+"), " ").trim()
+
+    /**
+     * Whether what TMDB answered is the title the extension showed. A search takes its first result when none is named alike, and a wrong
+     * picture on a billboard is worse than the extension's own: only a title that is the same, or contains the other, passes.
+     */
+    fun sameTitle(shown: String, found: String): Boolean {
+        fun norm(s: String) = cleanTitle(s).lowercase().filter { it.isLetterOrDigit() }
+        val a = norm(shown)
+        val b = norm(found)
+        if (a.length < 3 || b.length < 3) return a == b
+        return a == b || a.contains(b) || b.contains(a)
+    }
 
     /**
      * What TMDB knows about a title an extension showed. The ids the extension gave (IMDb, TMDB) are used first, then a search by

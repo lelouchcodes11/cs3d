@@ -222,6 +222,11 @@ class HomeViewModel : ViewModel() {
         _bookmarks.postValue(Pair(true, list))
     }
 
+    /** desktop: the extension whose home page is on screen or loading; why that page is not fresh (null: it is) */
+    private var currentApi: MainAPI? = null
+    private val _staleReason = MutableLiveData<String?>(null)
+    val staleReason: LiveData<String?> = _staleReason
+
     private var onGoingLoad: Job? = null
     private var isCurrentlyLoadingName: String? = null
     private fun loadAndCancel(api: MainAPI) {
@@ -399,6 +404,9 @@ class HomeViewModel : ViewModel() {
         }
 
 
+        currentApi = api
+        // desktop: every extension's page is fetched fresh, each time (nothing of an earlier visit is shown while it loads)
+        _staleReason.postValue(null)
         _page.postValue(Resource.Loading())
         _preview.postValue(Resource.Loading())
         // cancel the current preview expand as that is no longer relevant
@@ -576,7 +584,7 @@ class HomeViewModel : ViewModel() {
 
             // if we don't need to reload and we have a valid homepage or currently loading the same thing then return
             val currentLoading = isCurrentlyLoadingName
-            if (!forceReload && (currentPage is Resource.Success && currentPage.value.isNotEmpty() || (currentLoading != null && currentLoading == preferredApiName))) {
+            if (!forceReload && (currentPage is Resource.Success && currentPage.value.isNotEmpty() && currentApi?.name == preferredApiName || (currentLoading != null && currentLoading == preferredApiName))) {
                 return@ioSafe
             }
 

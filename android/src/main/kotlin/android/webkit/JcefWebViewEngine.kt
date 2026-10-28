@@ -212,6 +212,9 @@ internal class JcefWebViewEngine(private val view: WebView) : WebViewBackend {
         setupExecutor.execute {
             try {
                 applyViewport(b)
+                devTools(b, "Browser.getVersion")?.let { response ->
+                    runCatching { JcefRuntime.observeDefaultUserAgent(JSONObject(response).optString("userAgent")) }
+                }
                 applyUserAgentInternal(b, view.jcefSettings().getUserAgentString())
                 installBridgeScript(b)
             } catch (t: Throwable) {
@@ -746,7 +749,7 @@ internal class JcefWebViewEngine(private val view: WebView) : WebViewBackend {
             if (!overridesIntercept) return null
             val req = toRequest(request, frame?.isMain == true && mainNavigation)
             val response = try {
-                view.client.shouldInterceptRequest(view, req)
+                JcefRuntime.inNativeCookieCallback { view.client.shouldInterceptRequest(view, req) }
             } catch (t: Throwable) {
                 Log.e(TAG, "shouldInterceptRequest threw: ${Log.getStackTraceString(t)}")
                 null

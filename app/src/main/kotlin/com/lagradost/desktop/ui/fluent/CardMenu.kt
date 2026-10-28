@@ -119,173 +119,32 @@ object CardLibrary {
 }
 
 /**
- * Right click on a catalog title: the card lifts out of the shelf to the middle of the window over a dimmed background and the few things
- * that can be done with it (play, open, library, favourites) come in beside or under it, as in Nuvio.
+ * Right click on a catalog title: a small menu at the pointer, like any desktop app's. Play and the title page first, then the library lists (the
+ * one the title is on is ticked) and the favourites. The same calls the title page's buttons make.
  */
 @Composable
 fun CatalogCardMenu(card: SearchResponse, content: @Composable () -> Unit) {
-    // the place of the card, asked only when it is right-clicked (no state: nothing is redrawn while the shelf scrolls)
-    val place = remember { arrayOfNulls<LayoutCoordinates>(1) }
-    Box(
-        Modifier
-            .onGloballyPositioned { place[0] = it }
-            .onSecondaryClick {
-                val from = place[0]?.takeIf { c -> c.isAttached }?.boundsInRoot()
-                Overlays.show(Overlays.Dialog(title = null, close = null, fullscreen = true) { dismiss -> PosterActions(card, from, dismiss) })
-            },
-    ) { content() }
+    ContextMenuArea({ cardEntries(card) }) { content() }
 }
 
-private val PanelWidth = 304.dp
-
-@Composable
-private fun PosterActions(card: SearchResponse, from: Rect?, dismiss: () -> Unit) {
-    val c = Fluent.colors
-    // read when it opens: what the title is in the library now
-    val status = remember(card) { CardLibrary.status(card) }
-    val favourite = remember(card) { CardLibrary.isFavourite(card) }
-    val lift = remember { Animatable(0f) }
-    val panel = remember { Animatable(0f) }
-    var target by remember { mutableStateOf<Rect?>(null) }
-    LaunchedEffect(target != null) {
-        if (target == null) return@LaunchedEffect
-        lift.animateTo(1f, FluentMotion.springSoft())
-    }
-    LaunchedEffect(Unit) { delay(110); panel.animateTo(1f, tween(FluentMotion.ms(240), easing = FluentMotion.enter)) }
-
-    BoxWithConstraints(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { dismiss() } }, contentAlignment = Alignment.Center) {
-        // beside each other in a window that is wide and not tall, one above the other when there is height for a big poster
-        val panelHeight = 330.dp
-        val stacked = maxHeight >= 260.dp + 78.dp + panelHeight + 48.dp
-        val posterHeight: Dp = if (stacked) (maxHeight - 78.dp - panelHeight - 48.dp).coerceIn(260.dp, 400.dp) else (maxHeight * 0.74f).coerceIn(220.dp, 440.dp)
-        val posterWidth = posterHeight * (2f / 3f)
-
-        val poster = @Composable {
-            // the slot is measured without the lift, the poster inside it travels from the card to the slot
-            Box(Modifier.size(posterWidth, posterHeight).onGloballyPositioned { target = it.boundsInRoot() }) {
-                Box(
-                    Modifier
-                        .size(posterWidth, posterHeight)
-                        .graphicsLayer {
-                            val t = target
-                            if (t == null) { alpha = 0f; return@graphicsLayer }
-                            val p = lift.value
-                            val f = from
-                            if (f != null && f.width > 0f) {
-                                val s0 = f.width / t.width
-                                scaleX = lerp(s0, 1f, p); scaleY = scaleX
-                                translationX = lerp(f.center.x - t.center.x, 0f, p)
-                                translationY = lerp(f.center.y - t.center.y, 0f, p)
-                            } else {
-                                scaleX = lerp(0.9f, 1f, p); scaleY = scaleX
-                                alpha = p
-                            }
-                        }
-                        .shadow(36.dp, RoundedCornerShape(FluentShapes.card), clip = false)
-                        .clip(RoundedCornerShape(FluentShapes.card))
-                        .hairBorder(Color(0x44FFFFFF), RoundedCornerShape(FluentShapes.card))
-                        .pointerInput(Unit) { detectTapGestures { } },
-                ) { PosterImage(card, Modifier.fillMaxSize()) }
-            }
-        }
-        val actions = @Composable {
-            Column(
-                Modifier.graphicsLayer { alpha = panel.value; translationY = (1f - panel.value) * 14.dp.toPx() },
-                horizontalAlignment = if (stacked) Alignment.CenterHorizontally else Alignment.Start,
-            ) {
-                // what it is
-                val sub = listOfNotNull(CardLibrary.yearOf(card)?.toString(), card.type?.name, card.apiName.takeIf { it.isNotBlank() }).joinToString("  ·  ")
-                FText(card.name, Modifier.width(PanelWidth), style = Fluent.type.subtitle.copy(fontWeight = FontWeight.SemiBold), color = Color.White, maxLines = 2, textAlign = if (stacked) TextAlign.Center else TextAlign.Start)
-                if (sub.isNotBlank()) FText(sub, Modifier.width(PanelWidth), style = Fluent.type.caption, color = Color(0xB3FFFFFF), maxLines = 1, textAlign = if (stacked) TextAlign.Center else TextAlign.Start)
-                Box(Modifier.height(14.dp))
-                ActionPanel(card, status, favourite, dismiss)
-            }
-        }
-        if (stacked) Column(horizontalAlignment = Alignment.CenterHorizontally) { poster(); Box(Modifier.height(18.dp)); actions() }
-        else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(36.dp)) { poster(); actions() }
-    }
-}
-
-@Composable
-private fun ActionPanel(card: SearchResponse, status: WatchType, favourite: Boolean, close: () -> Unit) {
-    val c = Fluent.colors
+/** Read when the menu opens: what the title is in the library now */
+private fun cardEntries(card: SearchResponse): List<MenuEntry> {
     val ctx = DesktopBootstrap.activity
-    val saved = status != WatchType.NONE
-    val shape = RoundedCornerShape(FluentShapes.overlay)
-    Column(
-        Modifier
-            .width(PanelWidth)
-            .shadow(32.dp, shape, clip = false)
-            .background(c.flyout, shape)
-            .hairBorder(if (c.dark) Color(0x66757575) else Color(0x33000000), shape)
-            .clip(shape)
-            .pointerInput(Unit) { detectTapGestures { } }
-            .padding(vertical = 6.dp),
-    ) {
-        CardMenuRow("Play", Icons.Play) { close(); Navigator.openDetails(card, START_ACTION_RESUME_LATEST, null) }
-        CardMenuRow("Open title page", Icons.Info) { close(); Navigator.openDetails(card) }
-        Box(Modifier.padding(vertical = 4.dp)) { Divider() }
-        // the library: one click on a list
-        FText(
-            if (saved) "In your library: ${ctx.getString(status.stringRes)}" else "Add to library",
-            Modifier.padding(horizontal = 14.dp, vertical = 4.dp), style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = c.textSecondary, maxLines = 1,
+    val status = CardLibrary.status(card)
+    val favourite = CardLibrary.isFavourite(card)
+    val lists = WatchType.entries.filter { it != WatchType.NONE }
+    return buildList {
+        add(MenuItem("Play", Icons.Play) { Navigator.openDetails(card, START_ACTION_RESUME_LATEST, null) })
+        add(MenuItem("Open title page", Icons.Info) { Navigator.openDetails(card) })
+        add(MenuSeparator)
+        // the library: one click puts the title on a list; the list it is on is ticked, and clicking it again takes the title off
+        for (t in lists) add(MenuItem(if (t == status) "In ${ctx.getString(t.stringRes)}: remove" else "Add to ${ctx.getString(t.stringRes)}", Icons.Library, checked = t == status) { CardLibrary.setStatus(card, if (t == status) WatchType.NONE else t) })
+        add(MenuSeparator)
+        add(
+            MenuItem(
+                if (favourite) "Remove from favourites" else "Add to favourites",
+                if (favourite) Icons.FavoriteFilled else Icons.Favorite,
+            ) { CardLibrary.toggleFavourite(card) },
         )
-        Column(Modifier.padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            WatchType.entries.filter { it != WatchType.NONE }.chunked(2).forEach { pair ->
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    pair.forEach { t -> Box(Modifier.weight(1f)) { StatusChip(ctx.getString(t.stringRes), t == status) { close(); if (t != status) CardLibrary.setStatus(card, t) } } }
-                    if (pair.size == 1) Box(Modifier.weight(1f))
-                }
-            }
-        }
-        Box(Modifier.height(4.dp))
-        if (saved) CardMenuRow("Remove from library", Icons.Delete, destructive = true) { close(); CardLibrary.setStatus(card, WatchType.NONE) }
-        Box(Modifier.padding(vertical = 4.dp)) { Divider() }
-        CardMenuRow(if (favourite) "Remove from favourites" else "Add to favourites", if (favourite) Icons.FavoriteFilled else Icons.Favorite) { close(); CardLibrary.toggleFavourite(card) }
-    }
-}
-
-@Composable
-private fun CardMenuRow(text: String, icon: String, destructive: Boolean = false, onClick: () -> Unit) {
-    val c = Fluent.colors
-    val source = rememberInteraction()
-    val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.row)
-    Row(
-        Modifier
-            .padding(horizontal = 4.dp)
-            .fillMaxWidth()
-            .height(34.dp)
-            .background(if (hovered) c.subtleHover else Color.Transparent, shape)
-            .fluentClickable(source, true, shape, Role.Button, onClick)
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) { Icon(icon, size = 16.dp, tint = if (destructive) c.critical else c.text) }
-        Box(Modifier.width(12.dp))
-        FText(text, Modifier.weight(1f), color = if (destructive) c.critical else c.text, maxLines = 1)
-    }
-}
-
-/** One list of the library; the one the title is on is lit */
-@Composable
-private fun StatusChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    val c = Fluent.colors
-    val source = rememberInteraction()
-    val hovered by source.collectIsHoveredAsState()
-    val shape = FluentShapes.pill
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(30.dp)
-            .background(if (selected || hovered) c.controlHover else c.control, shape)
-            .hairBorder(if (selected) c.selectedEdge else c.stroke, shape)
-            .fluentClickable(source, true, shape, Role.Button, onClick)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        if (selected) { Icon(Icons.Check, size = 12.dp, tint = c.text); Box(Modifier.width(6.dp)) }
-        FText(text, style = Fluent.type.caption, color = c.text, maxLines = 1)
     }
 }

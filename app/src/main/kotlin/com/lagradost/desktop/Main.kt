@@ -39,6 +39,10 @@ import kotlin.system.exitProcess
 
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main(args: Array<String>) {
+    // Java2D starts a Direct3D 9 pipeline of its own for every AWT window. Skia draws this app's window itself, so it is not needed, and creating that
+    // device is a known cause of the whole screen flickering for a moment when a Java window opens on a PC with an old graphics driver. Must be set
+    // before the first AWT class is touched; `-Dsun.java2d.d3d=true` on the command line brings it back.
+    if (System.getProperty("sun.java2d.d3d") == null) System.setProperty("sun.java2d.d3d", "false")
     // Conscrypt must be the first TLS provider before OkHttp is touched for the first time: OkHttp picks its platform (and with it the way
     // HTTP/2 is negotiated) once. Otherwise every connection of the app stayed on HTTP/1.1 (also the DoH lookups: "Incorrect protocol: http/1.1")
     runCatching { java.security.Security.insertProviderAt(org.conscrypt.Conscrypt.newProvider(), 1) }
@@ -116,18 +120,9 @@ fun main(args: Array<String>) {
             builder.build().layout(300f)
         }
     }, "ui-warmup").apply { isDaemon = true }.start()
+    // set to the user's choice (or the safe fall back) once the preferences exist, below; this is the default
+    val renderApiOnCommandLine = System.getProperty("skiko.renderApi") != null
     System.setProperty("skiko.renderApi", System.getProperty("skiko.renderApi") ?: "DIRECT3D")
-    // Skia keeps up to 256 MB of textures by default; on a PC with integrated graphics that is the app's own RAM. 64 MB holds every poster
-    // of a screen (measured: about 100 MB less memory after browsing a few pages)
-    System.setProperty("skiko.gpu.resourceCacheLimit", System.getProperty("skiko.gpu.resourceCacheLimit") ?: "67108864")
-    // Coil keeps the decoded pictures up to a quarter of the JVM's largest heap (a gigabyte on a 16 GB PC) and the heap grows to hold them; on a PC with little
-    // free memory that is paging, which looks like the window hanging. 160 MB holds the pictures of several screens.
-    runCatching {
-        coil3.SingletonImageLoader.setSafe { context ->
-            coil3.ImageLoader.Builder(context).memoryCache { coil3.memory.MemoryCache.Builder().maxSizeBytes(160L * 1024 * 1024).build() }
-                .components { add(com.lagradost.desktop.ui.components.ImageQuality.upgrade); add(com.lagradost.desktop.ui.components.ImageQuality.decoder) }.build()
-        }
-    }
     // a native video window (see NativeVideo) is a window of its own: Compose must not copy the Swing paint of it
     System.setProperty("compose.interop.blending", System.getProperty("compose.interop.blending") ?: "false")
     // Android dimensions (dp) must match the Compose density of the screen before anything resolves them
@@ -141,6 +136,20 @@ fun main(args: Array<String>) {
     EventQueue.invokeAndWait {
         DesktopBootstrap.initApplication()
         AndroidRuntime.host = DesktopUiHost()
+    }
+    // The preferences exist now: the renderer is the user's choice (or the safe fall back after starts that did not become healthy; see Graphics), and the
+    // caches are sized for the PC. Skia keeps up to 256 MB of textures by default; on a PC with integrated graphics that is the app's own RAM. 64 MB holds every
+    // poster of a screen (measured: about 100 MB less memory after browsing a few pages), 32 MB on a weak PC.
+    com.lagradost.desktop.platform.Graphics.applyAtStart(renderApiOnCommandLine, com.lagradost.desktop.platform.Graphics.choiceFromArgs(args))
+    val lightPc = com.lagradost.desktop.ui.fluent.Appearance.lightFromPrefs()
+    System.setProperty("skiko.gpu.resourceCacheLimit", System.getProperty("skiko.gpu.resourceCacheLimit") ?: if (lightPc) "33554432" else "67108864")
+    // Coil keeps the decoded pictures up to a quarter of the JVM's largest heap (a gigabyte on a 16 GB PC) and the heap grows to hold them; on a PC with little
+    // free memory that is paging, which looks like the window hanging. 160 MB holds the pictures of several screens (64 MB on a weak PC).
+    runCatching {
+        coil3.SingletonImageLoader.setSafe { context ->
+            coil3.ImageLoader.Builder(context).memoryCache { coil3.memory.MemoryCache.Builder().maxSizeBytes((if (lightPc) 64L else 160L) * 1024 * 1024).build() }
+                .components { add(com.lagradost.desktop.ui.components.ImageQuality.upgrade); add(com.lagradost.desktop.ui.components.ImageQuality.decoder) }.build()
+        }
     }
     com.lagradost.desktop.platform.StartupProfile.startSamplerIfRequested()
     com.lagradost.desktop.platform.StartupProfile.mark("application initialised")

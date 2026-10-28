@@ -4,203 +4,171 @@
 
 <h1 align="center">CloudStream for Windows</h1>
 
-<h3 align="center">Movies, series, anime and live TV on your PC — in a native Windows 10 & 11 desktop app.</h3>
+<p align="center">Movies, series, anime and live TV in a native Windows 10 & 11 desktop app.<br>
+Runs your CloudStream extensions on the desktop, with a real <code>mpv</code> player and a sandbox around every extension.</p>
 
 <p align="center">
   <a href="../../releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%7C%2011%20(x64)-0078D4?style=for-the-badge&logo=windows11&logoColor=white"></a>
-  <a href="https://t.me/cs3d_official"><img alt="Join the Telegram channel" src="https://img.shields.io/badge/Telegram-Join%20Channel-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
-  <a href="https://discord.gg/u82JU5JDM"><img alt="Join the Discord server" src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
-  <a href="https://razorpay.me/@lelouch11"><img alt="Donate with Razorpay" src="https://img.shields.io/badge/Donate-Razorpay-0C2451?style=for-the-badge&logo=razorpay&logoColor=white"></a>
-  <a href="https://buymeacoffee.com/lelouchcodes11"><img alt="Buy me a coffee (international)" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-International-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black"></a>
+  <a href="https://t.me/cs3d_official"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-Join-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
+  <a href="https://discord.gg/u82JU5JDM"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
 </p>
 
 <p align="center">
   <a href="../../releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/lelouchcodes11/cs3d?include_prereleases&label=release&color=3B7BFF"></a>
-  <a href="../../releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/lelouchcodes11/cs3d/total?color=3B7BFF"></a>
   <a href="../../actions/workflows/ci.yml"><img alt="CI" src="https://github.com/lelouchcodes11/cs3d/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-3B7BFF"></a>
-  <img alt="Runs on the CloudStream engine" src="https://img.shields.io/badge/engine-CloudStream%204.8-3B7BFF">
 </p>
 
 <p align="center">
-  <a href="#-preview">Preview</a> ·
-  <a href="#️-download--install">Download</a> ·
-  <a href="#-join-the-community">Community</a> ·
-  <a href="#-what-you-get">Features</a> ·
-  <a href="#-first-steps">First Steps</a> ·
-  <a href="#-help--faq">Help & FAQ</a> ·
-  <a href="SECURITY.md">Security</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="#download">Download</a> ·
+  <a href="#extension-sandbox">Extension sandbox</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#help">Help</a> ·
+  <a href="#build-from-source">Build</a> ·
+  <a href="#credits">Credits</a>
 </p>
 
 ---
 
-## 🖥️ Preview
-
 <p align="center">
-  <img src="docs/screenshots/home-ui.png" width="100%" alt="CloudStream for Windows — Home screen">
+  <img src="docs/screenshots/home.jpg" width="100%" alt="Home with the StreamPlay extension: a billboard, the next titles and Trending">
 </p>
 
 <table>
   <tr>
-    <td width="50%">
-      <img src="docs/screenshots/details-ui.png" width="100%" alt="Title page with TMDB artwork, scores, Up Next card and episodes">
-      <p align="center"><sub><b>Rich Title Pages</b> — Full-bleed artwork, TMDB scores, Up Next card, episode stills, trailers & cast</sub></p>
-    </td>
-    <td width="50%">
-      <img src="docs/screenshots/explore-ui.png" width="100%" alt="Explore page with Global and Local discovery, streaming service filters and Trending Top 10">
-      <p align="center"><sub><b>Explore (Global & Local)</b> — Browse by streaming service, genre, language, and daily Top 10</sub></p>
-    </td>
+    <td width="50%"><img src="docs/screenshots/details.jpg" alt="A title page with artwork, ratings, Up Next and tabs"><br><sub><b>Title pages</b> · artwork, ratings, Up Next, cast, gallery and reviews</sub></td>
+    <td width="50%"><img src="docs/screenshots/episodes.jpg" alt="An episode list with stills; unseen episodes are blurred to avoid spoilers"><br><sub><b>Episodes</b> · stills and details, with spoilers hidden until you get there</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/explore.jpg" alt="Explore with Global and Local lists, genre and streaming service filters"><br><sub><b>Explore</b> · global and local charts, by genre and streaming service</sub></td>
+    <td width="50%"><img src="docs/screenshots/extensions.jpg" alt="Extension sources and the Phisher repository with its icons"><br><sub><b>Extensions</b> · add a repository, install what you want, pick a source on Home</sub></td>
   </tr>
 </table>
 
+<sub>Screenshots use the <a href="https://github.com/phisher98/cloudstream-extensions-phisher">StreamPlay</a> extension. CloudStream for Windows itself ships with no extensions and no content.</sub>
+
 ---
 
-## ⬇️ Download & Install
+## Download
 
-Open **[Releases](../../releases/latest)** and pick the package that fits how you want to run CloudStream on **Windows 10 or 11 (64-bit)**:
+Open **[Releases](../../releases/latest)** and pick a package for **Windows 10 or 11 (64-bit)**:
 
-| Package | File | Best For |
+| Package | File | Best for |
 | :--- | :--- | :--- |
-| **Setup Installer** *(Recommended)* | `CloudStream-…-windows-x64-setup.exe` | Standard per-user installation (no admin rights needed), Start menu & desktop shortcuts, and one-click in-app updates. Run over an existing MSI install it replaces it in the same folder and keeps your settings. |
-| **MSI Installer** | `CloudStream-…-windows-x64.msi` | Standard Windows Installer package (per-user, no PowerShell custom actions), upgrades existing MSI installs in place. |
-| **Portable ZIP** | `CloudStream-…-windows-x64-portable.zip` | Unpack anywhere and run `CloudStream.exe`. Keeps all settings, extensions, and caches inside its own `data/` folder. |
+| **Setup** *(recommended)* | `CloudStream-…-windows-x64-setup.exe` | Per-user install, no admin rights, Start menu and desktop shortcuts, in-app updates. Over an old MSI install it replaces it in the same folder and keeps your settings. |
+| **MSI** | `CloudStream-…-windows-x64.msi` | Standard Windows Installer package (per-user, no script actions). |
+| **Portable ZIP** | `CloudStream-…-windows-x64-portable.zip` | Unpack anywhere and run `CloudStream.exe`. Settings, extensions and caches stay in the `data/` folder next to it. |
 
-### Automatic In-App Updates
-When a new release is published, the app notifies you (never while a video is playing). Clicking **Update now** downloads the matching package with a progress bar, verifies its **SHA-256 checksum** against GitHub Releases, and installs it cleanly on restart—keeping all your repositories, extensions, accounts, and watch history intact.
+**Updates.** The app checks the GitHub releases a few seconds after it starts, then every few hours, and never while a video plays. **Update now** downloads the package that matches how you installed it, checks it against the SHA-256 GitHub lists for the file, and installs it when you click; your repositories, extensions, accounts and history are kept. Extensions update themselves at every start (`Settings → Updates & backup`).
 
 > [!NOTE]
-> **Windows SmartScreen & Antivirus Questions:** Because the installer is not signed with a paid EV certificate yet, Windows SmartScreen may show *"Windows protected your PC"* on first run (click **More info → Run anyway**). Read **[SECURITY.md](SECURITY.md)** for full details on verifying SHA-256 checksums, how disk caching works (`NoPageCache`), and our zero-script installer policy.
+> The installer is not signed with a paid certificate yet, so Windows SmartScreen may say *"Windows protected your PC"* on first run: **More info → Run anyway**. See **[SECURITY.md](SECURITY.md)** for checksums and how the installers are built.
 
----
+## What you get
 
-## 📣 Join the Community
+- **A real player.** `libmpv` with hardware decoding, HLS and DASH, Picture-in-Picture, audio passthrough, subtitles from files, embedded tracks and online search (OpenSubtitles, SubDL), and optional Anime4K / FSR upscaling.
+- **Your extensions.** Runs CloudStream `.cs3` extensions natively on the JVM, no emulator. Also Stremio add-ons and torrents (TorrServer is downloaded only when you turn it on).
+- **Explore and title pages.** TMDB and AniList charts (global or local), cast and crew, trailers, episode stills, spoiler protection, reviews.
+- **Live TV.** HLS and ClearKey DASH channels with a seek bar that follows each channel's own time window.
+- **Sync.** AniList, MyAnimeList and Simkl, one Library for all of them.
+- **Made for the desktop.** 14 themes (and a Netflix-style interface), 10 languages, a Low-end PC mode and a safe-graphics start for old graphics drivers.
 
-<table>
-<tr>
-<td width="72%">
+## Extension sandbox
 
-**[Telegram](https://t.me/cs3d_official) is where news comes first:**
-- 🆕 **Release announcements & changelogs** as soon as a new build drops.
-- 🛠️ **Fixes and workarounds** when a source or live channel changes.
-- 💬 **Direct feedback** on new features and upcoming builds.
+Extensions are programs that **anyone can publish**. CloudStream for Windows does not trust them: every extension runs inside a sandbox that is **on by default** (`Settings → General → Security → Extension sandbox`).
 
-**[Discord](https://discord.gg/u82JU5JDM) is the place to talk:**
-- Chat with other users, get help setting up extensions or Stremio add-ons, share theme setups, and suggest what should come next.
+<p align="center">
+  <img src="docs/screenshots/sandbox.jpg" width="90%" alt="Settings, General, Security: the Extension sandbox switch, Blocked by the sandbox and Trusted extensions">
+</p>
 
-</td>
-<td align="center" width="28%">
-
-<a href="https://t.me/cs3d_official"><img alt="Join on Telegram" src="https://img.shields.io/badge/Join-t.me%2Fcs3d__official-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
-<br><br>
-<a href="https://discord.gg/u82JU5JDM"><img alt="Join on Discord" src="https://img.shields.io/badge/Join-Discord%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
-
-</td>
-</tr>
-</table>
-
----
-
-## ✨ What You Get
-
-| Feature | What It Does |
+| An extension is **stopped** from… | It **keeps** |
 | :--- | :--- |
-| 🎬 **Desktop-Grade `libmpv` Player** | Full `mpv` engine with Vulkan, D3D11 & NVDEC hardware decoding, HLS/DASH streaming, audio passthrough (`SW` / `HW` / `HW+`), Picture-in-Picture, cumulative keyboard seek counter, and an automatic playback governor that steps down rendering cost on weaker PCs. |
-| 🔍 **Anime4K & AMD FSR Upscaling** | Live shader upscaling in **Player → Upscaling**: **Off**, **Sharp** (Spline36), **High quality** (EWA Lanczos), **FSR + CAS** (AMD FidelityFX Super Resolution 1.0 + Contrast Adaptive Sharpening), **Anime4K Mode A / B / C**, and **Anime4K Mode A HQ**. |
-| 🚀 **Native GPU Player & Smooth Motion** | Optional dedicated GPU window renderer (`Settings → Appearance → Native GPU player`) for zero-copy playback, plus **Smooth motion** frame blending so 24/25 fps films glide on 60 Hz+ displays. |
-| 🧩 **All CloudStream Extensions** | Runs Android `.cs3` extensions natively on the desktop JVM—no emulator or WSA required. Automatically deduplicates extensions across repositories and keeps a backup of your setup in `%LOCALAPPDATA%\CloudStream-keep`. |
-| 🧲 **Stremio Add-ons & Torrents** | Add any `stremio://` or `https://` add-on manifest (`Settings → Stremio & torrents`). Stream torrents on the fly with real-time peer and buffer stats via TorrServer (downloaded on demand only when enabled). |
-| 🧭 **Explore: Global & Local** | Discover trending, in-cinema, top-rated, and upcoming movies, series, and anime from TMDB and AniList. Switch between **Global** and **Local** (by country and regional language), and filter by streaming service (Netflix, Prime Video, Disney+, Max, Crunchyroll, etc.) and genre. |
-| 🎞️ **Cinematic Title Pages** | High-res logos and backdrops, TMDB & provider ratings, age certification, cast & crew biographies, studio/network pages, **in-app trailers with sound**, automatic TMDB episode stills/synopses when an extension omits them, and separate **Season pack** archive cards. |
-| 💬 **Subtitles That Work** | Embedded tracks, local `.srt`/`.ass` files, and built-in online search (**OpenSubtitles**, **SubDL**, **Subtitle Cat**). Choose between *Subtitle's own* styling (preserves ASS/SRT colors and placement) or *Universal* custom styling with any Windows or custom font file. |
-| 🎨 **14 Themes & Flexible Navigation** | Fourteen crafted color themes with ambient corner glows, custom wallpaper support, floating top bar / left icon dock / classic rails, smooth wheel-gliding scroll, and crisp pixel-aligned borders at 100%, 125%, 150%, and 175% Windows scaling. |
-| 🔗 **AniList, MyAnimeList & Simkl Sync** | Two-way watch status and episode progress sync, plus a unified Library with **All / Movies / TV shows / Anime** filters that can open any synced title across your installed extensions. |
-| 📺 **Live TV & External Players** | Live HLS and ClearKey DASH channels with a *Go live* button, or hand any stream directly to **VLC** or your web browser (`Settings → Player → Preferred video player`). |
+| running programs, also by asking Windows to "open" an executable, a script or a shortcut | the network |
+| reading your documents, downloads, browser data or keys, and changing or deleting files outside the app's own data and temp folders (so no startup entries) | everything it needs to find and resolve sources |
+| ending the app, switching the sandbox off, loading native libraries or its own class loaders, calling Windows system functions | its own settings page and web checks (Cloudflare) while you use it |
+| taking screenshots, watching the keyboard, reading the clipboard, changing the app's proxy, cookie or certificate handling | |
 
----
+- **You can see it working.** When something is stopped, the extension gets an error, a toast names the extension and the action, and **Blocked by the sandbox** lists it, so a source that breaks can be understood.
+- **You stay in charge.** An extension you know and need can be marked **Trust** from that list; **Trusted extensions** takes it back. The popups of an extension you are not using (donation or news windows) are not shown at all, and its Cloudflare check windows wait until you use it.
+- **How it works.** The launcher starts the JVM with a Java `SecurityManager` that only acts when extension code is on the call stack; the app's own work passes at once. The few things the app does for an extension on purpose (opening a link, copying text) go through a gate that checks them first. `-Dcloudstream.sandbox=audit` only logs what would be stopped.
+- **What it is not.** It is not a virtual machine and not a barrier against code written to defeat this very sandbox. It makes the usual attacks fail and shows what an extension tries. Add only repositories you trust and keep Windows Defender on. Details and reporting: **[SECURITY.md](SECURITY.md)**.
 
-## 🚀 First Steps
+## Getting started
 
-1. **Install an extension repository** (`Settings → Extensions → Add repository`) or enable a Stremio add-on (`Settings → Stremio & torrents`). The app ships with no content providers pre-installed.
-2. Browse **Home** or **Explore**, pick a movie, series, or anime, and press **Play**.
-3. *Optional:* Connect **AniList**, **MyAnimeList**, or **Simkl** under `Settings → Accounts & security` to sync your watchlists.
+1. **Add a repository** (`Extensions → Add repository`) and install the extensions you want, or enable a Stremio add-on (`Settings → Stremio & torrents`). Nothing is pre-installed.
+2. Pick a **source** at the top right of Home, or just **search**, choose a title and press **Play**.
+3. *Optional:* connect AniList, MyAnimeList or Simkl in `Settings → Accounts & sync`.
 
----
-
-## 🩺 Help & FAQ
+## Help
 
 <details>
-<summary><b>Windows SmartScreen says "Windows protected your PC" or Windows Security flagged a cache file</b></summary>
+<summary><b>The video stutters or drops frames</b></summary>
 
-- **SmartScreen:** The installer is not signed with a paid code-signing certificate yet. Click **More info → Run anyway**. Every release lists its SHA-256 hash so you can verify your download.
-- **`Trojan:HTML/Redirector` in `http_cache`:** Older versions cached raw HTML responses from third-party streaming websites on disk, which caused Windows Defender to flag ad/redirect scripts inside those pages. HTML and scripts are never executed by the app and are **no longer written to the disk cache** (`NoPageCache`). See **[SECURITY.md](SECURITY.md)** for a complete explanation.
+In the player's menu set **Upscaling** to **Off** or **Sharp**; try **Native GPU player** in `Settings → Appearance`. A built-in governor already steps the rendering down when the processor falls behind.
 
 </details>
 
 <details>
-<summary><b>The video stutters or drops frames on my PC</b></summary>
+<summary><b>The window flickers, or the app is slow on an old PC</b></summary>
 
-- In the player, click **Upscaling** and set it to **Off** or **Sharp** if your GPU cannot keep up with Anime4K / FSR shaders.
-- Open **Settings → Appearance** and try switching on **Native GPU player (beta)**, which lets `mpv` draw directly through your graphics card.
-- The built-in playback governor also watches frame times automatically and steps down rendering resolution if your CPU falls behind.
+`Settings → General → Performance`: **Low-end PC mode** (automatic) and **Graphics renderer** (try OpenGL, then Software; restart afterwards). If the screen is too broken to reach Settings, start **CloudStream (safe graphics)** from the Start menu (the portable folder has `CloudStream (safe graphics).cmd`) or run `CloudStream.exe --safe-graphics`. Update the graphics driver too.
 
 </details>
 
 <details>
-<summary><b>A live channel or source does not play (but works on my phone)</b></summary>
+<summary><b>A source or live channel does not play (but works on my phone)</b></summary>
 
-Many streaming hosts block VPNs, datacenter IPs, and Cloudflare WARP. If a source works on your phone over mobile data or home Wi-Fi, **turn off your VPN / Cloudflare WARP on your PC and try again**, or click **Reload sources** in the player's Sources menu.
+Many hosts block VPNs, datacenter IPs and Cloudflare WARP. Turn the VPN / WARP off and try again, or use **Reload sources** in the player's Sources menu.
 
 </details>
 
 <details>
-<summary><b>Where are my settings and extensions stored?</b></summary>
+<summary><b>A site's Cloudflare check does not open</b></summary>
 
-- **Installed app (Setup / MSI):** `%APPDATA%\CloudStream` (`Settings → About → App data folder` opens it). A safety mirror of your repositories, extensions, and settings is also kept in `%LOCALAPPDATA%\CloudStream-keep`.
-- **Portable app:** Inside the `data/` folder right next to `CloudStream.exe`.
-- You can export or restore a full backup anytime from **Settings → Updates & backup → Back up data**.
+The check window of an extension opens when you use that extension (it is Home, an open title page or a search). If it was asked for earlier it is held for a few minutes and shown, or passed in the background, when you switch to it. `Settings → General → Pass Cloudflare checks` turns the windows off for good.
 
 </details>
 
-**Reporting a bug:** Open a [GitHub Issue](../../issues/new/choose) or reach out on [Discord](https://discord.gg/u82JU5JDM) / [Telegram](https://t.me/cs3d_official). Include what you did, what happened, and the output of **Settings → About → Copy diagnostics** (passwords and tokens are automatically masked).
+<details>
+<summary><b>Where are my settings and extensions?</b></summary>
 
----
+Installed app: `%APPDATA%\CloudStream` (`Settings → About → App data folder`), with a safety mirror in `%LOCALAPPDATA%\CloudStream-keep`. Portable: the `data/` folder next to `CloudStream.exe`. Back up or restore everything in `Settings → Updates & backup`.
 
-## 🛠️ Building from Source & Contributing
+</details>
+
+**Reporting a bug:** open a [GitHub issue](../../issues/new/choose) or write on [Discord](https://discord.gg/u82JU5JDM) / [Telegram](https://t.me/cs3d_official), with the output of **Settings → About → Copy diagnostics** (passwords and tokens are masked).
+
+## Build from source
 
 Requires **JDK 21** and **[Git LFS](https://git-lfs.com)** (`git lfs install` before cloning).
 
 ```powershell
-.\gradlew.bat :app:runDev           # Run from source
-.\gradlew.bat :app:test             # Run unit test suite
-.\gradlew.bat :app:portableDist     # Build portable app in dist/CloudStream-Portable
-.\gradlew.bat :app:portableZip      # Build release portable zip in dist/release
-.\gradlew.bat :app:installerMsi     # Build Windows MSI in dist/release (requires WiX Toolset 3.x)
+.\gradlew.bat :app:runDev           # run from source
+.\gradlew.bat :app:test             # unit tests
+.\gradlew.bat :app:portableDist     # portable app in dist/CloudStream-Portable
+.\gradlew.bat :app:portableZip      # release zip in dist/release
+.\gradlew.bat :app:installerMsi     # MSI in dist/release (needs WiX Toolset 3.x)
 ```
 
-See **[CONTRIBUTING.md](CONTRIBUTING.md)** for full setup instructions, project architecture, and development tools, and **[CHANGELOG.md](CHANGELOG.md)** for detailed release history.
+The engine in `library/`, `shared/` and `android/` follows upstream CloudStream **4.8** at commit
+[`d9c55e2`](https://github.com/recloudstream/cloudstream/commit/d9c55e2e5b020dde8e28c12a3e7802df962265ac) (2026-10-15); the full hash is pinned in [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT).
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the architecture and dev tools, and **[CHANGELOG.md](CHANGELOG.md)** for every release.
 
----
+## Credits
 
-## 💙 Support the Project
+| | |
+| :--- | :--- |
+| **[CloudStream](https://github.com/recloudstream/cloudstream)** (GPL-3.0) | The engine this app is built on: the extension API, the repository and plugin format, the sync providers and the Android app this one mirrors. Pinned at upstream commit [`d9c55e2`](https://github.com/recloudstream/cloudstream/commit/d9c55e2e5b020dde8e28c12a3e7802df962265ac). Thanks to the CloudStream team and to every extension developer. CloudStream for Windows is an independent desktop port, not an official release. |
+| **[Ayu · CS3 Desktop Client (unofficial)](https://github.com/errorcode26/CS3-desktop-client-unofficial)** by errorcode26 | The UI ideas: the floating glass player and its motion, the cast and crew rows, the calmer art-first look of the title pages, and Stremio add-ons beside the extensions. Only the look and the ideas were taken; the code of this app is its own. |
 
-CloudStream for Windows is **free, open-source, and ad-free**. If you enjoy using it on your PC, starring the repository on GitHub or making a small donation helps keep development active. From India, use Razorpay (UPI and cards); from anywhere else, [buymeacoffee.com/lelouchcodes11](https://buymeacoffee.com/lelouchcodes11) takes international cards.
+**Built with** [mpv](https://mpv.io) and [FFmpeg](https://ffmpeg.org) (player), [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform) and [Skia](https://skia.org) (UI), [Anime4K](https://github.com/bloc97/Anime4K) (MIT) and FSR / CAS (AMD, MIT) shaders, [TorrServer](https://github.com/YouROK/TorrServer) (GPL-3.0), the [Manrope](https://github.com/sharanda/manrope) typeface (OFL 1.1). Data from [TMDB](https://www.themoviedb.org), [AniList](https://anilist.co), [MyAnimeList](https://myanimelist.net), [Simkl](https://simkl.com), [OpenSubtitles](https://www.opensubtitles.com) and [SubDL](https://subdl.com). This product uses the TMDB API but is not endorsed or certified by TMDB. The characters and footage of the animated profile pictures belong to their owners (`app/src/main/resources/avatars/LICENSE.txt`).
 
-<p align="center">
-  <a href="https://razorpay.me/@lelouch11"><img alt="Donate with Razorpay" src="https://img.shields.io/badge/Donate%20with-Razorpay-0C2451?style=for-the-badge&logo=razorpay&logoColor=white"></a>
-  &nbsp;
-  <a href="https://buymeacoffee.com/lelouchcodes11"><img alt="Buy me a coffee (international)" src="https://img.shields.io/badge/Buy%20Me%20a-Coffee%20(international)-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black"></a>
-  &nbsp;
-  <a href="https://t.me/cs3d_official"><img alt="Join the Telegram channel" src="https://img.shields.io/badge/Join-Telegram-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
-  &nbsp;
-  <a href="https://discord.gg/u82JU5JDM"><img alt="Join the Discord server" src="https://img.shields.io/badge/Join-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
-</p>
+## Support
 
----
+Free, open-source and ad-free. A star on GitHub or a small donation keeps it going: [Razorpay](https://razorpay.me/@lelouch11) (UPI and cards, India) or [Buy Me a Coffee](https://buymeacoffee.com/lelouchcodes11) (international). News and releases on [Telegram](https://t.me/cs3d_official), talk and help on [Discord](https://discord.gg/u82JU5JDM).
 
-## 📜 Disclaimer & License
+## Disclaimer & license
 
-CloudStream for Windows contains **no extensions, no Stremio add-ons, and no media content**. Extensions and add-ons are created by independent third-party developers and added at your own discretion; you are solely responsible for the content you access. Not affiliated with Stremio. Torrent streaming shares data peer-to-peer and exposes your IP address to the swarm unless you use a VPN.
+CloudStream for Windows contains **no extensions, no Stremio add-ons and no media content**. Extensions and add-ons are made by independent third parties and added at your own discretion; you are responsible for what you access. Not affiliated with Stremio. Torrent streaming shares data peer-to-peer and shows your IP address to the swarm unless you use a VPN.
 
 <p align="center"><sub>Licensed under <a href="LICENSE">GPL-3.0</a>. Built on the <a href="https://github.com/recloudstream/cloudstream">CloudStream</a> engine.</sub></p>
-<p align="center"><sub>Film and series metadata provided by <a href="https://www.themoviedb.org">TMDB</a>, anime lists by <a href="https://anilist.co">AniList</a>. This product uses the TMDB API but is not endorsed or certified by TMDB.</sub></p>

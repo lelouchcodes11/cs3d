@@ -264,6 +264,8 @@ private fun videoOrigin(canvas: Canvas): java.awt.Point? {
 @Composable
 fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
     val canvas = NativeVideo.canvas ?: return
+    // -Dcloudstream.overlaytest=gone: the controls window is never made (ControlsGuard has to give up on it)
+    if (System.getProperty("cloudstream.overlaytest") == "gone") return
     // the window is not shown before it has its place over the video: it used to appear small at the top left of the screen and then jump
     var placed by remember(canvas) { mutableStateOf(false) }
     val state = rememberDialogState(
@@ -272,7 +274,9 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
     )
     // the real window of the controls (to put its bounds right by hand when the dialog state and the window disagree)
     val shown = remember(canvas) { arrayOfNulls<java.awt.Window>(1) }
-    DialogWindow(onCloseRequest = {}, state = state, visible = placed, undecorated = true, transparent = true, resizable = false, focusable = focusable) {
+    // -Dcloudstream.overlaytest=hidden / blind breaks the controls window on purpose, to test ControlsGuard (it must put it right or give it up)
+    val overlayTest = remember { System.getProperty("cloudstream.overlaytest") }
+    DialogWindow(onCloseRequest = {}, state = state, visible = placed && overlayTest != "hidden", undecorated = true, transparent = true, resizable = false, focusable = focusable) {
         shown[0] = window
         // a new window of this class is white until something paints it (the first frame of the first video of a run showed it as one half-white frame at the
         // moment the page changes): its own background brush is black from its first paint, like the video's window
@@ -287,6 +291,7 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
         LaunchedEffect(window) {
             while (true) {
                 com.lagradost.desktop.platform.WindowsTouch.install(window)
+                if (overlayTest == "blind") com.lagradost.desktop.platform.WinProbe.makeClickThrough(com.lagradost.desktop.platform.WinProbe.handleOf(window))
                 delay(2000)
             }
         }

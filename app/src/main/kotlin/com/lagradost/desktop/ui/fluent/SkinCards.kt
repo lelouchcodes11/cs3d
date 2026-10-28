@@ -72,7 +72,7 @@ fun SkinPosterCard(
     val hovered by source.collectIsHoveredAsState()
     val pressed by source.collectIsPressedAsState()
     val shape = RoundedCornerShape(FluentShapes.card)
-    val lift by animateFloatAsState(if (pressed) 0.98f else if (hovered && Appearance.hoverZoom) 1.1f else 1f, FluentMotion.springSoft(), label = "skinLift")
+    val lift by animateFloatAsState(if (pressed) 0.98f else if (hovered && Appearance.hoverZoomOn) 1.1f else 1f, FluentMotion.springSoft(), label = "skinLift")
     val info by animateFloatAsState(if (hovered) 1f else 0f, FluentMotion.tweenIn(200), label = "skinInfo")
     val owned = item.apiName.isNotBlank() && item.url.isNotBlank() && item !is com.lagradost.desktop.tmdb.TmdbCard
     val status = remember(item.url, hovered) { if (hovered && owned) runCatching { CardLibrary.status(item) }.getOrDefault(WatchType.NONE) else WatchType.NONE }

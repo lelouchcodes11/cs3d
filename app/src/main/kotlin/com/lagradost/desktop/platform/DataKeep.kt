@@ -25,7 +25,7 @@ object DataKeep {
     private val explicit: Boolean get() = System.getProperty("cloudstream.data") != null
 
     /** `-Dcloudstream.keep=<folder>` names another place (the tests) */
-    private val folder: File?
+    internal val folder: File?
         get() {
             System.getProperty("cloudstream.keep")?.let { return File(it) }
             val base = System.getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }?.let { File(it) }

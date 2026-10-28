@@ -1,5 +1,6 @@
 package com.lagradost.desktop.player
 
+import com.lagradost.desktop.ui.fluent.AudioFilters
 import com.lagradost.desktop.ui.fluent.DynamicRange
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,6 +27,21 @@ class DynamicRangeTest {
             "lavfi=[acompressor=threshold=0.06310:ratio=8:attack=5:release=400:makeup=3.98107:detection=peak]",
             DynamicRange.Dialogue.filter,
         )
+    }
+
+    @Test
+    fun stableVolumeAndTheCompressorShareOneChain() {
+        assertEquals("", AudioFilters.chain(false, DynamicRange.Off))
+        assertEquals(AudioFilters.STABLE, AudioFilters.chain(true, DynamicRange.Off))
+        assertEquals(DynamicRange.Light.filter, AudioFilters.chain(false, DynamicRange.Light))
+        // levelled first, then compressed
+        assertEquals(AudioFilters.STABLE + "," + DynamicRange.Light.filter, AudioFilters.chain(true, DynamicRange.Light))
+    }
+
+    @Test
+    fun stableVolumeUsesOnlyDynaudnormOptionsFfmpegKnows() {
+        val options = Regex("([a-z]+)=").findAll(AudioFilters.STABLE.substringAfter("dynaudnorm=")).map { it.groupValues[1] }.toSet()
+        assertTrue(options.all { it in setOf("f", "g", "p", "m", "s", "n") }, "$options")
     }
 
     @Test

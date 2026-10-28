@@ -70,6 +70,10 @@ object HlsProxy {
             interceptorsById.remove(id)
             streamSubtitlesById.remove(id)
             variantsById.remove(id)
+            // what is known of a live stream's window goes with the stream (the playlist reader of [keepFresh] stops when the headers are gone)
+            timelines.keys.removeIf { it.startsWith("$id|") }
+            liveWindows.remove(id)
+            startCuts.remove(id)
             activeCalls.remove(id)?.forEach { runCatching { it.cancel() } }
             val it = firstSegments.entries.iterator()
             while (it.hasNext()) {
@@ -186,6 +190,108 @@ object HlsProxy {
     /** Whether a [wrap] address plays a live playlist (known once a media playlist was read) */
     fun isLive(address: String): Boolean = address.substringAfter("h=", "").substringBefore("&").let { it.isNotEmpty() && it in liveIds }
 
+    // the length (s) of the newest live media playlist of a stream (by id): how far back a viewer can go. Only read, nothing served is changed.
+    private val liveWindows = ConcurrentHashMap<String, Double>()
+    private val extInf = Regex("""#EXTINF:\s*([0-9]+(?:\.[0-9]+)?)""")
+
+    /**
+     * Where a live playlist's newest picture is on the player's clock. ffmpeg's HLS reader counts from the first segment of the first playlist it read (0), so the
+     * end of the stream is the length of everything listed since, added to as the playlist slides on; this is read from the playlists only. It is needed because
+     * the player's own idea of the end (its duration) is only as far as it has read: a channel that was opened far behind its live edge (a source switch that
+     * carried a position over did that) said the end was a minute away, and the window with it.
+     */
+    private class Timeline(val url: String, val createdAt: Long, var lastSeq: Long, var endSeconds: Double, var readAt: Long, var targetSeconds: Double) {
+        /** (the end listed at a read) minus (the time of that read), s, of the last reads: see [liveEndSeconds] */
+        val offsets = java.util.ArrayDeque<Double>()
+
+        @Synchronized
+        fun note(now: Long) {
+            offsets.addLast(endSeconds - now / 1e9)
+            while (offsets.size > 12) offsets.removeFirst()
+        }
+
+        @Synchronized
+        fun bestOffset(): Double = offsets.maxOrNull() ?: (endSeconds - readAt / 1e9)
+    }
+    private val timelines = ConcurrentHashMap<String, Timeline>()
+    private val mediaSequence = Regex("""#EXT-X-MEDIA-SEQUENCE:\s*(\d+)""")
+    private val targetDuration = Regex("""#EXT-X-TARGETDURATION:\s*(\d+(?:\.\d+)?)""")
+
+    private fun track(id: String, playlistUrl: String, text: String) {
+        runCatching {
+            val seq = mediaSequence.find(text)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            val durations = extInf.findAll(text).map { it.groupValues[1].toDoubleOrNull() ?: 0.0 }.toList()
+            if (durations.isEmpty()) return
+            val target = targetDuration.find(text)?.groupValues?.get(1)?.toDoubleOrNull() ?: durations.max()
+            val key = id + "|" + playlistUrl.substringBefore('?')
+            val last = seq + durations.size - 1
+            val now = System.nanoTime()
+            val t = timelines[key]
+            if (t == null) { timelines[key] = Timeline(playlistUrl, now, last, durations.sum(), now, target).also { it.note(now) }; keepFresh(id); return }
+            t.readAt = now
+            if (last > t.lastSeq) {
+                // the segments that are new since the last read; if the playlist slid past some between two reads they are counted at the average length
+                val firstNew = maxOf(t.lastSeq + 1, seq)
+                val missed = (firstNew - (t.lastSeq + 1)).coerceAtLeast(0)
+                t.endSeconds += missed * durations.average() + durations.drop((firstNew - seq).toInt().coerceAtLeast(0)).sum()
+                t.lastSeq = last
+            }
+            t.note(now)
+        }
+    }
+
+    /**
+     * The timeline that is followed for a stream: of the playlists (the qualities, the audio) that ffmpeg opened one after the other, the last one, whose zero is the
+     * latest, so its end is the smallest (a segment or two short at the worst, never long).
+     */
+    private fun primary(id: String): Timeline? = timelines.entries.filter { it.key.startsWith("$id|") }.maxByOrNull { it.value.createdAt }?.value
+
+    /**
+     * The newest picture of the live playlist of a [wrap] address on the player's clock, now (s), null while unknown. The playlist's end moves a segment (2 to 10 s) at a
+     * time, the channel runs on all the time: a read shows the end as it was published, up to a segment ago. The channel's clock is taken to keep step with the PC's, and
+     * its offset is the best (largest) of the last dozen reads (a read just after a segment came out shows it exactly); the edge is that offset plus the time now, so it
+     * moves steadily and does not jump back by a segment at every read.
+     */
+    fun liveEndSeconds(address: String): Double? {
+        val id = address.substringAfter("h=", "").substringBefore("&").takeIf { it.isNotEmpty() } ?: return null
+        val t = primary(id) ?: return null
+        return t.bestOffset() + System.nanoTime() / 1e9
+    }
+
+    /** The target segment length (s) the live playlist of a [wrap] address declares, null while unknown */
+    fun targetSeconds(address: String): Double? = address.substringAfter("h=", "").substringBefore("&").takeIf { it.isNotEmpty() }?.let { primary(it)?.targetSeconds }
+
+    // ffmpeg reads a live playlist again only when it has played everything the last copy listed, so a viewer who is behind live (a seek back, a pause) would see
+    // the end stand still while the channel goes on: the followed playlist is read from here, once per target duration, whenever ffmpeg has not read it itself
+    private val keepers = ConcurrentHashMap<String, Boolean>()
+
+    private fun keepFresh(id: String) {
+        if (keepers.putIfAbsent(id, true) != null) return
+        Thread({
+            try {
+                // until the player has let go of the stream ([cancel])
+                while (headersById.containsKey(id)) {
+                    Thread.sleep(1000)
+                    val t = primary(id) ?: continue
+                    val everyMs = (t.targetSeconds.coerceIn(2.0, 10.0) * 1000).toLong()
+                    if ((System.nanoTime() - t.readAt) / 1_000_000L < everyMs) continue
+                    val (code, bytes) = getFull(t.url, headersById[id] ?: break, interceptorsById[id], id).let { it.first to it.second }
+                    if (code !in 200..299) continue
+                    val text = String(bytes, Charsets.UTF_8)
+                    if (!text.contains("#EXTINF") || text.contains("#EXT-X-ENDLIST")) continue
+                    liveWindows[id] = extInf.findAll(text).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }
+                    track(id, t.url, text)
+                }
+            } catch (_: Throwable) {
+            } finally {
+                keepers.remove(id)
+            }
+        }, "HlsProxy-live").apply { isDaemon = true }.start()
+    }
+
+    /** How many seconds the live playlist of a [wrap] address lists (what the channel keeps: 20 s on some channels, 10 minutes on others), null while unknown */
+    fun windowSeconds(address: String): Double? = address.substringAfter("h=", "").substringBefore("&").takeIf { it.isNotEmpty() }?.let { liveWindows[it] }
+
     private val server: HttpServer by lazy {
         HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 32).apply {
             executor = Executors.newCachedThreadPool { r -> Thread(r, "HlsProxy").apply { isDaemon = true } }
@@ -196,12 +302,50 @@ object HlsProxy {
         }
     }
 
-    /** Address to give mpv instead of [url] */
-    fun wrap(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null): String {
+    /**
+     * Address to give mpv instead of [url]. [startBehindSeconds] > 0 makes a live channel open that far behind its live edge (or at its oldest picture when it keeps
+     * less): ffmpeg starts three segments before the end of the first copy of each live playlist it reads, so that copy is given without its last segments, once
+     * per playlist; every later copy is the whole playlist and playback goes on from the next segment, no seek and nothing else changed.
+     */
+    fun wrap(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null, startBehindSeconds: Double = 0.0): String {
         val id = Integer.toHexString(url.hashCode()) + "-" + System.nanoTime().toString(16)
         headersById[id] = headers
         if (interceptor != null) interceptorsById[id] = interceptor
+        if (startBehindSeconds > 0.0) startCuts[id] = StartCut(startBehindSeconds)
         return playlistAddress(url, id)
+    }
+
+    private class StartCut(val seconds: Double) {
+        @Volatile
+        var cutSeq = Long.MIN_VALUE
+        val done = java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    }
+    private val startCuts = ConcurrentHashMap<String, StartCut>()
+
+    /** The first copy of a live playlist of a stream that asked to start behind live, without the segments that are newer than the wanted start (else the playlist as it is) */
+    private fun startBehindCut(id: String, url: String, text: String): String {
+        val cut = startCuts[id] ?: return text
+        // the first copy of each playlist only (the qualities and the audio are opened one after the other: they are cut at the same segment)
+        if (!cut.done.add(url.substringBefore('?'))) return text
+        return runCatching {
+            val seq0 = mediaSequence.find(text)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            val lines = text.split('\n')
+            val extinfLines = lines.indices.filter { lines[it].startsWith("#EXTINF") }
+            val n = extinfLines.size
+            // a channel that lists three segments or fewer is opened as it is (its player starts at the oldest one)
+            if (n < 4) return@runCatching text
+            val last = seq0 + n - 1
+            if (cut.cutSeq == Long.MIN_VALUE || cut.cutSeq !in seq0..last) {
+                val segment = extInf.findAll(text).map { it.groupValues[1].toDoubleOrNull() ?: 0.0 }.average().coerceAtLeast(0.5)
+                // ffmpeg starts three segments before the end of what it is given: those are part of the wanted distance; never fewer than three segments are left
+                val dropped = ((cut.seconds - 3 * segment) / segment).toInt().coerceIn(0, n - 3)
+                cut.cutSeq = last - dropped
+            }
+            val keep = (cut.cutSeq - seq0 + 1).toInt()
+            if (keep >= n) return@runCatching text
+            Log.i(TAG, "live start: ${n - keep} newest segments of ${n} left out of the first copy of the playlist (${url.substringBefore('?').takeLast(40)}), playback starts about ${cut.seconds.toInt()} s behind live (or at the oldest picture when the channel keeps less)")
+            lines.subList(0, extinfLines[keep]).joinToString("\n") + "\n"
+        }.getOrDefault(text)
     }
 
     // playlists made by the app (OnDemandDash: DASH segment templates as HLS), by id; the newest few are kept
@@ -305,8 +449,15 @@ object HlsProxy {
                 } else {
                     val text = String(bytes, Charsets.UTF_8)
                     if (finalUrl.substringBefore('?') != url.substringBefore('?')) Log.i(TAG, "playlist redirected: segments come from ${finalUrl.substringBefore('?').take(100)}")
-                    val body = rewrite(text, finalUrl, id, headers).toByteArray(Charsets.UTF_8)
-                    if (text.contains("#EXTINF") && !text.contains("#EXT-X-ENDLIST")) liveIds.add(id)
+                    val isLive = text.contains("#EXTINF") && !text.contains("#EXT-X-ENDLIST")
+                    // what the player is given may start behind the live edge (see [wrap]); everything known about the window is taken from the whole playlist
+                    val served = if (isLive) startBehindCut(id, url, text) else text
+                    val body = rewrite(served, finalUrl, id, headers).toByteArray(Charsets.UTF_8)
+                    if (isLive) {
+                        liveIds.add(id)
+                        liveWindows[id] = extInf.findAll(text).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }
+                        track(id, url, text)
+                    }
                     future.complete(Fetched(200, body, text.contains("#EXT-X-ENDLIST")))
                 }
             } catch (t: Throwable) {

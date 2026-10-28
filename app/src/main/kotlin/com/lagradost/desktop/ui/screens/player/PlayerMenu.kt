@@ -174,6 +174,11 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         NavRow(Icons.Speed, "Playback speed", speedLabel(s.speed)) { onPage(MenuPage.Speed) }
         NavRow(Icons.Aspect, "Picture size", s.resize.label) { onPage(MenuPage.Picture) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
+        ToggleRow(Icons.Volume, "Stable volume", Appearance.stableVolume) {
+            Appearance.stableVolume = it
+            Appearance.save()
+            ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyDynamicRange() }
+        }
         NavRow(Icons.Volume, "Dynamic range", Appearance.dynamicRange.label) { onPage(MenuPage.Compressor) }
         NavRow(Icons.Anime, "Upscaling", Appearance.upscaler.label.substringBefore(" (").substringBefore(", ")) { onPage(MenuPage.Upscaling) }
         NavRow(Icons.Skip, "Skip intro & credits", if (Appearance.autoSkipStamps) (if (Appearance.autoSkipDelay5s) "Auto (5s)" else "Auto") else "Manual") { onPage(MenuPage.Skip) }
@@ -518,9 +523,20 @@ private fun NavRow(glyph: String, label: String, value: String?, onClick: () -> 
         Icon(glyph, size = 16.dp, tint = MenuColors.secondary)
         FText(label, Modifier.padding(start = 14.dp, end = 12.dp), color = MenuColors.text, maxLines = 1, softWrap = false)
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            if (value != null) FText(value, color = MenuColors.secondary, maxLines = 1, softWrap = false)
+            // the label has the room it needs; a value that does not fit the rest ("Japanese → English" beside a long translation of "Translate on-screen text") goes on a second line
+            if (value != null) FText(value, color = MenuColors.secondary, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.End)
         }
         Icon(Icons.ChevronRightSmall, Modifier.padding(start = 8.dp), size = 10.dp, tint = MenuColors.tertiary)
+    }
+}
+
+/** A setting of the root page that is on or off: icon, name and a switch (the whole row is the click target) */
+@Composable
+private fun ToggleRow(glyph: String, label: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(rowModifier({ onChange(!on) }, Role.Switch).heightIn(min = ROW_HEIGHT).padding(start = 10.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(glyph, size = 16.dp, tint = MenuColors.secondary)
+        FText(label, Modifier.padding(start = 14.dp, end = 12.dp).weight(1f), color = MenuColors.text, maxLines = 1, softWrap = false)
+        com.lagradost.desktop.ui.fluent.ToggleSwitch(on, { onChange(!on) })
     }
 }
 
@@ -531,7 +547,8 @@ private fun CheckRow(text: String, selected: Boolean, detail: String? = null, in
         Box(Modifier.width(30.dp)) { if (selected) Icon(Icons.Check, size = 14.dp, tint = Fluent.colors.accent) }
         Column(Modifier.weight(1f)) {
             FText(text, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (selected) MenuColors.text else MenuColors.secondary, maxLines = 2)
-            if (detail != null) FText(detail, style = Fluent.type.caption, color = MenuColors.tertiary, maxLines = 2)
+            // three lines: the translated descriptions of the upscaling modes are longer than the English ones and ended in the middle of a sentence
+            if (detail != null) FText(detail, style = Fluent.type.caption, color = MenuColors.tertiary, maxLines = 3)
         }
         if (trailing != null) Icon(trailing, Modifier.padding(start = 8.dp), size = 10.dp, tint = MenuColors.tertiary)
     }

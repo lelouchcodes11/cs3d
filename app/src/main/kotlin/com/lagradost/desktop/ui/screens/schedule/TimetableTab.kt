@@ -58,6 +58,7 @@ import com.lagradost.desktop.ui.fluent.Chip
 import com.lagradost.desktop.ui.fluent.EmptyState
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.lightShadow
 import com.lagradost.desktop.ui.fluent.FluentMotion
 import com.lagradost.desktop.ui.fluent.FluentShapes
 import com.lagradost.desktop.ui.fluent.Icon
@@ -319,7 +320,7 @@ private fun Slot(time: Long, items: List<AiringSchedule.Airing>, aired: Boolean,
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         Column(Modifier.width(TimeColumn).padding(top = 2.dp)) {
             FText(label, style = Fluent.type.bodyStrong, color = if (aired) c.textSecondary else c.text, maxLines = 1, softWrap = false)
-            if (!aired) FText(countdown(time - nowSec), style = Fluent.type.caption, color = c.accentText, maxLines = 1, softWrap = false)
+            if (!aired) FText(countdown(time - nowSec), style = Fluent.type.caption, color = c.accentText, maxLines = 2)
         }
         // the rail: a dot at the time, a line down to the next one
         val line = c.stroke
@@ -372,7 +373,7 @@ private fun EpisodeCard(a: AiringSchedule.Airing, aired: Boolean) {
     val lift by animateFloatAsState(if (hovered) 1.012f else 1f, FluentMotion.tweenStd(140), label = "epLift")
     Row(
         Modifier.fillMaxWidth().height(92.dp).graphicsLayer { scaleX = lift; scaleY = lift }
-            .clip(shape).background(if (hovered) c.cardHover else c.card, shape)
+            .lightShadow(shape).clip(shape).background(if (hovered) c.cardHover else c.card, shape)
             .hairBorder(edge, shape)
             .hoverable(source)
             .fluentClickable(source, true, shape, Role.Button) { Navigator.search(a.title) }

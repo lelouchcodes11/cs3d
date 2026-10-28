@@ -98,14 +98,21 @@ fun AndroidDialogHost(dialog: Dialog) {
             else -> RoundedCornerShape(12.dp)
         }
         val defaultBackground = MaterialTheme.colorScheme.surfaceVariant
+        // a window that is the whole screen (an extension's popup that draws its own shade and its own rounded card inside it, such as the donation popup of
+        // CNCVerse) is the whole app window: shrunk into a clipped, padded box its shade showed as a black rectangle around the card
+        val fullScreen = layoutWidth == ViewGroup.LayoutParams.MATCH_PARENT && layoutHeight == ViewGroup.LayoutParams.MATCH_PARENT && !isSheet && !isAlert
         var box: Modifier = Modifier.align(alignment)
+        if (fullScreen) box = box.fillMaxSize().alpha(appear)
+        else {
         if (!isSheet) box = box.padding(16.dp)
         box = if (width != null) box.width(width) else box.widthIn(min = min(maxW - 32.dp, 280.dp), max = min(maxW - 32.dp, 640.dp))
         box = box.heightIn(max = if (layoutHeight == ViewGroup.LayoutParams.MATCH_PARENT) maxHeight else maxHeight - (if (isSheet) 48.dp else 32.dp))
             .alpha(appear)
             .clip(shape)
+        }
+        box = box
             .drawBehind {
-                if (background == null) drawRect(defaultBackground)
+                if (background == null) { if (!fullScreen) drawRect(defaultBackground) }
                 else drawAndroidDrawable(background, size.width.toInt(), size.height.toInt())
             }
             // clicks inside the dialog must not reach the dim area

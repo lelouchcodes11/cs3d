@@ -230,7 +230,7 @@ private object Clips {
 private fun rememberClipTime(seconds: Float?, animated: Boolean, playing: Boolean, seed: Int): State<Float> {
     val time = remember { mutableFloatStateOf(0f) }
     val focused = LocalWindowInfo.current.isWindowFocused
-    val allowed = seconds != null && focused && Appearance.motion != Motion.Off && Appearance.animatedProfiles && (animated || playing)
+    val allowed = seconds != null && focused && Appearance.motion != Motion.Off && Appearance.profilesMove && (animated || playing)
     LaunchedEffect(allowed, playing, seconds) {
         time.floatValue = 0f
         val len = seconds ?: return@LaunchedEffect

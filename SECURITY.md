@@ -35,7 +35,25 @@ Earlier MSI builds (`1.0.0` – `1.0.2`) included a WiX custom action that invok
 
 ---
 
-## 4. Reporting a Vulnerability
+## 4. Extensions run in a sandbox
+
+CloudStream extensions are programs written by third parties and published in repositories that anyone can create. They run inside the app, with the rights of the Windows user. The app watches what they do (`Settings → General → Security → Extension sandbox`, **on by default**).
+
+**What an extension is stopped from doing**
+- running programs (also by asking Windows to "open" an executable, a script or a shortcut),
+- reading files outside the app's own folders (documents, downloads, browser data, keys) and changing or deleting files outside the data folder and the temp folder, which blocks the usual malware moves such as adding a startup entry,
+- ending the app, switching the sandbox off, loading native libraries, loading code through a class loader of its own, or using the JDK's internals and JNA (the way to Windows' own system functions),
+- taking screenshots, watching the keyboard or reading the clipboard, and changing the proxy, cookie or certificate handling of the whole app.
+
+It keeps the network and everything it needs to find sources. The windows of an extension you are not using are held back too: a donation or news popup is not shown at all, and a Cloudflare check window that the extension asks for while it loads (AnimePahe does) waits, for up to three minutes, until you use that extension, or is closed unseen when its page passes the check by itself. When something is stopped the extension gets an error, a toast names the extension and the action, and **Settings → General → Security → Blocked by the sandbox** lists it, so a source that breaks can be understood. An extension you know and trust can be marked **Trust** in that list (Settings → General → Security → Trusted extensions takes it back): the sandbox then leaves it alone. The switch turns the whole sandbox off.
+
+**How it works.** The launcher starts the JVM with `-Djava.security.manager=allow` and the app installs a Java `SecurityManager` that acts only when code of an extension is on the call stack (a class of a dex class loader). The app's own work passes at once. The few things the app does for an extension on purpose (opening a link in your browser, copying text to the clipboard) go through a gate that checks them first: a file can only be opened when it is a media, subtitle, picture or document file. `-Dcloudstream.sandbox=audit` only logs what would be stopped; `=off` does not install it.
+
+**What it is not.** It is not a virtual machine and not a barrier against code written to defeat this very sandbox (for example by abusing a feature of the app). It makes the usual attacks fail and shows what an extension tries. Add only repositories you trust, keep Windows Defender on, and report extensions that behave badly.
+
+---
+
+## 5. Reporting a Vulnerability
 
 If you discover a security vulnerability in CloudStream for Windows:
 - Please report it via [GitHub Issues](../../issues) or contact the maintainer on [Discord](https://discord.gg/u82JU5JDM) / [Telegram](https://t.me/cs3d_official).

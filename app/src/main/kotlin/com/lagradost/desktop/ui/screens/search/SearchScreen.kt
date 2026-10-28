@@ -446,8 +446,11 @@ private fun HistoryPage(history: List<SearchHistoryItem>, vm: SearchViewModel, v
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val filters = remember { com.lagradost.desktop.ui.screens.explore.ExploreFilters() }
     val rows = remember(filters.kind, filters.genre, filters.service, filters.local, filters.activeLanguage, com.lagradost.desktop.tmdb.Tmdb.region, com.lagradost.desktop.tmdb.Tmdb.enabled) { com.lagradost.desktop.ui.screens.explore.ExploreClient.rows(filters.kind, filters.genre, filters.service, filters.local, filters.activeLanguage) }
+    // the wheel glides here as on every other page (it jumped a step per notch on this one)
+    val pageState = rememberLazyListState()
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().smoothWheel(pageState),
+        state = pageState,
         contentPadding = PaddingValues(top = TopBarHeight + 28.dp, bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current),
     ) {
         item(key = "field") {

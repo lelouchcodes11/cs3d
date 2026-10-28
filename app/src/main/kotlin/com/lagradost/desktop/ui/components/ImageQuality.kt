@@ -16,6 +16,8 @@ import coil3.size.Dimension
 import coil3.size.Precision
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Canvas
+import org.jetbrains.skia.Codec
+import org.jetbrains.skia.Data
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.SamplingMode
@@ -52,6 +54,27 @@ internal object ImageQuality {
             return draw(current, w, h, SamplingMode.CATMULL_ROM)
         } finally {
             if (owned) current.close()
+        }
+    }
+
+    /**
+     * The picture of [codec] decoded at 1/2, 1/4 or 1/8 of its size (the codec scales while it decodes) as long as that is still at least [w] x [h];
+     * null when it is not worth it or the format cannot (the caller then decodes it whole). Same look as the halving loop: a box average, made by the decoder.
+     */
+    fun reducedDecode(codec: org.jetbrains.skia.Codec, srcW: Int, srcH: Int, w: Int, h: Int): Image? {
+        var denom = 1
+        while (denom < 8 && srcW / (denom * 2) >= w && srcH / (denom * 2) >= h) denom *= 2
+        if (denom == 1) return null
+        val bitmap = Bitmap()
+        return try {
+            bitmap.allocN32Pixels((srcW + denom - 1) / denom, (srcH + denom - 1) / denom, false)
+            codec.readPixels(bitmap)
+            bitmap.setImmutable()
+            Image.makeFromBitmap(bitmap)
+        } catch (_: Throwable) {
+            null
+        } finally {
+            bitmap.close()
         }
     }
 
@@ -99,14 +122,25 @@ internal object ImageQuality {
 private class CrispDecoder(private val source: ImageSource, private val options: Options) : Decoder {
     override suspend fun decode(): DecodeResult {
         val bytes = source.source().use { it.readByteArray() }
-        val image = Image.makeFromEncoded(bytes)
+        // a JPEG (or WebP) is decoded at a half, a quarter or an eighth of its size when the card needs no more: the decoder skips the work that the
+        // halving loop below used to do on the whole picture (a 2000 x 3000 poster was decoded in full and then scaled down three times on the processor)
+        val codec = runCatching { Codec.makeFromData(Data.makeFromBytes(bytes)) }.getOrNull()
+        val srcW = codec?.width ?: 0
+        val srcH = codec?.height ?: 0
+        val image: Image = codec?.let { c ->
+            val (tw, th) = target(srcW, srcH)
+            ImageQuality.reducedDecode(c, srcW, srcH, tw, th)
+        } ?: Image.makeFromEncoded(bytes)
         try {
-            val (w, h) = target(image.width, image.height)
+            val fullW = if (srcW > 0) srcW else image.width
+            val fullH = if (srcH > 0) srcH else image.height
+            val (w, h) = target(fullW, fullH)
             val bitmap = ImageQuality.scaled(image, w, h)
             bitmap.setImmutable()
-            return DecodeResult(bitmap.asImage(), isSampled = w < image.width || h < image.height)
+            return DecodeResult(bitmap.asImage(), isSampled = w < fullW || h < fullH)
         } finally {
             image.close()
+            codec?.close()
         }
     }
 

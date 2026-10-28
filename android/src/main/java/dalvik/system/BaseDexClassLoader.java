@@ -67,6 +67,11 @@ public class BaseDexClassLoader extends URLClassLoader {
         }
     }
 
+    /** The extension file(s) this loader reads (the extension sandbox names an extension by it) */
+    public String getDexPath() {
+        return dexPath;
+    }
+
     public String findLibrary(String name) {
         if (librarySearchPath == null) return null;
         String mapped = System.mapLibraryName(name);

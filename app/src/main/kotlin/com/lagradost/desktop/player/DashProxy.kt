@@ -217,6 +217,31 @@ object DashProxy {
         @Volatile
         var repeats = 0
 
+        /** The longest stretch (s) the live manifest lists: what the channel keeps (JIO TV a minute or ten, FanCode an hour) */
+        @Volatile
+        var listedSeconds = 0.0
+
+        /** How far behind the newest segment the player starts (s): 30 by default, further back for a seek past what the player keeps (see [wrap]) */
+        @Volatile
+        var startBehind = DashLiveStart.START_BEHIND_S
+
+        /** The start (s on the manifest's clock) of the first segment the player is given: where its picture begins, fixed with the first manifest */
+        @Volatile
+        var firstKept = Double.NaN
+
+        /** (the newest end the manifest listed at a read) minus (the time of that read), s, of the last dozen reads: the clock of the channel against this PC's */
+        private val edgeOffsets = java.util.ArrayDeque<Double>()
+
+        @Synchronized
+        fun noteEdge(newest: Double) {
+            edgeOffsets.addLast(newest - System.nanoTime() / 1e9)
+            while (edgeOffsets.size > 12) edgeOffsets.removeFirst()
+        }
+
+        /** The newest picture of the channel now on the manifest's clock (s): the best offset of the last reads plus the time now, null before the first read */
+        @Synchronized
+        fun edgeNow(): Double? = edgeOffsets.maxOrNull()?.let { it + System.nanoTime() / 1e9 }
+
         /** Where the player starts in a live manifest (s on its own clock), decided with the first manifest, see [DashLiveStart] */
         @Volatile
         var startBound: Double? = null
@@ -273,6 +298,7 @@ object DashProxy {
         entry.manifestAt = System.currentTimeMillis()
         date?.let { d -> runCatching { java.time.ZonedDateTime.parse(d, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }.getOrNull() }
             ?.let { entry.clockOffsetMs = it - System.currentTimeMillis() }
+        DashLiveStart.measure(String(bytes, Charsets.UTF_8))?.let { (newest, listed) -> entry.listedSeconds = listed; entry.noteEdge(newest) }
         val parsed = DashTimeline.parse(String(bytes, Charsets.UTF_8))
         if (parsed != null) {
             if (entry.timeline == null) Log.i(TAG, "live timeline: ${parsed.tracks.size} streams, segments ${parsed.tracks.first().segmentMs} ms")
@@ -294,8 +320,11 @@ object DashProxy {
         val xml = String(bytes, Charsets.UTF_8)
         if (!entry.startDecided) {
             entry.startDecided = true
-            entry.startBound = DashLiveStart.boundFor(xml)
-            Log.i(TAG, "live start: ${entry.startBound?.let { "${DashLiveStart.START_BEHIND_S.toInt()} s behind the newest segment" } ?: "the whole listed window (too little listed to cut)"}")
+            entry.startBound = DashLiveStart.boundFor(xml, entry.startBehind)
+            Log.i(TAG, "live start: ${entry.startBound?.let { "${entry.startBehind.toInt()} s behind the newest segment" } ?: "the whole listed window (too little listed to cut)"}")
+            // where the picture will begin on the manifest's clock (a player that is asked to start further back is told how far behind it is from this)
+            val first = entry.startBound?.let { b -> runCatching { DashLiveStart.firstStart(DashLiveStart.cut(xml, b)) }.getOrNull() } ?: DashLiveStart.firstStart(xml)
+            if (first != null) entry.firstKept = first
         }
         val bound = entry.startBound ?: return bytes
         return runCatching { DashLiveStart.cut(xml, bound).toByteArray(Charsets.UTF_8) }.getOrDefault(bytes)
@@ -392,6 +421,15 @@ object DashProxy {
     /** Whether a [wrap] address plays a live (dynamic) manifest */
     fun isLive(address: String): Boolean = address.substringAfter("/d/", "").substringBefore("/").let { entries[it]?.live == true }
 
+    /** The newest picture of the live channel behind a [wrap] address now, on the manifest's clock (s), null while unknown */
+    fun edgeSeconds(address: String): Double? = entryOf(address)?.edgeNow()
+
+    /** The start (s on the manifest's clock) of the first picture the player was given for a [wrap] address, null when the manifest could not be read that way */
+    fun firstKeptSeconds(address: String): Double? = entryOf(address)?.firstKept?.takeIf { !it.isNaN() }
+
+    /** How many seconds the live manifest behind a [wrap] address lists (what the channel keeps), 0 while unknown */
+    fun windowSeconds(address: String): Double = address.substringAfter("/d/", "").substringBefore("/").let { entries[it]?.listedSeconds ?: 0.0 }
+
     /** Cancels any active upstream requests and waiting loops for [address] (a [wrap] address or URL) */
     fun cancel(address: String?) {
         if (address == null) return
@@ -408,11 +446,15 @@ object DashProxy {
     }
 
     /** Address to give the player instead of [url] (the manifest); segments are asked for next to it */
-    fun wrap(url: String, headers: Map<String, String>, maxBandwidth: Long = 0L): String {
+    fun wrap(url: String, headers: Map<String, String>, maxBandwidth: Long = 0L, startBehindSeconds: Double = 0.0): String {
         if (entries.size > 50) entries.clear()
         val id = Integer.toHexString(url.hashCode()) + "-" + System.nanoTime().toString(16)
         val name = url.substringBefore('?').substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80).ifEmpty { "manifest.mpd" }
-        entries[id] = Entry(url, headers, name).also { it.maxBandwidth = maxBandwidth }
+        entries[id] = Entry(url, headers, name).also {
+            it.maxBandwidth = maxBandwidth
+            // a live channel opened at a given distance behind its live edge (the player's seek past its memory, or another source): 0 is the default, 30 s
+            if (startBehindSeconds > 0.0) it.startBehind = startBehindSeconds
+        }
         return "http://127.0.0.1:${server.address.port}/d/$id/$name"
     }
 

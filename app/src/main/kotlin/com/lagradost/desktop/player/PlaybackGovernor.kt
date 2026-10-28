@@ -27,17 +27,18 @@ class PlaybackGovernor(
         private const val TAG = "PlaybackGovernor"
         const val MAX_LEVEL = 3
 
-        /** The step reached in this run of the app; a new video starts there */
         @Volatile
-        var level = 0
-            private set
+        private var stepped = 0
+
+        /** The step reached in this run of the app; a new video starts there (never below 1 on a PC with the light look: no frame blending, frames may be dropped) */
+        val level: Int get() = maxOf(stepped, if (com.lagradost.desktop.ui.fluent.Appearance.light) 1 else 0)
 
         @Volatile
         private var suggested = false
 
         /** Dev: set the step by hand (`/player?perf=2`), 0 undoes them for the next video */
         fun force(value: Int) {
-            level = value.coerceIn(0, MAX_LEVEL)
+            stepped = value.coerceIn(0, MAX_LEVEL)
         }
     }
 
@@ -109,7 +110,7 @@ class PlaybackGovernor(
         if (++slowWindows < 2) return
         slowWindows = 0
         if (level < MAX_LEVEL) {
-            level++
+            stepped = level + 1
             Log.w(TAG, "the video is too heavy for this PC ($lastNote): step $level")
             apply(p)
             lastDropped = -1L

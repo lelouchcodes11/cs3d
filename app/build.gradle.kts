@@ -804,12 +804,16 @@ compose.desktop {
         mainClass = "com.lagradost.desktop.MainKt"
         jvmArgs += listOf(
             "--enable-native-access=ALL-UNNAMED",
+            // lets the extension sandbox install its SecurityManager (PluginSandbox); nothing else uses it
+            "-Djava.security.manager=allow",
             "--add-opens=java.base/java.lang=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
             "--add-exports=java.desktop/sun.awt=ALL-UNNAMED",
             "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED",
             "-Xss4m",
+            // Java2D's own Direct3D 9 pipeline is not needed (Skia draws the window) and starting it can make the whole screen flicker on an old graphics driver
+            "-Dsun.java2d.d3d=false",
             // a library that asks for a full collection (System.gc()) gets a concurrent one instead of a pause with every thread stopped
             "-XX:+ExplicitGCInvokesConcurrent",
             // memory goes back to Windows: the heap shrinks after a collection when more than 30 % of it is free, and an idle app collects every
@@ -849,7 +853,12 @@ compose.desktop {
 }
 
 tasks.withType<JavaExec>().configureEach {
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    jvmArgs("--enable-native-access=ALL-UNNAMED", "-Djava.security.manager=allow")
+}
+
+// PluginSandboxTest installs the extension sandbox's SecurityManager in the test JVM (see PluginSandbox)
+tasks.withType<Test>().configureEach {
+    jvmArgs("-Djava.security.manager=allow")
 }
 
 /**
@@ -943,6 +952,8 @@ tasks.register<Copy>("portableDist") {
                 "While this file (or a data folder) is next to CloudStream.exe, settings, extensions and caches are kept in the data folder here.\r\n" +
                 "Move or copy this whole folder to take everything with you; delete it to remove everything.\r\n",
         )
+        // for a window that flickers or is blank: starts the app drawing with the processor (and keeps that choice, see Graphics.choiceFromArgs)
+        target.file("CloudStream (safe graphics).cmd").asFile.writeText("@echo off\r\nstart \"\" \"%~dp0CloudStream.exe\" --safe-graphics\r\n")
         compressRuntime(target.asFile)
         trainStartupArchive(target.asFile)
     }
@@ -1046,6 +1057,7 @@ tasks.register<JavaExec>("runDev") {
     )
     (project.findProperty("dataDir") as String?)?.let { jvmArgs("-Dcloudstream.data=$it") }
     (project.findProperty("devPort") as String?)?.let { jvmArgs("-Dcloudstream.devport=$it") }
+    args = (project.findProperty("appArgs") as String?)?.split(" ")?.filter { it.isNotBlank() } ?: emptyList()
 }
 
 // Link lab: real extension links through the Exo style fetch and the desktop player.

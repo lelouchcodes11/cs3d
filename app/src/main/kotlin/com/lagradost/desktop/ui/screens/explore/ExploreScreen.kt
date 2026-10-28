@@ -53,6 +53,7 @@ import com.lagradost.desktop.ui.fluent.MotionCurves
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.artScrim
 import com.lagradost.desktop.ui.fluent.FluentMotion
 import com.lagradost.desktop.ui.fluent.Icons
 import com.lagradost.desktop.ui.fluent.MenuItem
@@ -143,9 +144,24 @@ fun LazyListScope.exploreSections(f: ExploreFilters, rows: List<ExploreRow>, car
     }
 }
 
+/**
+ * What Home shows under its notice when the extension it uses cannot be reached or has nothing: what is trending (TMDB's films and series, AniList's
+ * anime), each title opening a search for it in the installed extensions. Home is never an empty page with an error on it.
+ */
+fun LazyListScope.discoverSections(cardWidth: Dp) {
+    val movies = ExploreClient.rows(ExploreKind.Movies, null, null)
+    val series = ExploreClient.rows(ExploreKind.Series, null, null)
+    val anime = ExploreClient.rows(ExploreKind.Anime, null, null)
+    item(key = "discover-hero") { ExploreHero(movies.first()) }
+    item(key = "discover-movies") { ExploreShelf(movies.first(), cardWidth) }
+    item(key = "discover-anime") { ExploreShelf(anime.first(), cardWidth) }
+    item(key = "discover-series") { ExploreShelf(series.first(), cardWidth) }
+    item(key = "discover-popular") { ExploreShelf(movies[1], cardWidth) }
+}
+
 /** The first five of the first list, large, rotating: backdrop, title, score and a button to look for it */
 @Composable
-private fun ExploreHero(first: ExploreRow) {
+internal fun ExploreHero(first: ExploreRow) {
     val items by produceState<List<TmdbCard>>(emptyList(), first) { value = runCatching { first.load() }.getOrDefault(emptyList()).filter { it.backdrop != null }.take(5) }
     if (items.isEmpty()) return
     var index by remember(items) { mutableStateOf(0) }
@@ -161,8 +177,8 @@ private fun ExploreHero(first: ExploreRow) {
         Crossfade(items[index], animationSpec = androidx.compose.animation.core.tween(FluentMotion.ms(800), easing = MotionCurves.easing), label = "exploreHero") { item ->
             Box(Modifier.fillMaxSize()) {
                 RemoteImage(item.backdrop, null, null, Modifier.fillMaxSize(), ContentScale.Crop)
-                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.95f), 0.5f to Fluent.colors.bg.copy(alpha = 0.6f), 1f to Fluent.colors.bg.copy(alpha = 0.1f))))
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.6f to Color.Transparent, 1f to Fluent.colors.bg.copy(alpha = 0.6f))))
+                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.artScrim.copy(alpha = 0.95f), 0.5f to Fluent.colors.artScrim.copy(alpha = 0.6f), 1f to Fluent.colors.artScrim.copy(alpha = 0.1f))))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.6f to Color.Transparent, 1f to Fluent.colors.artScrim.copy(alpha = 0.6f))))
                 Column(Modifier.align(Alignment.BottomStart).padding(28.dp).widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         typeLabel(item.type)?.let { ArtChip(it, accent = true) }
@@ -172,13 +188,16 @@ private fun ExploreHero(first: ExploreRow) {
                     FText(item.name, style = Fluent.type.titleLarge.copy(fontSize = 38.sp, lineHeight = 44.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black), color = Color.White, maxLines = 2)
                     item.overview?.let { FText(it, color = Color(0xD9FFFFFF), maxLines = 2) }
                     Box(Modifier.height(2.dp))
-                    PillButton("Find to watch", Icons.Search, primary = true, onClick = { Navigator.search(item.name) }, height = 44.dp)
+                    PillButton("Find to watch", Icons.Search, primary = true, onArt = true, onClick = { Navigator.search(item.name) }, height = 44.dp)
                 }
             }
         }
         if (hovering && items.size > 1) {
-            ChevronButton(Icons.ChevronLeft, Modifier.align(Alignment.CenterStart).padding(start = 14.dp)) { index = (index - 1 + items.size) % items.size }
-            ChevronButton(Icons.ChevronRight, Modifier.align(Alignment.CenterEnd).padding(end = 14.dp)) { index = (index + 1) % items.size }
+            // a pair in the top corner: at the middle of the sides the left one sat on the first letter of the title
+            Row(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChevronButton(Icons.ChevronLeft, Modifier) { index = (index - 1 + items.size) % items.size }
+                ChevronButton(Icons.ChevronRight, Modifier) { index = (index + 1) % items.size }
+            }
         }
         Row(Modifier.align(Alignment.BottomEnd).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items.forEachIndexed { i, _ ->
@@ -195,12 +214,14 @@ private const val ALL = "__all__"
 @Composable
 private fun FilterBox(title: String, all: String, items: List<String>, selected: String?, onSelect: (String?) -> Unit, icon: String) {
     com.lagradost.desktop.ui.fluent.Tooltip(title) {
-        ComboBox(listOf(ALL) + items, selected ?: ALL, { if (it == ALL) all else it }, { onSelect(it.takeIf { v -> v != ALL }) }, icon = icon, minWidth = 150.dp, height = 36.dp)
+        // the bar scrolls sideways (no width limit): a label longer than the 150 dp minimum ("Todos los géneros", "N'importe quel service") used to be cut, because a
+        // weighted child of a Row without a width limit only gets the minimum; the box takes the width of its current text instead (never less than the minimum)
+        ComboBox(listOf(ALL) + items, selected ?: ALL, { if (it == ALL) all else it }, { onSelect(it.takeIf { v -> v != ALL }) }, Modifier.width(androidx.compose.foundation.layout.IntrinsicSize.Max), icon = icon, minWidth = 150.dp, height = 36.dp)
     }
 }
 
 @Composable
-private fun ExploreShelf(row: ExploreRow, cardWidth: Dp) {
+internal fun ExploreShelf(row: ExploreRow, cardWidth: Dp) {
     var attempt by remember { mutableStateOf(0) }
     // null while loading, an empty list when it failed
     val cards by produceState<List<TmdbCard>?>(null, row, attempt) {

@@ -6,14 +6,15 @@ Android's own strings (`app/src/main/android-res/values-b+xx/strings.xml`) are s
 
 ## The table
 
-`strings.tsv`: the first line is `en`, a tab and the language codes (`en  ar  tr`); every other line is the English text and its translation in
+`strings.tsv`: the first line is `en`, a tab and the language codes (`en  ar  tr  es  hi  fr  de  pt  ru  id`); every other line is the English text and its translation in
 each language, separated by tabs. An empty cell = not translated yet (English is shown). `#` starts a comment. `\n`, `\t`, `\` are escapes.
 
 * `{0}`, `{1}` are pieces cut out of the text: `Search {0} sources` matches "Search 12 sources". The pieces are looked up on their own.
   A key with hardly any words of its own (`E{0}`, `{0} ep`) only takes numbers.
 * Plural forms: `{0,plural,one{# başlık}other{# başlık}}` (categories zero, one, two, few, many, other; Arabic uses all six).
 * A line of several parts (`a · b`, `a • b`, `a - b`, `label: text`, one per line) is translated part by part when the whole is not in the table.
-* Add a language: add a column (and `Tr.rtlLanguages` if it is written right to left). Arabic and Turkish are complete.
+* Add a language: add a column (and `Tr.rtlLanguages` if it is written right to left, and its plural rule to `Tr.category` if it is not "one / other"). All ten languages are complete.
+  The code is `Locale.getDefault().language`: Indonesian is `id` (Java maps `in` to it), `pt-BR` and `pt` both use `pt`.
 * Add a text: add its English wording as a new row. A text that is made of pieces in the code ("episode" + "s") has to be written
   as whole sentences for the table to translate it: use the plural forms or two rows ("{0} episode", "{0} episodes").
 

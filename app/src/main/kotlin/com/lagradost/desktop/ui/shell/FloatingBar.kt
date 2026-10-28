@@ -159,7 +159,9 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
     val density = LocalDensity.current
     val shape = RoundedCornerShape(26.dp)
     val coloredPill = Appearance.navAccentPill
-    val isClassic = Appearance.theme == "classic"
+    // the default (classic) look is a dark glass capsule; in Light mode it is white glass with dark ink and a dark selected pill (a dark slab on a light page looked heavy)
+    val light = !c.dark
+    val isClassic = Appearance.theme == "classic" && !light
     val pillShape = RoundedCornerShape(19.dp)
     // laid out left to right in every language (the pill glides to a measured x); in Arabic the items come in the opposite order
     LeftToRight { rtl ->
@@ -167,10 +169,10 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
         // a maximized window has no title bar of its own: the top band answers Windows as a caption (drag, double click) unless a control says otherwise
         modifier
             .noWindowDrag("capsule")
-            .shadow(24.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .shadow(if (light) 14.dp else 24.dp, shape, clip = false, ambientColor = if (light) Color(0x40000000) else Color.Black, spotColor = if (light) Color(0x40000000) else Color.Black)
             .clip(shape)
-            .background(if (isClassic) Color(0xD90B0B10) else c.flyout.copy(alpha = if (Appearance.glass) 0.88f else 0.98f), shape)
-            .hairBorder(if (isClassic) Color(0x2BFFFFFF) else c.strokeStrong.copy(alpha = 0.55f), shape)
+            .background(if (isClassic) Color(0xD90B0B10) else c.flyout.copy(alpha = if (light) 0.94f else if (Appearance.glass) 0.88f else 0.98f), shape)
+            .hairBorder(if (isClassic) Color(0x2BFFFFFF) else if (light) c.stroke else c.strokeStrong.copy(alpha = 0.55f), shape)
             .padding(4.dp),
     ) {
         if (target != null && selected >= 0) {
@@ -179,16 +181,16 @@ private fun NavCapsule(compact: Boolean, modifier: Modifier) {
                     .offset { IntOffset(pillX.roundToInt(), 0) }
                     .width(with(density) { pillW.toDp() })
                     .height(38.dp)
-                    .background(if (coloredPill) c.button else Color(0x2EFFFFFF), pillShape),
+                    .background(if (coloredPill) c.button else if (light) Color(0xFF16171C) else Color(0x2EFFFFFF), pillShape),
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             visual(items.size, rtl).forEach { i ->
                 val item = items[i]
                 // the divider stands between the pages and the utility pages, whichever side they are on
-                if (!rtl && i == navItems.size) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(18.dp).background(Color(0x26FFFFFF)))
+                if (!rtl && i == navItems.size) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(18.dp).background(if (light) c.divider else Color(0x26FFFFFF)))
                 CapsuleItem(item, selected = i == selected, showName = i < navItems.size && (!compact || i == selected), onPlace = { x, w -> spots[i] = x to w })
-                if (rtl && i == navItems.size) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(18.dp).background(Color(0x26FFFFFF)))
+                if (rtl && i == navItems.size) Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(18.dp).background(if (light) c.divider else Color(0x26FFFFFF)))
             }
         }
     }
@@ -201,9 +203,10 @@ private fun CapsuleItem(item: NavItem, selected: Boolean, showName: Boolean, onP
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(19.dp)
+    val light = !c.dark
     val activeFg = if (Appearance.navAccentPill) c.onButton else Color.White
     val tint by androidx.compose.animation.animateColorAsState(
-        if (selected) activeFg else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF),
+        if (selected) activeFg else if (light) (if (hovered) c.text else c.textSecondary) else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF),
         FluentMotion.tweenStd(160), label = "tint",
     )
     val body = @Composable {
@@ -211,7 +214,7 @@ private fun CapsuleItem(item: NavItem, selected: Boolean, showName: Boolean, onP
             Modifier
                 .height(38.dp)
                 .clip(shape)
-                .background(if (hovered && !selected) Color(0x14FFFFFF) else Color.Transparent, shape)
+                .background(if (hovered && !selected) (if (light) c.subtleHover else Color(0x14FFFFFF)) else Color.Transparent, shape)
                 .fluentClickable(source, true, shape, Role.Tab) { Navigator.goTab(tabOf(item.id)) }
                 .padding(horizontal = 13.dp),
             verticalAlignment = Alignment.CenterVertically,

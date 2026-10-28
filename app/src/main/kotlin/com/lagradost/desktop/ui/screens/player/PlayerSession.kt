@@ -356,8 +356,11 @@ class PlayerSession(
                         }
                     }
                     bufferedMs = runCatching { (player.exoPlayer.bufferedPosition) }.getOrDefault(0L)
-                    if (player.liveStream != live) live = player.liveStream
-                    if (live && ++liveTicks % 4 == 0) liveBehindS = withContext(Dispatchers.IO) { player.liveLatency() }
+                    if (player.liveStream != live) {
+                        live = player.liveStream
+                        if (!live) { liveStartMs = 0L; liveEndMs = 0L; liveBehindMs = 0L; liveTicks = 0 }
+                    }
+                    if (live) updateLive()
                     // every 5 s: does this PC keep up with the picture (see PlaybackGovernor)
                     if (++governorTicks % 20 == 0) withContext(Dispatchers.IO) { runCatching { governor.check() } }
                     val pos = positionMs
@@ -557,7 +560,13 @@ class PlayerSession(
         // remembered as the wanted subtitle, so that the player's progress reports (and a dead file's replacement) are about it
         val initialSubtitle = (if (sameEpisode) selectedSubtitle else null) ?: autoSubtitle(subtitles, settings = true, downloads = true)
         selectedSubtitle = initialSubtitle
-        val startAt = resumeMs.takeIf { it > 0L }
+        // a live channel starts at its live picture: a position carried over from the source that played before (or saved from an earlier visit) is on another clock
+        // and, on a channel whose clock counts from its window, put a source switch at the oldest picture, minutes behind live
+        val liveChannel = (currentMeta as? ResultEpisode)?.tvType?.isLiveStream() == true || live || player.liveStream
+        val startAt = if (liveChannel) null else resumeMs.takeIf { it > 0L }
+        // another source of a live channel does not carry on where the old one was: it starts a little behind the live picture (30 s, or the oldest picture when the channel keeps
+        // less), so there is something in front of it; a recording carries on where it was
+        player.liveStartBehindS = if (liveChannel && sameEpisode) LIVE_SWITCH_BEHIND_S else 0.0
         val begin: (ExtractorLink?) -> Unit = { toPlay ->
             player.loadPlayer(
                 ctx, sameEpisode, toPlay, uri,
@@ -811,7 +820,7 @@ class PlayerSession(
     private var thumbsFor: String? = null
 
     private fun maybeStartThumbs(position: Long, duration: Long, meta: ResultEpisode?) {
-        if (!com.lagradost.desktop.ui.fluent.Appearance.seekPreviews || released) return
+        if (!com.lagradost.desktop.ui.fluent.Appearance.seekPreviewsOn || released) return
         val source = player.thumbSource ?: return
         if (source.url == thumbsFor) return
         // the source plays for a few seconds first (what is being watched has the bandwidth), and not a clip or a live channel
@@ -1718,7 +1727,11 @@ class PlayerSession(
     fun seekBy(ms: Long) {
         if (refuseSeek()) return
         val d = durationMs
-        val target = (positionMs + ms).coerceIn(0L, if (d > 0) d else Long.MAX_VALUE)
+        // a live channel moves inside its window; the player keeps the target inside what it can reach
+        val lo = if (liveWindowKnown) liveStartMs else 0L
+        val hi = if (liveWindowKnown) liveEdgeMs else if (d > 0) d else Long.MAX_VALUE
+        val target = (positionMs + ms).coerceIn(lo, maxOf(lo, hi))
+        if (liveWindowKnown) holdBehind((liveEdgeMs - target).coerceAtLeast(0L))
         player.seekTo(target)
         markSeek(target)
         positionMs = target
@@ -1747,16 +1760,143 @@ class PlayerSession(
     fun stampLabelAt(ms: Long): String? = vm.state.stamps.firstOrNull { ms >= it.timestamp.startMs && ms < it.timestamp.endMs }
         ?.let { it.timestamp.label ?: it.timestamp.type.name.replace(Regex("(?<=[a-z])(?=[A-Z])"), " ") }
 
-    /** A live channel: the seek bar is the buffered window, and [liveBehindS] says how far playback is from its end */
+    /**
+     * A live channel. The model is the phone player's (ExoPlayer): a live channel keeps a window of the past, whatever length the channel keeps (20 s,
+     * 2 minutes, 10 minutes ...); new pictures are added at its end and old ones dropped at its start. The seek bar is that window, the time beside it
+     * says how far into it playback is and how long it is, and "live" is playback at its end. [liveBehindMs] says how far playback is from the end.
+     */
     var live by mutableStateOf(false); private set
-    var liveBehindS by mutableStateOf<Double?>(null); private set
+
+    /** The window as last read (mpv ms): the oldest picture that can be reached to the newest. It slides on as the channel goes on. */
+    var liveStartMs by mutableLongStateOf(0L); private set
+    var liveEndMs by mutableLongStateOf(0L); private set
+    private var liveReportedAt = 0L
     private var liveTicks = 0
+    private var liveGoneTicks = 0
+
+    /** The window slides (a playlist, a manifest) or is what the player holds (its start stays): see MpvPlayer.liveWindowSliding */
+    var liveSliding by mutableStateOf(false); private set
+
+    // a seek that is on its way: the time behind the edge it will have is shown at once and held until the player's position has come there (the position is the old
+    // one until the picture at the new place arrives, and a channel that is opened again at that place takes a few seconds)
+    private var livePendingBehind = 0L
+    private var livePendingAt = 0L
+    private var livePendingLanded = 0
+
+    private fun holdBehind(behindMs: Long) {
+        liveBehindMs = behindMs
+        livePendingBehind = behindMs
+        livePendingAt = System.nanoTime()
+        livePendingLanded = player.liveLanded
+    }
+
+    /** Playback within this of the live edge is "live": three of the channel's segments (where its player starts) and a little more, at least LIVE_EDGE_MS */
+    var liveSlackMs by mutableLongStateOf(LIVE_EDGE_MS); private set
+
+    /** How far playback is from the live edge, ms (made every quarter of a second, the position and the edge taken together) */
+    var liveBehindMs by mutableLongStateOf(0L); private set
+
+    /** The window is known and shown as the seek bar (it is not for the first second, for a stream that does not say, and when the setting is off) */
+    val liveWindowKnown: Boolean get() = live && com.lagradost.desktop.ui.fluent.Appearance.liveWindow && liveEndMs - liveReserveMs() > liveStartMs
+
+    /** Nothing is seeked to within this of the window's end (a reserve for pictures that come late, see MpvPlayer.liveTarget) */
+    private fun liveReserveMs(): Long = (com.lagradost.desktop.player.MpvPlayer.LIVE_MARGIN_S * 1000).toLong()
+
+    /** The newest picture that playback can be moved to, now (mpv ms): the window's end as last read plus the time since (the end moves a segment at a time, the channel all the time) */
+    val liveEdgeMs: Long get() {
+        if (liveEndMs <= 0L) return 0L
+        val since = ((System.nanoTime() - liveReportedAt) / 1_000_000L).coerceAtLeast(0L)
+        // a channel that stops delivering does not run away; a paused one is as far behind as the time it was paused
+        val cap = if (showsPause) LIVE_EXTRAPOLATE_MS else (liveEndMs - liveStartMs).coerceAtLeast(LIVE_EXTRAPOLATE_MS)
+        return liveEndMs - liveReserveMs() + since.coerceAtMost(cap)
+    }
+
+    /** How long the window is that can be moved in, ms: 10:00 on a channel that keeps ten minutes, 0:20 on one that keeps twenty seconds */
+    val liveLengthMs: Long get() = (liveEndMs - liveReserveMs() - liveStartMs).coerceAtLeast(0L)
+
+    /** How far into its window playback is, ms: its whole length at the live edge, less the time behind it */
+    val liveElapsedMs: Long get() =
+        // a sliding window (a playlist, a manifest): its length less the time behind the edge; the player's own memory (its start stays, its end steps a segment at a
+        // time): the position from its start, which moves smoothly (the end of a window that is read in steps made this number stand still and then jump)
+        if (liveSliding) (liveLengthMs - liveBehindMs).coerceIn(0L, liveLengthMs) else (positionMs - liveStartMs).coerceIn(0L, liveLengthMs)
+
+    /** Playback is at the live edge: the knob sits at the end of the bar and the pill says LIVE */
+    val liveAtEdge: Boolean get() = liveBehindMs < liveSlackMs
+
+    /** Where the knob sits on the seek bar, 0 to 1: the position in the video, or for a live channel the position in its window */
+    val barFraction: Float get() =
+        if (liveWindowKnown) (liveElapsedMs.toFloat() / liveLengthMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+        else (positionMs.toFloat() / durationMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+
+    /** How much of the bar is buffered, 0 to 1 */
+    val barBuffered: Float get() =
+        if (liveWindowKnown) ((bufferedMs - liveStartMs).toFloat() / liveLengthMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+        else (bufferedMs.toFloat() / durationMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+
+    /** The time that belongs to a place on the bar: a position in the video, or for a live window how far behind the live edge it is ("-3:20", "LIVE" at the end) */
+    fun barLabelAt(f: Float): String =
+        if (liveWindowKnown) {
+            val behind = ((1f - f.coerceIn(0f, 1f)) * liveLengthMs).toLong()
+            if (behind < liveSlackMs) "LIVE" else "-" + fmt(behind)
+        } else fmt((f.coerceIn(0f, 1f) * durationMs).toLong())
+
+    /** How far behind the live edge, short: "50 s", "3:20", "1:02:10" */
+    fun behindText(ms: Long): String = if (ms < 60_000L) "${ms / 1000} s" else fmt(ms).removePrefix("0")
+
+    /** Seeks to a place on the bar (0 to 1) */
+    fun seekToFraction(f: Float) {
+        val fraction = f.coerceIn(0f, 1f)
+        if (liveWindowKnown) {
+            val behind = ((1f - fraction) * liveLengthMs).toLong()
+            seekTo(liveEdgeMs - behind)
+            holdBehind(behind)
+        } else seekTo((fraction * durationMs).toLong())
+    }
 
     /** Back to the newest picture of a live channel */
     fun goLive() {
+        android.util.Log.i("PlayerSession", "go live (behind ${liveBehindMs / 1000} s, window ${liveStartMs / 1000}..${liveEndMs / 1000}, position ${positionMs / 1000})")
         player.goLive()
+        holdBehind(0L)
         showHud(Icons.Play, "Live")
     }
+
+    /** Reads the live window and works out how far behind the edge playback is; called every quarter of a second from the session's loop */
+    private suspend fun updateLive() {
+        // the channel was opened again at the place that was asked for: its window is read now and the move is over
+        val landed = livePendingAt != 0L && player.liveLanded != livePendingLanded
+        if (landed || ++liveTicks % 4 == 1) {
+            val w = withContext(Dispatchers.IO) { player.liveWindow() }
+            if (w != null) {
+                liveStartMs = (w.first * 1000).toLong()
+                liveEndMs = (w.second * 1000).toLong()
+                liveReportedAt = System.nanoTime()
+                liveSliding = player.liveWindowSliding
+                liveSlackMs = maxOf(LIVE_EDGE_MS, ((player.liveSegmentSeconds() ?: 0.0) * 3000 + 2000).toLong())
+            }
+        }
+        if (landed) livePendingAt = 0L
+        if (liveEndMs <= 0L) return
+        // the picture playback is at has dropped out of the window (a long pause, a long stall): back to the live picture, as the phone's player does
+        // (ExoPlayer's BEHIND_LIVE_WINDOW). Some seconds past the start for two seconds, so a seek to the oldest picture, which the window then overtakes, is left alone.
+        if (livePendingAt == 0L && liveWindowKnown && showsPause && positionMs < liveStartMs - LIVE_GONE_MS) {
+            if (++liveGoneTicks >= 8) {
+                liveGoneTicks = 0
+                Toasts.show("That part of the channel is no longer kept. Back to live.", false)
+                goLive()
+                return
+            }
+        } else liveGoneTicks = 0
+        val behind = (liveEdgeMs - positionMs).coerceAtLeast(0L)
+        if (livePendingAt != 0L) {
+            val age = (System.nanoTime() - livePendingAt) / 1_000_000L
+            if (age < LIVE_PENDING_MS && kotlin.math.abs(behind - livePendingBehind) > LIVE_LANDED_MS) return
+            livePendingAt = 0L
+        }
+        // the position moves smoothly and the edge in steps: a difference of under a second is noise, not a move
+        if (kotlin.math.abs(behind - liveBehindMs) >= LIVE_DEAD_BAND_MS || behind == 0L) liveBehindMs = behind
+    }
+
 
     fun skipStamp() {
         val stamp = activeStamp ?: return
@@ -1905,7 +2045,7 @@ class PlayerSession(
         vm.addSubtitles(subs.toSet())
     }
 
-    fun debugLine(): String = "loading=${loadingText} status=$status boosting=$boosting failure=${failure?.take(60)} source=${sourceName?.lineSequence()?.firstOrNull()} links=$linksFound more=$loadingMore pos=$positionMs dur=$durationMs volume=$volume mpv[${player.debugState()}]"
+    fun debugLine(): String = "loading=${loadingText} status=$status boosting=$boosting failure=${failure?.take(60)} source=${sourceName?.lineSequence()?.firstOrNull()} links=$linksFound more=$loadingMore pos=$positionMs dur=$durationMs volume=$volume mpv[${player.debugState()}] live=$live window=${liveWindowKnown}[${liveStartMs}..${liveEndMs}] length=${liveLengthMs} behind=${liveBehindMs} elapsed=${liveElapsedMs} atEdge=$liveAtEdge pending=${livePendingAt != 0L} sliding=$liveSliding bar=${"%.3f".format(barFraction)}"
 
     companion object {
         @Volatile
@@ -1915,6 +2055,27 @@ class PlayerSession(
 
         /** Jumps that come within this time of each other are one run in the seek bubble (it also stays up that long) */
         const val SEEK_BUBBLE_MS = 1_000L
+
+        /** A live channel's edge is taken to run on for at most this long after its window was last read (a channel that stops delivering does not run away) */
+        const val LIVE_EXTRAPOLATE_MS = 15_000L
+
+        /** A live channel opened again (another source) starts this far behind the live picture, s */
+        const val LIVE_SWITCH_BEHIND_S = 30.0
+
+        /** Playback within this of the live edge is "live" (the phone's player says 11 s) */
+        const val LIVE_EDGE_MS = 12_000L
+
+        /** The time behind the edge changes on screen only for a move of at least this much: the window's end steps by a segment, the position runs smoothly */
+        const val LIVE_DEAD_BAND_MS = 900L
+
+        /** Playback this far before the start of the window is out of it */
+        const val LIVE_GONE_MS = 8_000L
+
+        /** A seek that has not shown in the position after this long is given up (a channel that is opened again at the new place takes a few seconds) */
+        const val LIVE_PENDING_MS = 15_000L
+
+        /** The position has come to a seek's place when the time behind the edge is within this of what it was to be */
+        const val LIVE_LANDED_MS = 5_000L
     }
 }
 

@@ -57,6 +57,10 @@ object Diagnostics {
             line("DNS setting", prefs.getInt(AndroidRuntime.context.getString(R.string.dns_key), 0).toString())
         }
         line("Smooth motion", com.lagradost.desktop.ui.fluent.Appearance.smoothMotion.toString())
+        line("Player controls", com.lagradost.desktop.ui.screens.player.ControlsGuard.summary())
+        line("Window renderer", com.lagradost.desktop.platform.Graphics.note)
+        line("Look", (if (com.lagradost.desktop.ui.fluent.Appearance.light) "light" else "full") + " (low-end PC mode: ${com.lagradost.desktop.ui.fluent.Appearance.performance.label}; ${com.lagradost.desktop.platform.LowEnd.describe()})")
+        line("Extension sandbox", com.lagradost.desktop.sandbox.PluginSandbox.summary())
         val player = MpvPlayer.active
         if (player != null) {
             line("Player", "output ${player.getMpvPropertyString("current-vo")}, decoder ${player.getMpvPropertyString("hwdec-current")}, video ${player.getMpvPropertyString("video-params/w")}x${player.getMpvPropertyString("video-params/h")} at ${player.getMpvPropertyString("container-fps")} fps, display ${player.getMpvPropertyString("display-fps")} Hz, dropped ${player.getMpvPropertyString("frame-drop-count")}/${player.getMpvPropertyString("decoder-frame-drop-count")}")

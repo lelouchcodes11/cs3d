@@ -28,7 +28,7 @@ data class WebCookie(
  * The cookie jar behind android.webkit.CookieManager. It lives in the app (encrypted on disk with the Windows user's key), so reading a
  * cookie never starts a browser: extensions and the Cloudflare helpers ask for cookies on every request. A browser engine, while it
  * runs, is a mirror: [backend] receives every change made here, and the engine hands its whole jar back after page loads ([replaceAll]).
- * When an engine starts it is given this jar ([BrowserBackend.pushAll]), so this store is the one that counts.
+ * Live CookieManager reads request a bounded fresh snapshot; without a browser the persisted jar is used.
  */
 object WebCookies {
     private const val TAG = "WebCookies"
@@ -38,12 +38,41 @@ object WebCookies {
         fun push(cookie: WebCookie)
         fun delete(cookie: WebCookie)
         fun deleteAll()
+        /** Null means unavailable/incomplete; an empty list means a successfully read empty jar. */
+        fun readCookies(complete: (List<WebCookie>?) -> Unit)
+        fun canWaitForCookies(): Boolean = true
     }
 
     @Volatile var backend: BrowserBackend? = null
 
     private val lock = Any()
     private var cookies = LinkedHashMap<String, WebCookie>()
+    private var revision = 0L
+    private var nextRead = 0L
+    private var acceptedRead = 0L
+    private val refresh = BrowserCookieRefresh()
+
+    internal data class ReadTicket(val revision: Long, val sequence: Long, val backend: BrowserBackend?)
+
+    internal fun beginBrowserRead(): ReadTicket {
+        ensureLoaded()
+        return synchronized(lock) { ReadTicket(revision, ++nextRead, backend) }
+    }
+
+    /** No browser is started for cookie reads. A failed live read must not masquerade as fresh login cookies. */
+    fun freshHeader(url: String): String? {
+        if (!refreshFromBrowser()) return null
+        return header(url)
+    }
+
+    private fun refreshFromBrowser(): Boolean {
+        val browser = backend ?: return true
+        val ticket = beginBrowserRead()
+        val ui = java.awt.EventQueue.isDispatchThread()
+        return refresh.refresh(if (ui) 200 else 1500, browser.canWaitForCookies(), browser::readCookies) {
+            replaceAll(it, ticket)
+        }
+    }
     private val loaded = AtomicBoolean(false)
     private val saver = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "cookie-store").also { it.isDaemon = true } }
     private val saveQueued = AtomicBoolean(false)
@@ -51,49 +80,69 @@ object WebCookies {
     private val file: File get() = File(AndroidRuntime.dataDir, "web/cookies.bin")
 
     private fun ensureLoaded() {
-        if (!loaded.compareAndSet(false, true)) return
-        runCatching {
-            val f = file
-            if (!f.isFile) return
-            val json = String(com.sun.jna.platform.win32.Crypt32Util.cryptUnprotectData(f.readBytes()), Charsets.UTF_8)
-            val array = JSONArray(json)
-            val map = LinkedHashMap<String, WebCookie>()
-            for (i in 0 until array.length()) {
-                val o = array.getJSONObject(i)
-                val c = WebCookie(
-                    o.getString("n"), o.optString("v"), o.getString("d"), o.optString("p", "/"),
-                    if (o.has("e")) o.getLong("e") else null, o.optBoolean("s"), o.optBoolean("h"),
-                )
-                if (!c.expired()) map[c.key] = c
+        synchronized(lock) {
+            if (loaded.get()) return
+            try {
+                runCatching {
+                    val f = file
+                    if (!f.isFile) return
+                    val json = String(com.sun.jna.platform.win32.Crypt32Util.cryptUnprotectData(f.readBytes()), Charsets.UTF_8)
+                    val array = JSONArray(json)
+                    val map = LinkedHashMap<String, WebCookie>()
+                    for (i in 0 until array.length()) {
+                        val o = array.getJSONObject(i)
+                        val c = WebCookie(
+                            o.getString("n"), o.optString("v"), o.getString("d"), o.optString("p", "/"),
+                            if (o.has("e")) o.getLong("e") else null, o.optBoolean("s"), o.optBoolean("h"),
+                        )
+                        if (!c.expired()) map[c.key] = c
+                    }
+                    cookies = map
+                }.onFailure { Log.w(TAG, "cookie store not read") }
+            } finally {
+                loaded.set(true)
             }
-            synchronized(lock) { cookies = map }
-        }.onFailure { Log.w(TAG, "cookie store not read: ${it.message}") }
+        }
     }
 
     private fun scheduleSave() {
         if (!saveQueued.compareAndSet(false, true)) return
         saver.schedule({
             saveQueued.set(false)
-            runCatching {
-                val array = JSONArray()
-                for (c in all()) {
-                    val o = JSONObject().put("n", c.name).put("v", c.value).put("d", c.domain).put("p", c.path)
-                    if (c.expires != null) o.put("e", c.expires)
-                    if (c.secure) o.put("s", true)
-                    if (c.httpOnly) o.put("h", true)
-                    array.put(o)
-                }
-                val bytes = com.sun.jna.platform.win32.Crypt32Util.cryptProtectData(array.toString().toByteArray(Charsets.UTF_8))
-                val f = file
-                f.parentFile.mkdirs()
-                val tmp = File(f.parentFile, f.name + ".tmp")
-                tmp.writeBytes(bytes)
-                if (!tmp.renameTo(f)) {
-                    f.delete()
-                    tmp.renameTo(f)
-                }
-            }.onFailure { Log.w(TAG, "cookie store not saved: ${it.message}") }
+            saveNow()
         }, 1, TimeUnit.SECONDS)
+    }
+
+    private fun saveNow(): Boolean = runCatching {
+        val array = JSONArray()
+        for (c in all()) {
+            val o = JSONObject().put("n", c.name).put("v", c.value).put("d", c.domain).put("p", c.path)
+            if (c.expires != null) o.put("e", c.expires)
+            if (c.secure) o.put("s", true)
+            if (c.httpOnly) o.put("h", true)
+            array.put(o)
+        }
+        val bytes = com.sun.jna.platform.win32.Crypt32Util.cryptProtectData(array.toString().toByteArray(Charsets.UTF_8))
+        val f = file
+        f.parentFile.mkdirs()
+        val tmp = File(f.parentFile, f.name + ".tmp")
+        tmp.writeBytes(bytes)
+        java.nio.file.Files.move(tmp.toPath(), f.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        true
+    }.getOrElse { Log.w(TAG, "cookie store not saved"); false }
+
+    /** Persists on the same writer as delayed saves, so a delayed old write cannot undo a flush. */
+    fun flush() {
+        val fresh = refreshFromBrowser()
+        val saved = try {
+            saver.submit<Boolean> { saveNow() }.get(3, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        } catch (_: Exception) {
+            false
+        }
+        if (!fresh || !saved) Log.w(TAG, "Cookie flush incomplete (browser=$fresh, disk=$saved)")
     }
 
     // Cloudflare ties a clearance cookie to the connection it was issued to (the address it came from). After the network changed (another Wi-Fi, a VPN or Cloudflare
@@ -159,11 +208,14 @@ object WebCookies {
         val path = (uri.rawPath ?: "/").ifEmpty { "/" }
         val secure = uri.scheme.equals("https", true) || uri.scheme.equals("wss", true)
         val matching = all().filter { c ->
-            domainMatches(host, c.domain) && path.startsWith(c.path) && (!c.secure || secure)
+            domainMatches(host, c.domain) && pathMatches(path, c.path) && (!c.secure || secure)
         }.sortedByDescending { it.path.length }
         if (matching.isEmpty()) return null
         return matching.joinToString("; ") { "${it.name}=${it.value}" }
     }
+
+    private fun pathMatches(path: String, cookiePath: String): Boolean =
+        path == cookiePath || (path.startsWith(cookiePath) && (cookiePath.endsWith('/') || path.getOrNull(cookiePath.length) == '/'))
 
     /** Parses a Set-Cookie style [value] for [url] and stores it (Android CookieManager.setCookie) */
     fun set(url: String, value: String): Boolean {
@@ -209,46 +261,53 @@ object WebCookies {
     fun put(cookie: WebCookie) {
         ensureLoaded()
         synchronized(lock) {
+            revision++
             if (cookie.expired()) cookies.remove(cookie.key) else cookies[cookie.key] = cookie
+            // Enqueue the native write before a later reader can obtain its revision ticket.
+            backend?.let { b -> runCatching { if (cookie.expired()) b.delete(cookie) else b.push(cookie) } }
         }
         scheduleSave()
-        backend?.let { b -> runCatching { if (cookie.expired()) b.delete(cookie) else b.push(cookie) } }
     }
 
     /** The running engine's whole jar after a page load: it becomes this jar (the engine got this jar when it started) */
-    fun replaceAll(fromBrowser: List<WebCookie>) {
+    internal fun replaceAll(fromBrowser: List<WebCookie>, ticket: ReadTicket): Boolean {
         ensureLoaded()
         val map = LinkedHashMap<String, WebCookie>()
         for (c in fromBrowser) if (!c.expired()) map[c.key] = c
         val changed = synchronized(lock) {
+            if (ticket.backend !== backend || ticket.revision != revision || ticket.sequence < acceptedRead) return false
+            acceptedRead = ticket.sequence
             val same = map.keys == cookies.keys && map.all { (k, c) -> cookies[k] == c }
             if (!same) cookies = map
             !same
         }
         if (changed) scheduleSave()
+        return true
     }
 
     fun removeSessionCookies(): Boolean {
         ensureLoaded()
         val removed = synchronized(lock) {
+            revision++
             val session = cookies.values.filter { it.expires == null }
             session.forEach { cookies.remove(it.key) }
+            backend?.let { b -> session.forEach { runCatching { b.delete(it) } } }
             session
         }
         if (removed.isNotEmpty()) scheduleSave()
-        backend?.let { b -> removed.forEach { runCatching { b.delete(it) } } }
         return removed.isNotEmpty()
     }
 
     fun removeAll(): Boolean {
         ensureLoaded()
         val had = synchronized(lock) {
+            revision++
             val any = cookies.isNotEmpty()
             cookies = LinkedHashMap()
+            backend?.let { runCatching { it.deleteAll() } }
             any
         }
         scheduleSave()
-        backend?.let { runCatching { it.deleteAll() } }
         return had
     }
 

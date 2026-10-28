@@ -195,7 +195,7 @@ internal fun ModernChrome(
                 // video and audio tracks live at the top right (not while the loading screen is up)
                 if (!loading && !episodesOpen) {
                     Spacer(Modifier.width(16.dp))
-                    ToolButton(Icons.Video, "Video & Audio", labels, "Video and audio tracks (A: next audio)") { openMenu(MenuPage.Tracks, it) }
+                    ToolButton(PlayerGlyph.Tracks, "Video & Audio", labels, "Video and audio tracks (A: next audio)") { openMenu(MenuPage.Tracks, it) }
                 }
             }
         }
@@ -210,39 +210,44 @@ internal fun ModernChrome(
             SeekRow(s)
             Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 // the transport at the left edge: play sits between the two 10 s jumps, the episode buttons at the ends
-                if (s.hasPrev && !compact) PlayerIconButton(Icons.Previous, "Previous episode (Ctrl+Left)", iconSize = 16.dp) { s.prevEpisode() }
+                if (s.hasPrev && !compact) PlayerIconButton(PlayerGlyph.Previous, "Previous episode (Ctrl+Left)", iconSize = 18.dp) { s.prevEpisode() }
                 SeekButton(back = true, "Back 10 s (J)") { s.seekBy(-10_000) }
                 PlayButton(s)
                 SeekButton(back = false, "Forward 10 s (L)") { s.seekBy(10_000) }
-                if (s.hasNext && !compact) PlayerIconButton(Icons.Next, "Next episode (Ctrl+Right)", iconSize = 16.dp) { s.nextEpisode() }
+                if (s.hasNext && !compact) PlayerIconButton(PlayerGlyph.Next, "Next episode (Ctrl+Right)", iconSize = 18.dp) { s.nextEpisode() }
                 Spacer(Modifier.width(10.dp))
                 VolumeControl(s)
                 if (s.live) { Spacer(Modifier.width(6.dp)); LivePill(s) }
                 // the tools at the right edge
                 Box(Modifier.weight(1f))
-                ToolButton(Icons.Subtitles, "Subtitles", labels, "Subtitles (S: next)") { openMenu(MenuPage.Subtitles, it) }
-                ToolButton(Icons.Link, "Sources", labels, "Sources: pick another server") { openMenu(MenuPage.Sources, it) }
+                ToolButton(PlayerGlyph.Subtitles, "Subtitles", labels, "Subtitles (S: next)") { openMenu(MenuPage.Subtitles, it) }
+                ToolButton(PlayerGlyph.Sources, "Sources", labels, "Sources: pick another server") { openMenu(MenuPage.Sources, it) }
                 ToolDivider()
                 if (moreTools) {
                     if (s.speed != 1f) SpeedChip(s) { openMenu(MenuPage.Speed, it) }
-                    else AnchoredIconButton(Icons.Speed, "Playback speed") { openMenu(MenuPage.Speed, it) }
-                    PlayerIconButton(Icons.List, "Episodes (E)", onClick = toggleEpisodes)
+                    else AnchoredIconButton(PlayerGlyph.Speed, "Playback speed") { openMenu(MenuPage.Speed, it) }
+                    PlayerIconButton(PlayerGlyph.Episodes, "Episodes (E)", onClick = toggleEpisodes)
                 }
-                PlayerIconButton(Icons.Pip, "Picture in picture (I)") { s.togglePip() }
-                AnchoredIconButton(Icons.Settings, "All settings and keyboard shortcuts") { openMenu(MenuPage.Root, it) }
-                PlayerIconButton(if (fullscreen) Icons.ExitFullscreen else Icons.Fullscreen, if (fullscreen) "Exit full screen (F)" else "Full screen (F)", onClick = toggleFullscreen)
+                PlayerIconButton(PlayerGlyph.Pip, "Picture in picture (I)") { s.togglePip() }
+                AnchoredIconButton(PlayerGlyph.Settings, "All settings and keyboard shortcuts") { openMenu(MenuPage.Root, it) }
+                PlayerIconButton(if (fullscreen) PlayerGlyph.ExitFullscreen else PlayerGlyph.Fullscreen, if (fullscreen) "Exit full screen (F)" else "Full screen (F)", onClick = toggleFullscreen)
             }
         }
     }
 }
 
-/** The seek bar with the time played at its left end and the time left (or the total, a click switches) at its right end; a live channel has the bar alone */
+/**
+ * The seek bar with the time played at its left end and the time left (or the total, a click switches) at its right end. A live channel's bar is the
+ * window it keeps: how far into it playback is at the left, how long it is at the right (the bar alone until the window is known).
+ */
 @Composable
 private fun SeekRow(s: PlayerSession) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         if (!s.live) { PlayedTime(s); Spacer(Modifier.width(14.dp)) }
+        else if (s.liveWindowKnown) { LiveElapsedTime(s); Spacer(Modifier.width(14.dp)) }
         ModernSeekBar(s, Modifier.weight(1f))
         if (!s.live) { Spacer(Modifier.width(14.dp)); TimeLeft(s) }
+        else if (s.liveWindowKnown) { Spacer(Modifier.width(14.dp)); LiveWindowTime(s) }
     }
 }
 
@@ -252,6 +257,27 @@ private val SeekTimeStyle: TextStyle
 @Composable
 private fun PlayedTime(s: PlayerSession) {
     FText(fmt(s.positionMs), Modifier.widthIn(min = 44.dp), style = SeekTimeStyle, color = Color.White, maxLines = 1, softWrap = false)
+}
+
+/** A live channel: how far into its window playback is */
+@Composable
+private fun LiveElapsedTime(s: PlayerSession) {
+    FText(fmt(s.liveElapsedMs), Modifier.widthIn(min = 44.dp), style = SeekTimeStyle, color = Color.White, maxLines = 1, softWrap = false)
+}
+
+/** A live channel: how long the window is that can be rewound (what the channel keeps: 0:20 on one, 10:00 on another); the tooltip says how far behind live playback is */
+@Composable
+private fun LiveWindowTime(s: PlayerSession) {
+    if (s.liveAtEdge) {
+        // at the live edge the end of the bar is the live picture, not a length (the window's last seconds are not seekable, so a length there only confused)
+        Tooltip("Live: the newest picture of the channel") {
+            FText("LIVE", Modifier.widthIn(min = 44.dp), style = SeekTimeStyle.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp), color = Color(0xFFFF6B6B), textAlign = androidx.compose.ui.text.style.TextAlign.End, maxLines = 1, softWrap = false)
+        }
+    } else {
+        Tooltip("How far back you can go (what the channel keeps)  ·  now ${s.behindText(s.liveBehindMs)} behind live") {
+            FText(fmt(s.liveLengthMs), Modifier.widthIn(min = 44.dp), style = SeekTimeStyle, color = Color(0xE6FFFFFF), textAlign = androidx.compose.ui.text.style.TextAlign.End, maxLines = 1, softWrap = false)
+        }
+    }
 }
 
 /** The time left; a click shows the total length instead (and back). The tooltip says when the video will end. */
@@ -284,7 +310,7 @@ private fun QualityBadge(text: String) {
 
 /** A tool of the right capsule: an icon, with its name beside it when the window is wide; [on] puts a little mark on it (subtitles are showing) */
 @Composable
-private fun ToolButton(glyph: String, label: String, showLabel: Boolean, tooltip: String, onClick: (Rect?) -> Unit) {
+private fun ToolButton(glyph: PlayerGlyph, label: String, showLabel: Boolean, tooltip: String, onClick: (Rect?) -> Unit) {
     val bounds = remember { arrayOfNulls<Rect>(1) }
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
@@ -298,8 +324,8 @@ private fun ToolButton(glyph: String, label: String, showLabel: Boolean, tooltip
                 .fluentClickable(source, true, shape, Role.Button) { onClick(bounds[0]) }.padding(horizontal = if (showLabel) 14.dp else 11.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                Icon(glyph, size = 18.dp, tint = Color.White)
+            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                PlayerIcon(glyph, size = 20.dp)
             }
             if (showLabel) FText(label, style = Fluent.type.bodyStrong.copy(fontSize = 13.sp, shadow = TextShade), color = Color.White, maxLines = 1, softWrap = false)
         }
@@ -337,14 +363,14 @@ internal fun GlassButton(
 
 /** An icon button that tells where it is when clicked (the menu it opens grows out of that place) */
 @Composable
-private fun AnchoredIconButton(glyph: String, tooltip: String, onClick: (Rect?) -> Unit) {
+private fun AnchoredIconButton(glyph: PlayerGlyph, tooltip: String, onClick: (Rect?) -> Unit) {
     val bounds = remember { arrayOfNulls<Rect>(1) }
-    GlassButton(tooltip, Modifier.onGloballyPositioned { bounds[0] = it.boundsInRoot() }, onClick = { onClick(bounds[0]) }) { Icon(glyph, size = 18.dp, tint = Color.White) }
+    GlassButton(tooltip, Modifier.onGloballyPositioned { bounds[0] = it.boundsInRoot() }, onClick = { onClick(bounds[0]) }) { PlayerIcon(glyph, size = 22.dp) }
 }
 
 @Composable
-private fun PlayerIconButton(glyph: String, tooltip: String, iconSize: Dp = 18.dp, onClick: () -> Unit) =
-    GlassButton(tooltip, onClick = onClick) { Icon(glyph, size = iconSize, tint = Color.White) }
+private fun PlayerIconButton(glyph: PlayerGlyph, tooltip: String, iconSize: Dp = 22.dp, onClick: () -> Unit) =
+    GlassButton(tooltip, onClick = onClick) { PlayerIcon(glyph, size = iconSize) }
 
 /** A circular arrow with the seconds in it, for the jump back and forward */
 @Composable
@@ -454,7 +480,7 @@ internal fun ModernSeekBar(s: PlayerSession, modifier: Modifier = Modifier.fillM
             .hoverable(source)
             .onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }
             .pointerHoverIcon(PointerIcon.Hand)
-            .pointerInput(s.durationMs) {
+            .pointerInput(s.durationMs, s.liveWindowKnown) {
                 awaitPointerEventScope {
                     while (true) {
                         val e = awaitPointerEvent()
@@ -467,7 +493,7 @@ internal fun ModernSeekBar(s: PlayerSession, modifier: Modifier = Modifier.fillM
                             PointerEventType.Exit -> hoverX = null
                             PointerEventType.Press -> if (e.primaryContactPressed) { dragFraction = (x / width).coerceIn(0f, 1f); e.changes.forEach { it.consume() } }
                             PointerEventType.Release -> {
-                                dragFraction?.let { f -> s.seekTo((f * s.durationMs).toLong()) }
+                                dragFraction?.let { f -> s.seekToFraction(f) }
                                 dragFraction = null
                             }
                         }
@@ -477,8 +503,8 @@ internal fun ModernSeekBar(s: PlayerSession, modifier: Modifier = Modifier.fillM
             // everything is drawn here: the position changes four times a second and must not recompose anything
             .drawBehind {
                 val duration = s.durationMs.coerceAtLeast(1)
-                val shown = dragFraction ?: if (s.live) (s.positionMs.toFloat() / duration).coerceIn(0f, 1f) else glide.value
-                val buffered = (s.bufferedMs.toFloat() / duration).coerceIn(0f, 1f)
+                val shown = dragFraction ?: if (s.live) s.barFraction else glide.value
+                val buffered = s.barBuffered
                 val h = trackH.toPx()
                 val y = (size.height - h) / 2
                 val r = CornerRadius(h / 2, h / 2)
@@ -487,7 +513,7 @@ internal fun ModernSeekBar(s: PlayerSession, modifier: Modifier = Modifier.fillM
                 drawRoundRect(Color(0x47FFFFFF), Offset(0f, y), Size(size.width, h), r)
                 drawRoundRect(Color(0x5CFFFFFF), Offset(0f, y), Size(size.width * buffered, h), r)
                 // skip segments (intro, recap, credits ...)
-                for ((from, to) in s.stampRanges()) {
+                if (!s.live) for ((from, to) in s.stampRanges()) {
                     val a = (from.toFloat() / duration).coerceIn(0f, 1f) * size.width
                     val b = (to.toFloat() / duration).coerceIn(0f, 1f) * size.width
                     if (b > a) drawRoundRect(Color(0xB3FFD54F), Offset(a, y), Size(b - a, h), r)
@@ -507,9 +533,8 @@ internal fun ModernSeekBar(s: PlayerSession, modifier: Modifier = Modifier.fillM
     ) {
         (hoverX ?: devHover?.let { it * width })?.let { x ->
             val f = (x / width).coerceIn(0f, 1f)
-            val at = (f * s.durationMs).toLong()
-            val stamp = s.stampLabelAt(at)
-            val label = if (s.live) "-" + fmt((s.durationMs - at).coerceAtLeast(0)) else fmt(at)
+            val stamp = if (s.live) null else s.stampLabelAt((f * s.durationMs).toLong())
+            val label = s.barLabelAt(f)
             // the still of the scene (a second headless player makes them, see SeekThumbs); only the time while there is none yet
             val thumb = if (s.live) null else s.seekThumbs?.frameAt(f)
             val crop = if (thumb != null) s.seekThumbs?.content() else null
@@ -595,6 +620,20 @@ internal fun SkipPill(label: String, progress: Float?, onClick: () -> Unit, modi
         Icon(Icons.Next, size = 14.dp, tint = Ink)
         FText(label, style = Fluent.type.bodyStrong.copy(fontSize = 15.sp), color = Ink, maxLines = 1, softWrap = false)
     }
+}
+
+/** The logo of a title: the extension's own, else TMDB's (looked up in the background); null while there is none (the name is shown instead) */
+@Composable
+internal fun rememberTitleLogo(response: com.lagradost.cloudstream3.LoadResponse?): String? {
+    val logo by produceState<String?>(response?.logoUrl, response?.url) {
+        value = response?.logoUrl
+        if (value == null && response != null && com.lagradost.desktop.tmdb.Tmdb.enabled) {
+            value = runCatching {
+                com.lagradost.desktop.tmdb.Tmdb.info(response.name, response.year, response.type?.isMovieType() == true, response.syncData.values)
+            }.getOrNull()?.logo
+        }
+    }
+    return logo
 }
 
 /**

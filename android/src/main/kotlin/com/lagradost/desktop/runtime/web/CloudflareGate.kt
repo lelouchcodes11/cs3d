@@ -72,16 +72,73 @@ object CloudflareGate {
     /** Set by the app: the names of the extensions whose site is [host] */
     @Volatile var apisOfHost: (String) -> Set<String> = { emptySet() }
 
+    /** Set by the app: true while the user is on the Extensions or Settings page (a plugin's own settings window is wanted there) */
+    @Volatile var managingExtensions: () -> Boolean = { false }
+
+    /** The first class of a plugin on the call stack: who asked for a window (null: the app itself did) */
+    fun callingPluginClass(): Class<*>? = runCatching {
+        StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE).walk { s ->
+            s.map { it.declaringClass }.filter { runCatching { apisOfLoader(it.classLoader).isNotEmpty() }.getOrDefault(false) }.findFirst().orElse(null)
+        }
+    }.getOrNull()
+
+    /**
+     * An extension's own window that nobody asked for (a donation or news popup it opens when it loads, or when it is first used): shown only when that
+     * extension is the one in use, or when the user is on the Extensions or Settings page. True when the window must not be shown.
+     */
+    fun refuseIdlePopup(owner: Class<*>?): Boolean {
+        if (owner == null) return false
+        val apis = runCatching { apisOfLoader(owner.classLoader) }.getOrDefault(emptySet())
+        Log.d(TAG, "a window of ${owner.name} (loader ${owner.classLoader?.javaClass?.simpleName}) belongs to ${apis.joinToString()}")
+        if (apis.isEmpty()) return false
+        if (inUse(apis, owner.name)) return false
+        if (runCatching { managingExtensions() }.getOrDefault(false)) return false
+        Log.i(TAG, "a window of ${owner.name} is not shown: ${apis.joinToString()} is not the extension in use")
+        return true
+    }
+
     private var lastNotInUseLog = 0L
 
     private fun inUse(apis: Set<String>, what: String): Boolean {
         // not an extension's own request (a video host, an extractor, a class of the app): nothing to judge it by
-        if (apis.isEmpty()) return true
-        val active = runCatching { activeApis() }.getOrNull() ?: return true
+        if (apis.isEmpty()) { Log.i(TAG, "the Cloudflare check of $what belongs to no extension: shown"); return true }
+        // null = every extension (a search in all of them). A failed lookup (the app is still starting) is "none": a window nobody asked for is worse than a failed request
+        val active = try { activeApis() } catch (e: Throwable) { Log.w(TAG, "which extensions are in use is not known yet: $e"); emptySet() } ?: return true
         if (apis.any { it in active }) return true
         val now = System.currentTimeMillis()
         if (now - lastNotInUseLog > 10_000) { lastNotInUseLog = now; Log.i(TAG, "the Cloudflare check of $what is not shown: ${apis.joinToString()} is not the extension in use (${active.joinToString()})") }
         return false
+    }
+
+    /** [inUse] without a log line: for polling */
+    private fun inUseQuiet(owner: Class<*>): Boolean {
+        val apis = runCatching { apisOfLoader(owner.classLoader) }.getOrDefault(emptySet())
+        if (apis.isEmpty()) return true
+        val active = runCatching { activeApis() }.getOrDefault(emptySet()) ?: return true
+        return apis.any { it in active }
+    }
+
+    private val held = java.util.concurrent.ConcurrentHashMap.newKeySet<Class<*>>()
+
+    /**
+     * A Cloudflare window that an extension asked for before the user was using it (AnimePahe checks its site as it loads, with another extension on Home) is not
+     * dropped: dropping it told the extension "dismissed", and the extension then refused to ask again for a while, so the window never opened when the user did
+     * switch to that extension. It is held until the extension is in use ([then] gets true, on the main thread) or [maxMs] have passed ([then] gets false).
+     * False when a window of that extension is already held (the caller refuses this one as before).
+     */
+    fun holdUntilInUse(owner: Class<*>, maxMs: Long, then: (Boolean) -> Unit): Boolean {
+        if (!held.add(owner)) return false
+        val started = System.currentTimeMillis()
+        Thread({
+            var ok = false
+            while (System.currentTimeMillis() - started < maxMs) {
+                if (inUseQuiet(owner)) { ok = true; break }
+                try { Thread.sleep(400) } catch (_: InterruptedException) { break }
+            }
+            held.remove(owner)
+            android.os.Handler(android.os.Looper.getMainLooper()).post { then(ok) }
+        }, "cloudflare-hold").apply { isDaemon = true; start() }
+        return true
     }
 
     /** Whether the extension that owns [host] is one the user is using */

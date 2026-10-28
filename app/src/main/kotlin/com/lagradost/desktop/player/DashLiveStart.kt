@@ -60,8 +60,28 @@ object DashLiveStart {
         return if (any) newest to longest else null
     }
 
-    /** The bound (s on the manifest's own clock) for a first manifest, or null when it lists too little to cut */
-    fun boundFor(xml: String): Double? = measure(xml)?.let { (newest, listed) -> if (listed >= MIN_LISTED_S) newest - START_BEHIND_S else null }
+    /**
+     * The bound (s on the manifest's own clock) for a first manifest, or null when it lists too little to cut. [behindSeconds] is how far behind the newest segment
+     * playback is to start: 30 s by default, further back when the player is asked to open the channel at an earlier point (a seek past what it keeps in memory);
+     * never closer than 15 s to the edge (the newest segments are not on every CDN edge yet) and never in the last 20 s of what the manifest lists.
+     */
+    fun boundFor(xml: String, behindSeconds: Double = START_BEHIND_S): Double? = measure(xml)?.let { (newest, listed) ->
+        if (listed >= MIN_LISTED_S) newest - behindSeconds.coerceIn(15.0, maxOf(15.0, listed - 20.0)) else null
+    }
+
+    /** The start (s on the manifest's own clock) of the first segment that is listed: of the streams the latest one (where all of them have something) */
+    fun firstStart(xml: String): Double? {
+        var first = Double.NEGATIVE_INFINITY
+        var any = false
+        for (tm in TEMPLATE.findAll(xml)) {
+            val scale = attr(tm.groupValues[1], "timescale")?.takeIf { it > 0 } ?: 1L
+            val tl = TIMELINE.find(tm.groupValues[2]) ?: continue
+            val segs = segments(tl.groupValues[1])?.takeIf { it.isNotEmpty() } ?: continue
+            first = maxOf(first, segs.first().t.toDouble() / scale)
+            any = true
+        }
+        return if (any) first else null
+    }
 
     /** [xml] without the segments that ended before [boundSeconds] */
     fun cut(xml: String, boundSeconds: Double): String = TEMPLATE.replace(xml) { tm ->

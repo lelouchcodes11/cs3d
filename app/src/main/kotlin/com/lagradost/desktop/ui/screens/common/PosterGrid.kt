@@ -50,6 +50,8 @@ fun PosterGrid(
     onOpen: ((SearchResponse) -> Unit)? = null,
     /** After the last card (a "loading more" line) */
     footer: (LazyGridScope.() -> Unit)? = null,
+    /** The line under a card's title (History: the episode and how much is left) */
+    subtitle: ((SearchResponse) -> String?)? = null,
 ) {
     if (onEnd != null) {
         LaunchedEffect(state, items.size) {
@@ -74,7 +76,7 @@ fun PosterGrid(
         itemsIndexed(unique, key = { _, it -> it.url + it.apiName }) { i, card ->
             // the first posters of a page arrive one after the other (once per poster and run of the app)
             Box(Modifier.reveal("grid/" + card.url + card.apiName, (i % 8) * 40 + (i / 8).coerceAtMost(3) * 40, rise = 18.dp)) {
-                PosterCard(card, { if (onOpen != null) onOpen(card) else openCard(card) }, width = null, showType = showType, menu = menu?.let { m -> { m(card) } })
+                PosterCard(card, { if (onOpen != null) onOpen(card) else openCard(card) }, width = null, subtitle = subtitle?.invoke(card), showType = showType, menu = menu?.let { m -> { m(card) } })
             }
         }
         footer?.invoke(this)

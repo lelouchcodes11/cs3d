@@ -82,6 +82,8 @@ Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cr
 
 [Icons]
 Name: "{autoprograms}\{#ShortcutName}"; Filename: "{app}\{#AppExe}"
+; for a window that flickers or is blank: starts the app drawing with the processor and keeps that choice (Settings > General > Performance changes it)
+Name: "{autoprograms}\{#ShortcutName} (safe graphics)"; Filename: "{app}\{#AppExe}"; Parameters: "--safe-graphics"
 Name: "{autodesktop}\{#ShortcutName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Run]

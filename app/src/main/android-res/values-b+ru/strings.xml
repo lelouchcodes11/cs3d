@@ -768,4 +768,16 @@
     <string name="compressor_threshold_hint">Звуки громче %d дБ приглушаются</string>
     <string name="compressor_makeup_hint">Повышает общую громкость на +%d дБ</string>
     <string name="background">Фон</string>
+    <string name="auto_status_sync_all_des">Также переносит в «Просмотр» названия, которых ещё нет ни в одном списке, когда вы начинаете их смотреть. Выкл.: затрагиваются только названия, которые уже есть в одном из ваших списков.</string>
+    <string name="auto_status_sync_all_title">Добавлять каждое запущенное название</string>
+    <string name="auto_status_sync_des">Переносит название из одного из ваших списков («Буду смотреть», «Приостановлено», «Брошено») в «Просмотр» при запуске, а в «Завершено» — когда досмотрена последняя серия, на сервисах, где вы вошли в аккаунт</string>
+    <string name="auto_status_sync_title">Обновлять статус в списках автоматически</string>
+    <string name="cloudflare_solvers_des">Некоторые сайты просят браузер доказать, что он не бот; для этого приложение открывает страницу. Выкл.: страница не открывается, и такие сайты просто не загружаются.</string>
+    <string name="cloudflare_solvers_title">Проходить проверки Cloudflare</string>
+    <string name="edit_profile_image_default">Изображения по умолчанию</string>
+    <string name="edit_profile_image_picker">Выбор изображения</string>
+    <string name="edit_profile_image_url">URL</string>
+    <string name="profile_stream">Поток</string>
+    <string name="public_dns_fallback_des">Когда ваш DNS (1.1.1.2, семейный или школьный фильтр, ваш провайдер) отказывается назвать адрес сайта потокового видео, спрашивать публичные серверы DNS (1.1.1.1, 8.8.8.8, 9.9.9.9). Исправляет источники, которые не работают из-за «unknown host». Выкл.: доверять только вашему DNS.</string>
+    <string name="public_dns_fallback_title">Спрашивать публичный DNS о заблокированных именах</string>
 </resources>

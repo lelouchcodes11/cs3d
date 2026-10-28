@@ -190,7 +190,7 @@ fun PlayerScreen(entry: Entry, route: Route.Player) {
  * until something was clicked.
  */
 /** How long a press on the picture, or Space, is held before the picture plays at 2x */
-private const val HOLD_BOOST_MS = 350L
+internal const val HOLD_BOOST_MS = 350L
 
 object PlayerKeys {
     @Volatile
@@ -218,6 +218,9 @@ object PlayerDev {
     @Volatile var pokes = 0
     @Volatile var controlsShown = true
     @Volatile var overControls = false
+
+    /** C pressed: the controls stay on the picture */
+    @Volatile var pinned = false
 }
 
 @Composable
@@ -291,15 +294,70 @@ private fun PlayerContent(s: PlayerSession) {
     // (Settings > Appearance: the delay can be longer, or the controls can stay.) A pressed button holds them too: dragging the seek bar or the volume
     // and resting the pointer beside the bar used to take the bar away under the drag.
     val hideAfter = Appearance.controlsHideSeconds
-    LaunchedEffect(lastActivity, hoveringControls, pointerDown, menuPage, showEpisodes, PlayerDev.hold, hideAfter) {
-        if (hoveringControls || pointerDown || menuPage != null || showEpisodes || PlayerDev.hold || hideAfter <= 0) {
+    // C keeps the controls on the picture (a fail-safe for a PC where they do not show by themselves, see ControlsGuard); C again lets them hide as usual
+    var pinned by remember { mutableStateOf(false) }
+    LaunchedEffect(lastActivity, hoveringControls, pointerDown, menuPage, showEpisodes, PlayerDev.hold, hideAfter, pinned) {
+        if (hoveringControls || pointerDown || menuPage != null || showEpisodes || PlayerDev.hold || hideAfter <= 0 || pinned) {
             visible = true
             return@LaunchedEffect
         }
         delay(hideAfter * 1000L)
         visible = false
     }
+    // The safety net (ControlsGuard): Windows is asked where the pointer is, so the controls come back when the pointer moves over the app even if no
+    // pointer event reached Compose; in the native player the controls window is watched too (never there, behind the video, or letting the pointer
+    // through) and the standard player takes over when it can not be repaired.
+    val guardOn = Appearance.controlsGuard
+    LaunchedEffect(guardOn, native) {
+        if (!guardOn || !com.lagradost.desktop.DesktopPlatform.isWindows) return@LaunchedEffect
+        ControlsGuard.note("watching (${if (native) "GPU player" else "standard player"})")
+        val watch = ControlsGuard.PointerWatch()
+        val health = ControlsGuard.OverlayHealth()
+        var moveAt = 0L
+        var pokesAtMove = 0
+        var warnedDeaf = false
+        var deaf = 0
+        class Look(val sample: ControlsGuard.Sample?, val overlay: Long, val overlayVisible: Boolean, val overlayRect: IntArray?, val away: Boolean)
+        while (true) {
+            delay(100)
+            if (s.closing || s.isReleased) continue
+            // everything that asks Windows is done off the UI thread
+            val look = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val frame = com.lagradost.desktop.ui.DesktopUiHost.window
+                val main = com.lagradost.desktop.platform.WinProbe.handleOf(frame)
+                val overlayWindow = NativeVideo.overlayWindow
+                val overlay = com.lagradost.desktop.platform.WinProbe.handleOf(overlayWindow)
+                val away = frame == null || !frame.isShowing || (frame.extendedState and java.awt.Frame.ICONIFIED) != 0
+                Look(ControlsGuard.sample(main, overlay), overlay, com.lagradost.desktop.platform.WinProbe.isVisible(overlay), com.lagradost.desktop.platform.WinProbe.rect(overlay), away)
+            }
+            if (look.away) { health.clear(); moveAt = 0L; continue }
+            val sample = look.sample ?: continue
+            val moved = watch.moved(sample.x, sample.y)
+            val now = System.currentTimeMillis()
+            if (moved && sample.hit != ControlsGuard.Hit.Other && moveAt == 0L) { moveAt = now; pokesAtMove = PlayerDev.pokes }
+            // Compose gets its pointer events first; only a movement it did not see within 0.2 s is covered here
+            if (moveAt != 0L && now - moveAt >= 200) {
+                if (PlayerDev.pokes == pokesAtMove) {
+                    ControlsGuard.pointerAssists.incrementAndGet()
+                    poke(null)
+                    if (++deaf == 20 && !warnedDeaf) { warnedDeaf = true; ControlsGuard.note("pointer events do not reach the player, the net shows the controls"); android.util.Log.w("ControlsGuard", "20 pointer movements over the player were not delivered to the window: the safety net shows the controls") }
+                }
+                moveAt = 0L
+            }
+            if (native && !NativeVideo.broken) {
+                val r = look.overlayRect
+                // inside the controls window, away from its edge (a pixel of the edge can be see-through)
+                val inside = r != null && sample.x in (r[0] + 6) until (r[2] - 6) && sample.y in (r[1] + 6) until (r[3] - 6)
+                when (health.sample(look.overlayVisible, moved && inside, sample.hit)) {
+                    ControlsGuard.Verdict.Fine -> {}
+                    ControlsGuard.Verdict.Heal -> ControlsGuard.heal(look.overlay, if (look.overlayVisible) "the pointer goes through it to the video" else "it is not visible")
+                    ControlsGuard.Verdict.GiveUp -> { ControlsGuard.giveUpNative(if (look.overlayVisible) "the pointer goes through it to the video" else "it is not visible"); return@LaunchedEffect }
+                }
+            }
+        }
+    }
     LaunchedEffect(visible, hoveringControls) { PlayerDev.controlsShown = visible; PlayerDev.overControls = hoveringControls }
+    LaunchedEffect(pinned) { PlayerDev.pinned = pinned }
     LaunchedEffect(Unit) { focus.requestFocus() }
     // the window changes size and may lose the keyboard focus when it enters or leaves full screen
     LaunchedEffect(fullscreen, pip) { delay(250); runCatching { focus.requestFocus() } }
@@ -391,6 +449,14 @@ private fun PlayerContent(s: PlayerSession) {
             Key.DirectionUp -> s.stepVolume(1)
             Key.DirectionDown -> s.stepVolume(-1)
             Key.M -> s.toggleMute()
+            // the fail-safe of the controls: they show and stay until C is pressed again (works when nothing else brings them up)
+            Key.C -> {
+                if (e.isCtrlPressed || e.isAltPressed) return false
+                pinned = !pinned
+                lastActivity = System.currentTimeMillis()
+                visible = true
+                s.showHud(Icons.Eye, if (pinned) "Controls stay on screen (C to let them hide)" else "Controls hide as usual")
+            }
             Key.F, Key.F11 -> toggleFullscreen()
             Key.I -> s.togglePip()
             Key.Escape -> if (pip) s.setPip(false) else if (fullscreen) toggleFullscreen() else if (showEpisodes) showEpisodes = false else Navigator.back()
@@ -404,13 +470,14 @@ private fun PlayerContent(s: PlayerSession) {
             Key.F1 -> Shortcuts.show()
             Key.Comma -> s.changeSpeed((s.speed - 0.25f).coerceAtLeast(0.25f))
             Key.Period -> s.changeSpeed((s.speed + 0.25f).coerceAtMost(3f))
-            Key.MoveHome -> s.seekTo(0)
+            Key.MoveHome -> if (s.liveWindowKnown) s.seekToFraction(0f) else s.seekTo(0)
+            Key.MoveEnd -> if (s.live) s.goLive() else return false
             Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine, Key.Zero -> {
                 val digit = when (e.key) {
                     Key.Zero -> 0; Key.One -> 1; Key.Two -> 2; Key.Three -> 3; Key.Four -> 4
                     Key.Five -> 5; Key.Six -> 6; Key.Seven -> 7; Key.Eight -> 8; else -> 9
                 }
-                if (s.durationMs > 0) s.seekTo(s.durationMs * digit / 10)
+                if (s.liveWindowKnown) s.seekToFraction(digit / 10f) else if (!s.live && s.durationMs > 0) s.seekTo(s.durationMs * digit / 10)
             }
             else -> return false
         }
@@ -445,8 +512,9 @@ private fun PlayerContent(s: PlayerSession) {
     }
 
     // the native video player (beta): mpv's GPU window below, the controls in a transparent window above it
-    // a click pauses / plays at once (detectTapGestures held every single click ~300 ms to rule out a double click, which felt like a lag);
-    // the second click of a double click puts the play state back and switches fullscreen, as in a browser's video player
+    // A mouse click pauses / plays at once (detectTapGestures held every single click ~300 ms to rule out a double click, which felt like a lag);
+    // the second click of a double click puts the play state back and switches fullscreen, as in a browser's video player.
+    // A finger is different: a single tap waits for the double-tap interval, and a double tap seeks 10 s left / right of the middle without pausing or leaving fullscreen.
     // Held down on the picture (a finger, or the left mouse button) for 0.35 s: the picture plays at 2x for as long as it is held, and letting go is not a click.
     // Not while paused (a press that long on a paused picture is a click that plays), not in the small window (a press there drags it), not on a button
     // (a button takes the press), and not when the pointer moves (a swipe).
@@ -480,7 +548,16 @@ private fun PlayerContent(s: PlayerSession) {
             }
         }
     }
-    val tapGestures = holdBoost.pointerInput(Unit) {
+    val touchTaps = Modifier.playerTouchTaps(
+        enabled = {
+            !com.lagradost.desktop.platform.WinChrome.pip && !s.closing && s.loadingText == null && s.failure == null &&
+                menuPage == null && !showEpisodes && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()
+        },
+        suppressTap = { holdSuppressesClick[0].also { holdSuppressesClick[0] = false } },
+        onSingleTap = { s.togglePlay() },
+        onSeek = { if (!s.live || s.liveWindowKnown) s.seekBy(it) },
+    )
+    val tapGestures = touchTaps.then(holdBoost).pointerInput(Unit) {
         awaitPointerEventScope {
             var lastClick = 0L
             var playingBefore = false
@@ -489,7 +566,12 @@ private fun PlayerContent(s: PlayerSession) {
                 val e = awaitPointerEvent()
                 val change = e.changes.firstOrNull() ?: continue
                 when {
-                    e.type == PointerEventType.Press -> downAt = if (e.primaryContactPressed) change.position else null
+                    e.type == PointerEventType.Press -> {
+                        val touch = !com.lagradost.desktop.platform.WinChrome.pip &&
+                            isPlayerTouch(change.type, com.lagradost.desktop.platform.WindowsTouch.lastPrimaryWasTouch)
+                        if (touch) lastClick = 0L // a mouse click and a finger tap are never one double click
+                        downAt = if (e.primaryContactPressed && !touch) change.position else null
+                    }
                     e.type == PointerEventType.Release -> {
                         val start = downAt ?: continue
                         downAt = null
@@ -843,7 +925,7 @@ private fun VideoSurface(s: PlayerSession, modifier: Modifier) {
     // a very large window is rendered smaller than it is and enlarged here (see MpvSurfaceView.scaledDrawing)
     surface.scaledDrawing = true
     // (the governor switches it off for a PC that can not keep up, see PlaybackGovernor)
-    val smooth = com.lagradost.desktop.ui.fluent.Appearance.smoothMotion && surface.smoothAllowed
+    val smooth = com.lagradost.desktop.ui.fluent.Appearance.smoothMotionOn && surface.smoothAllowed
     surface.smoothMotion = smooth
     // smooth motion: while a video whose frame rate does not divide the screen's plays, the picture is drawn on every refresh (a mix of the two frames
     // around it, see MpvSurfaceView.pick); otherwise it is drawn when a frame arrives
@@ -910,25 +992,63 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVideoImage(imag
     }
 }
 
+/**
+ * The picture behind the loading and failure screens: the episode's still or the title's backdrop full bleed and dark (only a poster is blurred:
+ * a tall picture stretched over a wide window would be a smear), shaded in the middle where the words are.
+ */
+@Composable
+private fun ScreenArt(s: PlayerSession, response: com.lagradost.cloudstream3.LoadResponse?, appear: Float) {
+    val headers = response?.posterHeaders
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear }) {
+        val still = s.episodePoster ?: response?.backgroundPosterUrl?.takeIf { it.isNotBlank() }
+        if (still != null) RemoteImage(still, headers, null, Modifier.fillMaxSize(), ContentScale.Crop, alpha = 0.6f)
+        else (response?.posterUrl)?.let { com.lagradost.desktop.ui.components.SoftImage(it, headers, Modifier.fillMaxSize(), alpha = 0.34f) }
+        Box(
+            Modifier.fillMaxSize().drawBehind {
+                drawRect(Color(0x66000000))
+                drawRect(Brush.radialGradient(0f to Color(0xB3000000), 1f to Color.Transparent, center = center, radius = size.maxDimension * 0.6f))
+                drawRect(Brush.verticalGradient(0.6f to Color.Transparent, 1f to Color(0x99000000)))
+            },
+        )
+    }
+}
+
 @Composable
 private fun LoadingOverlay(s: PlayerSession) {
     var listOpen by remember { mutableStateOf(false) }
+    // what the title looks like: the extension's own artwork, TMDB's logo when it sent none (the same lookup the pause screen does)
+    val response = remember(s.title, s.episodeVersion) { s.titleResponse }
+    val headers = response?.posterHeaders
+    val logo = rememberTitleLogo(response)
+    val facts = remember(response) {
+        listOfNotNull(
+            response?.year?.toString(), response?.contentRating?.takeIf { it.isNotBlank() },
+            response?.tags?.take(3)?.joinToString(" / ")?.takeIf { it.isNotBlank() },
+        ).joinToString("   ·   ")
+    }
+    // the screen settles in instead of cutting from the page to a black plate
+    val appear = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, tween(com.lagradost.desktop.ui.fluent.FluentMotion.ms(360), easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
     Box(
         // the page colour of the theme, as every other page (a blue-grey gradient used to show here)
-        Modifier.fillMaxSize().background(Fluent.colors.bg).pointerInput(Unit) { detectTapGestures { } },
-        contentAlignment = Alignment.Center,
+        Modifier.fillMaxSize().background(playerPageColor()).pointerInput(Unit) { detectTapGestures { } },
     ) {
-        // the episode's own picture, dark and blurred, behind the words
-        s.episodePoster?.let { com.lagradost.desktop.ui.components.SoftImage(it, null, Modifier.fillMaxSize(), alpha = 0.22f) }
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x66000000), 0.5f to Color.Transparent, 1f to Color(0x99000000))))
+        ScreenArt(s, response, appear.value)
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.widthIn(max = 600.dp).padding(24.dp)) {
-            FText(s.title, style = Fluent.type.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color.White, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            s.episodeLabel?.let { FText(it, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), color = Color(0xCCFFFFFF), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-            Box(Modifier.height(10.dp))
-            ProgressBar(null, Modifier.width(320.dp), height = 3.dp)
-            FText(s.loadingText ?: "", color = Color(0xB3FFFFFF), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.widthIn(max = 640.dp).padding(horizontal = 32.dp)
+                .graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 18.dp.toPx() },
+        ) {
+            com.lagradost.desktop.ui.fluent.TitleMark(logo, headers, s.title, 104.dp, 440.dp, centered = true) {
+                FText(s.title, style = Fluent.type.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Black, fontSize = 40.sp, lineHeight = 46.sp, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), Offset(0f, 2f), 16f)), color = Color.White, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+            s.episodeLabel?.let { FText(it, style = Fluent.type.bodyStrong.copy(fontSize = 17.sp), color = Color.White, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+            if (facts.isNotBlank()) FText(facts, style = Fluent.type.bodyStrong.copy(fontSize = 13.sp), color = Color(0xCCFFFFFF), maxLines = 1)
+            Box(Modifier.height(8.dp))
+            ProgressBar(null, Modifier.width(360.dp), height = 3.dp)
+            FText(s.loadingText ?: "", color = Color(0xCCFFFFFF), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             // a torrent: who it is downloaded from and how far the first part is
             s.torrent?.let { t ->
                 if (t.peers > 0 || t.speedBps > 0) FText("${t.peers} peers (${t.seeds} seeds)" + (if (t.speedBps > 0) "  ·  " + com.lagradost.desktop.torrent.TorrentConsent.speed(t.speedBps) else ""), style = Fluent.type.caption, color = Color(0xB3FFFFFF))
@@ -949,7 +1069,7 @@ private fun LoadingOverlay(s: PlayerSession) {
                 if (waited >= 6) FText("Waiting for the source… ${waited} s", color = Color(0x99FFFFFF), style = Fluent.type.caption)
             }
             if (s.linksFound > 0) FText("${s.linksFound} source${if (s.linksFound == 1) "" else "s"} found" + if (s.loadingMore) " · still looking" else "", color = Color(0x99FFFFFF), style = Fluent.type.caption)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                 when {
                     // a source is starting: it can be skipped instead of waiting for it to give up
                     s.startingSource -> if (s.hasNextMirror) Button("Try next source", { s.nextMirror() }, kind = ButtonKind.Accent, icon = Icons.Next)
@@ -994,14 +1114,26 @@ private fun PausedBadge(s: PlayerSession, modifier: Modifier) {
 @Composable
 private fun FailureOverlay(s: PlayerSession) {
     var listOpen by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxSize().background(Fluent.colors.bg.copy(alpha = 0.94f)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
+    // the same picture as the loading screen, so a failure is not a different, bare page
+    val response = remember(s.title, s.episodeVersion) { s.titleResponse }
+    val appear = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, tween(com.lagradost.desktop.ui.fluent.FluentMotion.ms(300), easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+    Box(Modifier.fillMaxSize().background(playerPageColor()).pointerInput(Unit) { detectTapGestures { } }) {
+        ScreenArt(s, response, appear.value)
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.widthIn(max = 520.dp).padding(24.dp)) {
-            Icon(Icons.Warning, size = 40.dp, tint = Fluent.colors.caution)
-            FText("This video could not be played", style = Fluent.type.subtitle, color = Color.White)
-            FText(s.failure ?: "", color = Color(0xCCFFFFFF), maxLines = 5)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.widthIn(max = 640.dp).padding(horizontal = 32.dp).graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 14.dp.toPx() },
+        ) {
+            // Light mode's caution colour is a dark amber made for a light page: on the player's dark screen it is a bright one
+            Box(Modifier.size(52.dp).background(Color(0x26FFFFFF), CircleShape).hairBorder(Color(0x33FFFFFF), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Warning, size = 24.dp, tint = if (Fluent.colors.dark) Fluent.colors.caution else Color(0xFFFFB84D))
+            }
+            FText(s.title, style = Fluent.type.bodyStrong.copy(fontSize = 15.sp), color = Color(0xCCFFFFFF), maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            FText("This video could not be played", style = Fluent.type.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontSize = 32.sp, lineHeight = 38.sp), color = Color.White, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            FText(s.failure ?: "", color = Color(0xCCFFFFFF), maxLines = 5, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                 if (s.hasNextMirror) Button("Try next source", { s.nextMirror() }, kind = ButtonKind.Accent, icon = Icons.Next)
                 Button("Reload sources", { s.reloadSources() }, icon = Icons.Refresh)
                 if (s.linksFound > 0) Button(if (listOpen) "Hide sources" else "Show sources (${s.linksFound})", { listOpen = !listOpen }, icon = Icons.Link)
@@ -1122,8 +1254,16 @@ private fun SeekRow(s: PlayerSession) {
     val time = Fluent.type.bodyStrong.copy(fontFeatureSettings = "tnum")
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         if (!s.live) FText(fmt(s.positionMs), Modifier.widthIn(min = 52.dp), style = time, color = Color.White, maxLines = 1, softWrap = false)
+        // a live channel: how far into its window playback is (left) and how long the window is (right)
+        else if (s.liveWindowKnown) FText(fmt(s.liveElapsedMs), Modifier.widthIn(min = 52.dp), style = time, color = Color.White, maxLines = 1, softWrap = false)
         Box(Modifier.weight(1f)) { SeekBar(s) }
-        if (!s.live) {
+        if (s.live) {
+            if (s.liveWindowKnown && s.liveAtEdge) com.lagradost.desktop.ui.fluent.Tooltip("Live: the newest picture of the channel") {
+                FText("LIVE", Modifier.widthIn(min = 54.dp), style = time.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = Color(0xFFFF6B6B), maxLines = 1, softWrap = false, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            } else if (s.liveWindowKnown) com.lagradost.desktop.ui.fluent.Tooltip("How far back you can go (what the channel keeps)") {
+                FText(fmt(s.liveLengthMs), Modifier.widthIn(min = 54.dp), style = time.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal), color = Color(0xB3FFFFFF), maxLines = 1, softWrap = false, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            }
+        } else {
             val remainingMs = (s.durationMs - s.positionMs).coerceAtLeast(0L)
             val text = if (Appearance.showRemainingTime) "-${fmt(remainingMs)}" else fmt(s.durationMs)
             val tooltip = if (Appearance.showRemainingTime) "Remaining time (click for total)" else "Total duration (click for remaining)"
@@ -1184,9 +1324,9 @@ private fun SeekBar(s: PlayerSession) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     var hoverX by remember { mutableStateOf<Float?>(null) }
     val duration = s.durationMs.coerceAtLeast(1)
-    val shown = dragFraction ?: (s.positionMs.toFloat() / duration).coerceIn(0f, 1f)
-    val buffered = (s.bufferedMs.toFloat() / duration).coerceIn(0f, 1f)
-    val stamps = s.stampFractions(duration)
+    val shown = dragFraction ?: s.barFraction
+    val buffered = s.barBuffered
+    val stamps = if (s.live) emptyList() else s.stampFractions(duration)
     val active = hovered || dragFraction != null
     val trackH by androidx.compose.animation.core.animateDpAsState(if (active) 7.dp else 4.dp, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(160))
     val thumb by androidx.compose.animation.core.animateFloatAsState(if (active) 1f else 0f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenIn(180))
@@ -1199,7 +1339,7 @@ private fun SeekBar(s: PlayerSession) {
             .hoverable(source)
             .onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }
             .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
-            .pointerInput(s.durationMs) {
+            .pointerInput(s.durationMs, s.liveWindowKnown) {
                 awaitPointerEventScope {
                     while (true) {
                         val e = awaitPointerEvent()
@@ -1212,7 +1352,7 @@ private fun SeekBar(s: PlayerSession) {
                             PointerEventType.Exit -> { hoverX = null }
                             PointerEventType.Press -> if (e.primaryContactPressed) { dragFraction = (x / width).coerceIn(0f, 1f); e.changes.forEach { it.consume() } }
                             PointerEventType.Release -> {
-                                dragFraction?.let { f -> s.seekTo((f * s.durationMs).toLong()) }
+                                dragFraction?.let { f -> s.seekToFraction(f) }
                                 dragFraction = null
                             }
                         }
@@ -1238,9 +1378,8 @@ private fun SeekBar(s: PlayerSession) {
     ) {
         hoverX?.let { x ->
             val f = (x / width).coerceIn(0f, 1f)
-            val at = (f * s.durationMs).toLong()
-            val stamp = s.stampLabelAt(at)
-            val label = if (s.live) "-" + fmt((s.durationMs - at).coerceAtLeast(0)) else fmt(at)
+            val stamp = if (s.live) null else s.stampLabelAt((f * s.durationMs).toLong())
+            val label = s.barLabelAt(f)
             // the still of the scene (SeekThumbs), when there is one
             val still = if (s.live) null else s.seekThumbs?.frameAt(f)
             val stillW = if (still != null) 160f else 88f
@@ -1343,14 +1482,14 @@ internal fun VolumeControl(s: PlayerSession) {
 /** Live: a red dot and LIVE at the live point; behind it, how far, and a click goes back to live */
 @Composable
 internal fun LivePill(s: PlayerSession) {
-    val behind = s.liveBehindS ?: 0.0
-    val atLive = behind < 12.0
+    val behindMs = s.liveBehindMs
+    val atLive = s.liveAtEdge
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val pulse = androidx.compose.animation.core.rememberInfiniteTransition()
     val a by pulse.animateFloat(0.45f, 1f, androidx.compose.animation.core.infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse))
     val shape = RoundedCornerShape(50)
-    com.lagradost.desktop.ui.fluent.Tooltip(if (atLive) "Live" else "Go to the live picture") {
+    com.lagradost.desktop.ui.fluent.Tooltip(if (atLive) "Live: the newest picture of the channel" else "${s.behindText(behindMs)} behind live. Click to go to the live picture (End)") {
         Row(
             Modifier.height(28.dp).clip(shape)
                 .background(if (atLive) Color(0x33FF4040) else if (hovered) Color(0x40FFFFFF) else Color(0x26FFFFFF), shape)
@@ -1360,7 +1499,7 @@ internal fun LivePill(s: PlayerSession) {
         ) {
             Box(Modifier.size(8.dp).graphicsLayer { alpha = if (atLive) a else 1f }.background(if (atLive) Color(0xFFFF4545) else Color(0xFF9E9E9E), CircleShape))
             Box(Modifier.width(8.dp))
-            FText(if (atLive) "LIVE" else "LIVE  −${behind.toInt()} s", style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1, softWrap = false)
+            FText(if (atLive) "LIVE" else "LIVE  −${s.behindText(behindMs)}", style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1, softWrap = false)
         }
     }
 }
@@ -1698,3 +1837,7 @@ private fun PanelChip(text: String, selected: Boolean, onClick: () -> Unit) {
             .hoverable(source).fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 14.dp, vertical = 6.dp),
     ) { FText(text, style = Fluent.type.caption, color = if (selected) Color(0xFF111111) else Color.White, maxLines = 1, softWrap = false) }
 }
+
+/** The page colour behind the player's loading and error screens: the theme's in a dark theme, the dark of the player in Light mode (their text is white) */
+@Composable
+private fun playerPageColor(): Color = if (Fluent.colors.dark) Fluent.colors.bg else Color(0xFF0E0F13)

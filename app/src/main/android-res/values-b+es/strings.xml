@@ -747,4 +747,34 @@
         <item quantity="many">%d enlaces ocultos</item>
         <item quantity="other">%d enlaces ocultos</item>
     </plurals>
+    <string name="auto_status_sync_all_des">También pone en Viendo los títulos que aún no están en ninguna lista cuando los empiezas. Desactivado: solo se tocan los títulos que ya tienes en una lista.</string>
+    <string name="auto_status_sync_all_title">Agregar cada título que reproduzco</string>
+    <string name="auto_status_sync_des">Pasa a Viendo un título que está en una de tus listas (Pendiente, En pausa, Abandonado) cuando lo empiezas, y a Completado cuando termina su último episodio, en los servicios en los que tienes la sesión iniciada</string>
+    <string name="auto_status_sync_title">Actualizar el estado de la lista automáticamente</string>
+    <string name="background">Fondo</string>
+    <string name="cloudflare_solvers_des">Algunos sitios piden a un navegador que demuestre que no es un bot; la aplicación abre una página para eso. Desactivado: nunca se abre ninguna página y esos sitios simplemente no cargan.</string>
+    <string name="cloudflare_solvers_title">Superar las verificaciones de Cloudflare</string>
+    <string name="compressor">Compresor</string>
+    <string name="compressor_makeup_hint">Sube el volumen general +%d dB</string>
+    <string name="compressor_makeup_label">Ganancia de compensación: +%d dB</string>
+    <string name="compressor_off">Desactivado</string>
+    <string name="compressor_on">Activado</string>
+    <string name="compressor_on_format">Activado · %1$d dB / +%2$d dB</string>
+    <string name="compressor_preset_dialog">Realce de diálogos</string>
+    <string name="compressor_preset_heavy">Fuerte</string>
+    <string name="compressor_preset_light">Ligero</string>
+    <string name="compressor_setting">Compresor de rango dinámico</string>
+    <string name="compressor_setting_summary">Mostrar los controles del compresor en el reproductor (ayuda a equilibrar el audio fuerte y el bajo)</string>
+    <string name="compressor_threshold_hint">Los sonidos de más de %d dB se bajan</string>
+    <string name="compressor_threshold_label">Umbral: %d dB</string>
+    <string name="edit_profile_image_default">Imágenes predeterminadas</string>
+    <string name="edit_profile_image_picker">Selector de imágenes</string>
+    <string name="edit_profile_image_url">URL</string>
+    <string name="log_cat">Logcat 🐈</string>
+    <string name="profile_stream">Transmisión</string>
+    <string name="public_dns_fallback_des">Cuando tu DNS (1.1.1.2, un filtro familiar o escolar, tu proveedor) rechaza la dirección de un sitio de streaming, consulta a los resolutores públicos (1.1.1.1, 8.8.8.8, 9.9.9.9). Arregla las fuentes que fallan con «host desconocido». Desactivado: solo se confía en tu propio DNS.</string>
+    <string name="public_dns_fallback_title">Consultar DNS públicos sobre nombres bloqueados</string>
+    <string name="start_paused_settings">Iniciar los videos en pausa</string>
+    <string name="start_paused_settings_des">Reduce el estrés al elegir fuentes</string>
+    <string name="subs_edge">Borde</string>
 </resources>

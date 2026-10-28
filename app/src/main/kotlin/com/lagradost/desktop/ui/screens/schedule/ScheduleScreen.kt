@@ -51,7 +51,7 @@ fun ScheduleScreen() {
         ) {
             item(key = "head") {
                 PageHeader(
-                    "Schedule",
+                    "Schedule", icon = Icons.Calendar, tint = androidx.compose.ui.graphics.Color(0xFFFF6B9A),
                     subtitle = when (tab) {
                         TIMETABLE -> "Anime airing, day by day, in your time"
                         SOON -> "Films in cinemas and on streaming, new series and anime, in the next three months"

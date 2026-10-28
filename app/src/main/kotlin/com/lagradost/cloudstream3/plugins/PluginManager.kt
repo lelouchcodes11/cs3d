@@ -688,6 +688,8 @@ object PluginManager {
         val filePath = file.absolutePath
         currentlyLoading = fileName
         Log.i(TAG, "Loading plugin: $data")
+        // desktop: extensions are untrusted code; from the first one on, the sandbox watches what they do (Settings > General > Security)
+        com.lagradost.desktop.sandbox.PluginSandbox.ensureInstalled()
 
         return try {
             // Desktop: upstream marks the file read-only here (Android 14 dynamic code loading rule).

@@ -57,4 +57,33 @@ class ImageQualityTest {
         }
         assertTrue(worst <= 12, "the reduced checkerboard is not grey (off by $worst)")
     }
+
+    @Test
+    fun aJpegIsDecodedAtAReducedSizeThatLooksLikeTheFullOneScaledDown() {
+        // a smooth 800 x 1200 picture with some detail, as a JPEG
+        val w = 800; val h = 1200
+        val pixels = ByteArray(w * h * 4)
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = (y * w + x) * 4
+            pixels[i] = (x * 255 / w).toByte(); pixels[i + 1] = (y * 255 / h).toByte(); pixels[i + 2] = (((x / 20 + y / 20) % 2) * 90 + 60).toByte(); pixels[i + 3] = 0xFF.toByte()
+        }
+        val source = Bitmap().apply { installPixels(ImageInfo.makeN32(w, h, ColorAlphaType.OPAQUE), pixels, w * 4) }
+        source.setImmutable()
+        val jpeg = org.jetbrains.skia.Data.makeFromBytes(Image.makeFromBitmap(source).encodeToData(org.jetbrains.skia.EncodedImageFormat.JPEG, 92)!!.bytes)
+        val codec = org.jetbrains.skia.Codec.makeFromData(jpeg)
+        // the card needs 200 x 300: a quarter of the picture is enough
+        val reduced = assertNotNull(ImageQuality.reducedDecode(codec, w, h, 200, 300))
+        assertEquals(200, reduced.width)
+        assertEquals(300, reduced.height)
+        // a card as large as the picture needs the whole of it
+        assertNull(ImageQuality.reducedDecode(codec, w, h, 700, 1000))
+        val viaReduced = ImageQuality.scaled(reduced, 200, 300)
+        val whole = ImageQuality.scaled(Image.makeFromEncoded(jpeg.bytes), 200, 300)
+        val a = assertNotNull(viaReduced.readPixels(ImageInfo.makeN32(200, 300, ColorAlphaType.OPAQUE), 800, 0, 0))
+        val b = assertNotNull(whole.readPixels(ImageInfo.makeN32(200, 300, ColorAlphaType.OPAQUE), 800, 0, 0))
+        var sum = 0L
+        for (i in a.indices) sum += kotlin.math.abs((a[i].toInt() and 0xFF) - (b[i].toInt() and 0xFF))
+        val mean = sum.toDouble() / a.size
+        assertTrue(mean < 3.0, "the reduced decode differs from the scaled whole one by $mean on average")
+    }
 }

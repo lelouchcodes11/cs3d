@@ -208,7 +208,8 @@ private fun SoonHero(items: List<ComingSoon.Item>, today: LocalDate) {
         while (true) { delay(7000); index = (index + 1) % items.size }
     }
     val shape = RoundedCornerShape(FluentShapes.card)
-    val bg = Fluent.colors.bg
+    // the text on this hero is white, so the shade over the picture is dark in the light theme too (the page colour made it a pale wash with white text on it)
+    val bg = if (Fluent.colors.dark) Fluent.colors.bg else Color(0xFF0B0B0F)
     BoxWithConstraints(Modifier.fillMaxWidth().height(340.dp).clip(shape).hoverable(source)) {
         val roomy = maxWidth >= 820.dp
         Crossfade(items[index.coerceIn(0, items.lastIndex)], animationSpec = FluentMotion.tweenStd(600), label = "soonHero") { item ->
@@ -230,12 +231,12 @@ private fun SoonHero(items: List<ComingSoon.Item>, today: LocalDate) {
                             FText(
                                 if (item.approx) item.date.format(monthDate) else item.date.format(longDate), style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1,
                             )
-                            FText(countdown(item, today), color = Fluent.colors.accentText, maxLines = 1)
+                            FText(countdown(item, today), color = if (Fluent.colors.dark) Fluent.colors.accentText else androidx.compose.ui.graphics.lerp(Fluent.colors.accent, Color.White, 0.55f), maxLines = 1)
                         }
                         if (item.genres.isNotEmpty()) FText(item.genres.joinToString("  ·  "), style = Fluent.type.caption, color = Color(0xB3FFFFFF), maxLines = 1)
                         item.overview?.let { FText(it, color = Color(0xD9FFFFFF), maxLines = 2, modifier = Modifier.widthIn(max = 620.dp)) }
                         Box(Modifier.height(2.dp))
-                        PillButton("Find to watch", Icons.Search, primary = true, onClick = { Navigator.search(item.title) }, height = 42.dp)
+                        PillButton("Find to watch", Icons.Search, primary = true, onArt = true, onClick = { Navigator.search(item.title) }, height = 42.dp)
                     }
                     if (roomy) Box(Modifier.height(284.dp).size(190.dp, 284.dp).clip(RoundedCornerShape(FluentShapes.card)).background(Fluent.colors.control)) {
                         RemoteImage(item.poster, null, null, Modifier.fillMaxSize(), ContentScale.Crop)

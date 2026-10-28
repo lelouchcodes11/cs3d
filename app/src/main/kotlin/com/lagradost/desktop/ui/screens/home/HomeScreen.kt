@@ -2,6 +2,7 @@ package com.lagradost.desktop.ui.screens.home
 
 import com.lagradost.desktop.ui.fluent.fadeIntoPage
 import com.lagradost.desktop.ui.fluent.reveal
+import com.lagradost.desktop.ui.fluent.composeAhead
 import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -88,6 +89,7 @@ import com.lagradost.desktop.ui.fluent.Chip
 import com.lagradost.desktop.ui.fluent.ComboBox
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.artScrim
 import com.lagradost.desktop.ui.fluent.Icons
 import com.lagradost.desktop.ui.fluent.IconButton
 import com.lagradost.desktop.ui.fluent.MenuItem
@@ -100,6 +102,8 @@ import com.lagradost.desktop.ui.fluent.rememberInteraction
 import com.lagradost.desktop.ui.fluent.typeLabel
 import com.lagradost.desktop.ui.shell.TopBarOverlay
 import kotlinx.coroutines.delay
+import com.lagradost.desktop.ui.screens.explore.discoverSections
+import kotlinx.coroutines.ensureActive
 
 /** Where the text of the page starts: 36 dp, and after the floating dock when that floats over the artwork */
 private val gutter: Dp
@@ -144,6 +148,8 @@ fun HomeScreen() {
     val bookmarks by vm.bookmarks.observeAsState()
     val statusTypes by vm.availableWatchStatusTypes.observeAsState()
     val apiName by vm.apiName.observeAsState()
+    // the page of the last visit is on screen because the fresh one could not be loaded
+    val staleReason by vm.staleReason.observeAsState()
 
     // customise and reload live in the top bar of the floating-dock look (no "Browse" header on Home)
     val rowNames = (page as? Resource.Success)?.value?.entries?.filter { it.value.list.list.isNotEmpty() }?.map { it.key }.orEmpty()
@@ -174,7 +180,9 @@ fun HomeScreen() {
         val space = com.lagradost.desktop.ui.fluent.Appearance.space(38.dp)
 
         FluentScrollbar(listState, com.lagradost.desktop.ui.shell.TopBarHeight)
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().smoothWheel(listState), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
+        // the rows of the next screenful are composed while the page is idle (see composeAhead), not in the frames of the first scroll
+        val ahead = com.lagradost.desktop.ui.fluent.rememberComposeAhead()
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().composeAhead(ahead).smoothWheel(listState), contentPadding = com.lagradost.desktop.ui.fluent.lazyPadding(ahead, bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "hero") {
                 val res = preview
                 val items = (res as? Resource.Success)?.value?.second.orEmpty()
@@ -184,13 +192,22 @@ fun HomeScreen() {
                     val heroScroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE }
                     if (skin != null) SkinHero(skin, items, heroHeight, maxWidth, heroScroll)
                     else HomeHero(items, heroHeight, compact = maxWidth < 900.dp, width = maxWidth, scroll = heroScroll)
-                } else if (res == null || res is Resource.Loading) {
+                } else if ((res == null || res is Resource.Loading) && page !is Resource.Failure) {
                     HeroSkeleton(heroHeight)
                 } else Box(Modifier.height(72.dp))
             }
             // the other looks keep their "Browse" header with the customise and reload buttons
             if (skin == null && com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }) item(key = "header") {
                 HomeHeader(vm, apiName, rowNames)
+            }
+            staleReason?.let { reason ->
+                item(key = "stale") {
+                    com.lagradost.desktop.ui.fluent.NoticeBar(
+                        "${apiName ?: "This source"} could not be reached, so this is its page from your last visit. ${reason.take(120)}",
+                        Modifier.padding(horizontal = gutter).padding(bottom = 18.dp),
+                        action = "Try again", onAction = { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true) },
+                    )
+                }
             }
             val resumeList = resume.orEmpty()
             val resumeShown = resumeList.isNotEmpty() && com.lagradost.desktop.ui.fluent.Appearance.homeContinue
@@ -207,6 +224,7 @@ fun HomeScreen() {
                             val r = card as? DataStoreHelper.ResumeWatchingResult
                             ResumeCard(
                                 card, resumeWidth, resumeSubtitle(card),
+                                remove = { r?.let { DataStoreHelper.removeLastWatched(it.parentId); vm.reloadStored() } },
                                 menu = {
                                     listOf(
                                         MenuItem("Resume", Icons.Play) { openCard(card) },
@@ -238,10 +256,31 @@ fun HomeScreen() {
             }
             when (val res = page) {
                 null, is Resource.Loading -> items(3, key = { "sk$it" }) { SkeletonRow(cardWidth) }
-                is Resource.Failure -> item(key = "error") { ErrorRow(res.errorString, vm) }
+                is Resource.Failure -> {
+                    item(key = "error") {
+                        com.lagradost.desktop.ui.fluent.NoticeBar(
+                            "${apiName ?: "This source"} could not be reached. ${res.errorString}",
+                            Modifier.padding(horizontal = gutter).padding(bottom = 22.dp),
+                            action = "Try again", onAction = { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true) },
+                        )
+                    }
+                    // not an empty page: what is trending meanwhile
+                    discoverSections(cardWidth)
+                }
                 is Resource.Success -> {
                     val rows = HomeLayout.rowsFor(apiName.orEmpty(), res.value.entries.filter { it.value.list.list.isNotEmpty() }.map { it.key to it.value })
-                    if (rows.isEmpty()) item(key = "empty") { EmptyHome() }
+                    if (rows.isEmpty()) {
+                        item(key = "empty") {
+                            com.lagradost.desktop.ui.fluent.NoticeBar(
+                                // no extension chosen at all reads "from None" otherwise
+                                if (apiName.isNullOrBlank() || apiName.equals("none", ignoreCase = true)) "No extension is chosen yet. Install one in Extensions to get catalogues here, or pick a source at the top right."
+                                else "Nothing to show from $apiName yet. Pick another source at the top right, or install an extension.",
+                                Modifier.padding(horizontal = gutter).padding(bottom = 22.dp),
+                                action = "Open Extensions", onAction = { Navigator.goTab(com.lagradost.desktop.core.Tab.Extensions) },
+                            )
+                        }
+                        discoverSections(cardWidth)
+                    }
                     rows.forEachIndexed { rowIndex, (name, row) ->
                         item(key = "row-$name") {
                             Column(Modifier.let { if (rowIndex == 0 && !resumeShown && !bookmarksShown) it.climb() else it }.reveal("home/$apiName/row-$name", 60 + rowIndex.coerceAtMost(4) * 70).padding(bottom = space)) {
@@ -299,7 +338,7 @@ fun HomeScreen() {
 }
 
 /** "S1 · E3 · 40 min left" (a film: "26 min left") */
-private fun resumeSubtitle(card: SearchResponse): String? {
+internal fun resumeSubtitle(card: SearchResponse): String? {
     val r = card as? DataStoreHelper.ResumeWatchingResult ?: return typeLabel(card.type)
     val parts = ArrayList<String>()
     val ep = r.episode
@@ -373,34 +412,21 @@ private fun SkeletonRow(cardWidth: Dp) {
     }
 }
 
-@Composable
-private fun ErrorRow(message: String, vm: HomeViewModel) {
-    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Warning, "The home page could not be loaded", message) {
-        Button("Try again", { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true) }, kind = ButtonKind.Accent, icon = Icons.Refresh, height = 36.dp)
-    }
-}
-
-@Composable
-private fun EmptyHome() {
-    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Extensions, "Nothing to show yet", "Install an extension repository, then pick a provider at the top right.") {
-        Button("Open Extensions", { Navigator.goTab(com.lagradost.desktop.core.Tab.Extensions) }, kind = ButtonKind.Accent, icon = Icons.Extensions, height = 36.dp)
-    }
-}
-
 // -------------------------------------------------------------------------------------------
 // Hero
 // -------------------------------------------------------------------------------------------
 
 @Composable
 private fun HeroSkeleton(height: Dp) {
-    Box(Modifier.fillMaxWidth().height(height).shimmer()) {
+    // a dim lift of the page colour that fades out at the foot (a full-width shimmering slab was a big grey block on the black page), and the shapes of the text on it
+    Box(Modifier.fillMaxWidth().height(height).background(Brush.verticalGradient(0f to Fluent.colors.card, 0.7f to Color.Transparent))) {
         Column(Modifier.align(Alignment.BottomStart).padding(start = gutter, bottom = 80.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(90.dp, 22.dp).clip(RoundedCornerShape(50)).background(Fluent.colors.card))
-            Box(Modifier.size(420.dp, 52.dp).clip(RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.control)).background(Fluent.colors.card))
-            Box(Modifier.size(520.dp, 18.dp).clip(RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.control)).background(Fluent.colors.card))
+            Box(Modifier.size(90.dp, 22.dp).clip(RoundedCornerShape(50)).shimmer())
+            Box(Modifier.size(420.dp, 52.dp).clip(RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.control)).shimmer())
+            Box(Modifier.size(520.dp, 18.dp).clip(RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.control)).shimmer())
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.size(130.dp, 44.dp).clip(RoundedCornerShape(50)).background(Fluent.colors.card))
-                Box(Modifier.size(150.dp, 44.dp).clip(RoundedCornerShape(50)).background(Fluent.colors.card))
+                Box(Modifier.size(130.dp, 44.dp).clip(RoundedCornerShape(50)).shimmer())
+                Box(Modifier.size(150.dp, 44.dp).clip(RoundedCornerShape(50)).shimmer())
             }
         }
     }
@@ -434,8 +460,15 @@ private fun HomeHero(all: List<LoadResponse>, height: Dp, compact: Boolean, widt
     val art = remember(items) { androidx.compose.runtime.mutableStateMapOf<String, com.lagradost.desktop.tmdb.TmdbInfo>() }
     LaunchedEffect(index, items) {
         for (item in listOf(current, items[(index + 1) % items.size])) {
-            if (art.containsKey(item.url) || (item.backgroundPosterUrl != null && item.logoUrl != null)) continue
-            runCatching { com.lagradost.desktop.tmdb.Tmdb.info(item.name, item.year, item.type?.isMovieType() == true, item.syncData.values) }.getOrNull()?.let { art[item.url] = it }
+            if (art.containsKey(item.url)) continue
+            val found = try {
+                com.lagradost.desktop.tmdb.Tmdb.info(item.name, item.year, item.type?.isMovieType() == true, item.syncData.values)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Throwable) { null }
+            ensureActive()
+            // only the title itself: a first search result that is another show would put the wrong picture on the billboard
+            if (found != null && com.lagradost.desktop.tmdb.Tmdb.sameTitle(item.name, found.title)) art[item.url] = found
         }
     }
     com.lagradost.desktop.ui.shell.AmbientArtwork(current.backgroundPosterUrl ?: current.posterUrl, current.posterHeaders)
@@ -494,14 +527,17 @@ internal fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null, scro
     Box(
         Modifier.fillMaxSize().fadeIntoPage(fadeStart),
     ) {
-        val backdrop = item.backgroundPosterUrl ?: tmdbBackdrop
+        // the extension's own picture, unless it is small (a 640 px still stretched over a 1920 px window is a smear) and TMDB has a wide one of the same title
+        val own = item.backgroundPosterUrl
+        var ownWidth by remember(own) { mutableStateOf<Int?>(null) }
+        val smear = own != null && tmdbBackdrop != null && (ownWidth ?: Int.MAX_VALUE) < 1100
+        val backdrop = if (smear) tmdbBackdrop else (own ?: tmdbBackdrop)
+        val sizeSeen: ((Int, Int) -> Unit)? = if (backdrop == own) { w, _ -> ownWidth = w } else null
         // the picture trails the page a little (parallax): it is shifted down by a part of the scroll, under the fade at the bottom
         Box(Modifier.fillMaxSize().graphicsLayer { val s = zoom?.value ?: 1f; scaleX = s; scaleY = s; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.7f, 0.4f); translationY = scroll().coerceAtMost(size.height) * 0.3f }) {
-            if (backdrop != null) {
-                RemoteImage(backdrop, item.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop)
-            } else {
-                com.lagradost.desktop.ui.components.SoftImage(item.posterUrl, item.posterHeaders, Modifier.fillMaxSize(), alpha = 0.6f)
-            }
+            // colour at once, never a black page while the wide picture is on its way: the poster, decoded tiny
+            com.lagradost.desktop.ui.components.SoftImage(item.posterUrl, item.posterHeaders, Modifier.fillMaxSize(), alpha = 0.55f)
+            if (backdrop != null) RemoteImage(backdrop, if (backdrop == own) item.posterHeaders else null, null, Modifier.fillMaxSize(), ContentScale.Crop, onSize = sizeSeen)
         }
         if (backdrop == null) {
             // sharp poster on the right when the provider has no backdrop
@@ -520,7 +556,7 @@ internal fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null, scro
         }
         // scrims: left for the text, top for the title bar
         if (scrims) {
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.bg.copy(alpha = 0.95f), 0.38f to Fluent.colors.bg.copy(alpha = 0.7f), 0.7f to Fluent.colors.bg.copy(alpha = 0.2f), 1f to Color.Transparent)))
+            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.artScrim.copy(alpha = 0.95f), 0.38f to Fluent.colors.artScrim.copy(alpha = 0.7f), 0.7f to Fluent.colors.artScrim.copy(alpha = 0.2f), 1f to Color.Transparent)))
             Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))))
         }
     }
@@ -540,12 +576,25 @@ private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp, tmdbLogo:
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             val logo = item.logoUrl ?: tmdbLogo
-            if (logo != null) {
-                RemoteImage(logo, item.posterHeaders, item.name, Modifier.height(if (tight) 72.dp else if (compact) 92.dp else 128.dp).widthIn(max = 520.dp), ContentScale.Fit, alignment = Alignment.CenterStart)
-            } else {
-                FText(item.name, style = (if (compact) Fluent.type.title else Fluent.type.titleLarge).copy(fontSize = if (compact) 36.sp else 56.sp, lineHeight = if (compact) 42.sp else 62.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = if (tight || !showPlot) 1 else 2)
+            com.lagradost.desktop.ui.fluent.TitleMark(logo, item.posterHeaders, item.name, if (tight) 60.dp else if (compact) 76.dp else 104.dp, 460.dp) {
+                FText(item.name, style = (if (compact) Fluent.type.title else Fluent.type.titleLarge).copy(fontSize = if (compact) 30.sp else 46.sp, lineHeight = if (compact) 36.sp else 52.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), androidx.compose.ui.geometry.Offset(0f, 2f), 16f)), color = Color.White, maxLines = if (tight || !showPlot) 1 else 2)
             }
             // one line: score, age rating, what it is
+            val chips = buildList {
+                com.lagradost.desktop.ui.fluent.typeLabel(item.type)?.let { add(it) }
+                // a series: how many episodes it has, and for an anime whether it has sub and dub
+                val episodes = when (item) {
+                    is com.lagradost.cloudstream3.AnimeLoadResponse -> item.episodes.values.maxOfOrNull { it.size }
+                    is com.lagradost.cloudstream3.TvSeriesLoadResponse -> item.episodes.size
+                    else -> null
+                }?.takeIf { it > 1 }
+                episodes?.let { add("$it episodes") }
+                (item as? com.lagradost.cloudstream3.AnimeLoadResponse)?.episodes?.keys?.filter { it != com.lagradost.cloudstream3.DubStatus.None }?.let { keys ->
+                    val dub = com.lagradost.cloudstream3.DubStatus.Dubbed in keys
+                    val sub = com.lagradost.cloudstream3.DubStatus.Subbed in keys
+                    (if (dub && sub) "SUB · DUB" else if (dub) "DUB" else if (sub) "SUB" else null)?.let { add(it) }
+                }
+            }
             val tags = buildList {
                 item.year?.let { add(it.toString()) }
                 item.duration?.takeIf { it > 0 }?.let { add(if (it >= 60) "${it / 60} h ${it % 60} min" else "$it min") }
@@ -559,12 +608,24 @@ private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp, tmdbLogo:
                     }
                 }
                 item.contentRating?.takeIf { it.isNotBlank() }?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
+                chips.forEach { com.lagradost.desktop.ui.fluent.ArtChip(it) }
                 if (tags.isNotEmpty()) FText(tags.joinToString("  •  "), style = Fluent.type.bodyStrong, color = Color(0xE6FFFFFF), maxLines = 1)
             }
-            if (showPlot) item.plot?.takeIf { it.isNotBlank() }?.let { FText(stripHtml(it), style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xCCFFFFFF), maxLines = if (compact) 2 else 3) }
+            if (showPlot) item.plot?.takeIf { it.isNotBlank() }?.let { FText(stripHtml(it).replace("[more]", "").trim(), style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xCCFFFFFF), maxLines = 2) }
             Box(Modifier.height(2.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                com.lagradost.desktop.ui.fluent.PillButton("Watch now", Icons.Play, primary = true, onClick = { Navigator.go(Route.Details(item.url, item.apiName, item.name, item.posterUrl, START_ACTION_RESUME_LATEST)) }, height = 50.dp)
+                com.lagradost.desktop.ui.fluent.PillButton("Watch now", Icons.Play, primary = true, onArt = true, onClick = { Navigator.go(Route.Details(item.url, item.apiName, item.name, item.posterUrl, START_ACTION_RESUME_LATEST)) }, height = 50.dp)
+                // add to / take off the library without leaving the page (the mark follows a click at once, the library answers a moment later)
+                var saved by remember(item.url) { mutableStateOf(runCatching { com.lagradost.desktop.ui.fluent.CardLibrary.statusOf(item) != com.lagradost.cloudstream3.ui.WatchType.NONE }.getOrDefault(false)) }
+                com.lagradost.desktop.ui.fluent.GlassCircleButton(
+                    if (saved) Icons.Check else Icons.Add, if (saved) "Remove from your library" else "Add to your library",
+                    {
+                        val now = !saved
+                        saved = now
+                        runCatching { com.lagradost.desktop.ui.fluent.CardLibrary.setStatus(item, if (now) com.lagradost.cloudstream3.ui.WatchType.PLANTOWATCH else com.lagradost.cloudstream3.ui.WatchType.NONE) }
+                    },
+                    size = 50.dp,
+                )
                 com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Info, "More info", { Navigator.go(Route.Details(item.url, item.apiName, item.name, item.posterUrl)) }, size = 50.dp)
             }
         }
@@ -579,31 +640,58 @@ internal fun stripHtml(html: String): String =
 // Continue watching card
 // -------------------------------------------------------------------------------------------
 
+/** TMDB's wide picture by title for the Continue watching cards that have no still of their own ("" = looked up, none found) */
+private val resumeBackdrops = java.util.concurrent.ConcurrentHashMap<String, String>()
+
 /**
  * One entry of Continue watching as a 16:9 card: the still of the episode (the poster of the title when the extension sent none),
  * the title and what is next at the bottom, the source it was watched with at the top right, how far you got as a bar.
  */
 @Composable
-private fun ResumeCard(card: SearchResponse, width: Dp, subtitle: String?, menu: () -> List<MenuItem>) {
+private fun ResumeCard(card: SearchResponse, width: Dp, subtitle: String?, menu: () -> List<MenuItem>, remove: (() -> Unit)? = null) {
     val c = Fluent.colors
     val r = card as? DataStoreHelper.ResumeWatchingResult
     val source = com.lagradost.desktop.ui.fluent.rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.card)
     val lift by androidx.compose.animation.core.animateFloatAsState(if (hovered) 1.03f else 1f, com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(160), label = "resumeLift")
-    val thumb = com.lagradost.desktop.stats.ResumeExtras.thumbOf(r?.id) ?: card.posterUrl
+    val stored = com.lagradost.desktop.stats.ResumeExtras.thumbOf(r?.id)
+    // nothing stored (a title watched before stills were kept): TMDB's wide picture of the title instead of the tall poster cropped to a strip
+    val backdrop by androidx.compose.runtime.produceState<String?>(resumeBackdrops[card.name]?.ifEmpty { null }, card.name, stored) {
+        if (stored != null || !com.lagradost.desktop.tmdb.Tmdb.enabled || resumeBackdrops.containsKey(card.name)) return@produceState
+        // a lookup that is cut off (the page was left) says nothing: only an answer is kept
+        val info = try {
+            com.lagradost.desktop.tmdb.Tmdb.info(card.name, null, card.type?.isMovieType() == true, emptyList())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            return@produceState
+        }
+        // Tmdb swallows a cancellation inside its request and answers null: look again whether this coroutine is still wanted
+        ensureActive()
+        value = info?.takeIf { com.lagradost.desktop.tmdb.Tmdb.sameTitle(card.name, it.title) }?.backdrop
+        resumeBackdrops[card.name] = value ?: ""
+    }
+    val thumb = stored ?: backdrop ?: card.posterUrl
     val sourceName = com.lagradost.desktop.stats.ResumeExtras.sourceOf(r?.parentId)
     val fraction = card.watchedFraction()
     com.lagradost.desktop.ui.fluent.ContextMenuArea(menu) {
         Column(Modifier.width(width).hoverable(source).fluentClickable(source, true, shape, androidx.compose.ui.semantics.Role.Button) { openCard(card) }) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).graphicsLayer { scaleX = lift; scaleY = lift }.clip(shape).background(c.card)) {
-                RemoteImage(thumb, card.posterHeaders, null, Modifier.fillMaxSize(), ContentScale.Crop, alignment = Alignment.TopCenter)
+                // colour at once: the poster, decoded tiny; the wide picture crossfades over it when it has come
+                if (thumb != card.posterUrl) com.lagradost.desktop.ui.components.SoftImage(card.posterUrl, card.posterHeaders, Modifier.fillMaxSize(), alpha = 0.8f)
+                RemoteImage(thumb, if (thumb == card.posterUrl) card.posterHeaders else null, null, Modifier.fillMaxSize(), ContentScale.Crop, alignment = if (thumb == card.posterUrl) Alignment.TopCenter else Alignment.Center)
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color(0xCC000000))))
                 // a quiet play disc on hover
                 if (hovered) Box(Modifier.align(Alignment.Center).size(46.dp).background(Color(0x66000000), CircleShape), contentAlignment = Alignment.Center) {
                     com.lagradost.desktop.ui.fluent.Icon(Icons.Play, size = 18.dp, tint = Color.White)
                 }
-                sourceName?.let { name ->
+                // under the pointer: a round button to take the title off the list (the source it was watched with is shown otherwise)
+                if (hovered && remove != null) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                        com.lagradost.desktop.ui.fluent.SkinCircleButton(Icons.Close, "Remove from Continue watching", remove, size = 30.dp)
+                    }
+                } else sourceName?.let { name ->
                     Box(Modifier.align(Alignment.TopEnd).padding(8.dp).widthIn(max = width * 0.6f).background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) {
                         FText(name, style = Fluent.type.caption, color = Color.White, maxLines = 1, softWrap = false)
                     }

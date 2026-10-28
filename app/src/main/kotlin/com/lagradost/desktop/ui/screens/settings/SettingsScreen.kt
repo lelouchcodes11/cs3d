@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,6 +45,7 @@ import com.lagradost.desktop.ui.LegacyContent
 import com.lagradost.desktop.ui.fluent.Button
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.lightShadow
 import com.lagradost.desktop.ui.fluent.FluentMotion
 import com.lagradost.desktop.ui.fluent.FluentScrollbar
 import com.lagradost.desktop.ui.fluent.FluentShapes
@@ -233,14 +235,15 @@ private fun CategoryTile(title: String, about: String, glyph: String, tint: Colo
     val shape = RoundedCornerShape(FluentShapes.card)
     val fill by androidx.compose.animation.animateColorAsState(if (hovered) c.cardHover else c.card, FluentMotion.tweenStd(FluentMotion.FAST), label = "tileFill")
     Row(
-        modifier.height(84.dp).clip(shape).background(fill, shape).hairBorder(if (hovered) c.hoverEdge else c.stroke, shape)
+        modifier.heightIn(min = 84.dp).clip(shape).background(fill, shape).hairBorder(if (hovered) c.hoverEdge else c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         IconBadge(48.dp, tint) { col -> Icon(glyph, size = 22.dp, tint = col) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            FText(title, style = Fluent.type.bodyStrong, maxLines = 1)
-            FText(about, style = Fluent.type.caption, color = c.textSecondary, maxLines = 2)
+            // the tile grows with its text: a translated name or description is longer than the English one, and a narrower window makes it longer still
+            FText(title, Modifier.padding(top = 8.dp), style = Fluent.type.bodyStrong, maxLines = 2)
+            FText(about, Modifier.padding(bottom = 8.dp), style = Fluent.type.caption, color = c.textSecondary, maxLines = 3)
         }
         Icon(Icons.ChevronRightSmall, size = 12.dp, tint = if (hovered) c.text else c.textSecondary)
     }
@@ -251,7 +254,7 @@ private fun CategoryTile(title: String, about: String, glyph: String, tint: Colo
 private fun RowCard(items: List<SettingItem>) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
-    Column(Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape)) {
+    Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape)) {
         androidx.compose.runtime.CompositionLocalProvider(LocalRowGroup provides true, LocalReserveIcon provides items.any { it.hasIcon }) {
             items.forEachIndexed { i, item ->
                 if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
@@ -265,10 +268,11 @@ private fun RowCard(items: List<SettingItem>) {
 @Composable
 private fun GroupList(groups: List<SettingGroup>, firstGap: Boolean = false) {
     groups.forEachIndexed { i, g ->
-        Row(Modifier.fillMaxWidth().padding(top = if (i == 0 && !firstGap) 0.dp else 24.dp, bottom = 8.dp, start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        // a group without a title (the card at the top of About) starts straight with its content
+        if (g.title.isNotBlank() || g.action != null) Row(Modifier.fillMaxWidth().padding(top = if (i == 0 && !firstGap) 0.dp else 24.dp, bottom = 8.dp, start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             FText(g.title, style = Fluent.type.bodyStrong, modifier = Modifier.weight(1f))
             g.action?.invoke()
-        }
+        } else if (i > 0) Box(Modifier.height(24.dp))
         // plain rows that follow one another share one rounded card, divided by hairlines; a block (a picture grid, a colour picker) stands on its own
         val parts = buildList<Pair<Boolean, List<SettingItem>>> {
             var run = mutableListOf<SettingItem>()
@@ -333,7 +337,7 @@ private fun CategoryRow(title: String, glyph: String, tint: Color, selected: Boo
     val shape = FluentShapes.pill
     val fill by androidx.compose.animation.animateColorAsState(if (selected) c.controlHover else if (hovered) c.subtleHover else Color.Transparent, FluentMotion.tweenStd(FluentMotion.FAST), label = "settingsNavFill")
     Row(
-        Modifier.padding(vertical = 1.dp).fillMaxWidth().height(40.dp).clip(shape)
+        Modifier.padding(vertical = 1.dp).fillMaxWidth().heightIn(min = 40.dp).clip(shape)
             .background(fill, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick).padding(end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -341,6 +345,7 @@ private fun CategoryRow(title: String, glyph: String, tint: Color, selected: Boo
         Box(Modifier.width(8.dp))
         IconBadge(28.dp, tint) { col -> Icon(glyph, size = 15.dp, tint = col) }
         Box(Modifier.width(12.dp))
-        FText(title, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (selected) c.text else c.textSecondary, maxLines = 1)
+        // a long translation ("Updates and backup" in Russian, Spanish, French) wraps to a second line instead of ending in an ellipsis
+        FText(title, Modifier.padding(vertical = 8.dp), style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = if (selected) c.text else c.textSecondary, maxLines = 2)
     }
 }

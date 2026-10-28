@@ -3,7 +3,10 @@ package com.lagradost.desktop.ui.fluent
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -49,6 +52,15 @@ fun Modifier.smoothWheel(state: ScrollableState, step: Dp = 72.dp): Modifier {
     }
 }
 
+/**
+ * True while a wheel glide is under way. A page that moves under a resting pointer hands the pointer to a new card every few frames; each one
+ * would lift, throw its shadow and compose its panel (title, buttons, facts) for a card that is gone a moment later. The cards leave those
+ * effects out until the page has stopped (they come back for the card under the pointer then).
+ */
+object ScrollActivity {
+    var active by mutableStateOf(false)
+}
+
 private class WheelGlide(private val state: ScrollableState, private val scope: CoroutineScope) {
     private var remaining = 0f
     private var job: Job? = null
@@ -60,6 +72,12 @@ private class WheelGlide(private val state: ScrollableState, private val scope: 
     }
 
     private suspend fun run() {
+        // -Dcloudstream.hoverscroll=keep: cards keep their hover effects while the page moves (to measure what they cost)
+        ScrollActivity.active = System.getProperty("cloudstream.hoverscroll") != "keep"
+        try { glide() } finally { ScrollActivity.active = false }
+    }
+
+    private suspend fun glide() {
         var last = withFrameNanos { it }
         while (abs(remaining) > 0.5f) {
             val now = withFrameNanos { it }

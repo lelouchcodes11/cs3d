@@ -42,6 +42,7 @@ import com.lagradost.desktop.ui.fluent.ButtonKind
 import com.lagradost.desktop.ui.fluent.EmptyState
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.lightShadow
 import com.lagradost.desktop.ui.fluent.FluentScrollbar
 import com.lagradost.desktop.ui.fluent.FluentShapes
 import com.lagradost.desktop.ui.fluent.Icons
@@ -125,8 +126,8 @@ fun StatsScreen() {
     val t by produceState<Totals?>(null, version) { value = runCatching { compute() }.getOrNull() }
     val state = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        FluentScrollbar(state, TopBarHeight)
         val data = t
+        FluentScrollbar(state, TopBarHeight)
         LazyColumn(
             state = state, modifier = Modifier.fillMaxSize().smoothWheel(state),
             contentPadding = PaddingValues(start = 36.dp, end = 36.dp, top = TopBarHeight + 20.dp, bottom = 40.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current),
@@ -134,7 +135,7 @@ fun StatsScreen() {
         ) {
             item(key = "head") {
                 PageHeader(
-                    "Stats", subtitle = "What you watched, in this app",
+                    "Stats", icon = Icons.Chart, tint = androidx.compose.ui.graphics.Color(0xFFFFA24C), subtitle = "What you watched, in this app",
                     trailing = {
                         if (data != null && data.loggedMs > 0) Button("Reset", {
                             Overlays.message("Reset the stats?", "The diary of what you watched (this page) is cleared. Your library, history and tracker lists stay.", primary = "Reset", onPrimary = { WatchLog.reset(); version++ })
@@ -190,11 +191,12 @@ private fun Tile(label: String, value: String, sub: String) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(18.dp),
+        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         FText(label, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
-        FText(value, style = Fluent.type.title, maxLines = 1)
+        // a long value ("24 Std. 46 Min.") is set smaller instead of being cut in a narrow card
+        FText(value, style = if (value.length <= 10) Fluent.type.title else Fluent.type.subtitle, maxLines = 2)
         FText(sub, style = Fluent.type.caption, color = c.textTertiary, maxLines = 2)
     }
 }
@@ -204,7 +206,7 @@ private fun Card(title: String, content: @Composable () -> Unit) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(18.dp),
+        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         FText(title, style = Fluent.type.bodyStrong, maxLines = 1)
@@ -255,7 +257,8 @@ private fun Heatmap(perDay: Map<LocalDate, Long>, weekdays: LongArray) {
     val today = LocalDate.now(ZoneId.systemDefault())
     val max = (perDay.values.maxOrNull() ?: 1L).coerceAtLeast(1L)
     val accent = c.accent
-    val empty = c.control
+    // a day without watching: a faint tint of the text colour (the control colour is white on the white card of Light mode: the empty grid vanished)
+    val empty = c.text.copy(alpha = 0.08f)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     // as many weeks as fit (a year at most)
     val weeks = ((maxWidth + 3.dp) / (15.dp + 3.dp)).toInt().coerceIn(12, 53)

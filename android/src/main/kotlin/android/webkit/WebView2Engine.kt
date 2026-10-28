@@ -145,6 +145,11 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
 
     override fun setup(core: Pointer) {
         Com.getPtr(core, 3)?.let { settings ->
+            // Read the engine default before an extension's per-WebView override is applied.
+            Com.query(settings, IID_SETTINGS2)?.let { s2 ->
+                rt.observeDefaultUserAgent(Com.getString(s2, 21))
+                Com.release(s2)
+            }
             Com.putBool(settings, 8, false) // script dialogs come to WebChromeClient
             Com.putBool(settings, 10, false) // no status bar
             Com.putBool(settings, 18, false) // no Ctrl+wheel zoom

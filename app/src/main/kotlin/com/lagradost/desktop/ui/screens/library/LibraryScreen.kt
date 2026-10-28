@@ -154,6 +154,14 @@ fun LibraryScreen() {
             else -> PosterGrid(
                 items = items,
                 onOpen = ::openLibraryItem,
+                // "12 / 24 episodes" under a title of AniList or MyAnimeList (and a bar along the poster)
+                subtitle = { card ->
+                    (card as? SyncAPI.LibraryItem)?.let { li ->
+                        val done = li.episodesCompleted ?: 0
+                        val total = li.episodesTotal ?: 0
+                        if (total > 0) "$done / $total episodes" else if (done > 0) "$done episodes" else null
+                    }
+                },
                 menu = { card ->
                     val sync = card as? SyncAPI.LibraryItem
                     buildList<com.lagradost.desktop.ui.fluent.MenuEntry> {
@@ -173,7 +181,7 @@ fun LibraryScreen() {
                                 )
                                 Box(Modifier.height(16.dp))
                             }
-                            com.lagradost.desktop.ui.fluent.PageHeader("Library", subtitle = "${if (kind == Kind.All) "${allTitles.size} titles" else "${items.size} of ${allTitles.size} titles · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = { Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart) })
+                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = "${if (kind == Kind.All) "${allTitles.size} titles" else "${items.size} of ${allTitles.size} titles · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = { Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart) })
                             Box(Modifier.height(18.dp))
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)

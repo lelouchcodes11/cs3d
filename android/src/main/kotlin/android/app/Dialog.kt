@@ -101,13 +101,19 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
         }
     }
 
+    /** The plugin class that asked for this window (found on the call stack of the first show(), which may be another thread's) */
+    private var mCaller: Class<*>? = null
+
     open fun show() {
+        if (mCaller == null && !isFragmentDialog) mCaller = com.lagradost.desktop.runtime.web.CloudflareGate.callingPluginClass()
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mHandler.post { show() }
             return
         }
         if (mShowing) return
         dispatchOnCreate(null)
+        // a window of an extension that is not the one in use and that nobody asked for (a donation popup): not shown
+        if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseIdlePopup(mCaller ?: javaClass)) return
         // Settings > General > Cloudflare solvers: off, a page in a dialog (an extension's challenge window) is not shown
         if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseBrowserDialog(mWindow.getDecorView(), javaClass) { cancel() }) return
         onStart()

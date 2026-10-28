@@ -83,11 +83,17 @@ object WinTheme {
         return (b shl 16) or (g shl 8) or r
     }
 
+    private var lastLook: List<Any>? = null
+
     /** Dark title bar, caption + text colour of the app's background, rounded corners (Windows 11) */
     fun styleWindow(window: Window, dark: Boolean, caption: Color, text: Color, fullscreen: Boolean = false) {
         val api = dwm ?: return
         runCatching {
             val hwnd = WinDef.HWND(Pointer(Native.getComponentID(window)))
+            // the same look again changes nothing: Windows is not asked to repaint the title bar and border for it
+            val look = listOf(Pointer.nativeValue(hwnd.pointer), dark, caption, text, fullscreen)
+            if (look == lastLook) return
+            lastLook = look
             fun set(attr: Int, v: Int) = api.DwmSetWindowAttribute(hwnd, attr, IntByReference(v), 4)
             set(DWMWA_USE_IMMERSIVE_DARK_MODE, if (dark) 1 else 0)
             // full screen: square corners and no border colour, nothing around the picture

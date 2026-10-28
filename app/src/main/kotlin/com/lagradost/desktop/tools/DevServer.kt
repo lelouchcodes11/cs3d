@@ -894,6 +894,11 @@ object DevServer {
                 if (q["start"] != null) { com.lagradost.desktop.tools.ComposeTrace.start(); ok(ex, "tracing") }
                 else ok(ex, com.lagradost.desktop.tools.ComposeTrace.stop(q["top"]?.toIntOrNull() ?: 40))
             }
+            "/textaudit" -> {
+                // dev: texts that did not fit (cut by an ellipsis) since the last clear; needs -Dcloudstream.textaudit=1. /textaudit?clear=1 empties the list first
+                if (q["clear"] != null) com.lagradost.desktop.ui.fluent.TextAudit.clear()
+                ok(ex, com.lagradost.desktop.ui.fluent.TextAudit.report())
+            }
             "/framestats" -> ok(ex, com.lagradost.desktop.tools.FrameStats.report(q["s"]?.toInt() ?: 10) + (q["worst"]?.toIntOrNull()?.let { "\n" + com.lagradost.desktop.tools.FrameStats.worst(q["s"]?.toInt() ?: 10, it) } ?: ""))
             "/videostats" -> {
                 // dev: how the video frames keep up (render thread) and what mpv says about timing
@@ -1588,7 +1593,8 @@ object DevServer {
                 val dev = com.lagradost.desktop.ui.screens.player.PlayerDev
                 ok(ex, (com.lagradost.desktop.ui.screens.player.PlayerSession.active?.debugLine() ?: "no player page") +
                     " controls=${dev.controlsShown} pokes=${dev.pokes} overControls=${dev.overControls} pip=${com.lagradost.desktop.platform.WinChrome.pip}" +
-                    " governor=${com.lagradost.desktop.player.PlaybackGovernor.level}/${com.lagradost.desktop.ui.screens.player.PlayerSession.active?.governor?.lastNote}")
+                    " governor=${com.lagradost.desktop.player.PlaybackGovernor.level}/${com.lagradost.desktop.ui.screens.player.PlayerSession.active?.governor?.lastNote}" +
+                    " guard=[${com.lagradost.desktop.ui.screens.player.ControlsGuard.summary()}] nativeBroken=${com.lagradost.desktop.ui.screens.player.NativeVideo.broken} pinned=${dev.pinned}")
             }
             "/tlsinfo" -> {
                 // dev: which TLS stack and HTTP version the app's client and a plain OkHttp client get

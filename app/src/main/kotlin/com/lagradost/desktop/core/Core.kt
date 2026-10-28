@@ -160,7 +160,8 @@ object PlayerExit {
 object Navigator {
     val stack = mutableStateListOf(Entry(Route.Home))
     val current: Entry get() = stack.last()
-    val canGoBack: Boolean get() = stack.size > 1
+    // the first-run set-up sits on top of Home but is not a page to go back from: its own "Skip setup" is the way out (the Back buttons stay dim)
+    val canGoBack: Boolean get() = stack.size > 1 && stack.last().route !is Route.Setup
 
     /** The nav pane item that stays selected: the last top level page in the stack */
     val selectedTab: Tab get() = stack.asReversed().firstNotNullOfOrNull { it.route.tab() } ?: Tab.Home

@@ -75,9 +75,16 @@ object WebView2Runtime {
 
     val isAvailable: Boolean get() = version != null
 
+    @Volatile private var observedUserAgent: String? = null
+
+    internal fun observeDefaultUserAgent(value: String?) {
+        if (!value.isNullOrBlank()) observedUserAgent = value
+    }
+
     /** The user agent of WebView2's own (Edge) browser: what a cf_clearance cookie made by it is bound to */
     val userAgent: String
         get() {
+            observedUserAgent?.let { return it }
             val major = version?.substringBefore('.') ?: "154"
             return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36 Edg/$major.0.0.0"
         }
@@ -329,12 +336,17 @@ object WebView2Runtime {
     /** The last page closed: changes to the jar from now on cannot reach the browser, the next page gets the whole jar again */
     internal fun onCoreRemoved(core2: Pointer?) {
         if (core2 != null) cores.remove(core2)
-        if (cores.isEmpty()) cookiesGiven = false
+        if (cores.isEmpty()) {
+            cookiesGiven = false
+            if (WebCookies.backend === cookieBackend) WebCookies.backend = null
+        }
     }
 
     private val debugCookies = System.getProperty("cloudstream.webdebug") == "true"
 
     private val cookieBackend = object : WebCookies.BrowserBackend {
+        override fun readCookies(complete: (List<WebCookie>?) -> Unit) = post { readBrowserCookies(complete) }
+        override fun canWaitForCookies(): Boolean = !isWebViewThread
         override fun push(cookie: WebCookie) = post { withCookieManager { addCookie(it, cookie) } }
         override fun delete(cookie: WebCookie) = post {
             withCookieManager { Com.call(it, 9, WString(cookie.name), WString(cookie.domain), WString(cookie.path)) }
@@ -377,37 +389,55 @@ object WebView2Runtime {
 
     /** Copies the browser's jar into the app's (WebView2 thread), then [then] */
     internal fun pullCookies(then: () -> Unit) {
-        val cm = cookieManager() ?: run { then(); return }
+        val ticket = WebCookies.beginBrowserRead()
+        readBrowserCookies { cookies ->
+            if (cookies != null) WebCookies.replaceAll(cookies, ticket)
+            then()
+        }
+    }
+
+    private fun readBrowserCookies(complete: (List<WebCookie>?) -> Unit) {
+        val cm = cookieManager() ?: run { complete(null); return }
         val handler = ComObject.completed(IID_GET_COOKIES_DONE) { hr, list ->
             if (!Com.ok(hr) || list == null) Log.w(TAG, "cookies not read: HRESULT 0x${Integer.toHexString(hr)}")
             if (Com.ok(hr) && list != null) {
                 val count = IntByReference()
-                Com.call(list, 3, count)
+                if (Com.call(list, 3, count) < 0 || count.value < 0) {
+                    complete(null)
+                    return@completed
+                }
                 if (debugCookies) Log.d(TAG, "browser jar: ${count.value} cookies")
                 val out = ArrayList<WebCookie>(count.value)
                 for (i in 0 until count.value) {
-                    val c = Com.getPtr(list, 4, i) ?: continue
+                    val c = Com.getPtr(list, 4, i) ?: run { complete(null); return@completed }
                     try {
-                        val session = Com.getBool(c, 16)
-                        val expires = if (session) null else Com.getDouble(c, 8)?.let { (it * 1000).toLong() }
+                        val session = Com.getInt(c, 16) ?: continue
+                        val secure = Com.getInt(c, 14) ?: continue
+                        val httpOnly = Com.getInt(c, 10) ?: continue
+                        val expires = if (session != 0) null else {
+                            val seconds = Com.getDouble(c, 8) ?: continue
+                            (seconds * 1000).toLong()
+                        }
                         out.add(
                             WebCookie(
-                                Com.getString(c, 3) ?: continue, Com.getString(c, 4) ?: "", Com.getString(c, 6) ?: continue,
-                                Com.getString(c, 7) ?: "/", expires, Com.getBool(c, 14), Com.getBool(c, 10),
+                                Com.getString(c, 3) ?: continue, Com.getString(c, 4) ?: continue, Com.getString(c, 6) ?: continue,
+                                Com.getString(c, 7) ?: continue, expires, secure != 0, httpOnly != 0,
                             )
                         )
                     } finally {
                         Com.release(c)
                     }
                 }
-                WebCookies.replaceAll(out)
+                // A missing entry/property is a failed read, never a reason to wipe saved cookies.
+                complete(if (out.size == count.value) out else null)
+            } else {
+                complete(null)
             }
-            then()
         }
         val hr = Com.call(cm, 5, WString(""), handler.pointer)
         if (debugCookies) Log.d(TAG, "GetCookies: 0x${Integer.toHexString(hr)}")
         Com.release(cm)
-        if (hr < 0) then()
+        if (hr < 0) complete(null)
         handler.releaseOwn()
     }
 }

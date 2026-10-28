@@ -38,9 +38,11 @@ object Shortcuts {
         "Z" to "Picture size: fit, fill, zoom",
         "T" to "Translate the writing on the picture (signs, game windows) and show it over the video",
         "E" to "Episode list",
+        "C" to "Show the controls and keep them on the picture; press again to let them hide (if the controls ever do not show up)",
         "," to "Slower (0.25x steps)",
         "." to "Faster (0.25x steps)",
         "Home" to "Back to the start",
+        "End" to "Live channel: go to the live picture",
         "0 – 9" to "Jump to 0 % … 90 % of the video",
         "F1" to "This list",
     )

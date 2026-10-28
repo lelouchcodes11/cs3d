@@ -42,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -51,6 +53,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lagradost.cloudstream3.SearchQuality
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
@@ -65,10 +68,12 @@ fun Modifier.shimmer(): Modifier {
     val phase = shimmerPhase()
     return this.drawBehind {
         val x = (phase * 2f - 0.5f) * size.width
-        drawRect(c.card)
+        // Light mode: a grey block with a white glint (a white card on the pale page left the skeleton of a loading banner invisible)
+        // dark: a lit block you can see on the black page (the card tint, 4 % white, was close to invisible on it)
+        drawRect(if (c.dark) Color(0x12FFFFFF) else Color(0xFFE6E6EC))
         drawRect(
             Brush.horizontalGradient(
-                listOf(Color.Transparent, if (c.dark) Color(0x14FFFFFF) else Color(0x14000000), Color.Transparent),
+                listOf(Color.Transparent, if (c.dark) Color(0x1FFFFFFF) else Color(0xA6FFFFFF), Color.Transparent),
                 startX = x - size.width * 0.3f, endX = x + size.width * 0.3f,
             ),
         )
@@ -108,6 +113,12 @@ fun typeLabel(t: TvType?): String? = when (t) {
 
 /** Fraction watched (0..1) of a continue-watching entry, null for ordinary results */
 fun SearchResponse.watchedFraction(): Float? {
+    // a library entry of AniList / MyAnimeList: how many episodes of the whole are done (nothing for a title not started or finished)
+    (this as? com.lagradost.cloudstream3.syncproviders.SyncAPI.LibraryItem)?.let { li ->
+        val total = li.episodesTotal ?: return null
+        val done = li.episodesCompleted ?: return null
+        return if (total > 0 && done in 1 until total) done.toFloat() / total else null
+    }
     val pos = (this as? DataStoreHelper.ResumeWatchingResult)?.watchPos ?: return null
     if (pos.duration <= 0) return null
     return (pos.position.toFloat() / pos.duration.toFloat()).coerceIn(0f, 1f)
@@ -116,9 +127,14 @@ fun SearchResponse.watchedFraction(): Float? {
 @Composable
 fun PosterImage(item: SearchResponse, modifier: Modifier = Modifier, scale: ContentScale = ContentScale.Crop) {
     val c = Fluent.colors
-    Box(modifier.background(c.card), contentAlignment = Alignment.Center) {
-        Icon(Icons.Video, size = 28.dp, tint = c.textDisabled)
-        RemoteImage(item.posterUrl, item.posterHeaders, item.name, Modifier.fillMaxSize(), scale)
+    // until the picture is there (a slow network, a title with none) the card says what it is, instead of a dark box with a camera in it
+    var loaded by androidx.compose.runtime.remember(item.posterUrl) { androidx.compose.runtime.mutableStateOf(false) }
+    Box(modifier.background(Brush.verticalGradient(listOf(c.cardHover, c.card))), contentAlignment = Alignment.Center) {
+        if (!loaded) Column(Modifier.padding(horizontal = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Video, size = 24.dp, tint = c.textDisabled)
+            if (item.name.isNotBlank()) FText(item.name, style = Fluent.type.caption, color = c.textTertiary, maxLines = 3, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+        RemoteImage(item.posterUrl, item.posterHeaders, item.name, Modifier.fillMaxSize(), scale, onSize = { _, _ -> loaded = true })
     }
 }
 
@@ -143,20 +159,34 @@ fun PosterCard(
     }
     val c = Fluent.colors
     val source = rememberInteraction()
-    val hovered by source.collectIsHoveredAsState()
-    val zoomOn = Appearance.hoverZoom
+    val pointerOn by source.collectIsHoveredAsState()
+    // not while the page is moving under the pointer (see ScrollActivity); only the card under the pointer re-composes when that changes
+    val hovered by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { pointerOn && !ScrollActivity.active } }
+    val zoomOn = Appearance.hoverZoomOn
     val pressed by source.collectIsPressedAsState()
     // the card rises on a spring when the pointer comes (a little overshoot) and gives way under a press
     val liftSpec = FluentMotion.springSoft<Float>()
-    val lift by animateFloatAsState(if (pressed) 0.975f else if (hovered && zoomOn) 1.035f else 1f, liftSpec, label = "lift")
-    val glow by animateFloatAsState(if (hovered) 1f else 0f, FluentMotion.tweenIn(220))
+    val lift by animateFloatAsState(if (pressed) 0.975f else if (hovered && zoomOn) 1.04f else 1f, liftSpec, label = "lift")
+    // the info that comes up on the card (title, play / add / more, score, year): a tween, so it never overshoots
+    val info by animateFloatAsState(if (hovered) 1f else 0f, FluentMotion.tweenIn(200), label = "cardInfo")
     val shape = RoundedCornerShape(FluentShapes.card)
     // a top-lit hairline gives the poster an edge (brighter under the pointer)
     val edge = depthEdge(if (hovered) 2.1f else 1f)
+    // the list a title is on is read only while the pointer is on it (a database read per card otherwise)
+    // only a title of an extension can be put on the library here (an AniList entry is already on a list, a TMDB title belongs to no extension)
+    val owned = item.apiName.isNotBlank() && item.url.isNotBlank() && item !is com.lagradost.desktop.tmdb.TmdbCard && com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(item.apiName) != null
+    val savedInLibrary = androidx.compose.runtime.remember(item.url, hovered) {
+        hovered && owned && runCatching { CardLibrary.status(item) != com.lagradost.cloudstream3.ui.WatchType.NONE }.getOrDefault(false)
+    }
+    // the mark follows a click at once (the library answers a moment later)
+    var flipped by androidx.compose.runtime.remember(item.url, hovered) { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
+    val saved = flipped ?: savedInLibrary
     val body = @Composable {
         Column(
             modifier
                 .let { if (width != null) it.width(width) else it.fillMaxWidth() }
+                // the card under the pointer is drawn above its neighbours: it grows over them
+                .zIndex(if (hovered) 2f else 0f)
                 // fluentClickable adds the hover tracking and the focus ring itself (they were added a second time here: two more nodes and a second focus collector per card)
                 .fluentClickable(source, true, shape, Role.Button, onClick),
         ) {
@@ -165,27 +195,30 @@ fun PosterCard(
                     .fillMaxWidth()
                     .aspectRatio(if (landscape) 16f / 9f else 2f / 3f)
                     .graphicsLayer { scaleX = lift; scaleY = lift }
+                    .let { if (info > 0.05f) it.shadow((16 * info).dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black) else it.lightShadow(shape, 4.dp) }
                     .clip(shape)
                     .hairBorder(edge, shape),
             ) {
                 PosterImage(item, Modifier.fillMaxSize())
-                // hover: a flat dim and a quiet play button (no gradient, shadow or accent)
-                if (glow > 0.01f) {
-                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = glow }.background(Color(0x59000000)), contentAlignment = Alignment.Center) {
-                        Box(
-                            Modifier
-                                .size(44.dp).background(Color(0x33FFFFFF), CircleShape).hairBorder(Color(0x66FFFFFF), CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Play, size = 16.dp, tint = Color.White)
-                        }
-                    }
-                }
+                // what the title is, at a glance: quality, sub / dub, episodes (they give way to the info panel)
                 Row(Modifier.align(Alignment.TopStart).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     qualityLabel(item.quality)?.let { Overlay(it) }
+                    dubLabel(item)?.let { Overlay(it) }
                 }
                 item.score?.let { s ->
                     Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Overlay("★ " + s.toString(10, 1)) }
+                }
+                episodeCount(item)?.let { n ->
+                    Box(Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = if (item.watchedFraction() != null) 10.dp else 6.dp)) { Overlay(if (n == 1) "1 ep" else "$n eps") }
+                }
+                if (info > 0.01f) {
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = info }) {
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0xB3000000))))
+                        CardInfoPanel(item, width, subtitle, owned, saved, onPlay ?: onClick, onClick) {
+                            flipped = !saved
+                            runCatching { CardLibrary.setStatus(item, if (saved) com.lagradost.cloudstream3.ui.WatchType.NONE else com.lagradost.cloudstream3.ui.WatchType.PLANTOWATCH) }
+                        }
+                    }
                 }
                 item.watchedFraction()?.let { f ->
                     Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()) {
@@ -194,7 +227,7 @@ fun PosterCard(
                 }
             }
             Box(Modifier.height(8.dp))
-            // the title is quiet until the pointer is on the card
+            // the title stays under the card; under the pointer it is a little brighter
             if (item.name.isNotBlank()) FText(item.name, style = Fluent.type.body, color = if (hovered) c.text else c.textSecondary, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
             val sub = subtitle ?: if (showType) typeLabel(item.type) else null
             if (sub != null) FText(sub, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
@@ -210,6 +243,42 @@ fun PosterCard(
 private fun Overlay(text: String) {
     Box(Modifier.background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) {
         FText(text, style = Fluent.type.caption, color = Color.White, maxLines = 1, softWrap = false)
+    }
+}
+
+/** "DUB", "SUB" or "SUB · DUB" for an anime card whose extension says which it has */
+private fun dubLabel(item: SearchResponse): String? {
+    val a = item as? com.lagradost.cloudstream3.AnimeSearchResponse ?: return null
+    val set = a.dubStatus?.filter { it != com.lagradost.cloudstream3.DubStatus.None }?.toSet().orEmpty()
+    val dub = com.lagradost.cloudstream3.DubStatus.Dubbed in set
+    val sub = com.lagradost.cloudstream3.DubStatus.Subbed in set
+    return when { dub && sub -> "SUB · DUB"; dub -> "DUB"; sub -> "SUB"; else -> null }
+}
+
+/** How many episodes the extension says a series has (the most of the sub and dub counts for an anime) */
+private fun episodeCount(item: SearchResponse): Int? = when (item) {
+    is com.lagradost.cloudstream3.AnimeSearchResponse -> item.episodes.values.maxOrNull()
+    is com.lagradost.cloudstream3.TvSeriesSearchResponse -> item.episodes
+    else -> null
+}?.takeIf { it > 0 }
+
+/**
+ * What comes up on a poster under the pointer: the round buttons (play, add to the library, more), the title and the facts. The same
+ * calls as the card's right-click menu ([CardLibrary]), so a title added here is the one the library and the title page show.
+ */
+@Composable
+private fun CardInfoPanel(item: SearchResponse, width: Dp?, subtitle: String?, owned: Boolean, saved: Boolean, onPlay: () -> Unit, onOpen: () -> Unit, onToggle: () -> Unit) {
+    val narrow = width != null && width < 150.dp
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (narrow) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SkinCircleButton(Icons.Play, "Play", onPlay, size = 32.dp, filled = true) }
+            else Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                SkinCircleButton(Icons.Play, "Play", onPlay, size = 32.dp, filled = true)
+                if (owned) SkinCircleButton(if (saved) Icons.Check else Icons.Add, if (saved) "Remove from your library" else "Add to your library", onToggle, size = 32.dp)
+                Box(Modifier.weight(1f))
+                SkinCircleButton(Icons.ChevronDown, "More info", onOpen, size = 32.dp)
+            }
+        }
     }
 }
 

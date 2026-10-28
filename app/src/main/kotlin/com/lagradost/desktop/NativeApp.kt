@@ -287,7 +287,10 @@ private suspend fun watchSceneSize(window: java.awt.Window, scene: () -> android
         val off = native != null && size.width > 0 && size.height > 0 && !chrome.fullscreen && !chrome.pip &&
             (kotlin.math.abs(native[0] - size.width) > maxOf(48, native[0] / 25) || kotlin.math.abs(native[1] - size.height) > maxOf(48, native[1] / 25))
         if (!off) { badPolls = 0; heals = 0; continue }
-        if (++badPolls < 4) continue
+        // while the start screen is up (and for 15 s at most) a weak PC is still making its window big and laying it out: the picture is behind the
+        // window for seconds without being stale, and laying out or maximizing the window again then showed as flicker. Wait much longer first.
+        val starting = !com.lagradost.desktop.ui.Startup.revealed.isCompleted && System.currentTimeMillis() - opened < 15_000
+        if (++badPolls < (if (starting) 12 else 4)) continue
         badPolls = 0
         heals++
         android.util.Log.w("NativeApp", "the picture is ${size.width}x${size.height} but the window is ${native!![0]}x${native[1]}: laying it out again (#$heals, maximized=${chrome.maximized})")

@@ -744,4 +744,34 @@
         <item quantity="one">%d ausgeblendeter Link</item>
         <item quantity="other">%d ausgeblendete Links</item>
     </plurals>
+    <string name="auto_status_sync_all_des">Setzt auch Titel, die noch auf keiner Liste stehen, beim Start auf „Am schauen“. Aus: Es werden nur Titel angefasst, die bereits auf einer deiner Listen stehen.</string>
+    <string name="auto_status_sync_all_title">Jeden Titel hinzufügen, den ich abspiele</string>
+    <string name="auto_status_sync_des">Setzt einen Titel, der auf einer deiner Listen steht (Geplant, Pausiert, Abgebrochen), beim Start auf „Am schauen“ und nach der letzten Folge auf „Abgeschlossen“, bei den Diensten, bei denen du angemeldet bist</string>
+    <string name="auto_status_sync_title">Listenstatus automatisch aktualisieren</string>
+    <string name="background">Hintergrund</string>
+    <string name="cloudflare_solvers_des">Manche Seiten verlangen von einem Browser den Beweis, dass er kein Bot ist; die App öffnet dafür eine Seite. Aus: Es wird nie eine Seite geöffnet und diese Seiten laden einfach nicht.</string>
+    <string name="cloudflare_solvers_title">Cloudflare-Prüfungen bestehen</string>
+    <string name="compressor">Kompressor</string>
+    <string name="compressor_makeup_hint">Erhöht die Gesamtlautstärke um +%d dB</string>
+    <string name="compressor_makeup_label">Make-up-Gain: +%d dB</string>
+    <string name="compressor_off">Aus</string>
+    <string name="compressor_on">An</string>
+    <string name="compressor_on_format">An · %1$d dB / +%2$d dB</string>
+    <string name="compressor_preset_dialog">Dialogverstärkung</string>
+    <string name="compressor_preset_heavy">Stark</string>
+    <string name="compressor_preset_light">Leicht</string>
+    <string name="compressor_setting">Dynamikkompressor</string>
+    <string name="compressor_setting_summary">Kompressor-Regler im Player anzeigen (gleicht laute und leise Passagen an)</string>
+    <string name="compressor_threshold_hint">Töne, die lauter als %d dB sind, werden leiser gestellt</string>
+    <string name="compressor_threshold_label">Schwellwert: %d dB</string>
+    <string name="edit_profile_image_default">Standardbilder</string>
+    <string name="edit_profile_image_picker">Bildauswahl</string>
+    <string name="edit_profile_image_url">URL</string>
+    <string name="log_cat">Logcat 🐈</string>
+    <string name="profile_stream">Stream</string>
+    <string name="public_dns_fallback_des">Wenn dein DNS (1.1.1.2, ein Familien- oder Schulfilter, dein Anbieter) die Adresse einer Streaming-Seite ablehnt, werden stattdessen öffentliche Resolver (1.1.1.1, 8.8.8.8, 9.9.9.9) gefragt. Behebt Quellen, die mit „Unbekannter Host“ fehlschlagen. Aus: Es wird nur deinem eigenen DNS vertraut.</string>
+    <string name="public_dns_fallback_title">Öffentliches DNS nach gesperrten Namen fragen</string>
+    <string name="start_paused_settings">Videos pausiert starten</string>
+    <string name="start_paused_settings_des">Weniger Stress bei der Quellenauswahl</string>
+    <string name="subs_edge">Kante</string>
 </resources>

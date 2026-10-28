@@ -45,6 +45,7 @@ import com.lagradost.desktop.ui.fluent.CheckBox
 import com.lagradost.desktop.ui.fluent.ComboBox
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.lightShadow
 import com.lagradost.desktop.ui.fluent.FluentShapes
 import com.lagradost.desktop.ui.fluent.Icon
 import com.lagradost.desktop.ui.fluent.Icons
@@ -101,7 +102,7 @@ fun SettingsCard(
     val lit = hovered && onClick != null && enabled
     // in a group the card is the group's (one rounded card, rows divided by a hairline); alone a row is a card of its own
     val base = if (grouped) Modifier.fillMaxWidth().heightIn(min = 60.dp).background(if (lit) c.subtleHover else Color.Transparent)
-    else Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(shape).background(if (lit) c.cardHover else c.card, shape).hairBorder(c.stroke, shape)
+    else Modifier.fillMaxWidth().heightIn(min = 64.dp).lightShadow(shape).clip(shape).background(if (lit) c.cardHover else c.card, shape).hairBorder(c.stroke, shape)
     Row(
         (if (onClick != null && enabled) base.fluentClickable(source, true, shape, Role.Button, onClick) else base).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -113,7 +114,8 @@ fun SettingsCard(
         else if (icon == null && LocalRowIcons.current && LocalReserveIcon.current) Box(Modifier.size(36.dp))
         Column(Modifier.weight(1f).widthIn(min = 120.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             FText(title, color = if (enabled) c.text else c.textDisabled, maxLines = 3)
-            if (!subtitle.isNullOrBlank()) FText(subtitle, style = Fluent.type.caption, color = if (enabled) c.textSecondary else c.textDisabled, maxLines = 4)
+            // a description is never cut: in a half-screen window a long translation beside a drop-down ("Follow Windows, or always use light or dark surfaces") took five lines
+            if (!subtitle.isNullOrBlank()) FText(subtitle, style = Fluent.type.caption, color = if (enabled) c.textSecondary else c.textDisabled, maxLines = 8)
             if (below != null) { Box(Modifier.height(8.dp)); below() }
         }
         trailing()

@@ -203,7 +203,7 @@ fun AppShell() {
     val c = Fluent.colors
     // 1 = the bottom dock is shown, 0 = it has slid away; a new page always shows it
     // (only when "Hide the dock while scrolling" is on in Settings)
-    val dockShown by animateFloatAsState(if (Appearance.dockAutoHide && ShellState.dockHidden) 0f else 1f, FluentMotion.tweenIn(220), label = "dockShown")
+    val dockShown by animateFloatAsState(if (Appearance.dockAutoHide && ShellState.dockHidden && !com.lagradost.desktop.ui.fluent.InputMode.touchUi) 0f else 1f, FluentMotion.tweenIn(220), label = "dockShown")
     LaunchedEffect(Navigator.current.id) { ShellState.dockHidden = false }
     // Arabic (and the other right-to-left languages): the screens are laid out from the right; the title bar above stays as Windows draws it
     androidx.compose.runtime.CompositionLocalProvider(
@@ -648,15 +648,16 @@ private fun TopTab(item: NavItem, iconOnly: Boolean = false) {
 @Composable
 private fun FloatingDock(modifier: Modifier) {
     val c = Fluent.colors
-    val isClassic = Appearance.theme == "classic"
+    val light = !c.dark
+    val isClassic = Appearance.theme == "classic" && !light
     val shape = RoundedCornerShape(28.dp)
     Column(
         modifier
             .width(56.dp)
-            .shadow(18.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .shadow(if (light) 12.dp else 18.dp, shape, clip = false, ambientColor = if (light) Color(0x40000000) else Color.Black, spotColor = if (light) Color(0x40000000) else Color.Black)
             .clip(shape)
             .background(if (isClassic) Color(0xD90B0B10) else if (Appearance.glass) c.flyout.copy(alpha = 0.90f) else c.flyout, shape)
-            .hairBorder(if (isClassic) Color(0x2BFFFFFF) else c.strokeStrong.copy(alpha = 0.5f), shape)
+            .hairBorder(if (isClassic) Color(0x2BFFFFFF) else if (light) c.stroke else c.strokeStrong.copy(alpha = 0.5f), shape)
             .padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -680,10 +681,13 @@ private fun FloatingDockItem(item: NavItem) {
             Box(Modifier.align(Alignment.CenterStart).padding(start = 4.dp).size(3.dp, bar).clip(RoundedCornerShape(2.dp)).background(if (colored) c.button else c.accent))
             Box(
                 Modifier.size(40.dp).clip(shape)
-                    .background(if (selected && colored) c.button.copy(alpha = 0.22f) else if (hovered) Color(0x18FFFFFF) else Color.Transparent, shape)
+                    .background(if (selected && colored) c.button.copy(alpha = 0.22f) else if (hovered) (if (c.dark) Color(0x18FFFFFF) else c.subtleHover) else Color.Transparent, shape)
                     .fluentClickable(source, true, shape, Role.Tab) { Navigator.goTab(tabOf(item.id)) },
                 contentAlignment = Alignment.Center,
-            ) { NavIcon(item, size = 20.dp, tint = if (selected) (if (colored) c.accentText else Color.White) else if (hovered) Color(0xE6FFFFFF) else Color(0x99FFFFFF)) }
+            ) {
+                val ink = if (c.dark) Color.White else c.text
+                NavIcon(item, size = 20.dp, tint = if (selected) (if (colored) c.accentText else ink) else if (hovered) ink.copy(alpha = 0.9f) else if (c.dark) Color(0x99FFFFFF) else c.textSecondary)
+            }
         }
     }
 }
@@ -728,7 +732,7 @@ private fun DockItem(item: NavItem) {
     val selected = Navigator.selectedTab.id() == item.id
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    val lift by animateFloatAsState(if (hovered && Appearance.hoverZoom) 1.12f else 1f, FluentMotion.tweenIn(180), label = "dock")
+    val lift by animateFloatAsState(if (hovered && Appearance.hoverZoomOn) 1.12f else 1f, FluentMotion.tweenIn(180), label = "dock")
     val pill by animateDpAsState(if (selected) 26.dp else 0.dp, FluentMotion.tweenIn(260), label = "pill")
     val shape = RoundedCornerShape(FluentShapes.card.coerceAtLeast(10.dp))
     val colored = Appearance.navAccentPill
@@ -800,12 +804,16 @@ private fun AccountButton(expanded: Boolean) {
     }
 }
 
-/** Fluent info bars for the engine's toasts (top right, slide in, auto dismiss) */
+/**
+ * The engine's toasts as small rounded bars at the bottom centre (they rise in, then leave on their own). The top right belonged to the pages' own buttons
+ * (Refresh, Stats, Update all): a toast over them hid the very button that had just been pressed.
+ */
 @Composable
 private fun ToastLayer() {
     val c = Fluent.colors
-    Box(Modifier.fillMaxSize().padding(top = 60.dp, end = 16.dp), contentAlignment = Alignment.TopEnd) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val dockRoom = if (Appearance.navPosition == NavPosition.Bottom) 84.dp else 0.dp
+    Box(Modifier.fillMaxSize().padding(horizontal = 28.dp).padding(bottom = 28.dp + dockRoom), contentAlignment = Alignment.BottomCenter) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             for (toast in Toasts.current.toList()) {
                 androidx.compose.runtime.key(toast.id) {
                     LaunchedEffect(toast.id) {
@@ -813,8 +821,8 @@ private fun ToastLayer() {
                         Toasts.dismiss(toast)
                     }
                     val shown = remember { androidx.compose.animation.core.MutableTransitionState(false) }.apply { targetState = true }
-                    AnimatedVisibility(shown, enter = fadeIn(FluentMotion.tweenIn(200)) + slideInHorizontally(FluentMotion.tweenIn(320)) { it / 3 }) {
-                        val shape = RoundedCornerShape(FluentShapes.card)
+                    AnimatedVisibility(shown, enter = fadeIn(FluentMotion.tweenIn(200)) + androidx.compose.animation.slideInVertically(FluentMotion.tweenIn(320)) { it }) {
+                        val shape = RoundedCornerShape(20.dp)
                         Row(
                             Modifier
                                 .widthIn(max = 420.dp)

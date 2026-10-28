@@ -36,12 +36,34 @@ object JcefRuntime {
     const val CHROME_VERSION = "146.0.7680.179"
 
     /** Desktop Chrome user agent used by all browsers (and reported by WebSettings) */
-    val defaultUserAgent =
+    private val configuredUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VERSION.substringBefore('.')}.0.0.0 Safari/537.36"
+
+    @Volatile private var observedUserAgent: String? = null
+    val defaultUserAgent: String get() = observedUserAgent ?: configuredUserAgent
+
+    internal fun observeDefaultUserAgent(value: String?) {
+        if (!value.isNullOrBlank()) observedUserAgent = value
+    }
 
     @Volatile
     private var app: CefApp? = null
+    @Volatile private var cookieBackend: WebCookies.BrowserBackend? = null
     private val initFuture = CompletableFuture<CefApp>()
+    private val nativeCookieCallback = ThreadLocal.withInitial { false }
+    internal val canWaitForCookieRead: Boolean get() = !nativeCookieCallback.get()
+
+    private fun detachCookieBackend() {
+        if (WebCookies.backend === cookieBackend) WebCookies.backend = null
+        cookieBackend = null
+    }
+
+    /** shouldInterceptRequest runs on CEF's cookie/IO thread, unlike Android UI callbacks. */
+    internal fun <T> inNativeCookieCallback(block: () -> T): T {
+        val previous = nativeCookieCallback.get()
+        nativeCookieCallback.set(true)
+        return try { block() } finally { nativeCookieCallback.set(previous) }
+    }
 
     @Volatile
     var progressListener: ((state: String, percent: Float) -> Unit)? = null
@@ -160,7 +182,10 @@ object JcefRuntime {
         )
         builder.setAppHandler(object : MavenCefAppHandlerAdapter() {
             override fun stateHasChanged(state: CefApp.CefAppState) {
-                if (state == CefApp.CefAppState.TERMINATED) app = null
+                if (state == CefApp.CefAppState.TERMINATED) {
+                    app = null
+                    detachCookieBackend()
+                }
             }
         })
         val cefApp = builder.build()
@@ -182,7 +207,11 @@ object JcefRuntime {
                     deleteCookies("http://${cookie.domain.removePrefix(".")}${cookie.path}", cookie.name)
                 }
                 override fun deleteAll() = cookieReads.execute { deleteCookies(null, null) }
-            }
+                override fun canWaitForCookies(): Boolean = canWaitForCookieRead
+                override fun readCookies(complete: (List<WebCookie>?) -> Unit) = cookieReads.execute {
+                    complete(if (isReady) runCatching { readCookies(1200).map(::toWebCookie) }.getOrNull() else null)
+                }
+            }.also { cookieBackend = it }
             java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "jcef-cookie-pull").also { it.isDaemon = true } }
                 .scheduleWithFixedDelay({ refreshCookiesThen {} }, 2, 2, TimeUnit.SECONDS)
         }.onFailure { Log.w(TAG, "cookies not shared with Chromium: ${it.message}") }
@@ -204,6 +233,7 @@ object JcefRuntime {
     fun createClient(): CefClient = await().createClient()
 
     fun shutdown() {
+        detachCookieBackend()
         try {
             app?.dispose()
         } catch (_: Throwable) {
@@ -254,7 +284,7 @@ object JcefRuntime {
             if (cookieRefreshPosted.compareAndSet(false, true)) {
                 cookieReads.execute {
                     try {
-                        cookieSnapshot.set(readCookies(timeoutMs))
+                        runCatching { readCookies(timeoutMs) }.getOrNull()?.let(cookieSnapshot::set)
                     } finally {
                         cookieRefreshPosted.set(false)
                     }
@@ -262,16 +292,22 @@ object JcefRuntime {
             }
             return cookieSnapshot.get()
         }
-        val fresh = readCookies(timeoutMs)
+        val fresh = runCatching { readCookies(timeoutMs) }.getOrNull() ?: return cookieSnapshot.get()
         cookieSnapshot.set(fresh)
         return fresh
     }
 
     /** Reads the jar into the snapshot (off the UI thread, at most [timeoutMs]), then runs [then] */
     fun refreshCookiesThen(timeoutMs: Long = 3000, then: () -> Unit) {
+        val ticket = WebCookies.beginBrowserRead()
         cookieReads.execute {
             try {
-                runCatching { readCookies(timeoutMs).also { cookieSnapshot.set(it); WebCookies.replaceAll(it.map(::toWebCookie)) } }
+                if (!isReady) return@execute
+                runCatching {
+                    readCookies(timeoutMs).also {
+                        if (WebCookies.replaceAll(it.map(::toWebCookie), ticket)) cookieSnapshot.set(it)
+                    }
+                }
             } finally {
                 then()
             }
@@ -279,7 +315,7 @@ object JcefRuntime {
     }
 
     private fun readCookies(timeoutMs: Long): List<CefCookie> {
-        val cm = cookieManager() ?: return emptyList()
+        val cm = cookieManager() ?: error("Cookie manager unavailable")
         val result = ArrayList<CefCookie>()
         val latch = CountDownLatch(1)
         val visitor = CefCookieVisitor { cookie: CefCookie, count: Int, total: Int, _: BoolRef ->
@@ -287,8 +323,8 @@ object JcefRuntime {
             if (total <= 0 || count + 1 >= total) latch.countDown()
             true
         }
-        if (!cm.visitAllCookies(visitor)) return emptyList()
-        latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        check(cm.visitAllCookies(visitor)) { "Cookie enumeration rejected" }
+        check(latch.await(timeoutMs, TimeUnit.MILLISECONDS)) { "Cookie enumeration timed out" }
         return synchronized(result) { result.filter { it.domain?.removePrefix(".") != "cloudstream-cookie-sentinel.invalid" } }
     }
 

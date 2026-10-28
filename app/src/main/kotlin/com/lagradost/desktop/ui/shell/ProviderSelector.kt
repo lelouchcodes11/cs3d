@@ -78,7 +78,8 @@ fun ProviderSelector(modifier: Modifier = Modifier) {
         val ctx = DesktopBootstrap.activityOrNull()
         runCatching { ctx?.filterProviderByPreferredMedia()?.map { it.name }?.distinct()?.sortedBy { it.lowercase() } }.getOrNull().orEmpty()
     }
-    val selected = apiName?.takeIf { it == random || it in names } ?: DataStoreHelper.currentHomePage?.takeIf { it == random || it in names }
+    // while the extensions are still loading the name of the last one is shown (its saved page is on screen), not "Choose a source"
+    val selected = apiName?.takeIf { it == random || it in names } ?: DataStoreHelper.currentHomePage?.takeIf { it == random || it in names } ?: (apiName ?: DataStoreHelper.currentHomePage)?.takeIf { it != random && !com.lagradost.cloudstream3.plugins.PluginManager.loadedOnlinePlugins }
     var open by remember { mutableStateOf(false) }
     val c = Fluent.colors
     val source = rememberInteraction()

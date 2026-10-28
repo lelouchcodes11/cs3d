@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.lagradost.desktop.platform.PerformanceMode
 
 /** Where the main navigation sits */
 enum class NavPosition(val label: String) { Floating("Floating bar"), Dock("Floating dock"), Left("Left"), Right("Right"), Top("Top"), Bottom("Bottom dock") }
@@ -77,6 +78,21 @@ enum class DynamicRange(val label: String, val detail: String, val thresholdDb: 
 }
 
 /**
+ * Everything the player does to the sound before it is played, as mpv's `af` value ("" = the sound is not touched): Stable volume first (the
+ * level of the whole film is kept even: music, effects and speech end up about equally loud), then the compressor of [DynamicRange].
+ */
+object AudioFilters {
+    /**
+     * ffmpeg's `dynaudnorm` follows the loudness of the last seconds and lifts the quiet parts or turns the loud ones down to the same target:
+     * 0.4 s frames, a 21 frame (about 8 s) smoothing window so the volume never pumps, up to +20 dB for a whisper, peaks at 0.9 so it never
+     * clips, a light compression (s=5) so a shout and a murmur end up near each other, channels kept together so the surround balance stays.
+     */
+    const val STABLE = "lavfi=[dynaudnorm=f=400:g=21:p=0.9:m=10:s=5:n=1]"
+
+    fun chain(stable: Boolean, range: DynamicRange): String = listOf(if (stable) STABLE else "", range.filter).filter { it.isNotEmpty() }.joinToString(",")
+}
+
+/**
  * How the video is enlarged when it is shown larger than it is, and for the Anime4K modes cleaned up too (native GPU player only).
  * [scaler] is mpv's own filter for the picture; the shader chains behind the Anime4K and FSR modes are in player/Upscaling.kt.
  * [load] is a rough price on the graphics card (0 = none, 3 = a strong card).
@@ -111,7 +127,21 @@ object Appearance {
 
     /** See-through bars and panels over artwork */
     var glass by mutableStateOf(true)
-    var motion by mutableStateOf(Motion.Full)
+    /** What the user chose for animations; [motion] is what is in force (a weak PC does not get Full, see [light]) */
+    var motionChoice by mutableStateOf(Motion.Full)
+    var motion: Motion
+        get() = if (light && motionChoice == Motion.Full) Motion.Reduced else motionChoice
+        set(value) { motionChoice = value }
+
+    /** Settings > General > Performance: whether this PC gets the light look (see LowEnd) */
+    var performance by mutableStateOf(PerformanceMode.Auto)
+
+    /** The light look is in force: shorter animations, no hover zoom or moving profile pictures, no seek preview, no frame blending in the video, smaller caches */
+    val light: Boolean get() = com.lagradost.desktop.platform.LowEnd.active(performance)
+    val hoverZoomOn: Boolean get() = hoverZoom && !light
+    val profilesMove: Boolean get() = animatedProfiles && !light
+    val seekPreviewsOn: Boolean get() = seekPreviews && !light
+    val smoothMotionOn: Boolean get() = smoothMotion && !light
 
     /** Size of everything (100 = Windows scale) */
     var uiScale by mutableFloatStateOf(1f)
@@ -166,6 +196,13 @@ object Appearance {
     val dynamicRangeState = mutableStateOf(DynamicRange.Off)
     var dynamicRange by dynamicRangeState
 
+    /** Stable volume: music, effects and speech are kept at about the same loudness (see [AudioFilters]); applies to the playing video at once */
+    val stableVolumeState = mutableStateOf(false)
+    var stableVolume by stableVolumeState
+
+    /** mpv's `af` value for the two sound settings */
+    val audioFilter: String get() = AudioFilters.chain(stableVolume, dynamicRange)
+
     /** Video: blends the frames around each screen refresh so 24 or 25 fps film does not judder on a 60 Hz screen */
     var smoothMotion by mutableStateOf(true)
 
@@ -181,8 +218,14 @@ object Appearance {
     /** The still of the scene above the seek bar (a second, light player reads the video for it) */
     var seekPreviews by mutableStateOf(true)
 
+    /** A live channel's seek bar is the window the channel keeps (what can be rewound), with the times and LIVE as the phone's player has them; off: the plain bar of the buffered part */
+    var liveWindow by mutableStateOf(true)
+
     /** Seconds after the last mouse movement the player controls go away; 0 keeps them on the picture */
     var controlsHideSeconds by mutableStateOf(2)
+
+    /** The safety net of the player controls (see ControlsGuard): pointer check by Windows, controls-window watch, fall back to the standard player */
+    var controlsGuard by mutableStateOf(true)
 
     /** Country code for age ratings and streaming services; empty follows the Windows region */
     var tmdbRegion by mutableStateOf("")
@@ -223,6 +266,9 @@ object Appearance {
 
     private inline fun <reified E : Enum<E>> enumOf(name: String?, default: E): E = enumValues<E>().firstOrNull { it.name == name } ?: default
 
+    /** Whether the light look applies, read straight from the preferences: the start-up sizes the caches with it before [load] has run */
+    fun lightFromPrefs(): Boolean = runCatching { com.lagradost.desktop.platform.LowEnd.active(enumOf(prefs().getString(PREFIX + "performance", null), PerformanceMode.Auto)) }.getOrDefault(false)
+
     fun load() {
         runCatching {
             val p = prefs()
@@ -241,6 +287,7 @@ object Appearance {
             backdrop = if (!cinema && (savedBackdrop == null || savedBackdrop == "Solid")) Backdrop.Black else enumOf(savedBackdrop, Backdrop.Black)
             glass = p.getBoolean(PREFIX + "glass", true)
             motion = enumOf(p.getString(PREFIX + "motion", null), Motion.Full)
+            performance = enumOf(p.getString(PREFIX + "performance", null), PerformanceMode.Auto)
             uiScale = p.getFloat(PREFIX + "scale", 1f).coerceIn(0.8f, 1.4f)
             playerStyle = enumOf(p.getString(PREFIX + "player", null), PlayerStyle.Modern)
             startupAnimation = p.getBoolean(PREFIX + "startup", true)
@@ -256,11 +303,14 @@ object Appearance {
             upscaler = enumOf(p.getString(PREFIX + "upscaler", null), if (p.getBoolean(PREFIX + "anime4k", false)) Upscaler.Anime4kA else Upscaler.Off)
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
             dynamicRange = enumOf(p.getString(PREFIX + "dynamic_range", null), DynamicRange.Off)
+            stableVolume = p.getBoolean(PREFIX + "stable_volume", false)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
             subtitleUniversal = p.getBoolean(PREFIX + "sub_universal", false)
             tmdbEnabled = p.getBoolean(PREFIX + "tmdb", true)
             seekPreviews = p.getBoolean(PREFIX + "seek_previews", true)
+            liveWindow = p.getBoolean(PREFIX + "live_window", true)
             controlsHideSeconds = p.getInt(PREFIX + "controls_hide_s", 2).coerceIn(0, 30)
+            controlsGuard = p.getBoolean(PREFIX + "controls_guard", true)
             tmdbRegion = p.getString(PREFIX + "tmdb_region", "") ?: ""
             theme = Themes.byId(p.getString(PREFIX + "theme", null)).id
             // an ordinary theme is its own palette; with a special one on, the palette saved before it
@@ -299,7 +349,8 @@ object Appearance {
                 .putString(PREFIX + "surface_tint", surfaceTint.name)
                 .putBoolean(PREFIX + "nav_colored_pill", navAccentPill)
                 .putBoolean(PREFIX + "glass", glass)
-                .putString(PREFIX + "motion", motion.name)
+                .putString(PREFIX + "motion", motionChoice.name)
+                .putString(PREFIX + "performance", performance.name)
                 .putFloat(PREFIX + "scale", uiScale)
                 .putString(PREFIX + "player", playerStyle.name)
                 .putBoolean(PREFIX + "startup", startupAnimation)
@@ -307,6 +358,7 @@ object Appearance {
                 .putBoolean(PREFIX + "smooth_motion", smoothMotion)
                 .putBoolean(PREFIX + "native_player", nativePlayer)
                 .putBoolean(PREFIX + "smooth_sources", smoothSources)
+                .putBoolean(PREFIX + "stable_volume", stableVolume)
                 .putBoolean(PREFIX + "hide_title_bar", hideTitleBar)
                 .putString(PREFIX + "upscaler", upscaler.name)
                 .putBoolean(PREFIX + "auto_skip_stamps", autoSkipStamps)
@@ -318,7 +370,9 @@ object Appearance {
                 .putBoolean(PREFIX + "sub_universal", subtitleUniversal)
                 .putBoolean(PREFIX + "tmdb", tmdbEnabled)
                 .putBoolean(PREFIX + "seek_previews", seekPreviews)
+                .putBoolean(PREFIX + "live_window", liveWindow)
                 .putInt(PREFIX + "controls_hide_s", controlsHideSeconds)
+                .putBoolean(PREFIX + "controls_guard", controlsGuard)
                 .putString(PREFIX + "tmdb_region", tmdbRegion)
                 .putString(PREFIX + "theme", theme)
                 .putString(PREFIX + "palette", palette)
@@ -339,8 +393,8 @@ object Appearance {
     fun reset() {
         touchSwipes = TouchSwipes.Auto
         navPosition = NavPosition.Floating; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
-        posterSize = PosterSize.Large; backdrop = Backdrop.Black; buttonStyle = ButtonStyle.White; surfaceTint = SurfaceTint.Balanced; navAccentPill = false; glass = true; motion = Motion.Full; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; tmdbRegion = ""; theme = Themes.DEFAULT_ID; palette = Themes.DEFAULT_ID; themeGlow = false; skinLayout = true; hideSpoilers = true; hideSpoilerTitles = false
+        posterSize = PosterSize.Large; backdrop = Backdrop.Black; buttonStyle = ButtonStyle.White; surfaceTint = SurfaceTint.Balanced; navAccentPill = false; glass = true; motion = Motion.Full; performance = PerformanceMode.Auto; uiScale = 1f
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; controlsGuard = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; palette = Themes.DEFAULT_ID; themeGlow = false; skinLayout = true; hideSpoilers = true; hideSpoilerTitles = false
         FluentSettings.chooseAccent(null)
         FluentSettings.chooseButtonColor(null)
         save()
@@ -366,7 +420,7 @@ object FluentMotion {
     fun <T> tweenIn(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = enter)
     /** like [tweenIn] but starting [delayMs] late: the first frames of a new page are spent composing it, and an animation that has already begun looks like a pop */
     fun <T> tweenInAfter(base: Int, delayMs: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), delayMillis = delayMs, easing = enter)
-    /** a long soft landing (NuvioDesktop's curve for content that arrives): leaves at once, settles slowly; starts [delayMs] late like [tweenInAfter] */
+    /** a long soft landing for content that arrives: leaves at once, settles slowly; starts [delayMs] late like [tweenInAfter] */
     fun <T> tweenSoftAfter(base: Int, delayMs: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), delayMillis = delayMs, easing = MotionCurves.easing)
     fun <T> tweenOut(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = exit)
     fun <T> tweenStd(base: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(ms(base), easing = standard)

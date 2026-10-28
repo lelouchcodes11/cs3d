@@ -60,9 +60,14 @@ import com.lagradost.desktop.ui.components.SoftImage
 
 /** Big page title with an optional line under it and controls at the right */
 @Composable
-fun PageHeader(title: String, modifier: Modifier = Modifier, subtitle: String? = null, trailing: @Composable () -> Unit = {}) {
+fun PageHeader(title: String, modifier: Modifier = Modifier, subtitle: String? = null, icon: String? = null, tint: Color = Color.Unspecified, trailing: @Composable () -> Unit = {}) {
     val c = Fluent.colors
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // the mark of the page, as the Settings pages have (every page of the app starts the same way); the interface of a special theme has its own headings
+        if (icon != null && Skins.spec == null) {
+            PageBadge(icon, tint)
+            Box(Modifier.width(18.dp))
+        }
         Column(Modifier.weight(1f)) {
             FText(Skins.pageTitle(title), style = Fluent.type.title.copy(fontSize = 34.sp, lineHeight = 42.sp, fontWeight = FontWeight.Bold), maxLines = 1)
             // two lines before it is cut: a page with tiles beside its title (Extensions) had its sentence end in dots
@@ -72,13 +77,31 @@ fun PageHeader(title: String, modifier: Modifier = Modifier, subtitle: String? =
     }
 }
 
+/** A rounded tile with the page's glyph in its colour (a tint of the colour behind it; neutral without one) */
+@Composable
+fun PageBadge(glyph: String, tint: Color = Color.Unspecified, size: Dp = 56.dp) {
+    val c = Fluent.colors
+    val neutral = tint == Color.Unspecified
+    val ink = when {
+        neutral -> c.text
+        c.dark -> androidx.compose.ui.graphics.lerp(tint, Color.White, 0.4f)
+        else -> androidx.compose.ui.graphics.lerp(tint, Color.Black, 0.2f)
+    }
+    val shape = RoundedCornerShape(size * 0.3f)
+    Box(
+        // a soft fill and no outline: the outline read as a second ring around the glyph
+        Modifier.size(size).background(if (neutral) c.control else tint.copy(alpha = if (c.dark) 0.18f else 0.14f), shape),
+        contentAlignment = Alignment.Center,
+    ) { Icon(glyph, size = size * 0.46f, tint = ink) }
+}
+
 /** Shelf title: bold, plain, and "See all" that slides its arrow on hover */
 @Composable
 fun RichSectionHeader(title: String, modifier: Modifier = Modifier, subtitle: String? = null, onSeeAll: (() -> Unit)? = null, trailing: @Composable () -> Unit = {}) {
     val c = Fluent.colors
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            FText(title, style = Fluent.type.subtitle.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+            FText(title, style = Fluent.type.subtitle.copy(fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
             if (subtitle != null) FText(subtitle, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
         }
         trailing()
@@ -98,8 +121,8 @@ fun SeeAllLink(onClick: () -> Unit, text: String = "View all") {
             .fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FText(text, style = Fluent.type.bodyStrong, color = if (hovered) c.text else c.textSecondary, maxLines = 1, softWrap = false)
-        Box(Modifier.width(6.dp + shift))
+        FText(text, style = Fluent.type.caption.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold), color = if (hovered) c.text else c.textSecondary, maxLines = 1, softWrap = false)
+        Box(Modifier.width(5.dp + shift))
         Icon(Icons.ChevronRight, size = 11.dp, tint = if (hovered) c.accentText else c.textSecondary)
     }
 }
@@ -239,18 +262,14 @@ fun Modifier.glass(radius: Dp = FluentShapes.card, elevation: Dp = 0.dp, strong:
 fun EmptyState(glyph: String, title: String, text: String? = null, modifier: Modifier = Modifier, action: @Composable () -> Unit = {}) {
     val c = Fluent.colors
     Column(modifier.reveal("empty/" + title, 40, rise = 16.dp).fillMaxWidth().padding(vertical = 56.dp, horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.size(84.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(Modifier.size(56.dp).background(c.card, CircleShape).hairBorder(c.stroke, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(glyph, size = 24.dp, tint = c.accentText)
-            }
+        // one flat disc under the mark: a place for the icon, not a bare icon on the page (no rings: they read as a target)
+        Box(Modifier.size(72.dp).background(c.control, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(glyph, size = 28.dp, tint = c.textSecondary)
         }
-        Box(Modifier.height(16.dp))
-        FText(title, style = Fluent.type.subtitle.copy(fontWeight = FontWeight.Bold), maxLines = 2)
-        if (text != null) FText(text, color = c.textSecondary, maxLines = 4, modifier = Modifier.padding(top = 6.dp).widthIn(max = 460.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        Box(Modifier.height(18.dp))
+        Box(Modifier.height(20.dp))
+        FText(title, style = Fluent.type.subtitle.copy(fontWeight = FontWeight.Bold, fontSize = 22.sp), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        if (text != null) FText(text, color = c.textSecondary, maxLines = 4, modifier = Modifier.padding(top = 8.dp).widthIn(max = 480.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Box(Modifier.height(22.dp))
         action()
     }
 }
@@ -327,7 +346,7 @@ fun FeaturedStrip(count: Int, selected: Int, progress: () -> Float, image: (Int)
 
 /** Circle icon button on artwork (favourite, trailer, more) */
 @Composable
-fun GlassCircleButton(glyph: String, tooltip: String, onClick: () -> Unit, modifier: Modifier = Modifier, active: Boolean = false, size: Dp = 44.dp) {
+fun GlassCircleButton(glyph: String, tooltip: String, onClick: () -> Unit, modifier: Modifier = Modifier, active: Boolean = false, size: Dp = 44.dp, edge: Boolean = true) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
@@ -337,7 +356,7 @@ fun GlassCircleButton(glyph: String, tooltip: String, onClick: () -> Unit, modif
         Box(
             modifier.size(size)
                 .background(if (active) c.primaryFill(hovered, pressed) else SolidColor(glass), CircleShape)
-                .hairBorder(if (active) c.primaryBorder(hovered) else Color.White.copy(alpha = if (hovered) 0.5f else 0.3f), CircleShape)
+                .let { if (edge) it.hairBorder(if (active) c.primaryBorder(hovered) else Color.White.copy(alpha = if (hovered) 0.5f else 0.3f), CircleShape) else it }
                 .fluentClickable(source, true, CircleShape, Role.Button, onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -354,22 +373,47 @@ fun GlassCircleButton(glyph: String, tooltip: String, onClick: () -> Unit, modif
     }
 }
 
-/** Pill button for artwork: primary (uses button style & colour) or frosted glass */
+/**
+ * The colour of a scrim over artwork that carries white text: the page colour in a dark theme (the picture melts into the page), black in Light mode
+ * (a scrim of the light page colour left the white genres and story of the banners unreadable)
+ */
+val FluentColors.artScrim: Color get() = if (dark) bg else Color.Black
+
+/**
+ * A soft shadow under a card in Light mode: white on pale grey needs one to read as raised (a premium light interface is made of layers, not of lines).
+ * Nothing in a dark theme, where a shadow is invisible, and nothing in the light look of a weak PC.
+ */
 @Composable
-fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 44.dp) {
+fun Modifier.lightShadow(shape: androidx.compose.ui.graphics.Shape, elevation: Dp = 2.dp): Modifier =
+    if (Fluent.colors.dark || Appearance.light) this
+    else this.shadow(elevation, shape, clip = false, ambientColor = Color(0x12000000), spotColor = Color(0x26000000))
+
+/**
+ * Pill button for artwork: primary (uses button style & colour) or frosted glass. [onImage] false: the secondary one is a plain control of the theme
+ * (the frosted one is white text on a see-through black: unreadable on the light page of Light mode)
+ */
+@Composable
+fun PillButton(text: String, glyph: String?, primary: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 44.dp, onImage: Boolean = true, onArt: Boolean = false) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, FluentMotion.tweenIn(120))
     val shape = FluentShapes.pill
-    val fg = if (primary) c.primaryContent() else Color.White
-    val fill: androidx.compose.ui.graphics.Brush = if (primary) {
+    val plain = !primary && !onImage
+    // a primary button over a billboard or hero picture: white with dark text in the light theme too (it was a dark pill on the dark picture)
+    val white = primary && onArt && c.whiteOverArt()
+    val fg = if (white) Color(0xFF0B0B0F) else if (primary) c.primaryContent() else if (plain) c.text else Color.White
+    val fill: androidx.compose.ui.graphics.Brush = if (white) {
+        SolidColor(Color.White.copy(alpha = if (pressed) 0.82f else if (hovered) 0.92f else 1f))
+    } else if (primary) {
         c.primaryFill(hovered, pressed)
+    } else if (plain) {
+        SolidColor(if (hovered) c.controlHover else c.control)
     } else {
         SolidColor(if (hovered) Color(0x66000000) else Color(0x4D000000))
     }
-    val stroke = if (primary) c.primaryBorder(hovered) else Color.White.copy(alpha = if (hovered) 0.5f else 0.3f)
+    val stroke = if (primary) c.primaryBorder(hovered) else if (plain) (if (hovered) c.strokeStrong else c.stroke) else Color.White.copy(alpha = if (hovered) 0.5f else 0.3f)
     Row(
         modifier.height(height).graphicsLayer { scaleX = scale; scaleY = scale }
             .background(fill, shape)
