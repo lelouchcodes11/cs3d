@@ -151,7 +151,7 @@ Requires **JDK 21** and **[Git LFS](https://git-lfs.com)** (`git lfs install` be
 ```
 
 The engine in `library/`, `shared/` and `android/` follows upstream CloudStream **4.8** at commit
-[`d9c55e2`](https://github.com/recloudstream/cloudstream/commit/d9c55e2e5b020dde8e28c12a3e7802df962265ac) (2026-10-15); the full hash is pinned in [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT).
+[`d9c55e2`](https://github.com/recloudstream/cloudstream/commit/d9c55e2e5b020dde8e28c12a3e7802df962265ac) (2026-10-15); the same commit is linked in the repository as the [`cloudstream-reference`](cloudstream-reference) submodule (full hash in [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)); you do not need to check it out to build.
 See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the architecture and dev tools, and **[CHANGELOG.md](CHANGELOG.md)** for every release.
 
 ## Credits

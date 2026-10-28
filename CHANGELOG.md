@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.8
 
 **AnimePahe's Cloudflare check opens again, extension icons, a tidier README**
 - **A Cloudflare check window that an extension asks for before you use it is held, not dropped.** AnimePahe checks its site as it loads (at every start, and when it is installed), usually while another extension is on Home; the window was refused at once, the extension took that as "dismissed" and then refused to ask again for a while ("CF dialog throttled"), so when you switched Home to AnimePahe its check never opened and Home stayed empty (reproduced from your log and in a scratch profile). The window is now held for up to three minutes until that extension is in use (Home, an open title page, a search): if its hidden page has passed the check by itself meanwhile (AnimePahe's does, in a few seconds) it is closed unseen, otherwise it is shown when you switch to it. A donation or news popup of an extension you are not using is still not shown at all. Checked on the real AnimePahe: held, passed by itself, Home loaded with the latest releases, no stale window.
