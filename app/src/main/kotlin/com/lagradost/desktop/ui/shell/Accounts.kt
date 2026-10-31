@@ -75,8 +75,7 @@ fun showAccountPicker(forStartup: Boolean = false) {
                         }, onEdit = {
                             showProfileEditor(account) { accounts = runCatching { getAccounts(ctx) }.getOrDefault(accounts) }
                         }, onDelete = if (accounts.size > 1) ({
-                            vm.handleAccountDelete(account, ctx)
-                            accounts = runCatching { getAccounts(ctx) }.getOrDefault(accounts)
+                            confirmDeleteProfile(account) { accounts = runCatching { getAccounts(ctx) }.getOrDefault(accounts) }
                         }) else null)
                     }
                     if (!adding) {
@@ -156,11 +155,12 @@ private fun ProfileTile(account: DataStoreHelper.Account, current: Boolean, onCl
             FText(account.name, style = Fluent.type.bodyStrong, maxLines = 1)
             if (account.lockPin != null) Icon(Icons.Lock, size = 12.dp, tint = c.textSecondary)
         }
+        // the profile the app opens with (chosen in Edit)
+        if (StartProfile.isStart(account.keyIndex)) FText("Opens at start", style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             Button("Edit", onEdit, kind = ButtonKind.Subtle, icon = Icons.Edit, height = 26.dp)
-            if (onDelete != null && (hovered || !current)) {
-                Button("Remove", onDelete, kind = ButtonKind.Subtle, height = 26.dp)
-            }
+            // (the tile is narrow: Edit and a second word did not fit side by side, the second button shrank to an empty pill; an icon does fit)
+            if (onDelete != null) com.lagradost.desktop.ui.fluent.IconButton(Icons.Delete, onDelete, tooltip = "Delete profile", size = 26.dp, iconSize = 14.dp)
         }
     }
 }

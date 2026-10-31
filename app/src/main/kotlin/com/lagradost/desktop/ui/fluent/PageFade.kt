@@ -53,21 +53,6 @@ fun Modifier.scrollEdgeFade(state: androidx.compose.foundation.lazy.LazyListStat
 
 @Composable
 private fun Modifier.edgeFade(fade: androidx.compose.ui.unit.Dp, back: () -> Boolean, forward: () -> Boolean): Modifier {
-    val plain = Appearance.backdrop != Backdrop.Ambient && Appearance.wallpaper.isBlank() &&
-        (Appearance.navPosition == NavPosition.Floating || Appearance.navPosition == NavPosition.Dock)
-    if (!plain) return this
-    val page = Fluent.colors.bg
-    return this.drawWithContent {
-        drawContent()
-        val w = fade.toPx().coerceAtMost(size.width / 2f)
-        if (back()) {
-            drawRect(Brush.horizontalGradient(0f to page, 1f to Color.Transparent, startX = 0f, endX = w), size = androidx.compose.ui.geometry.Size(w, size.height))
-        }
-        if (forward()) {
-            drawRect(
-                Brush.horizontalGradient(0f to Color.Transparent, 1f to page, startX = size.width - w, endX = size.width),
-                topLeft = androidx.compose.ui.geometry.Offset(size.width - w, 0f), size = androidx.compose.ui.geometry.Size(w, size.height),
-            )
-        }
-    }
+    // no fade: a row of chips or posters is cut by the edge of the window, as in Apple TV (a fade of the page colour read as a gradient effect)
+    return this
 }

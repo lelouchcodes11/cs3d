@@ -21,10 +21,39 @@ import kotlin.concurrent.thread
 object SingleInstanceIpc {
     private const val TAG = "SingleInstanceIpc"
     private const val DEFAULT_PORT = 52525
-    private const val IPC_MAGIC = "CS_IPC_ARGS"
+    private const val IPC_MAGIC = "CS_IPC_ARGS2"
 
     private val port: Int
         get() = System.getProperty("cloudstream.ipcport")?.toIntOrNull() ?: DEFAULT_PORT
+
+    /**
+     * The port only answers a sender that knows the secret of this run, kept in a file of the data folder (a program that cannot read the user's
+     * data folder, such as another Windows user's or a sandboxed helper, gets "ERR" and nothing it sends is acted on).
+     */
+    private fun tokenFile(port: Int): java.io.File =
+        java.io.File(System.getProperty("cloudstream.data")?.let { java.io.File(it) } ?: com.lagradost.desktop.runtime.AndroidRuntime.defaultDataDir(), "ipc-$port.token")
+
+    private fun newToken(port: Int): String {
+        val bytes = ByteArray(24).also { java.security.SecureRandom().nextBytes(it) }
+        val token = bytes.joinToString("") { "%02x".format(it) }
+        runCatching { tokenFile(port).also { it.parentFile?.mkdirs() }.writeText(token) }.onFailure { Log.w(TAG, "could not write the IPC token: $it") }
+        return token
+    }
+
+    /** A line of at most [max] characters, or null (end of stream, or too long: the sender is not the app) */
+    private fun readLineBounded(reader: BufferedReader, max: Int): String? {
+        val sb = StringBuilder()
+        while (true) {
+            val c = reader.read()
+            if (c < 0) return if (sb.isEmpty()) null else sb.toString()
+            if (c == 10) return sb.toString().trimEnd(13.toChar())
+            if (sb.length >= max) return null
+            sb.append(c.toChar())
+        }
+    }
+
+    private fun sameToken(a: String, b: String): Boolean =
+        java.security.MessageDigest.isEqual(a.toByteArray(Charsets.UTF_8), b.toByteArray(Charsets.UTF_8))
 
     @Volatile
     private var serverSocket: ServerSocket? = null
@@ -48,7 +77,8 @@ object SingleInstanceIpc {
                 val writer = PrintWriter(socket.getOutputStream(), true)
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
 
-                writer.println(IPC_MAGIC)
+                val token = runCatching { tokenFile(port).readText().trim() }.getOrDefault("")
+                writer.println("$IPC_MAGIC $token")
                 for (arg in args) {
                     writer.println(arg)
                 }
@@ -69,6 +99,7 @@ object SingleInstanceIpc {
         try {
             val server = ServerSocket(port, 50, InetAddress.getByName("127.0.0.1"))
             serverSocket = server
+            val token = newToken(port)
 
             thread(name = "cloudstream-ipc-server", isDaemon = true) {
                 while (!server.isClosed) {
@@ -81,13 +112,14 @@ object SingleInstanceIpc {
                                     val reader = BufferedReader(InputStreamReader(sock.getInputStream()))
                                     val writer = PrintWriter(sock.getOutputStream(), true)
 
-                                    val magic = reader.readLine()
-                                    if (magic == IPC_MAGIC) {
+                                    val magic = readLineBounded(reader, 128)
+                                    if (magic != null && sameToken(magic, "$IPC_MAGIC $token")) {
                                         val args = mutableListOf<String>()
-                                        var line: String? = reader.readLine()
-                                        while (line != null && line.isNotEmpty()) {
+                                        var line: String? = readLineBounded(reader, 8192)
+                                        // a message is a handful of short lines: anything longer is not from the app
+                                        while (line != null && line.isNotEmpty() && args.size < 64) {
                                             args.add(line)
-                                            line = reader.readLine()
+                                            line = readLineBounded(reader, 8192)
                                         }
                                         writer.println("OK")
                                         if (args.isNotEmpty()) {

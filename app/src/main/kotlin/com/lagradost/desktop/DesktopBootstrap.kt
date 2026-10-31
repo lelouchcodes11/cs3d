@@ -139,7 +139,8 @@ object DesktopBootstrap {
         if (dataDir != null) AndroidRuntime.init(dataDir) else AndroidRuntime.init()
         TrustStore.install(AndroidRuntime.dataDir)
         // bundled Chromium (only where WebView2 is missing) takes a few seconds to start, do it in the background right away
-        if (!com.lagradost.desktop.runtime.web.WebRuntime.usesWebView2) com.lagradost.desktop.runtime.web.JcefRuntime.startAsync()
+        // (the extension sandbox process has no browser of its own: its hidden browser is the app's)
+        if (System.getProperty("cloudstream.worker") == null && !com.lagradost.desktop.runtime.web.WebRuntime.usesWebView2) com.lagradost.desktop.runtime.web.JcefRuntime.startAsync()
 
         // Android ships a Bouncy Castle based "BC" provider (e.g. AES/CBC/PKCS7Padding)
         if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
@@ -307,10 +308,11 @@ object DesktopBootstrap {
 
         // Desktop: deep links from the command line are passed to handleAppIntentUrl by main()
         // Start OAuth loopback callback listener for AniList / MyAnimeList / Simkl browser logins
-        ioSafe { com.lagradost.desktop.net.OAuthCallback.start() }
+        // (neither the sign-in page's address nor the cast device search is for the extension sandbox process: it has no window and no home network)
+        if (System.getProperty("cloudstream.worker") == null) ioSafe { com.lagradost.desktop.net.OAuthCallback.start() }
 
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: before fcast")
-        FcastManager().init(act, false)
+        if (System.getProperty("cloudstream.worker") == null) FcastManager().init(act, false)
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: after fcast")
 
         APIRepository.dubStatusActive = act.getApiDubstatusSettings()

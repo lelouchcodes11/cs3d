@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.stats
 
+import com.lagradost.desktop.ui.fluent.cardSurface
 import com.lagradost.desktop.ui.fluent.hairBorder
 
 import androidx.compose.foundation.Canvas
@@ -191,7 +192,7 @@ private fun Tile(label: String, value: String, sub: String) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
-        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(18.dp),
+        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         FText(label, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
@@ -206,7 +207,7 @@ private fun Card(title: String, content: @Composable () -> Unit) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
-        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(18.dp),
+        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         FText(title, style = Fluent.type.bodyStrong, maxLines = 1)

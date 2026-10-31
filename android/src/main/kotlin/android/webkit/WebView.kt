@@ -116,6 +116,13 @@ open class WebView : AbsoluteLayout {
         abstract fun onComplete(requestId: Long)
     }
 
+    /**
+     * Set for a page made on behalf of an extension in the sandbox: every address the page loads, navigates or is redirected to is asked first, and one that is refused
+     * (this PC, the local network: see PrivateNetworkGuard) is not loaded.
+     */
+    @Volatile
+    var networkGuard: ((String) -> Boolean)? = null
+
     internal val engine: WebViewBackend
     private val mSettings: JcefWebSettings
     @Volatile
@@ -151,6 +158,7 @@ open class WebView : AbsoluteLayout {
     open fun getWebViewClient(): WebViewClient = client
     open fun setWebChromeClient(client: WebChromeClient?) {
         chromeClient = client
+        engine.clientChanged()
     }
 
     open fun getWebChromeClient(): WebChromeClient? = chromeClient

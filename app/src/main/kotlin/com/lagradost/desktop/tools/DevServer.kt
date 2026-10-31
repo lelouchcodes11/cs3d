@@ -350,7 +350,7 @@ object DevServer {
                         },
                     )
                 } else {
-                    val account = runCatching { com.lagradost.cloudstream3.utils.DataStoreHelper.getAccounts(com.lagradost.desktop.DesktopBootstrap.activity).firstOrNull() }.getOrNull()
+                    val account = runCatching { com.lagradost.cloudstream3.utils.DataStoreHelper.getAccounts(com.lagradost.desktop.DesktopBootstrap.activity).let { all -> all.firstOrNull { it.keyIndex == q["key"]?.toIntOrNull() } ?: all.firstOrNull() } }.getOrNull()
                         ?: com.lagradost.cloudstream3.utils.DataStoreHelper.Account(keyIndex = 0, name = "Test", defaultImageIndex = 0)
                     com.lagradost.desktop.ui.shell.showProfileEditor(account)
                 }
@@ -1155,6 +1155,25 @@ object DevServer {
                     com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(listOf(link), emptyList()), 0, null))
                 }
                 ok(ex)
+            }
+            "/sandboxstats" -> {
+                // dev: how much memory the extension sandbox's program uses
+                ok(ex, kotlinx.coroutines.runBlocking { com.lagradost.desktop.isolate.IsolatedHost.call("stats", com.lagradost.cloudstream3.mapper.createObjectNode(), 20_000) }.toString())
+            }
+            "/sandboxtrace" -> {
+                // dev (run with -Dcloudstream.workerprobe=1): what a site sees of the app's own requests and of the sandbox's: /sandboxtrace?url=https://www.cloudflare.com/cdn-cgi/trace
+                val url = q["url"] ?: "https://www.cloudflare.com/cdn-cgi/trace"
+                val mine = kotlinx.coroutines.runBlocking { runCatching { com.lagradost.cloudstream3.app.get(url).text }.getOrElse { it.toString() } }
+                val theirs = kotlinx.coroutines.runBlocking { com.lagradost.desktop.isolate.IsolatedHost.call("probe", com.lagradost.cloudstream3.mapper.createObjectNode().put("trace", url), 60_000) }
+                ok(ex, "APP:\n$mine\nSANDBOX:\n${theirs.get("trace")?.asText()}")
+            }
+            "/sandboxweb" -> {
+                // dev (run with -Dcloudstream.workerprobe=1): a browser view built in the extension sandbox, as an extension builds one, optionally shown in a dialog:
+                // /sandboxweb?url=http://localhost:8899/page&seconds=20 answers with what the extension in the sandbox saw
+                com.lagradost.desktop.isolate.RemoteBrowserHost.owns = { true }
+                val body = com.lagradost.cloudstream3.mapper.createObjectNode().put("webUrl", q["url"]).put("webAs", "dev-probe").put("webDialogSeconds", q["seconds"]?.toIntOrNull() ?: 0)
+                Thread({ val answer = runCatching { kotlinx.coroutines.runBlocking { com.lagradost.desktop.isolate.IsolatedHost.call("probe", body, 150_000) }.toString() }.getOrElse { it.toString() }; android.util.Log.i("sandboxweb", "result: $answer") }, "sandboxweb").apply { isDaemon = true }.start()
+                ok(ex, "started: the answer is in the log (sandboxweb)")
             }
             "/playurls" -> {
                 // dev: several plain links as the sources of one video, best first: /playurls?urls=http://a.mp4%7Chttp://b.mp4&names=One%7CTwo

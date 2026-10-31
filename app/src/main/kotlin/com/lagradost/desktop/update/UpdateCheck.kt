@@ -63,6 +63,7 @@ object UpdateCheck {
 
     private const val KEY_AUTO = "auto_update"
     private const val KEY_SKIPPED = "desktop_update_skipped"
+    private const val KEY_CHANNEL = "desktop_update_channel"
     private const val KEY_CHECKED = "desktop_update_checked_at"
     private const val KEY_LAST_VERSION = "desktop_update_last_version"
     private const val CHECK_EVERY_MS = 6L * 60 * 60 * 1000
@@ -72,6 +73,21 @@ object UpdateCheck {
     private val apiUrl: String = apiOverride ?: "https://api.github.com/repos/${AppInfo.REPO}/releases?per_page=20"
 
     val currentVersion: String get() = AppInfo.version
+
+    /** Which releases this copy is offered: Stable (releases not marked pre-release) or Beta (those too, and the pre-releases newer than them) */
+    enum class Channel(val id: String, val label: String, val about: String) {
+        Stable("stable", "Stable", "Tested releases only. Recommended."),
+        Beta("beta", "Beta", "Pre-releases too: new things first, with rough edges.");
+
+        companion object { fun of(id: String?): Channel? = entries.firstOrNull { it.id == id } }
+    }
+
+    /** A pre-release version (0.x, or one with a suffix such as -beta) follows the Beta channel unless the user chose otherwise */
+    internal fun defaultChannel(version: String): Channel =
+        parseVersion(version)?.let { if (it.preRelease || it.numbers.firstOrNull() == 0) Channel.Beta else Channel.Stable } ?: Channel.Stable
+
+    /** Whether a release of this kind is offered on [channel] */
+    internal fun channelAccepts(channel: Channel, prerelease: Boolean): Boolean = channel == Channel.Beta || !prerelease
 
     // ---------------------------------------------------------------------------------------------
     // How this copy was installed
@@ -85,6 +101,8 @@ object UpdateCheck {
     }
 
     val installKind: InstallKind by lazy {
+        // a test build can pretend (-Dcloudstream.installkind=setup|msi|portable) to try the download and install steps
+        System.getProperty("cloudstream.installkind")?.let { v -> InstallKind.entries.firstOrNull { it.name.equals(v, ignoreCase = true) }?.let { return@lazy it } }
         val dir = launcherDir ?: return@lazy InstallKind.Other
         when {
             // Inno Setup puts its uninstaller beside the program
@@ -175,6 +193,8 @@ object UpdateCheck {
         val notes: String,
         val pageUrl: String,
         val assets: List<Asset>,
+        /** The notes as the release page has them (markdown), for the notes window */
+        val markdown: String = notes,
     ) {
         val label: String get() = tag.trimStart('v', 'V')
 
@@ -200,14 +220,13 @@ object UpdateCheck {
         val assets = r.assets.filter { it.url.isNotBlank() && it.name.isNotBlank() }.map {
             Asset(it.name, it.url, it.size, it.digest?.takeIf { d -> d.startsWith("sha256:", ignoreCase = true) }?.substringAfter(':')?.trim()?.lowercase())
         }
-        return Release(r.tag, version, r.prerelease, plainNotes(r.body), r.htmlUrl.ifBlank { AppInfo.RELEASES_URL }, assets)
+        return Release(r.tag, version, r.prerelease, plainNotes(r.body), r.htmlUrl.ifBlank { AppInfo.RELEASES_URL }, assets, (r.body ?: "").replace("\r\n", "\n").trim().take(8000))
     }
 
     /** The newest release this install should be offered, or null when there is none newer */
     private fun newestOffer(all: List<GhRelease>): Release? {
         val current = parseVersion(currentVersion) ?: return null
-        val acceptPre = current.numbers.firstOrNull() == 0 || current.preRelease
-        return all.asSequence().filter { !it.draft && (acceptPre || !it.prerelease) }.mapNotNull { toRelease(it) }
+        return all.asSequence().filter { !it.draft && channelAccepts(channel, it.prerelease) }.mapNotNull { toRelease(it) }
             .maxByOrNull { it.version }?.takeIf { it.version > current }
     }
 
@@ -245,7 +264,49 @@ object UpdateCheck {
 
     val lastChecked: Long get() = runCatching { prefs.getLong(KEY_CHECKED, 0L) }.getOrDefault(0L)
 
-    private fun skippedTag(): String? = runCatching { prefs.getString(KEY_SKIPPED, "") }.getOrNull()
+    var channel: Channel by mutableStateOf(runCatching { Channel.of(prefs.getString(KEY_CHANNEL, null)) }.getOrNull() ?: defaultChannel(AppInfo.version))
+        private set
+
+    /** The version the user chose to ignore ("Skip this version"): no banner for it until a newer one appears or it is cleared */
+    var skipped: String? by mutableStateOf(runCatching { prefs.getString(KEY_SKIPPED, "")?.takeIf { it.isNotBlank() } }.getOrNull())
+        private set
+
+    /** The version whose banner was closed in this run */
+    var dismissedTag: String? by mutableStateOf(null)
+        private set
+
+    /** Why the last download failed (shown in the banner and on the page, with a retry) */
+    var downloadError: String? by mutableStateOf(null)
+        private set
+
+    fun skip(release: Release) {
+        skipped = release.tag
+        runCatching { prefs.edit().putString(KEY_SKIPPED, release.tag).apply() }
+    }
+
+    fun clearSkipped() {
+        skipped = null
+        runCatching { prefs.edit().remove(KEY_SKIPPED).apply() }
+    }
+
+    fun dismissBanner(release: Release) {
+        dismissedTag = release.tag
+    }
+
+    /** Another channel: what was offered or downloaded before is forgotten and the new channel is asked at once */
+    fun chooseChannel(value: Channel) {
+        if (value == channel) return
+        channel = value
+        runCatching { prefs.edit().putString(KEY_CHANNEL, value.id).apply() }
+        clearSkipped()
+        dismissedTag = null
+        downloadError = null
+        val busy = status is Status.Downloading || status is Status.Installing
+        if (!busy) { status = Status.Idle; checkNow(quiet = true) }
+    }
+
+    /** The size of the file this copy would download for [release] (null when it has none) */
+    fun sizeOf(release: Release): Long? = release.installerFor(installKind)?.size?.takeIf { it > 0 }
 
     /** True when "Update now" can do the whole job for this copy of the app and this release */
     fun canInstall(release: Release): Boolean = release.installerFor(installKind) != null && DesktopPlatform.isWindows && installKind != InstallKind.Other
@@ -286,26 +347,24 @@ object UpdateCheck {
         return result
     }
 
-    /** The user asked ("Check now"): always answers, with the dialog or a short message */
-    fun checkNow() {
+    /** The user asked ("Check now"): the banner and the Updates page show a new version; a short message says when there is none or it failed */
+    fun checkNow(quiet: Boolean = false) {
         if (status is Status.Checking || status is Status.Downloading || status is Status.Installing) return
         scope.launch {
+            dismissedTag = null
+            downloadError = null
             when (val s = check()) {
-                is Status.Available -> showUpdateDialog(s.release)
-                is Status.Ready -> showReadyDialog(s.release, s.file)
-                is Status.UpToDate -> Toasts.show("CloudStream $currentVersion is the latest version", false)
-                is Status.Failed -> Toasts.show("Could not check for updates: ${s.reason}", true)
+                is Status.Available -> if (!quiet && skipped == s.release.tag) Toasts.show("Version ${s.release.label} is available (you skipped it: the Updates page can bring it back)", false)
+                is Status.UpToDate -> if (!quiet) Toasts.show("CloudStream $currentVersion is the latest version", false)
+                is Status.Failed -> if (!quiet) Toasts.show("Could not check for updates: ${s.reason}", true)
                 else -> {}
             }
         }
     }
 
-    /** The tag of the release the dialog was shown for in this run: it is not shown again until a newer one appears */
-    @Volatile private var offeredTag: String? = null
-
     /**
-     * Once the app is on screen and calm: asks GitHub (at most every few hours) and shows the dialog for a new version that was not skipped; then
-     * again every half hour while the app stays open (the same limit applies, and nothing is shown during a video).
+     * Once the app is on screen and calm: asks GitHub (at most every few hours); a new version that was not skipped shows as the banner at the bottom
+     * of the window (never over a video); then again every half hour while the app stays open (the same limit applies).
      * Fails silently, a missing connection is not worth a message at start.
      */
     private var autoCheckJob: Job? = null
@@ -319,13 +378,7 @@ object UpdateCheck {
             delay(4000)
             while (true) {
                 if (autoCheckEnabled && System.currentTimeMillis() - lastChecked >= CHECK_EVERY_MS) {
-                    val found = check() as? Status.Available
-                    if (found != null && skippedTag() != found.release.tag && offeredTag != found.release.tag) {
-                        // not in the middle of a film, nor while the first-run setup is open
-                        while (com.lagradost.desktop.core.Navigator.current.route.let { it is com.lagradost.desktop.core.Route.Player || it is com.lagradost.desktop.core.Route.Setup }) delay(30_000)
-                        offeredTag = found.release.tag
-                        showUpdateDialog(found.release)
-                    }
+                    check()
                 }
                 delay(30L * 60 * 1000)
             }
@@ -399,7 +452,7 @@ object UpdateCheck {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button("Release page on GitHub", { DesktopPlatform.openExternalBrowser(release.pageUrl) }, kind = ButtonKind.Subtle)
-                Button("Skip this version", { prefs.edit().putString(KEY_SKIPPED, release.tag).apply(); dismiss() }, kind = ButtonKind.Subtle)
+                Button("Skip this version", { skip(release); dismiss() }, kind = ButtonKind.Subtle)
             }
         }
     }
@@ -495,25 +548,20 @@ object UpdateCheck {
             return
         }
         if (status is Status.Downloading || status is Status.Installing) return
-        val progress = showProgressDialog(release)
+        downloadError = null
+        dismissedTag = null
         downloadJob = scope.launch {
             try {
                 status = Status.Downloading(release, 0, asset.size)
                 val file = download(release, asset)
                 status = Status.Ready(release, file)
-                Overlays.dismiss(progress)
-                // not over a film: the dialog waits until the page is left, the Settings card has the button meanwhile
-                if (com.lagradost.desktop.core.Navigator.current.route is com.lagradost.desktop.core.Route.Player) {
-                    Toasts.show("CloudStream ${release.label} is downloaded: restart to update from Settings > About", false)
-                } else showReadyDialog(release, file)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 status = Status.Available(release)
                 throw e
             } catch (e: Throwable) {
                 Log.w(TAG, "update download failed: ${e.message}")
-                Overlays.dismiss(progress)
+                downloadError = e.message?.takeIf { it.isNotBlank() }?.take(140) ?: "the download failed"
                 status = Status.Available(release)
-                Toasts.show("Could not download the update: ${e.message}", true)
             }
         }
     }
@@ -557,6 +605,8 @@ object UpdateCheck {
             throw t
         }
         if (asset.size > 0 && part.length() != asset.size) { part.delete(); error("the download is incomplete") }
+        // an installer is run with the user's rights: without a checksum from the release it is not installed (only a test build with its own update address may)
+        if (asset.sha256 == null && apiOverride == null) { part.delete(); error("the release states no checksum for this file, so it was not installed") }
         if (asset.sha256 != null && hex(digest.digest()) != asset.sha256) { part.delete(); error("the download does not match the checksum of the release") }
         file.delete()
         if (!part.renameTo(file)) { part.copyTo(file, overwrite = true); part.delete() }
@@ -572,7 +622,7 @@ object UpdateCheck {
      * process to end, runs the installer, and starts the app again whatever the installer did. The app closes the normal way (its data is
      * written first); should it hang, it is ended after ten seconds.
      */
-    private fun install(release: Release, file: File) {
+    fun install(release: Release, file: File) {
         val kind = installKind
         val launcher = launcherDir?.let { File(it, "CloudStream.exe") }
         val launcherPath = System.getProperty("jpackage.app-path")?.takeIf { File(it).isFile }

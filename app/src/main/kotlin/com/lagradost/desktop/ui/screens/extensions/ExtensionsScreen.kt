@@ -1,11 +1,13 @@
 package com.lagradost.desktop.ui.screens.extensions
 
+import com.lagradost.desktop.ui.fluent.cardSurface
 import com.lagradost.desktop.ui.fluent.selectedEdge
 
 import com.lagradost.desktop.ui.fluent.hoverEdge
 
 import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.foundation.background
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import com.lagradost.desktop.ui.fluent.tabletVerticalScroll as verticalScroll
@@ -230,7 +232,7 @@ fun ExtensionsScreen() {
                             EmptyPlugins(sel == INSTALLED)
                         } else {
                             val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-                            val columns = ((this@BoxWithConstraints.maxWidth - (if (compact) 250.dp else 320.dp) - 44.dp) / 380.dp).toInt().coerceIn(1, 3)
+                            val columns = ((this@BoxWithConstraints.maxWidth - (if (compact) 250.dp else 320.dp) - 44.dp) / 460.dp).toInt().coerceIn(1, 3)
                             val rows = items.chunked(columns)
                             Box(Modifier.fillMaxSize()) {
                                 FluentScrollbar(listState)
@@ -298,8 +300,8 @@ private fun RepoRow(
     ContextMenuArea(menu) {
         Row(
             Modifier.fillMaxWidth()
-                .lightShadow(shape).clip(shape).background(bg, shape)
-                .border(if (selected) 1.5.dp else androidx.compose.ui.unit.Dp.Hairline, if (selected) c.selectedEdge else c.stroke, shape)
+                .lightShadow(shape).clip(shape)
+                .let { if (selected) it.background(bg, shape).border(1.5.dp, c.selectedEdge, shape) else it.cardSurface(shape, hovered) }
                 .fluentClickable(source, true, shape, Role.Tab, onClick)
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -329,47 +331,64 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
     val p = item.pluginWrapper.plugin
     val shape = RoundedCornerShape(FluentShapes.card)
     val instance = (PluginManager.urlPlugins[p.url] ?: PluginManager.plugins[p.url]) as? Plugin
-    val hasSettings = item.isDownloaded && instance?.openSettings != null
+    // an extension that runs in the sandbox has its settings page opened in the app on this click (see Isolation.openSettings)
+    val sandboxed = if (item.isDownloaded) com.lagradost.desktop.isolate.Isolation.sandboxedPathFor(p.url) else null
+    val hasSettings = item.isDownloaded && (instance?.openSettings != null || (sandboxed != null && com.lagradost.desktop.isolate.Isolation.hasSettings(sandboxed)))
+    val settingsScope = androidx.compose.runtime.rememberCoroutineScope()
     val repoList = if (repos.isEmpty()) listOf(item.pluginWrapper.repositoryData) else repos
     var busy by remember(item) { mutableStateOf(false) }
     LaunchedEffect(item) { busy = false }
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
-    Column(
-        Modifier.fillMaxWidth().height(168.dp).hoverable(source)
-            .lightShadow(shape).clip(shape).background(if (hovered) c.cardHover else c.card, shape)
-            .border(if (hovered) 1.dp else androidx.compose.ui.unit.Dp.Hairline, if (hovered) c.hoverEdge else if (item.isDownloaded) c.strokeStrong else c.stroke, shape)
-            .padding(16.dp),
+    // an installed extension's "description" is its file name on the disk (CNCVerse.-2008229843.cs3): what it offers is more use there, and where it runs (the sandbox is
+    // what makes an extension safe: the page says which ones are in it)
+    val about = p.description?.takeIf { it.isNotBlank() && !it.endsWith(".cs3", true) && !it.endsWith(".jar", true) } ?: (p.tvTypes?.take(5)?.joinToString(" · ") ?: "")
+    val sources = remember(item) { if (item.isDownloaded) com.lagradost.cloudstream3.APIHolder.allProviders.count { it.sourcePlugin == p.url } else 0 }
+    val runs = when {
+        !item.isDownloaded -> ""
+        com.lagradost.desktop.isolate.Isolation.whereIs(p.url) == com.lagradost.desktop.isolate.Isolation.Where.Sandbox -> com.lagradost.desktop.i18n.Tr.t("Runs in the Windows sandbox")
+        else -> com.lagradost.desktop.isolate.Isolation.reasonInApp(p.url)?.let { com.lagradost.desktop.i18n.Tr.f("Not in the sandbox: {0}", it) } ?: ""
+    }
+    val counts = when { sources == 1 -> com.lagradost.desktop.i18n.Tr.t("1 source"); sources > 1 -> com.lagradost.desktop.i18n.Tr.f("{0} sources", sources); else -> "" }
+    // one row: the icon, what the extension is and does, and its buttons at the right (the card is as tall as its text, not a fixed block with empty space in it)
+    Row(
+        Modifier.fillMaxWidth().hoverable(source).lightShadow(shape).clip(shape).cardSurface(shape, hovered).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(52.dp).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
-                Icon(Icons.Extensions, size = 22.dp, tint = c.textTertiary)
-                // the Installed page lists what is on the disk, which has no icon: the repositories' icon of the same plugin is used
-                val iconUrl = p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")
-                    ?: if (local) com.lagradost.desktop.net.ExtensionIcons.iconForFile(p.url) else null
-                iconUrl?.let { RemoteImage(it, null, null, Modifier.size(52.dp), ContentScale.Crop) }
-            }
-            Column(Modifier.weight(1f)) {
-                FText(p.name, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)
-                FText("v${p.version}" + (p.authors.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "  ·  by $it" } ?: ""), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
-            }
-            if (hasSettings) IconButton(Icons.Settings, {
-                try { instance?.openSettings?.invoke(ctx) } catch (t: Throwable) { logError(t); Toasts.show("Could not open settings: ${t.message}", true) }
-            }, tooltip = "Extension settings", kind = ButtonKind.Standard, size = 34.dp)
+        Box(Modifier.size(52.dp).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
+            Icon(Icons.Extensions, size = 22.dp, tint = c.textTertiary)
+            // the Installed page lists what is on the disk, which has no icon: the repositories' icon of the same plugin is used
+            val iconUrl = p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")
+                ?: if (local) com.lagradost.desktop.net.ExtensionIcons.iconForFile(p.url) else null
+            iconUrl?.let { RemoteImage(it, null, null, Modifier.size(52.dp), ContentScale.Crop) }
         }
-        Box(Modifier.height(10.dp))
-        // an installed extension's "description" is its file name on the disk (CNCVerse.-2008229843.cs3): what it offers is more use there
-        FText(p.description?.takeIf { it.isNotBlank() && !it.endsWith(".cs3", true) && !it.endsWith(".jar", true) } ?: (p.tvTypes?.take(5)?.joinToString(" · ") ?: ""), style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.weight(1f))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            p.language?.takeIf { it.isNotBlank() }?.let { Badge(fromTagToLanguageName(it) ?: it) }
-            if (p.status == PROVIDER_STATUS_DOWN) Badge("Down")
-            p.tvTypes?.firstOrNull()?.let { Badge(it) }
-            Box(Modifier.weight(1f))
-            if (item.isDownloaded) {
-                Button("Uninstall", { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, local) }, enabled = !busy, icon = Icons.Delete, height = 34.dp)
-            } else {
-                com.lagradost.desktop.ui.fluent.PillButton(if (busy) "Installing…" else "Install", Icons.Download, primary = true, onClick = { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, false) } }, height = 34.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            FText(p.name, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)
+            FText("v${p.version}" + (p.authors.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "  ·  by $it" } ?: ""), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+            val line = listOf(about.ifBlank { counts }, runs).filter { it.isNotBlank() }.joinToString("  ·  ")
+            if (line.isNotBlank()) FText(line, style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 2.dp))
+            val language = p.language?.takeIf { it.isNotBlank() }
+            val type = p.tvTypes?.firstOrNull()
+            if (language != null || type != null || p.status == PROVIDER_STATUS_DOWN) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    language?.let { Badge(fromTagToLanguageName(it) ?: it) }
+                    if (p.status == PROVIDER_STATUS_DOWN) Badge("Down")
+                    type?.let { Badge(it) }
+                }
             }
+        }
+        if (hasSettings) IconButton(Icons.Settings, {
+            if (instance?.openSettings != null) {
+                try { instance.openSettings?.invoke(ctx) } catch (t: Throwable) { logError(t); Toasts.show("Could not open settings: ${t.message}", true) }
+            } else if (sandboxed != null) settingsScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                if (!com.lagradost.desktop.isolate.Isolation.openSettings(ctx, sandboxed)) Toasts.show("Could not open the settings of ${p.name}", true)
+            }
+        }, tooltip = "Extension settings", kind = ButtonKind.Standard, size = 34.dp)
+        if (item.isDownloaded) {
+            Button("Uninstall", { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, local) }, enabled = !busy, icon = Icons.Delete, height = 34.dp)
+        } else {
+            com.lagradost.desktop.ui.fluent.PillButton(if (busy) "Installing…" else "Install", Icons.Download, primary = true, onClick = { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, false) } }, height = 34.dp)
         }
     }
 }

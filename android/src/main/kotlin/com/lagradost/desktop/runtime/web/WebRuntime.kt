@@ -7,5 +7,9 @@ object WebRuntime {
     val usesWebView2: Boolean get() = WebView2Runtime.isAvailable
 
     /** The user agent of the engine's own browser (what a Cloudflare clearance cookie made by it is bound to) */
-    val defaultUserAgent: String get() = if (usesWebView2) WebView2Runtime.userAgent else JcefRuntime.defaultUserAgent
+    val defaultUserAgent: String get() = reportedUserAgent ?: if (usesWebView2) WebView2Runtime.userAgent else JcefRuntime.defaultUserAgent
+
+    /** Set in the extension sandbox, which has no browser engine: the user agent of the app's browser, which an extension takes for its own requests (a Cloudflare clearance is bound to it) */
+    @Volatile
+    var reportedUserAgent: String? = null
 }

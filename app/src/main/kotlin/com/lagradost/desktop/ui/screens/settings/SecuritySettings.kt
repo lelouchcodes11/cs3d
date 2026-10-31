@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.lagradost.desktop.i18n.Tr
 import com.lagradost.desktop.sandbox.PluginSandbox
 import com.lagradost.desktop.ui.fluent.Button
 import com.lagradost.desktop.ui.fluent.ButtonKind
@@ -31,21 +32,70 @@ import java.util.Date
 /** Settings > General > Security: the extension sandbox. Each line of a description is a text of its own, so it can be translated. */
 @Composable
 fun GroupBuilder.securityItems() {
-    var on by remember { mutableStateOf(PluginSandbox.enabledSetting()) }
+    // one switch for both layers: the Windows sandbox (the process the OS locks down) and the Java guard that covers the few extensions that must run in the app
+    var on by remember { mutableStateOf(com.lagradost.desktop.isolate.Isolation.enabledSetting() || PluginSandbox.enabledSetting()) }
     card(
-        "Extension sandbox",
-        "Extensions are programs that anyone can publish. The sandbox stops them from running programs, reading your documents and browser data, changing files outside this app's data folder, ending the app, switching the sandbox off or calling Windows' own system functions.\n" +
-            PluginSandbox.statusLine(),
-        "sandbox security malware plugins extensions harm protect virus safe permissions",
+        "Sandbox for extensions",
+        "Extensions are programs that anyone can publish. They run in a separate process that Windows itself locks down: whatever an extension does, it cannot read your documents or browser data, start programs, change files outside its own folder or reach your home network.\n" +
+            "A page that an extension needs (a Cloudflare check) is opened by the app, and shown in a window of the app only while you are using that extension.\n" +
+            "An extension you trust, and every extension when Windows cannot start the sandbox, runs in the app instead; the app then stops it from running programs, reading your documents, changing files outside this app's data folder or ending the app.\n" +
+            "Takes effect when the extensions load (the next start).",
+        "sandbox appcontainer isolate isolation process windows security malware plugins extensions harm protect virus safe permissions java",
     ) {
-        ToggleSwitch(on, { on = it; PluginSandbox.setEnabled(it) })
+        ToggleSwitch(on, {
+            on = it
+            com.lagradost.desktop.isolate.Isolation.setEnabled(it)
+            PluginSandbox.setEnabled(it)
+        })
     }
+    var fallback by remember { mutableStateOf(com.lagradost.desktop.isolate.Isolation.fallbackAllowed()) }
+    card(
+        "Run extensions in the app if the sandbox cannot start",
+        "Not safe. Normally an extension that cannot be put in the sandbox is not loaded at all, because in the app it could do to this PC what you can do.\n" +
+            "Turn this on only to keep using extensions while the sandbox is broken on this PC; a weaker Java guard then watches them.",
+        "sandbox fallback unsafe insecure app run anyway cannot start blocked not loaded",
+    ) {
+        ToggleSwitch(fallback, {
+            fallback = it
+            com.lagradost.desktop.isolate.Isolation.setFallbackAllowed(it)
+        })
+    }
+    link("Where extensions run", "Which extensions run in the Windows sandbox and which in the app, and why.", "sandbox isolated app extensions list where status") { showWhereExtensionsRun() }
     link("Blocked by the sandbox", "Actions of extensions that were stopped in this run (or would have been, in audit mode). If an extension stops working, this list says why.", "log blocked refused denied extension tried") { showBlocked() }
     link(
         "Trusted extensions",
         "The sandbox leaves these extensions alone. Trust one from the blocked list only if you know it and need what the sandbox stopped.",
         "trust allow exception whitelist extension sandbox",
     ) { showTrusted() }
+}
+
+private fun showWhereExtensionsRun() {
+    Overlays.show(
+        Overlays.Dialog(title = "Where extensions run", close = "Close", width = 560.dp) {
+            val c = Fluent.colors
+            val providers = com.lagradost.cloudstream3.APIHolder.allProviders.toList().filter { it.sourcePlugin != null }.groupBy { it.sourcePlugin!! }
+            Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FText(
+                    com.lagradost.desktop.isolate.IsolatedHost.let {
+                        if (it.running()) Tr.t("The Windows sandbox is running.")
+                        else it.lastError?.let { e -> Tr.f("The Windows sandbox is not running: {0}", e) } ?: Tr.t("The Windows sandbox is not running (it starts with the first extension).")
+                    },
+                    color = c.textSecondary, style = Fluent.type.body,
+                )
+                com.lagradost.desktop.isolate.IsolatedHost.startFailure()?.let { why -> FText(Tr.f("The sandbox could not start: {0}", why), color = c.accent, style = Fluent.type.body) }
+                com.lagradost.desktop.isolate.Isolation.blockedNames().takeIf { it.isNotEmpty() }?.let { names -> FText(Tr.f("Not loaded, because the sandbox could not start: {0}", names.joinToString(", ")), color = c.accent, style = Fluent.type.body) }
+                if (providers.keys.any { com.lagradost.desktop.isolate.Isolation.reasonInApp(it) != null || providers[it]!!.first() !is com.lagradost.desktop.isolate.RemoteMainAPI }) FText(PluginSandbox.statusLine(), color = c.textSecondary, style = Fluent.type.body)
+                for ((path, apis) in providers.entries.sortedBy { it.value.first().name.lowercase() }) {
+                    val sandboxed = apis.first() is com.lagradost.desktop.isolate.RemoteMainAPI
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        FText(apis.joinToString(", ") { it.name }, style = Fluent.type.bodyStrong, modifier = Modifier.weight(1f))
+                        val reason = com.lagradost.desktop.isolate.Isolation.reasonInApp(path)
+                        FText(Tr.t(if (sandboxed) "Sandbox" else "App") + (reason?.let { " (${Tr.t(it)})" } ?: ""), color = c.textSecondary, style = Fluent.type.body)
+                    }
+                }
+            }
+        },
+    )
 }
 
 private fun showBlocked() {

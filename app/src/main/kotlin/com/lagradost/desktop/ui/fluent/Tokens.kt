@@ -26,7 +26,7 @@ import com.lagradost.desktop.platform.WinTheme
 import kotlinx.coroutines.delay
 import java.io.File
 
-/** Design tokens of the app. Windows 11 Fluent look: see docs/PLAN.md section 2. */
+/** Design tokens of the app: pure black pages with solid grey grouped surfaces and translucent grey controls (the Apple TV look); see docs/PLAN.md section 2. */
 @Immutable
 class FluentColors(
     val dark: Boolean,
@@ -101,11 +101,11 @@ internal fun fluentColors(dark: Boolean, a: AccentPalette, btnOverride: Color? =
         onAccent = onAcc, accentText = a.light2,
         button = btn, button2 = btn, onButton = onBtn,
         bg = Color(0xFF0E0F13), bgPane = Color(0xFF0E0F13), layer = Color(0xFF15161B),
-        card = Color(0x0EFFFFFF), cardHover = Color(0x18FFFFFF), cardPressed = Color(0x0AFFFFFF),
-        control = Color(0x12FFFFFF), controlHover = Color(0x1CFFFFFF), controlPressed = Color(0x0BFFFFFF), controlDisabled = Color(0x0BFFFFFF),
+        card = Color(0xFF1C1C1E), cardHover = Color(0xFF2C2C2E), cardPressed = Color(0xFF242426),
+        control = Color(0x5C787880), controlHover = Color(0x70787880), controlPressed = Color(0x48787880), controlDisabled = Color(0x24787880),
         subtleHover = Color(0x12FFFFFF), subtlePressed = Color(0x0BFFFFFF),
-        flyout = Color(0xFF1D1F25), stroke = Color(0x18FFFFFF), strokeStrong = Color(0x36FFFFFF), divider = Color(0x15FFFFFF),
-        text = Color(0xFFFFFFFF), textSecondary = Color(0xCCFFFFFF), textTertiary = Color(0x8FFFFFFF), textDisabled = Color(0x5DFFFFFF),
+        flyout = Color(0xFF2C2C2E), stroke = Color(0x14FFFFFF), strokeStrong = Color(0x33FFFFFF), divider = Color(0x29545458),
+        text = Color(0xFFFFFFFF), textSecondary = Color(0x99EBEBF5), textTertiary = Color(0x80EBEBF5), textDisabled = Color(0x4DEBEBF5),
         success = Color(0xFF6CCB5F), caution = Color(0xFFFCE100), critical = Color(0xFFFF99A4), scrim = Color(0x99000000),
     ) else FluentColors(
         dark = false,
@@ -113,12 +113,12 @@ internal fun fluentColors(dark: Boolean, a: AccentPalette, btnOverride: Color? =
         accent2 = a.dark1,
         onAccent = Color.White, accentText = a.dark2,
         button = btn, button2 = btn, onButton = onBtn,
-        bg = Color(0xFFF3F3F3), bgPane = Color(0xFFEEEEEE), layer = Color(0xFFFAFAFA),
-        card = Color(0xB3FFFFFF), cardHover = Color(0x80F9F9F9), cardPressed = Color(0x4DF9F9F9),
-        control = Color(0xB3FFFFFF), controlHover = Color(0x80F9F9F9), controlPressed = Color(0x4DF9F9F9), controlDisabled = Color(0x4DF9F9F9),
+        bg = Color(0xFFF2F2F7), bgPane = Color(0xFFEDEDF2), layer = Color(0xFFF7F7FA),
+        card = Color(0xFFFFFFFF), cardHover = Color(0xFFF2F2F7), cardPressed = Color(0xFFE9E9EE),
+        control = Color(0x1F787880), controlHover = Color(0x2E787880), controlPressed = Color(0x14787880), controlDisabled = Color(0x0F787880),
         subtleHover = Color(0x09000000), subtlePressed = Color(0x06000000),
-        flyout = Color(0xFFFCFCFC), stroke = Color(0x0F000000), strokeStrong = Color(0x72000000), divider = Color(0x0F000000),
-        text = Color(0xE4000000), textSecondary = Color(0x9E000000), textTertiary = Color(0x72000000), textDisabled = Color(0x5C000000),
+        flyout = Color(0xFFFFFFFF), stroke = Color(0x0F000000), strokeStrong = Color(0x55000000), divider = Color(0x1F3C3C43),
+        text = Color(0xFF000000), textSecondary = Color(0x993C3C43), textTertiary = Color(0x803C3C43), textDisabled = Color(0x4D3C3C43),
         success = Color(0xFF0F7B0F), caution = Color(0xFF9D5D00), critical = Color(0xFFC42B1C), scrim = Color(0x4D000000),
     )
 }
@@ -311,9 +311,9 @@ fun ScaledContent(content: @Composable () -> Unit) {
 /** Pure black surfaces (OLED) with the same text, button and accent colours */
 private fun FluentColors.oled() = FluentColors(
     dark = dark, accent = accent, accentHover = accentHover, accentPressed = accentPressed, onAccent = onAccent, accentText = accentText,
-    bg = Color.Black, bgPane = Color.Black, layer = Color(0xFF080808), card = Color(0x0AFFFFFF), cardHover = Color(0x12FFFFFF), cardPressed = Color(0x08FFFFFF),
+    bg = Color.Black, bgPane = Color.Black, layer = Color(0xFF0B0B0C), card = card, cardHover = cardHover, cardPressed = cardPressed,
     control = control, controlHover = controlHover, controlPressed = controlPressed, controlDisabled = controlDisabled,
-    subtleHover = subtleHover, subtlePressed = subtlePressed, flyout = Color(0xFF151515), stroke = stroke, strokeStrong = strokeStrong, divider = divider,
+    subtleHover = subtleHover, subtlePressed = subtlePressed, flyout = flyout, stroke = stroke, strokeStrong = strokeStrong, divider = divider,
     text = text, textSecondary = textSecondary, textTertiary = textTertiary, textDisabled = textDisabled,
     success = success, caution = caution, critical = critical, scrim = scrim,
     accent2 = accent2, button = button, button2 = button2, onButton = onButton,

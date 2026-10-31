@@ -269,6 +269,7 @@ fun AppShell() {
         ToastLayer()
         if (com.lagradost.desktop.tools.FrameStats.enabled) com.lagradost.desktop.tools.GpuBenchLayer()
         com.lagradost.desktop.ui.CloudflareSolveBar()
+        com.lagradost.desktop.update.UpdateUi.Banner()
     }
     }
 }

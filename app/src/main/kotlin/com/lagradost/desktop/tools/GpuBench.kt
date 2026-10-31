@@ -126,7 +126,7 @@ fun GpuBenchLayer() {
                     Column(Modifier.width(190.dp)) {
                         var box = Modifier.width(190.dp).height(285.dp).clip(shape)
                         if (t.mode == "grad") box = box.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.cardHover, c.card)))
-                        if (t.mode == "border") box = box.hairBorder(com.lagradost.desktop.ui.fluent.depthEdge(1f), shape)
+                        if (t.mode == "border") box = box.hairBorder(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.1f), shape)
                         Box(box) {
                             if (t.mode == "icon") Column(Modifier.align(androidx.compose.ui.Alignment.Center).padding(horizontal = 14.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
                                 com.lagradost.desktop.ui.fluent.Icon(com.lagradost.desktop.ui.fluent.Icons.Video, size = 24.dp, tint = c.textDisabled)

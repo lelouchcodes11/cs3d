@@ -74,7 +74,7 @@ internal fun showProfileGate(forStartup: Boolean) {
                                     if (managing) showProfileEditor(account) { refresh() }
                                     else { vm.handleAccountSelect(account, ctx, forStartup); dismiss() }
                                 },
-                                onRemove = if (managing && accounts.size > 1) ({ vm.handleAccountDelete(account, ctx); refresh() }) else null,
+                                onRemove = if (managing && accounts.size > 1) ({ confirmDeleteProfile(account) { refresh() } }) else null,
                             )
                         }
                         if (!adding) GateAdd(onClick = { adding = true })
@@ -132,7 +132,7 @@ private fun GateProfile(account: DataStoreHelper.Account, managing: Boolean, onC
             FText(account.name, style = Fluent.type.bodyLarge.copy(fontSize = 19.sp), color = name, maxLines = 1)
             if (account.lockPin != null) Icon(Icons.Lock, size = 13.dp, tint = c.textSecondary)
         }
-        if (onRemove != null) Button("Remove", onRemove, kind = ButtonKind.Subtle, height = 28.dp)
+        if (onRemove != null) Button("Delete", onRemove, kind = ButtonKind.Subtle, height = 28.dp)
         else if (current && !managing) FText("Current", style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
     }
 }

@@ -44,6 +44,20 @@ object CloudflareGate {
     private val cancelledHosts = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private const val CANCELLED_MS = 2 * 60_000L
 
+    /** A check that was tried and did not end in a clearance (a page that needs a click, a site that blocks this PC): not tried again for a while, so the next title is not held up by it again */
+    private val failedHosts = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val FAILED_MS = 10 * 60_000L
+
+    /** How long a check that nobody sees may take: a clearance that comes by itself comes in a few seconds; a page that waits for a click is not waited for (the extension goes on without that site) */
+    const val UNATTENDED_MS = 25_000L
+
+    fun markFailed(host: String) {
+        failedHosts[host] = System.currentTimeMillis()
+        Log.i(TAG, "no clearance came for $host: it is left alone for ${FAILED_MS / 60_000} minutes")
+    }
+
+    private fun recentlyFailed(host: String): Boolean = failedHosts[host]?.let { System.currentTimeMillis() - it < FAILED_MS } == true
+
     fun beginSolve(host: String, cancel: () -> Unit): Solve = Solve(host, cancel).also { solves.add(it) }
 
     fun endSolve(solve: Solve) {
@@ -65,6 +79,9 @@ object CloudflareGate {
 
     /** Set by the app: the names of the extensions the user is working with now (the one on Home, the title pages that are open); null: all of them (a search in all extensions) */
     @Volatile var activeApis: () -> Set<String>? = { null }
+
+    /** Set by the app: the same as [activeApis] for a window, which is never put up for a search in all extensions (that is null above: every extension) */
+    @Volatile var activeApisForWindows: () -> Set<String> = { emptySet() }
 
     /** Set by the app: the names of the extensions of the plugin whose classes [loader] loaded */
     @Volatile var apisOfLoader: (ClassLoader?) -> Set<String> = { emptySet() }
@@ -98,12 +115,17 @@ object CloudflareGate {
     }
 
     private var lastNotInUseLog = 0L
+    private var lastNoOwnerLog = 0L
 
-    private fun inUse(apis: Set<String>, what: String): Boolean {
+    private fun inUse(apis: Set<String>, what: String, window: Boolean = false): Boolean {
         // not an extension's own request (a video host, an extractor, a class of the app): nothing to judge it by
-        if (apis.isEmpty()) { Log.i(TAG, "the Cloudflare check of $what belongs to no extension: shown"); return true }
+        if (apis.isEmpty()) {
+            val now = System.currentTimeMillis()
+            if (now - lastNoOwnerLog > 30_000) { lastNoOwnerLog = now; Log.i(TAG, "the Cloudflare check of $what belongs to no extension: shown") }
+            return true
+        }
         // null = every extension (a search in all of them). A failed lookup (the app is still starting) is "none": a window nobody asked for is worse than a failed request
-        val active = try { activeApis() } catch (e: Throwable) { Log.w(TAG, "which extensions are in use is not known yet: $e"); emptySet() } ?: return true
+        val active = try { if (window) activeApisForWindows() else activeApis() } catch (e: Throwable) { Log.w(TAG, "which extensions are in use is not known yet: $e"); emptySet() } ?: return true
         if (apis.any { it in active }) return true
         val now = System.currentTimeMillis()
         if (now - lastNotInUseLog > 10_000) { lastNotInUseLog = now; Log.i(TAG, "the Cloudflare check of $what is not shown: ${apis.joinToString()} is not the extension in use (${active.joinToString()})") }
@@ -114,7 +136,8 @@ object CloudflareGate {
     private fun inUseQuiet(owner: Class<*>): Boolean {
         val apis = runCatching { apisOfLoader(owner.classLoader) }.getOrDefault(emptySet())
         if (apis.isEmpty()) return true
-        val active = runCatching { activeApis() }.getOrDefault(emptySet()) ?: return true
+        // a window: see activeApisForWindows
+        val active = runCatching { activeApisForWindows() }.getOrDefault(emptySet())
         return apis.any { it in active }
     }
 
@@ -145,15 +168,22 @@ object CloudflareGate {
     fun inUseHost(host: String): Boolean = inUse(runCatching { apisOfHost(host) }.getOrDefault(emptySet()), host)
 
     /** Whether the extension that owns the plugin class [owner] is one the user is using */
-    fun inUseOwner(owner: Class<*>?): Boolean = inUse(runCatching { apisOfLoader(owner?.classLoader) }.getOrDefault(emptySet()), owner?.name ?: "a dialog")
+    fun inUseOwner(owner: Class<*>?): Boolean = inUse(runCatching { apisOfLoader(owner?.classLoader) }.getOrDefault(emptySet()), owner?.name ?: "a dialog", window = true)
 
     /** Whether a page may be opened to pass the check of [host]: the solvers are on, the extension is in use and the user did not just cancel that site's */
     fun allowsSolving(host: String): Boolean {
         if (!solversOn) return false
         if (!inUseHost(host)) return false
+        if (recentlyFailed(host)) return false
         val at = cancelledHosts[host] ?: return true
         return System.currentTimeMillis() - at > CANCELLED_MS
     }
+
+    /**
+     * A page of an extension in the sandbox that asks to be shown in a window (its challenge dialog): the same rules as for one that runs in the app. The solvers are on,
+     * one of [apis] (the extension's sources) is in use. (That such windows are not coming over and over is checked when the window is shown, see [refuseBrowserDialog].)
+     */
+    fun allowsDialogFor(apis: Set<String>, what: String): Boolean = solversOn && inUse(apis, what, window = true)
 
     /** The Cancel of a page dialog: its own Cancel button is pressed (the extension is told), or the dialog is cancelled */
     fun cancelBrowserDialog(content: View?, cancel: () -> Unit) {

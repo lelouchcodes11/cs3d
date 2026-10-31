@@ -230,8 +230,6 @@ fun Modifier.onDoubleClick(onDoubleClick: () -> Unit): Modifier {
     }
 }
 
-fun Modifier.handCursor(): Modifier = pointerHoverIcon(PointerIcon.Hand)
-
 // ---------------------------------------------------------------------------------------------
 // Buttons
 // ---------------------------------------------------------------------------------------------
@@ -537,9 +535,13 @@ fun TextBox(
                 if (value.isEmpty() && placeholder.isNotEmpty()) {
                     FText(placeholder, color = c.textTertiary, maxLines = 1)
                 }
+                // a box that opens with text in it (the search box when you come back to Home) has its caret after the text, as in any app: the plain String overload
+                // starts every box with the caret before the first letter, so what you typed next went in front of the old text
+                var edit by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))) }
+                val shown = if (edit.text == value) edit else androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))
                 BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
+                    value = shown,
+                    onValueChange = { next -> edit = next; if (next.text != value) onValueChange(next.text) },
                     enabled = enabled,
                     singleLine = singleLine,
                     textStyle = Fluent.type.body.copy(color = c.text),
@@ -772,8 +774,9 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
     Row(
         modifier
             .height(32.dp)
-            .background(if (selected) c.primaryFill(hovered, pressed) else SolidColor(if (hovered) c.controlHover else Color.Transparent), shape)
-            .hairBorder(if (selected) c.primaryBorder(hovered) else if (hovered) c.strokeStrong else c.stroke, shape)
+            // a grey pill with nothing round it; the chosen one is the white one
+            .background(if (selected) c.primaryFill(hovered, pressed) else SolidColor(if (hovered) c.controlHover else c.control), shape)
+            .hairBorder(if (selected) c.primaryBorder(hovered) else Color.Transparent, shape)
             .fluentClickable(source, true, shape, Role.Tab, onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -786,9 +789,6 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
         FText(text, style = if (selected) Fluent.type.bodyStrong else Fluent.type.body, color = fg, maxLines = 1, softWrap = false)
     }
 }
-
-/** Scrim-gradient helper used on media surfaces */
-fun verticalScrim(from: Color, to: Color): Brush = Brush.verticalGradient(listOf(from, to))
 
 @Composable
 fun BoxScope.Fill(color: Color) {

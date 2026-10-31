@@ -1,6 +1,7 @@
 package com.lagradost.desktop.torrent
 
 import android.util.Log
+import com.lagradost.desktop.platform.ProcessConfine
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,7 +51,12 @@ object TorrentEngine {
     private const val TAG = "Torrent"
     private const val PREF = "desktop_torrent_"
     private const val RELEASES = "https://api.github.com/repos/YouROK/TorrServer/releases/latest"
-    private const val FALLBACK_URL = "https://github.com/YouROK/TorrServer/releases/latest/download/TorrServer-windows-amd64.exe"
+    private const val ASSET = "TorrServer-windows-amd64.exe"
+    private const val DOWNLOAD_PREFIX = "https://github.com/YouROK/TorrServer/releases/download/"
+
+    /** A release this app knows (used when GitHub's API cannot be reached, and to recognise an engine installed by an older version of this app) */
+    private const val PINNED_TAG = "MatriX.145"
+    private const val PINNED_SHA256 = "407532e5da6e7676ad274489b322d28f8f1ae7d2e12032e9d6acfadd9b945006"
     private const val MIN_SIZE = 30L * 1024 * 1024
     private const val IDLE_STOP_MS = 5 * 60_000L
 
@@ -75,6 +81,9 @@ object TorrentEngine {
     /** The version of TorrServer on the disk (its release tag), null when none */
     var version by mutableStateOf<String?>(null)
         private set
+
+    /** SHA-256 of the engine file as it was installed: checked before every start, so a program that was swapped in is never run */
+    @Volatile private var binarySha: String? = null
 
     /** 0..1 while TorrServer is downloaded, null otherwise; [installError] says why the last try failed */
     var installProgress by mutableStateOf<Float?>(null)
@@ -102,6 +111,7 @@ object TorrentEngine {
                 cacheMb = p.getInt(PREF + "cache_mb", 256).coerceIn(64, 4096)
                 encrypt = p.getBoolean(PREF + "encrypt", false)
                 version = p.getString(PREF + "version", null)?.takeIf { binary.isFile }
+                binarySha = p.getString(PREF + "sha256", null)
             }
         }
     }
@@ -109,7 +119,7 @@ object TorrentEngine {
     private fun savePrefs() {
         runCatching {
             prefs().edit().putBoolean(PREF + "enabled", enabled).putInt(PREF + "port", port).putInt(PREF + "cache_mb", cacheMb)
-                .putBoolean(PREF + "encrypt", encrypt).putString(PREF + "version", version).apply()
+                .putBoolean(PREF + "encrypt", encrypt).putString(PREF + "version", version).putString(PREF + "sha256", binarySha).apply()
         }
     }
 
@@ -126,7 +136,8 @@ object TorrentEngine {
     val sizeMb: Int get() = (binary.length() / (1024 * 1024)).toInt()
     private val dataDir: File get() = File(dir, "data").also { it.mkdirs() }
     val cacheDir: File get() = File(dir, "cache").also { it.mkdirs() }
-    private val logFile: File get() = File(dir, "torrserver.log")
+    // inside the folder the engine may write to (see ProcessConfine): the engine itself and its folder stay as only this app can change them
+    private val logFile: File get() = File(dataDir, "torrserver.log")
 
     /** Torrent streaming is on and the engine is on the disk: a torrent source can be played */
     val ready: Boolean get() { load(); return enabled && installed }
@@ -186,16 +197,21 @@ object TorrentEngine {
 
     private suspend fun downloadBinary() = withContext(Dispatchers.IO) {
         installProgress = 0f
-        // the newest release names the file; when GitHub's API is out of reach the "latest" redirect gives the same file
-        var url = FALLBACK_URL
-        var tag: String? = null
+        // the newest release names the file and states its SHA-256; when GitHub's API is out of reach the release this app knows is installed
+        var url = DOWNLOAD_PREFIX + PINNED_TAG + "/" + ASSET
+        var tag: String? = PINNED_TAG
+        var expected: String? = PINNED_SHA256
         runCatching {
             val j = JSONObject(app.get(RELEASES, timeout = 15, headers = mapOf("Accept" to "application/vnd.github+json")).text)
-            tag = j.optString("tag_name").takeIf { it.isNotBlank() }
+            val newest = j.optString("tag_name").takeIf { it.isNotBlank() }
             val assets = j.optJSONArray("assets")
-            if (assets != null) for (i in 0 until assets.length()) {
+            if (newest != null && assets != null) for (i in 0 until assets.length()) {
                 val a = assets.getJSONObject(i)
-                if (a.optString("name").equals("TorrServer-windows-amd64.exe", true)) url = a.optString("browser_download_url", url)
+                if (!a.optString("name").equals(ASSET, true)) continue
+                val found = a.optString("browser_download_url")
+                val digest = a.optString("digest").removePrefix("sha256:").lowercase().takeIf { Regex("[0-9a-f]{64}").matches(it) }
+                // only this program's own release files, and only with a checksum to compare with
+                if (found.startsWith(DOWNLOAD_PREFIX) && digest != null) { url = found; tag = newest; expected = digest }
             }
         }
         val tmp = File(dir, "TorrServer.exe.part")
@@ -225,10 +241,16 @@ object TorrentEngine {
             tmp.delete()
             throw TorrentException("The downloaded file is not the torrent engine")
         }
+        val actual = ProcessConfine.sha256(tmp)
+        if (actual != expected) {
+            tmp.delete()
+            throw TorrentException("The downloaded file does not match the checksum published for the release, so it was not installed")
+        }
         stop()
         binary.delete()
         if (!tmp.renameTo(binary)) throw TorrentException("The engine could not be saved in ${dir.path}")
         version = tag ?: "unknown"
+        binarySha = actual
         savePrefs()
         Log.i(TAG, "TorrServer ${version} installed (${sizeMb} MB)")
     }
@@ -238,6 +260,7 @@ object TorrentEngine {
         stop()
         runCatching { binary.delete(); dataDir.deleteRecursively(); cacheDir.deleteRecursively() }
         version = null
+        binarySha = null
         savePrefs()
     }
 
@@ -263,6 +286,17 @@ object TorrentEngine {
         return ServerSocket(0).use { it.localPort }
     }
 
+    /** The file on the disk is the one that was installed (or a release this app knows): anything else is not run */
+    private fun verifyBinary() {
+        val actual = ProcessConfine.sha256(binary)
+        val known = binarySha
+        if (known != null && actual == known) return
+        // installed by an earlier version of this app, which did not keep the checksum: accepted only when it is the release this app knows
+        if (known == null && actual == PINNED_SHA256) { binarySha = actual; version = version ?: PINNED_TAG; savePrefs(); return }
+        Log.w(TAG, "the torrent engine on the disk does not match what was installed (sha256 $actual)")
+        throw TorrentException("The torrent engine file has changed since it was installed, so it was not started. Install it again in Settings > Stremio & torrents.")
+    }
+
     /** Starts TorrServer when it does not run (and tells it how this app wants it to behave) */
     suspend fun ensureRunning() = withContext(Dispatchers.IO) {
         load()
@@ -276,10 +310,14 @@ object TorrentEngine {
                 port = freePort(port + 1)
                 savePrefs()
             }
+            verifyBinary()
+            // the folders the engine writes in are marked low integrity; with that done the engine itself runs at the low level (see ProcessConfine)
+            val lowOk = ProcessConfine.prepareFolder(dataDir) && ProcessConfine.prepareFolder(cacheDir)
             val command = listOf(binary.absolutePath, "-p", port.toString(), "-i", "127.0.0.1", "-d", dataDir.absolutePath, "-l", logFile.absolutePath, "--dontkill")
             Log.i(TAG, "starting ${command.drop(1).joinToString(" ")}")
             settingsApplied = false
             process = ProcessBuilder(command).directory(dir).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
+            process?.let { ProcessConfine.confine(it, lowIntegrity = lowOk) }
             val until = System.currentTimeMillis() + 25_000
             while (System.currentTimeMillis() < until) {
                 if (echo()) break

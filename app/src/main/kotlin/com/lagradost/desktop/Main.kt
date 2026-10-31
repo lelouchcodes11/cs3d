@@ -67,6 +67,9 @@ fun main(args: Array<String>) {
         exitProcess(0)
     }
 
+    // "Reset app" (Settings > Updates & backup): the reset the last run asked for happens before a setting, the log or an extension is opened
+    if (com.lagradost.desktop.platform.MultiInstance.number == 1) com.lagradost.desktop.platform.ResetApp.applyPending()
+
     // Uncaught exceptions are logged (class, message and stack even when toString/printStackTrace fail)
     Thread.setDefaultUncaughtExceptionHandler { thread, e ->
         val summary = runCatching { e.toString() }.getOrElse { e.javaClass.name + " (toString failed: $it)" }

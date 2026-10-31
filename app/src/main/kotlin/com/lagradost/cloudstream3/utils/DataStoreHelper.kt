@@ -218,17 +218,32 @@ object DataStoreHelper {
         _selectedAccountNumberFlow.value += 1
     }
 
+    /**
+     * The built-in Default profile (number 0) was deleted. It is a profile like any other then: it is not added to the list any more and another profile is the
+     * one the app falls back to. Only set while at least one other profile exists.
+     */
+    var defaultAccountRemoved by PreferenceDelegate("$TAG/default_account_removed", false)
+
+    /** The profile the app falls back to: the Default profile, or the first one that is left when the Default profile was deleted */
     fun getDefaultAccount(context: Context): Account {
         return accounts.let { currentAccounts ->
-            currentAccounts.getOrNull(currentAccounts.indexOfFirst { it.keyIndex == 0 }) ?: Account(
-                keyIndex = 0,
-                name = context.getString(R.string.default_account),
-                defaultImageIndex = 0,
-            )
+            currentAccounts.firstOrNull { it.keyIndex == 0 }
+                ?: (if (defaultAccountRemoved) currentAccounts.firstOrNull() else null)
+                ?: Account(
+                    keyIndex = 0,
+                    name = context.getString(R.string.default_account),
+                    defaultImageIndex = 0,
+                )
         }
     }
 
     fun getAccounts(context: Context): List<Account> {
+        if (defaultAccountRemoved) {
+            val saved = accounts.filter { it.keyIndex != 0 }
+            if (saved.isNotEmpty()) return saved
+            // nothing else is left (a restored backup, a damaged file): the built-in profile is back rather than an app without any
+            defaultAccountRemoved = false
+        }
         return accounts.toMutableList().apply {
             val item = getDefaultAccount(context)
             remove(item)

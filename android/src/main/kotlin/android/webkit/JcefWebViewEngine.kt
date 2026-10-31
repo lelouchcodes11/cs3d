@@ -111,7 +111,6 @@ internal class JcefWebViewEngine(private val view: WebView) : WebViewBackend {
         private const val DEFAULT_HEIGHT = 720
         private val bridgeExecutor = Executors.newCachedThreadPool { r -> Thread(r, "JavaBridge").also { it.isDaemon = true } }
         private val setupExecutor = Executors.newCachedThreadPool { r -> Thread(r, "webview-setup").also { it.isDaemon = true } }
-        private val blockedImageExt = Regex("\\.(png|jpe?g|gif|webp|bmp|ico|svg)(\\?|$)", RegexOption.IGNORE_CASE)
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -875,6 +874,4 @@ internal class JcefWebViewEngine(private val view: WebView) : WebViewBackend {
         }
     }
 
-    @Suppress("unused")
-    private fun viewOrNull(): View = view
 }

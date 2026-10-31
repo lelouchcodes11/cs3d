@@ -59,7 +59,7 @@ Open **[Releases](../../releases/latest)** and pick a package for **Windows 10 o
 | **MSI** | `CloudStream-…-windows-x64.msi` | Standard Windows Installer package (per-user, no script actions). |
 | **Portable ZIP** | `CloudStream-…-windows-x64-portable.zip` | Unpack anywhere and run `CloudStream.exe`. Settings, extensions and caches stay in the `data/` folder next to it. |
 
-**Updates.** The app checks the GitHub releases a few seconds after it starts, then every few hours, and never while a video plays. **Update now** downloads the package that matches how you installed it, checks it against the SHA-256 GitHub lists for the file, and installs it when you click; your repositories, extensions, accounts and history are kept. Extensions update themselves at every start (`Settings → Updates & backup`).
+**Updates.** The app checks the GitHub releases a few seconds after it starts, then every few hours, and never while a video plays. A new version shows as a banner at the bottom of the window with its size and release notes; **Update** downloads the package that matches how you installed it (setup, MSI or portable zip) with a progress bar, checks it against the SHA-256 GitHub lists for the file, and installs it when you click *Restart & update*; your repositories, extensions, accounts and history are kept. A failed download says why and offers a retry, a version can be skipped, and `Settings → Updates` has the Stable or Beta channel and the automatic check. Extensions update themselves at every start (`Settings → Extensions and sources`).
 
 > [!NOTE]
 > The installer is not signed with a paid certificate yet, so Windows SmartScreen may say *"Windows protected your PC"* on first run: **More info → Run anyway**. See **[SECURITY.md](SECURITY.md)** for checksums and how the installers are built.
@@ -75,7 +75,7 @@ Open **[Releases](../../releases/latest)** and pick a package for **Windows 10 o
 
 ## Extension sandbox
 
-Extensions are programs that **anyone can publish**. CloudStream for Windows does not trust them: every extension runs inside a sandbox that is **on by default** (`Settings → General → Security → Extension sandbox`).
+Extensions are programs that **anyone can publish**. CloudStream for Windows does not trust them: every extension runs in a sandbox that is **on by default** (`Settings → Network and security → Sandbox for extensions`, one switch). They run in a separate process that **Windows itself locks down** (an AppContainer in a job object): it cannot read your documents or browser data, start programs, change files outside its own folder or reach your home network, and it keeps the internet, so sources work as before. Settings pages, video interceptors and the browser pages an extension needs (Cloudflare checks) are handled by the app on its behalf. Only an extension you mark **Trust**, and every extension on a PC where Windows cannot start the sandbox, runs in the app, under a Java guard described below.
 
 <p align="center">
   <img src="docs/screenshots/sandbox.jpg" width="90%" alt="Settings, General, Security: the Extension sandbox switch, Blocked by the sandbox and Trusted extensions">
@@ -90,7 +90,7 @@ Extensions are programs that **anyone can publish**. CloudStream for Windows doe
 
 - **You can see it working.** When something is stopped, the extension gets an error, a toast names the extension and the action, and **Blocked by the sandbox** lists it, so a source that breaks can be understood.
 - **You stay in charge.** An extension you know and need can be marked **Trust** from that list; **Trusted extensions** takes it back. The popups of an extension you are not using (donation or news windows) are not shown at all, and its Cloudflare check windows wait until you use it.
-- **How it works.** The launcher starts the JVM with a Java `SecurityManager` that only acts when extension code is on the call stack; the app's own work passes at once. The few things the app does for an extension on purpose (opening a link, copying text) go through a gate that checks them first. `-Dcloudstream.sandbox=audit` only logs what would be stopped.
+- **How it works.** For an extension in the Windows sandbox, search, title pages and links travel over a pipe and only plain data comes back; a browser view it builds is a page of the app's browser (opened for http and https addresses only, shown to you in a window of the app, with a Cancel button, only while you use that extension), and its settings page opens in the app on your click. For an extension that runs in the app, the launcher starts the JVM with a Java `SecurityManager` that only acts when extension code is on the call stack; the app's own work passes at once. The few things the app does for an extension on purpose (opening a link, copying text) go through a gate that checks them first. `-Dcloudstream.sandbox=audit` only logs what would be stopped.
 - **What it is not.** It is not a virtual machine and not a barrier against code written to defeat this very sandbox. It makes the usual attacks fail and shows what an extension tries. Add only repositories you trust and keep Windows Defender on. Details and reporting: **[SECURITY.md](SECURITY.md)**.
 
 ## Getting started

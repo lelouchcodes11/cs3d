@@ -153,7 +153,15 @@ fun ApplicationScope.NativeWindow() {
                 else runCatching {
                     val skip = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.DesktopBootstrap.activity)
                         .getBoolean(com.lagradost.desktop.DesktopBootstrap.activity.getString(R.string.skip_startup_account_select_key), false)
-                    if (!skip && com.lagradost.cloudstream3.utils.DataStoreHelper.getAccounts(com.lagradost.desktop.DesktopBootstrap.activity).size > 1) {
+                    val all = com.lagradost.cloudstream3.utils.DataStoreHelper.getAccounts(com.lagradost.desktop.DesktopBootstrap.activity)
+                    // the profile chosen in Edit profile ("Open the app with this profile") is used without asking; a PIN of it is still asked
+                    val chosen = com.lagradost.desktop.ui.shell.StartProfile.get()?.let { key -> all.firstOrNull { it.keyIndex == key } }
+                    if (chosen != null) {
+                        com.lagradost.desktop.ui.Startup.revealed.await()
+                        if (chosen.keyIndex != com.lagradost.cloudstream3.utils.DataStoreHelper.selectedKeyIndex || chosen.lockPin != null) {
+                            com.lagradost.desktop.core.AppVms.get<com.lagradost.cloudstream3.ui.account.AccountViewModel>().handleAccountSelect(chosen, com.lagradost.desktop.DesktopBootstrap.activity, true)
+                        }
+                    } else if (!skip && all.size > 1) {
                         // after the start screen
                         com.lagradost.desktop.ui.Startup.revealed.await()
                         com.lagradost.desktop.ui.shell.showAccountPicker(forStartup = true)

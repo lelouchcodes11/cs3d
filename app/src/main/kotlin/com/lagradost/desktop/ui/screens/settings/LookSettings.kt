@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.settings
 
+import com.lagradost.desktop.ui.fluent.cardSurface
 import com.lagradost.desktop.ui.fluent.hairBorder
 
 import androidx.compose.animation.animateColorAsState
@@ -82,7 +83,7 @@ fun GroupBuilder.layoutItems() {
         "Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.",
         "menu bar dock rail tabs top bottom left right capsule sidebar",
     ) {
-        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             FText("Navigation position", style = Fluent.type.body)
             FText("Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.", style = Fluent.type.caption, color = c.textSecondary)
             Box(Modifier.height(14.dp))
@@ -103,7 +104,7 @@ fun GroupBuilder.layoutItems() {
     }
     // corner radius with a live sample
     block("Corner radius", "Roundness of cards, posters, dialogs and buttons: ${Appearance.cornerRadius} px", "round rounded corners") {
-        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     FText("Corner radius", style = Fluent.type.body)
@@ -400,7 +401,7 @@ fun GroupBuilder.themeItems() {
     }
 
     block("Themes", "Default is this app's own look, in the colours of Settings > Colors. Netflix brings a whole interface: its navigation, billboard, rows, cards, profile screen and button shapes, with its colours. Every feature of the app stays where it is. No name or logo of the service is drawn.", "default netflix streaming interface layout red special profile billboard my list") {
-        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             val active = Themes.byId(Appearance.theme)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -461,7 +462,7 @@ fun GroupBuilder.colorItems() {
 
     // 1. Clean Flat Colour Gallery (grid of all the palettes)
     block("Colour palette", "Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.", "theme palette preset catppuccin nord dracula gruvbox slate graphite") {
-        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             val special = Themes.byId(Appearance.theme).special
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -494,7 +495,7 @@ fun GroupBuilder.colorItems() {
 
     // 2. Accent Colour Picker (Swatches + Custom Hex)
     block("Accent colour", "Tints switches, sliders, active tabs, focus rings and links. Override the theme's accent or enter any hex colour.", "color hex swatch highlight") {
-        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             var customHex by remember(FluentSettings.accentOverride) {
                 mutableStateOf(FluentSettings.accentOverride?.let { colorToHex(it) } ?: "")
             }
@@ -528,7 +529,7 @@ fun GroupBuilder.colorItems() {
 
     // 3. Independent Button, Chip & Pill Colour Picker (Swatches + Custom Hex)
     block("Button, chip & pill colour", "Keep the default crisp white buttons and pills, match the accent colour, or pick any solid colour for primary buttons (Watch now, Play), selected chips and active pills.", "color hex swatch primary") {
-        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             val isDefaultWhite = FluentSettings.buttonColorOverride == null && Appearance.buttonStyle == ButtonStyle.White
             val isMatchAccent = FluentSettings.buttonColorOverride == null && Appearance.buttonStyle != ButtonStyle.White
             var buttonHex by remember(FluentSettings.buttonColorOverride) {

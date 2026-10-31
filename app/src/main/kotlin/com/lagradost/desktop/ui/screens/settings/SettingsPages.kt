@@ -26,20 +26,53 @@ import com.mihon.presentation.settings.collectAsState
 
 @Composable
 internal fun generalGroups(): List<SettingGroup> {
-    com.lagradost.desktop.net.ExtensionPriority.names // read: the row says what is on the list
     val up = Upstream(SettingsGeneralScreen.getPreferences())
     return listOf(
         group("Language") {
             pref(up.key("app_locale"), "locale translate interface")
-            pref(up.key("provider_lang_key"), "extension languages providers")
-            pref(up.key("prefer_media_type_key_2"), "movies series anime content types")
-            pref(extensionPriorityPreference(), "providers order sources first")
         },
         group("Downloads") {
             pref(up.title(stringResource(R.string.download_path_pref)), "folder location save")
             pref(up.key("download_parallel_key"), "simultaneous at once")
             pref(up.key("download_concurrent_key"), "threads speed")
         },
+        group("Window") { windowItems() },
+        group("Performance") { performanceItems() },
+    )
+}
+
+/** Settings > Extensions and sources: everything that decides which sources are used, in what order, and how they are kept up to date */
+@Composable
+internal fun sourcesGroups(): List<SettingGroup> {
+    com.lagradost.desktop.net.ExtensionPriority.names // read: the row says what is on the list
+    val general = Upstream(SettingsGeneralScreen.getPreferences())
+    val up = Upstream(SettingsUpdatesScreen.getPreferences())
+    return listOf(
+        group("Manage") {
+            link("Extensions", "Repositories and installed extensions: add, remove, update and see where each one runs", "repository repositories plugins install add remove") {
+                com.lagradost.desktop.core.Navigator.goTab(com.lagradost.desktop.core.Tab.Extensions)
+            }
+            link("Stremio add-ons and torrents", "Add-ons as sources, their subtitles, and torrent streaming", "stremio torrserver torrent magnet addon") { SettingsNav.page = "stremio" }
+        },
+        group("Languages and order") {
+            pref(general.key("provider_lang_key"), "extension languages providers")
+            pref(general.key("prefer_media_type_key_2"), "movies series anime content types")
+            pref(extensionPriorityPreference(), "providers order sources first")
+        },
+        group("Extension updates") {
+            pref(up.key("auto_update_plugins"), "plugins automatic")
+            pref(up.key("auto_download_plugins_key2"), "plugins install new repositories")
+            pref(up.title(stringResource(R.string.update_plugins)), "plugins now manually")
+            pref(up.title("Extension update history"), "plugins log")
+        },
+    )
+}
+
+/** Settings > Network and security: how the app reaches sites, and what keeps extensions (programs of strangers) in check */
+@Composable
+internal fun securityGroups(): List<SettingGroup> {
+    val up = Upstream(SettingsGeneralScreen.getPreferences())
+    return listOf(
         group("Network") {
             pref(up.title(stringResource(R.string.add_site_pref)), "domain mirror bypass blocked site")
             pref(up.key("dns_key"), "doh resolver blocked")
@@ -47,9 +80,7 @@ internal fun generalGroups(): List<SettingGroup> {
             pref(up.key("jsdelivr_proxy_key"), "cdn github blocked")
             pref(cloudflarePreference(), "captcha bot challenge solver browser window flash popup turn off disable")
         },
-        group("Window") { windowItems() },
-        group("Performance") { performanceItems() },
-        group("Security") { securityItems() },
+        group("Extension security") { securityItems() },
     )
 }
 
@@ -147,30 +178,33 @@ internal fun accountGroups(): List<SettingGroup> {
     }
 }
 
+/** Settings > Updates: this version, the channel and the newest release (the cards are in UpdateCards) */
 @Composable
-internal fun updateGroups(): List<SettingGroup> {
+internal fun updateGroups(): List<SettingGroup> = listOf(
+    group("") {
+        block("Check for updates", "This version, the update channel and automatic checks", "version release download install github automatic channel beta stable skip notes what's new") { UpdateCards() }
+    },
+)
+
+/** Settings > Backup and reset */
+@Composable
+internal fun backupGroups(): List<SettingGroup> {
     val up = Upstream(SettingsUpdatesScreen.getPreferences())
     return listOf(
-        group("App updates") {
-            block("Check for updates", "Looks for a newer version on GitHub and updates the app when you say so", "version release download install github automatic") {
-                androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(3.dp)) { UpdateCards() }
-            }
-        },
         group("Backup") {
             pref(up.title(stringResource(R.string.backup_settings)), "save export file")
             pref(up.key("automatic_backup_key"), "schedule periodic")
             pref(up.title(stringResource(R.string.backup_path_title)), "folder location")
             pref(up.title(stringResource(R.string.restore_settings)), "import load file")
         },
-        group("Extensions") {
-            pref(up.key("auto_update_plugins"), "plugins")
-            pref(up.key("auto_download_plugins_key2"), "plugins install new repositories")
-            pref(up.title(stringResource(R.string.update_plugins)), "plugins now manually")
-            pref(up.title("Extension update history"), "plugins log")
-        },
-        group("Maintenance") {
+        group("Set up again") {
             pref(up.title(stringResource(R.string.redo_setup_process)), "wizard first run language")
         },
+        group("Reset") {
+            link("Reset settings", "Puts the look, player, subtitle and performance settings back to their defaults. Your profiles, library, watch history, accounts and extensions stay.", "reset default restore factory appearance theme") { showResetSettings() }
+            link("Erase all data and reset the app", "Deletes every profile, sign-in, library entry, watch position, extension and setting and starts the app like a first install. Downloaded videos are not deleted.", "reset factory erase wipe delete everything clean start over") { showEraseEverything() }
+        },
+
     )
 }
 

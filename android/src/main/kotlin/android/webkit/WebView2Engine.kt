@@ -253,6 +253,13 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
         val url = Com.getString(a, 3) ?: return
         if (debug) Log.i(TAG, "$id navigation starting $url")
         if (url == "about:blank") return
+        view.networkGuard?.let { guard ->
+            if (!guard(url)) {
+                Log.w(TAG, "$id navigation refused (an address of this PC or its network): ${url.take(120)}")
+                Com.putBool(a, 8, true)
+                return
+            }
+        }
         navigating = url
         val redirect = Com.getBool(a, 5)
         if (!redirect && programmatic.remove(url)) return
@@ -343,6 +350,13 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
             if (url.startsWith(JsBridge.ORIGIN)) {
                 bridgeCall(a, request, url)
                 return
+            }
+            view.networkGuard?.let { guard ->
+                if (!guard(url)) {
+                    Log.w(TAG, "$id request refused (an address of this PC or its network): ${url.take(120)}")
+                    respond(a, 403, "Blocked", emptyMap(), null)
+                    return
+                }
             }
             val context = Com.getInt(a, 7) ?: CONTEXT_ALL
             val settings = view.jcefSettings()

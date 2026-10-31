@@ -35,6 +35,20 @@ internal interface WebViewBackend {
     fun currentUrl(): String?
 
     companion object {
-        fun create(view: WebView): WebViewBackend = if (WebView2Runtime.isAvailable) WebView2Engine(view) else JcefWebViewEngine(view)
+        fun create(view: WebView): WebViewBackend {
+            // the extension sandbox: the page lives in the app
+            RemoteBrowsers.factory?.let { factory ->
+                val id = "r" + RemoteBrowsers.serial.incrementAndGet()
+                factory.create(id, view)?.let { return RemoteEngine(view, it, id) }
+            }
+            WebBrowserGate.unavailable?.invoke()
+            return if (WebView2Runtime.isAvailable) WebView2Engine(view) else JcefWebViewEngine(view)
+        }
     }
+}
+
+/** Set in the extension sandbox process, which has no browser of its own (see [RemoteBrowsers]): called when the app cannot make a page for a view either (it tells the app which extension asked, and throws) */
+object WebBrowserGate {
+    @Volatile
+    var unavailable: (() -> Unit)? = null
 }

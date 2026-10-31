@@ -127,7 +127,9 @@ class CloudflareKiller : Interceptor {
                 // Cannot use okhttp (i think intercepting cookies fails which causes the issues)
                 useOkhttp = false,
                 // Match every url for the requestCallBack
-                additionalUrls = listOf(Regex("."))
+                additionalUrls = listOf(Regex(".")),
+                // desktop: a check nobody sees is not waited for as long as a minute (see CloudflareGate.UNATTENDED_MS)
+                timeout = com.lagradost.desktop.runtime.web.CloudflareGate.UNATTENDED_MS,
             )
             // the bar with a Cancel button shows while the page works (see CloudflareGate)
             val solve = com.lagradost.desktop.runtime.web.CloudflareGate.beginSolve(request.url.host) { resolver.cancel() }
@@ -142,7 +144,10 @@ class CloudflareKiller : Interceptor {
             }
         }
 
-        val cookies = savedCookies[request.url.host] ?: return null
+        val cookies = savedCookies[request.url.host] ?: run {
+            com.lagradost.desktop.runtime.web.CloudflareGate.markFailed(request.url.host)
+            return null
+        }
         return proceed(request, cookies)
     }
 }

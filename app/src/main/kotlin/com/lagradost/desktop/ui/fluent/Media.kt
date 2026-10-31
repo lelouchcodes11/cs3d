@@ -70,13 +70,9 @@ fun Modifier.shimmer(): Modifier {
         val x = (phase * 2f - 0.5f) * size.width
         // Light mode: a grey block with a white glint (a white card on the pale page left the skeleton of a loading banner invisible)
         // dark: a lit block you can see on the black page (the card tint, 4 % white, was close to invisible on it)
-        drawRect(if (c.dark) Color(0x12FFFFFF) else Color(0xFFE6E6EC))
-        drawRect(
-            Brush.horizontalGradient(
-                listOf(Color.Transparent, if (c.dark) Color(0x1FFFFFFF) else Color(0xA6FFFFFF), Color.Transparent),
-                startX = x - size.width * 0.3f, endX = x + size.width * 0.3f,
-            ),
-        )
+        // a flat block that breathes (no band of light sweeping over it)
+        val breath = 0.5f + 0.5f * kotlin.math.sin(phase * 2f * Math.PI.toFloat())
+        drawRect(if (c.dark) Color.White.copy(alpha = 0.07f + 0.05f * breath) else Color(0xFFE6E6EC).copy(alpha = 0.7f + 0.3f * breath))
     }
 }
 
@@ -129,7 +125,7 @@ fun PosterImage(item: SearchResponse, modifier: Modifier = Modifier, scale: Cont
     val c = Fluent.colors
     // until the picture is there (a slow network, a title with none) the card says what it is, instead of a dark box with a camera in it
     var loaded by androidx.compose.runtime.remember(item.posterUrl) { androidx.compose.runtime.mutableStateOf(false) }
-    Box(modifier.background(Brush.verticalGradient(listOf(c.cardHover, c.card))), contentAlignment = Alignment.Center) {
+    Box(modifier.background(c.card), contentAlignment = Alignment.Center) {
         if (!loaded) Column(Modifier.padding(horizontal = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Video, size = 24.dp, tint = c.textDisabled)
             if (item.name.isNotBlank()) FText(item.name, style = Fluent.type.caption, color = c.textTertiary, maxLines = 3, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -166,12 +162,12 @@ fun PosterCard(
     val pressed by source.collectIsPressedAsState()
     // the card rises on a spring when the pointer comes (a little overshoot) and gives way under a press
     val liftSpec = FluentMotion.springSoft<Float>()
-    val lift by animateFloatAsState(if (pressed) 0.975f else if (hovered && zoomOn) 1.04f else 1f, liftSpec, label = "lift")
+    val lift by animateFloatAsState(if (pressed) 0.975f else if (hovered && zoomOn) 1.05f else 1f, liftSpec, label = "lift")
     // the info that comes up on the card (title, play / add / more, score, year): a tween, so it never overshoots
     val info by animateFloatAsState(if (hovered) 1f else 0f, FluentMotion.tweenIn(200), label = "cardInfo")
     val shape = RoundedCornerShape(FluentShapes.card)
-    // a top-lit hairline gives the poster an edge (brighter under the pointer)
-    val edge = depthEdge(if (hovered) 2.1f else 1f)
+    // a flat hairline gives the poster an edge on the black page (brighter under the pointer)
+    val edge = Color.White.copy(alpha = if (hovered) 0.28f else 0.1f)
     // the list a title is on is read only while the pointer is on it (a database read per card otherwise)
     // only a title of an extension can be put on the library here (an AniList entry is already on a list, a TMDB title belongs to no extension)
     val owned = item.apiName.isNotBlank() && item.url.isNotBlank() && item !is com.lagradost.desktop.tmdb.TmdbCard && com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(item.apiName) != null
@@ -222,7 +218,7 @@ fun PosterCard(
                 }
                 item.watchedFraction()?.let { f ->
                     Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()) {
-                        ProgressBar(f, height = 3.dp, color = c.accent)
+                        ProgressBar(f, height = 3.dp, color = c.text)
                     }
                 }
             }

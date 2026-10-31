@@ -13,7 +13,8 @@ internal object JsBridge {
     const val ORIGIN = "https://cloudstream-bridge.invalid"
 
     private fun exposedMethods(obj: Any): List<String> =
-        obj.javaClass.methods.filter { it.isAnnotationPresent(JavascriptInterface::class.java) }.map { it.name }.distinct()
+        if (obj is RemoteBridge) obj.methods.keys.toList()
+        else obj.javaClass.methods.filter { it.isAnnotationPresent(JavascriptInterface::class.java) }.map { it.name }.distinct()
 
     /** The document-creation script for [interfaces] of the browser [browserId], null when there are none */
     fun script(browserId: Any, interfaces: Map<String, Any>): String? {
@@ -40,6 +41,12 @@ internal object JsBridge {
     /** Invokes a @JavascriptInterface method, returns the JSON answer for the page */
     fun invoke(interfaces: Map<String, Any>, name: String, method: String, argsJson: String): String {
         val obj = interfaces[name] ?: return JSONObject().put("e", "No interface $name").toString()
+        // an object that lives in the extension sandbox: the call goes there, the answer comes back as the same JSON
+        if (obj is RemoteBridge) {
+            val count = runCatching { JSONArray(argsJson.ifBlank { "[]" }).length() }.getOrDefault(0)
+            if (obj.methods[method]?.contains(count) != true) return JSONObject().put("e", "Method not found").toString()
+            return runCatching { obj.call(method, argsJson) }.getOrElse { JSONObject().put("e", it.toString()).toString() }
+        }
         return try {
             val args = JSONArray(argsJson.ifBlank { "[]" })
             val candidates = obj.javaClass.methods.filter {

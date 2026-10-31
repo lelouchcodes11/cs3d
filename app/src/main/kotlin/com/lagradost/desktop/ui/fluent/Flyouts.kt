@@ -95,16 +95,6 @@ class AtPoint(private val point: Offset) : PopupPositionProvider {
     }
 }
 
-/** Beside the anchor, vertically centred (side flyouts, tooltips) */
-class RightOfAnchor(private val gap: Int = 4) : PopupPositionProvider {
-    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
-        var x = anchorBounds.right + gap
-        if (x + popupContentSize.width > windowSize.width - 8) x = anchorBounds.left - gap - popupContentSize.width
-        val y = (anchorBounds.top + anchorBounds.height / 2 - popupContentSize.height / 2).coerceIn(8, (windowSize.height - popupContentSize.height - 8).coerceAtLeast(8))
-        return IntOffset(x.coerceAtLeast(8), y)
-    }
-}
-
 @Composable
 fun FlyoutSurface(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val c = Fluent.colors

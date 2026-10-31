@@ -329,6 +329,4 @@ open class Path {
         return p
     }
 
-    @Suppress("unused")
-    private fun direction(dir: Direction?) = if (dir == Direction.CCW) PathDirection.COUNTER_CLOCKWISE else PathDirection.CLOCKWISE
 }

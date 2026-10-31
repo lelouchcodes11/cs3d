@@ -2,6 +2,7 @@ package torrServer
 
 import android.util.Log
 import com.lagradost.desktop.DesktopPlatform
+import com.lagradost.desktop.platform.ProcessConfine
 import com.lagradost.desktop.runtime.AndroidRuntime
 import java.io.File
 import java.net.HttpURLConnection
@@ -16,6 +17,15 @@ import java.net.URI
 object TorrServer {
     private const val TAG = "TorrServer"
     private const val VERSION = "MatriX.145"
+
+    /** SHA-256 of the program for each file name of release [VERSION] (as GitHub states them): a download or a file on the disk that differs is never run */
+    private val PINNED = mapOf(
+        "TorrServer-windows-amd64.exe" to "407532e5da6e7676ad274489b322d28f8f1ae7d2e12032e9d6acfadd9b945006",
+        "TorrServer-windows-386.exe" to "d9fc5ca0eb46b299dbecfc11f4ec49d037bb1473eab40bf97274b47a33904961",
+        "TorrServer-linux-amd64" to "0819f0d697b778d85feb5d8c06becb2c63b06e7eedbb4690bafb460e220221b4",
+        "TorrServer-darwin-amd64" to "fcab1a670cb1e3bd44c60a56a70d2cedff904c39a7524aa0e4380679d93be5cf",
+        "TorrServer-darwin-arm64" to "2b1d47a2b6c57f891413fe19e28439647b3b7f02b751b8a129d848770308e864",
+    )
 
     @Volatile
     private var process: Process? = null
@@ -46,7 +56,12 @@ object TorrServer {
         }
         val dir = File(AndroidRuntime.dataDir, "torrserver/$VERSION").also { it.mkdirs() }
         val file = File(dir, name)
-        if (file.isFile && file.length() > 0) return file
+        val pinned = PINNED[name] ?: error("no checksum is known for $name: the program is not downloaded")
+        if (file.isFile && file.length() > 0) {
+            if (ProcessConfine.sha256(file) == pinned) return file
+            Log.w(TAG, "$name on the disk does not match release $VERSION: deleted")
+            file.delete()
+        }
         val url = "https://github.com/YouROK/TorrServer/releases/download/$VERSION/$name"
         Log.i(TAG, "Downloading $url")
         val tmp = File(dir, "$name.tmp")
@@ -55,9 +70,15 @@ object TorrServer {
         while (connection.responseCode in 300..399 && redirects++ < 10) {
             val location = connection.getHeaderField("Location")
             connection.disconnect()
+            // a redirect must stay on https
+            require(location.startsWith("https://")) { "the download was redirected to an address that is not https" }
             connection = URI(location).toURL().openConnection() as HttpURLConnection
         }
         connection.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+        if (ProcessConfine.sha256(tmp) != pinned) {
+            tmp.delete()
+            error("the download of $name does not match the checksum of release $VERSION")
+        }
         if (!tmp.renameTo(file)) {
             file.delete()
             tmp.renameTo(file)
@@ -97,8 +118,11 @@ object TorrServer {
                 "-i", "127.0.0.1",
                 "-l", File(config, "torrserver.log").absolutePath,
             )
+            // the folder it writes in is marked low integrity first; the program then runs at the low level with the job limits (see ProcessConfine)
+            val lowOk = ProcessConfine.prepareFolder(config)
             val p = ProcessBuilder(cmd).directory(config).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
+            ProcessConfine.confine(p, lowIntegrity = lowOk)
             process = p
             Runtime.getRuntime().addShutdownHook(Thread { p.destroy() })
             val deadline = System.currentTimeMillis() + 15_000

@@ -83,12 +83,8 @@ internal fun FloatingTopBar() {
             .height(TopBarHeight)
             .drawBehind {
                 if (fade > 0.01f) {
-                    // the page colour fading out below the bar (it reaches a little lower than the bar itself)
-                    val reach = size.height + 30.dp.toPx()
-                    drawRect(
-                        Brush.verticalGradient(0f to c.bg.copy(alpha = 0.97f * fade), 0.62f to c.bg.copy(alpha = 0.9f * fade), 1f to Color.Transparent, endY = reach),
-                        size = Size(size.width, reach),
-                    )
+                    // the page colour behind the bar while the page has scrolled under it: one flat band, no fade
+                    drawRect(c.bg.copy(alpha = 0.94f * fade), size = Size(size.width, size.height))
                 }
             },
     ) {

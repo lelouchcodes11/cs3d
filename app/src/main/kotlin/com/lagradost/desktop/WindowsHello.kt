@@ -21,7 +21,7 @@ object WindowsHello {
             val full = "Add-Type -AssemblyName System.Runtime.WindowsRuntime; " +
                     "[Windows.Security.Credentials.UI.UserConsentVerifier,Windows.Security.Credentials.UI,ContentType=WindowsRuntime] | Out-Null; " +
                     AWAIT + script
-            val p = ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", full)
+            val p = ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", full)
                 .redirectErrorStream(true).start()
             if (!p.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
                 p.destroyForcibly()

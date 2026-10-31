@@ -76,6 +76,8 @@ class AccountViewModel : ViewModel() {
 
         currentAccounts.removeIf { it.keyIndex == account.keyIndex }
 
+        // the built-in Default profile is added to the list again unless it is marked as deleted (and something else is left to open)
+        if (account.keyIndex == 0 && currentAccounts.isNotEmpty()) DataStoreHelper.defaultAccountRemoved = true
         DataStoreHelper.accounts = currentAccounts.toTypedArray()
 
         if (account.keyIndex == DataStoreHelper.selectedKeyIndex) {

@@ -100,6 +100,72 @@ object ProfileLooks {
         runCatching { prefs().edit().putString(key(keyIndex), if (raw == LEGACY_DEFAULT) "$raw|chosen" else raw).apply() }
         version++
     }
+
+    /** Forgets the look of a deleted profile (a new profile that gets the same number must not inherit it) */
+    fun remove(keyIndex: Int) {
+        runCatching { prefs().edit().remove(key(keyIndex)).apply() }
+        version++
+    }
+}
+
+/**
+ * The profile the app opens with, without asking "Who is watching?" (null: the picker is shown when there are several profiles, as before).
+ * Any profile can be it, the default one too; it is chosen in the Edit profile window.
+ */
+object StartProfile {
+    private const val KEY = "desktop_start_profile"
+    private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
+
+    fun get(): Int? = runCatching { prefs().getInt(KEY, -1) }.getOrDefault(-1).takeIf { it >= 0 }
+
+    fun set(keyIndex: Int?) {
+        runCatching { prefs().edit().apply { if (keyIndex == null) remove(KEY) else putInt(KEY, keyIndex) }.apply() }
+        version++
+    }
+
+    private var version by mutableIntStateOf(0)
+
+    /** Read in a composable: the tile of the profile says "Opens at start" and follows a change */
+    fun isStart(keyIndex: Int): Boolean { version; return get() == keyIndex }
+}
+
+/**
+ * Asks, then deletes [account] with everything kept for it: library, watch history, resume points, its sign-ins, its look and its own picture.
+ * Any profile can be deleted, the built-in Default one too, as long as another profile is left to open. A profile with a PIN asks for the PIN first: a child must
+ * not be able to remove an adult's profile.
+ */
+fun confirmDeleteProfile(account: DataStoreHelper.Account, onDeleted: () -> Unit = {}) {
+    val ctx = DesktopBootstrap.activity
+    if (!canDeleteProfiles()) return
+    val ask = {
+        Overlays.message(
+            "Delete \"${account.name}\"?",
+            "This removes the profile with its library, watch history, resume points, sign-ins and picture. It cannot be undone." +
+                if (account.keyIndex == DataStoreHelper.selectedKeyIndex) "\n\nYou are using this profile now: the app switches to another profile." else "",
+            primary = "Delete profile",
+            onPrimary = { deleteProfile(account, onDeleted) },
+            close = "Cancel",
+        )
+    }
+    if (account.lockPin != null) {
+        com.lagradost.cloudstream3.ui.account.AccountHelper.showPinInputDialog(ctx, account.lockPin, false) { pin -> if (pin != null) ask() }
+    } else ask()
+}
+
+/** A profile can be deleted when there is another one to open (the last profile stays) */
+fun canDeleteProfiles(): Boolean = runCatching { DataStoreHelper.getAccounts(DesktopBootstrap.activity).size }.getOrDefault(0) > 1
+
+private fun deleteProfile(account: DataStoreHelper.Account, onDeleted: () -> Unit) {
+    val ctx = DesktopBootstrap.activity
+    com.lagradost.desktop.core.AppVms.get<com.lagradost.cloudstream3.ui.account.AccountViewModel>().handleAccountDelete(account, ctx)
+    ProfileLooks.remove(account.keyIndex)
+    if (StartProfile.get() == account.keyIndex) StartProfile.set(null)
+    // the picture copied into the data folder for this profile only
+    runCatching {
+        java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "files")
+            .listFiles { f -> f.name.startsWith("profile-${account.keyIndex}-") }?.forEach { it.delete() }
+    }
+    onDeleted()
 }
 
 /** A profile's picture: its own or stock picture, an animated character, or a show icon */
@@ -169,6 +235,7 @@ private class ProfileDraft(val account: DataStoreHelper.Account) {
     var character by mutableStateOf(look.character.ifBlank { ProfileIconCatalog.defaultFor(account.keyIndex).id })
     var custom by mutableStateOf(account.customImage)
     var index by mutableIntStateOf(account.defaultImageIndex)
+    var startHere by mutableStateOf(StartProfile.get() == account.keyIndex)
     fun asLook() = ProfileLook(style, palette, character)
 }
 
@@ -234,11 +301,15 @@ fun showProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit = {}
     Overlays.show(
         Overlays.Dialog(
             title = "Edit profile", primary = "Save", close = "Cancel", width = 740.dp,
+            // every profile can be deleted from here, after a confirmation, while another one is left
+            secondary = if (canDeleteProfiles()) "Delete profile" else null,
+            onSecondary = { confirmDeleteProfile(account, onSaved) },
             primaryEnabled = { draft.name.isNotBlank() },
             onPrimary = {
                 val updated = account.copy(name = draft.name.trim(), customImage = draft.custom, defaultImageIndex = draft.index)
                 updateProfile(updated)
                 ProfileLooks.set(account.keyIndex, draft.asLook())
+                if (draft.startHere) StartProfile.set(account.keyIndex) else if (StartProfile.get() == account.keyIndex) StartProfile.set(null)
                 onSaved()
             },
         ) {
@@ -292,6 +363,18 @@ fun showProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit = {}
                             }
                         }
                     }
+                }
+
+                // which profile the app opens with
+                Row(
+                    Modifier.fillMaxWidth().background(c.card, RoundedCornerShape(FluentShapes.card)).hairBorder(c.stroke, RoundedCornerShape(FluentShapes.card)).padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        FText("Open the app with this profile")
+                        FText("The app starts on this profile and does not ask who is watching. Without a choice it asks when there are several profiles.", style = Fluent.type.caption, color = c.textSecondary)
+                    }
+                    com.lagradost.desktop.ui.fluent.ToggleSwitch(draft.startHere, { draft.startHere = it })
                 }
 
                 // Search Bar

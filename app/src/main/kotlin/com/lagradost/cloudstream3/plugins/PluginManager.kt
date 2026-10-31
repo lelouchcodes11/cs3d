@@ -683,6 +683,9 @@ object PluginManager {
     private suspend fun loadPlugin(context: Context, file: File, data: PluginData): Boolean =
         PluginLoadGate.limit.withPermit { loadPluginNow(context, file, data) }
 
+    /** The sandbox process (see ExtensionWorker) loads its extensions with this: it does nothing else, so no gate and no second sandbox */
+    suspend fun loadPluginFile(context: Context, file: File, data: PluginData): Boolean = loadPluginNow(context, file, data)
+
     private suspend fun loadPluginNow(context: Context, file: File, data: PluginData): Boolean {
         val fileName = file.nameWithoutExtension
         val filePath = file.absolutePath
@@ -714,19 +717,14 @@ object PluginManager {
                 Log.d(TAG, "No manifest version for ${data.internalName}")
             }
 
-            @Suppress("UNCHECKED_CAST")
-            val pluginClass: Class<*> =
-                loader.loadClass(manifest.pluginClassName) as Class<out BasePlugin?>
-            val pluginInstance: BasePlugin =
-                pluginClass.getDeclaredConstructor().newInstance() as BasePlugin
-
             // Sets with the proper version
             setPluginData(data.copy(version = version))
 
-            if (plugins.containsKey(filePath)) {
+            if (plugins.containsKey(filePath) || com.lagradost.desktop.isolate.IsolatedHost.owns(filePath)) {
                 Log.i(TAG, "Plugin with name $name already exists")
                 return true
             }
+
 
             // desktop: two repositories can offer the same extension (VegaMovies is in two of them). Both would register an API of the same name: the Home
             // list shows it twice and a title page may be loaded by one and its links by the other. One is kept, the one with the higher version.
@@ -748,6 +746,19 @@ object PluginManager {
                 return true
             }
             twinToUnload?.let { unloadPlugin(it) }
+
+            // desktop: the extension runs in the sandbox process (a Windows AppContainer) when it can; none of its code is loaded into the app then
+            if (com.lagradost.desktop.isolate.Isolation.tryLoad(file, data.copy(version = version))) {
+                Log.i(TAG, "Loaded plugin ${data.internalName} into the sandbox")
+                currentlyLoading = null
+                return true
+            }
+
+            @Suppress("UNCHECKED_CAST")
+            val pluginClass: Class<*> =
+                loader.loadClass(manifest.pluginClassName) as Class<out BasePlugin?>
+            val pluginInstance: BasePlugin =
+                pluginClass.getDeclaredConstructor().newInstance() as BasePlugin
 
             pluginInstance.filename = file.absolutePath
             if (manifest.requiresResources) {
@@ -783,15 +794,57 @@ object PluginManager {
             currentlyLoading = null
             true
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to load $file: ${Log.getStackTraceString(e)}")
-            showToast(
-                // context.getActivity(), // we are not always on the main thread
-                context.getString(R.string.plugin_load_fail).format(fileName),
-                Toast.LENGTH_LONG
-            )
+            if (e is com.lagradost.desktop.isolate.Isolation.Blocked) {
+                // the sandbox cannot start and the user did not allow the app to run extensions itself: one message for all of them was shown by the sandbox
+                Log.w(TAG, e.message ?: "not loaded: the sandbox cannot start")
+                synchronized(loadedMeta) { loadedMeta.remove(file.absolutePath) }
+            } else {
+                Log.e(TAG, "Failed to load $file: ${Log.getStackTraceString(e)}")
+                showToast(
+                    // context.getActivity(), // we are not always on the main thread
+                    context.getString(R.string.plugin_load_fail).format(fileName),
+                    Toast.LENGTH_LONG
+                )
+            }
             currentlyLoading = null
             false
         }
+    }
+
+    private val settingsOnly = HashMap<String, Plugin>()
+    private val settingsOnlyLock = Any()
+
+    /**
+     * A copy of an extension that runs in the sandbox, made in the app only to show its settings page (code that needs the app's window): its `load` runs with nothing registered, so
+     * its providers, extractors and actions exist only in the sandbox. Null when the file cannot be loaded.
+     */
+    suspend fun settingsOnlyInstance(context: Context, file: File): Plugin? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val path = file.absolutePath
+        synchronized(settingsOnly) { settingsOnly[path] }?.let { return@withContext it }
+        runCatching {
+            val loader = PathClassLoader(path, context.classLoader)
+            val manifest = loader.getResourceAsStream("manifest.json").use { stream -> parseJson<BasePlugin.Manifest>(InputStreamReader(stream!!).readText()) }
+            val instance = loader.loadClass(manifest.pluginClassName).getDeclaredConstructor().newInstance() as? Plugin ?: return@runCatching null
+            instance.filename = path
+            if (manifest.requiresResources) {
+                val assets = AssetManager::class.java.getDeclaredConstructor().newInstance()
+                AssetManager::class.java.getMethod("addAssetPath", String::class.java).invoke(assets, path)
+                @Suppress("DEPRECATION")
+                instance.resources = Resources(assets, context.resources.displayMetrics, context.resources.configuration)
+            }
+            synchronized(classLoaders) { classLoaders[loader] = instance }
+            synchronized(settingsOnlyLock) {
+                BasePlugin.registrationSuppressed = true
+                try { instance.load(context) } finally { BasePlugin.registrationSuppressed = false }
+            }
+            synchronized(settingsOnly) { settingsOnly[path] = instance }
+            instance
+        }.onFailure { Log.e(TAG, "settings page of $path: ${Log.getStackTraceString(it)}") }.getOrNull()
+    }
+
+    /** The extension was updated or removed: the next settings page is made from the new file */
+    fun dropSettingsOnly(path: String) {
+        synchronized(settingsOnly) { settingsOnly.remove(path) }?.let { dropped -> synchronized(classLoaders) { classLoaders.values.removeIf { it === dropped } } }
     }
 
     /** desktop: file path -> (lower case internal name, version) of the loaded online and local plugins, to keep two copies of one extension from both loading */
@@ -800,6 +853,10 @@ object PluginManager {
     fun unloadPlugin(absolutePath: String) {
         Log.i(TAG, "Unloading plugin: $absolutePath")
         synchronized(loadedMeta) { loadedMeta.remove(absolutePath) }
+        if (com.lagradost.desktop.isolate.IsolatedHost.owns(absolutePath)) {
+            kotlinx.coroutines.runBlocking { com.lagradost.desktop.isolate.Isolation.unload(absolutePath) }
+            return
+        }
         val plugin = plugins[absolutePath]
         if (plugin == null) {
             Log.w(TAG, "Couldn't find plugin $absolutePath")

@@ -21,6 +21,7 @@ import com.lagradost.cloudstream3.BuildConfig
 import com.lagradost.desktop.AppInfo
 import com.lagradost.desktop.i18n.Tr
 import com.lagradost.desktop.DesktopPlatform
+import com.lagradost.desktop.ui.fluent.cardSurface
 import com.lagradost.desktop.ui.fluent.Badge
 import com.lagradost.desktop.ui.fluent.Button
 import com.lagradost.desktop.ui.fluent.ButtonKind
@@ -42,7 +43,7 @@ internal fun AboutHero() {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
-        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape).padding(horizontal = 22.dp, vertical = 20.dp),
+        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(horizontal = 22.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {

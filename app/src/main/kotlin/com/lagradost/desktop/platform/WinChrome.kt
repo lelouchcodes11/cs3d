@@ -95,8 +95,6 @@ object WinChrome {
     @Volatile
     var debugPointer: IntArray? = null
 
-    private var leftTopSince = 0L
-
     /**
      * Called ~25 times a second: reveals the bar when the pointer touches the top edge of the maximized window and hides it again
      * a moment after the pointer left the bar.

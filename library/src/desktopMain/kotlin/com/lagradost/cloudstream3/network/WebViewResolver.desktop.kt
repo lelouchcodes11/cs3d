@@ -48,7 +48,20 @@ actual class WebViewResolver actual constructor(
     val timeout: Long
 ) : Interceptor {
 
+    /** In the extension sandbox the hidden browser is the app's, not this process's: the app opens it and sends what it sees back (see ExtensionWorker) */
+    interface Remote {
+        suspend fun resolve(resolver: WebViewResolver, request: Request, requestCallBack: (Request) -> Boolean): Pair<Request?, List<Request>>
+    }
+
+    /** Set for a resolve made on behalf of an extension in the sandbox: a request to an address it refuses (this PC, the local network) is blocked, see PrivateNetworkGuard */
+    @Volatile
+    var urlGuard: ((String) -> Boolean)? = null
+
     actual companion object {
+        /** Set only in the sandbox process; null in the app, which opens the browser itself */
+        @Volatile
+        var remote: Remote? = null
+
         actual var webViewUserAgent: String? = null
         actual val DEFAULT_TIMEOUT = 60_000L
         private const val TAG = "WebViewResolver"
@@ -113,6 +126,7 @@ actual class WebViewResolver actual constructor(
         request: Request,
         requestCallBack: (Request) -> Boolean
     ): Pair<Request?, List<Request>> {
+        remote?.let { return it.resolve(this, request, requestCallBack) }
         val url = request.url.toString()
         val headers = request.headers
         Log.i(TAG, "Initial web-view request: $url")
@@ -142,6 +156,7 @@ actual class WebViewResolver actual constructor(
         try {
             browser = HeadlessBrowser(userAgent, onRequest = { r ->
                 val webViewUrl = r.url
+                urlGuard?.let { guard -> if (!guard(webViewUrl)) { Log.w(TAG, "a request to an address of this PC or its network was refused: ${webViewUrl.take(120)}"); return@HeadlessBrowser HeadlessBrowser.Decision.BLOCK } }
                 Log.i(TAG, "Loading WebView URL: $webViewUrl")
                 if (script != null) {
                     browser?.evaluate(script) { result -> scriptCallback?.invoke(result) }

@@ -38,6 +38,9 @@ object MultiInstance {
         runCatching { if (on) f.delete() else { f.parentFile?.mkdirs(); f.writeText("A second start of the app only brings the first window to the front. Delete this file to open new windows.") } }
     }
 
+    /** Is a window of the app other than this one running? (a reset needs the data folder to itself) */
+    fun otherWindowsRunning(): Boolean = (1..11).any { it != number && SingleInstanceIpc.isRunning(portOf(it)) }
+
     private fun isDeepLink(args: Array<String>) = args.any { it.contains("://") || it.startsWith("cloudstream", ignoreCase = true) }
 
     /**

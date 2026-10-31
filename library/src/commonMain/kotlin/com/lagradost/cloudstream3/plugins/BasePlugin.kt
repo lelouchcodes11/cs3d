@@ -18,6 +18,7 @@ abstract class BasePlugin {
      * @param element MainAPI provider you want to register
      */
     fun registerMainAPI(element: MainAPI) {
+        if (registrationSuppressed) return
         Log.i(PLUGIN_TAG, "Adding ${element.name} (${element.mainUrl}) MainAPI")
         element.sourcePlugin = this.filename
         APIHolder.allProviders.add(element)
@@ -29,6 +30,7 @@ abstract class BasePlugin {
      * @param element ExtractorApi provider you want to register
      */
     fun registerExtractorAPI(element: ExtractorApi) {
+        if (registrationSuppressed) return
         Log.i(PLUGIN_TAG, "Adding ${element.name} (${element.mainUrl}) ExtractorApi")
         element.sourcePlugin = this.filename
         extractorApis.add(element)
@@ -60,6 +62,12 @@ abstract class BasePlugin {
             filename = value
         }
     var filename: String? = null
+
+    companion object {
+        /** True while the app makes a copy of an extension only to show its settings page (the extension itself runs in the sandbox): nothing it registers counts */
+        @kotlin.concurrent.Volatile
+        var registrationSuppressed: Boolean = false
+    }
 
     @Serializable
     class Manifest {

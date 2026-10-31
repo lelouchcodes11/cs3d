@@ -358,7 +358,7 @@ class PlayerSession(
                     bufferedMs = runCatching { (player.exoPlayer.bufferedPosition) }.getOrDefault(0L)
                     if (player.liveStream != live) {
                         live = player.liveStream
-                        if (!live) { liveStartMs = 0L; liveEndMs = 0L; liveBehindMs = 0L; liveTicks = 0 }
+                        if (!live) { liveStartMs = 0L; liveEndMs = 0L; liveBehindMs = 0L; liveTicks = 0; barEdgeMs = 0L }
                     }
                     if (live) updateLive()
                     // every 5 s: does this PC keep up with the picture (see PlaybackGovernor)
@@ -1814,11 +1814,31 @@ class PlayerSession(
     /** How long the window is that can be moved in, ms: 10:00 on a channel that keeps ten minutes, 0:20 on one that keeps twenty seconds */
     val liveLengthMs: Long get() = (liveEndMs - liveReserveMs() - liveStartMs).coerceAtLeast(0L)
 
-    /** How far into its window playback is, ms: its whole length at the live edge, less the time behind it */
+    /**
+     * The end of the bar of a sliding window (mpv ms): the live edge as it was at the last step. The phone's bar is a window whose ends move a segment at a time (when the
+     * playlist is read again) while playback moves all the time, so the knob runs on to the right and drops back at every step; a bar whose end moved smoothly with the
+     * clock made the knob stand still. 0: not a sliding window (or not known yet).
+     */
+    private var barEdgeMs by mutableLongStateOf(0L)
+    private var barLanded = 0
+
+    /** How far the window moves at a step: one of the channel's segments, kept to a quarter of the window so that a short window does not jump about */
+    private var liveStepMs = LIVE_STEP_MS
+
+    /** The start of the bar of a sliding window (mpv ms) */
+    private val liveBarStartMs: Long get() = barEdgeMs - liveLengthMs
+
+    private val barStepped: Boolean get() = liveSliding && barEdgeMs > 0L
+
+    /** How far into its window playback is, ms: its whole length at the end of the bar, less the time before it */
     val liveElapsedMs: Long get() =
-        // a sliding window (a playlist, a manifest): its length less the time behind the edge; the player's own memory (its start stays, its end steps a segment at a
-        // time): the position from its start, which moves smoothly (the end of a window that is read in steps made this number stand still and then jump)
-        if (liveSliding) (liveLengthMs - liveBehindMs).coerceIn(0L, liveLengthMs) else (positionMs - liveStartMs).coerceIn(0L, liveLengthMs)
+        // a seek is on its way (the position is the old one until the picture at the new place has come): the place it will have, held
+        if (liveSliding && livePendingAt != 0L) (liveLengthMs - liveBehindMs).coerceIn(0L, liveLengthMs)
+        // a sliding window (a playlist, a manifest): the position from the start of the stepped bar
+        else if (barStepped) (positionMs - liveBarStartMs).coerceIn(0L, liveLengthMs)
+        else if (liveSliding) (liveLengthMs - liveBehindMs).coerceIn(0L, liveLengthMs)
+        // the player's own memory (its start stays, its end steps a segment at a time): the position from its start, which moves smoothly
+        else (positionMs - liveStartMs).coerceIn(0L, liveLengthMs)
 
     /** Playback is at the live edge: the knob sits at the end of the bar and the pill says LIVE */
     val liveAtEdge: Boolean get() = liveBehindMs < liveSlackMs
@@ -1830,13 +1850,20 @@ class PlayerSession(
 
     /** How much of the bar is buffered, 0 to 1 */
     val barBuffered: Float get() =
-        if (liveWindowKnown) ((bufferedMs - liveStartMs).toFloat() / liveLengthMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+        if (liveWindowKnown) ((bufferedMs - (if (barStepped) liveBarStartMs else liveStartMs)).toFloat() / liveLengthMs.coerceAtLeast(1)).coerceIn(0f, 1f)
         else (bufferedMs.toFloat() / durationMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+
+    /** How far behind the live edge the place [f] (0 to 1) of the live bar is, ms */
+    private fun behindAt(f: Float): Long {
+        val fraction = f.coerceIn(0f, 1f)
+        return if (barStepped) (liveEdgeMs - (liveBarStartMs + (fraction * liveLengthMs).toLong())).coerceAtLeast(0L)
+        else ((1f - fraction) * liveLengthMs).toLong()
+    }
 
     /** The time that belongs to a place on the bar: a position in the video, or for a live window how far behind the live edge it is ("-3:20", "LIVE" at the end) */
     fun barLabelAt(f: Float): String =
         if (liveWindowKnown) {
-            val behind = ((1f - f.coerceIn(0f, 1f)) * liveLengthMs).toLong()
+            val behind = behindAt(f)
             if (behind < liveSlackMs) "LIVE" else "-" + fmt(behind)
         } else fmt((f.coerceIn(0f, 1f) * durationMs).toLong())
 
@@ -1847,7 +1874,7 @@ class PlayerSession(
     fun seekToFraction(f: Float) {
         val fraction = f.coerceIn(0f, 1f)
         if (liveWindowKnown) {
-            val behind = ((1f - fraction) * liveLengthMs).toLong()
+            val behind = behindAt(fraction)
             seekTo(liveEdgeMs - behind)
             holdBehind(behind)
         } else seekTo((fraction * durationMs).toLong())
@@ -1859,6 +1886,16 @@ class PlayerSession(
         player.goLive()
         holdBehind(0L)
         showHud(Icons.Play, "Live")
+    }
+
+    /** Moves the end of the bar on by whole steps as the live edge runs on; starts again where the edge is when the channel was opened again or its clock restarted */
+    private fun stepBar() {
+        if (!liveSliding || liveEndMs <= 0L) { barEdgeMs = 0L; return }
+        val edge = liveEdgeMs
+        val landed = player.liveLanded
+        val d = edge - barEdgeMs
+        if (barEdgeMs <= 0L || landed != barLanded || d < 0L) { barEdgeMs = edge; barLanded = landed; return }
+        if (d >= liveStepMs) barEdgeMs += d / liveStepMs * liveStepMs
     }
 
     /** Reads the live window and works out how far behind the edge playback is; called every quarter of a second from the session's loop */
@@ -1873,8 +1910,10 @@ class PlayerSession(
                 liveReportedAt = System.nanoTime()
                 liveSliding = player.liveWindowSliding
                 liveSlackMs = maxOf(LIVE_EDGE_MS, ((player.liveSegmentSeconds() ?: 0.0) * 3000 + 2000).toLong())
+                liveStepMs = ((player.liveSegmentSeconds() ?: (LIVE_STEP_MS / 1000.0)) * 1000).toLong().coerceIn(1000L, maxOf(1000L, liveLengthMs / 4))
             }
         }
+        stepBar()
         if (landed) livePendingAt = 0L
         if (liveEndMs <= 0L) return
         // the picture playback is at has dropped out of the window (a long pause, a long stall): back to the live picture, as the phone's player does
@@ -2067,6 +2106,9 @@ class PlayerSession(
 
         /** The time behind the edge changes on screen only for a move of at least this much: the window's end steps by a segment, the position runs smoothly */
         const val LIVE_DEAD_BAND_MS = 900L
+
+        /** The live bar's window moves on by this much at a time when the channel does not say how long its segments are */
+        const val LIVE_STEP_MS = 4_000L
 
         /** Playback this far before the start of the window is out of it */
         const val LIVE_GONE_MS = 8_000L

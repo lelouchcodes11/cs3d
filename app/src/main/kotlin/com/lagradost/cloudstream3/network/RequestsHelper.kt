@@ -83,6 +83,10 @@ fun buildDefaultClient(context: Context, ignoreSSL: Boolean = false): OkHttpClie
         .let {
             it.newBuilder()
                 .dns(com.lagradost.desktop.net.UsableAddresses.wrap(it.dns))
+                // the extension sandbox (a Windows AppContainer) stops the whole process when one thread closes a socket that another is still connecting
+                // (what the race between two addresses does to the slower one): there one address is tried after the other
+                // and a Cloudflare check that refuses a request is passed to the app's browser (see isolate/BrowserFetch.kt)
+                .apply { if (System.getProperty("cloudstream.worker") != null) { fastFallback(false); addInterceptor(com.lagradost.desktop.isolate.BrowserFetchInterceptor) } }
                 .eventListenerFactory(com.lagradost.desktop.net.Quarantine.listenerFactory)
                 .addInterceptor(com.lagradost.desktop.net.RetryQuickFailures)
                 // reads what AniList / MyAnimeList / Simkl / Kitsu answer (an outage, a refused sign-in) for the pages to say so; the answer itself is not changed

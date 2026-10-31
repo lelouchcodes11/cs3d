@@ -173,6 +173,7 @@ object JcefRuntime {
             // the on-device AI model service is a helper process that outlives its parent for hours; nothing here needs it
             "--disable-features=CalculateNativeWinOcclusion,HardwareMediaKeyHandling,MediaSessionService,OptimizationGuideModelExecution,OptimizationGuideOnDeviceModel,OnDeviceModelService",
             "--autoplay-policy=no-user-gesture-required",
+            "--mute-audio",
             "--disable-blink-features=AutomationControlled",
             "--no-first-run",
             "--no-default-browser-check",

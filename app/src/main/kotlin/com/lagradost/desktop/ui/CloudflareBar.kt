@@ -48,7 +48,8 @@ fun CloudflareSolveBar() {
             delay(400)
         }
     }
-    val waiting = solves.toList().filter { now - it.startedAt > 1500 }
+    // the checks that pass by themselves take a few seconds and are never seen
+    val waiting = solves.toList().filter { now - it.startedAt > 5000 }
     // the text stays while the bar slides away
     val hosts = remember { arrayOf("") }
     if (waiting.isNotEmpty()) hosts[0] = waiting.map { it.host }.distinct().joinToString(", ")

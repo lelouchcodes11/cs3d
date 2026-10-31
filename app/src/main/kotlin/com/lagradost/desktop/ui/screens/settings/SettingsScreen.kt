@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.settings
 
+import com.lagradost.desktop.ui.fluent.cardSurface
 import com.lagradost.desktop.ui.fluent.hairBorder
 import com.lagradost.desktop.ui.fluent.hoverEdge
 
@@ -56,18 +57,33 @@ import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 import com.lagradost.desktop.ui.shell.TopBarHeight
 
-private enum class Page(val id: String, val title: String, val glyph: String, val tint: Long, val about: String, val hidden: Boolean = false) {
-    /** The page Settings opens on: the settings people change most, and a card for every page */
-    Overview("overview", "Overview", Icons.Home, 0xFF8B95A7, "The settings you change most, and every page of them"),
-    General("general", "General", Icons.Settings, 0xFF6E7BF2, "Language, downloads, network and the window"),
-    Player("player", "Player", Icons.Play, 0xFFE5484D, "Playback, video, audio, subtitles and controls"),
-    Stremio("stremio", "Stremio & torrents", Icons.Link, 0xFF8E4EC6, "Add-ons, their sources and subtitles, torrent streaming", hidden = true),
-    Appearance("ui", "Appearance", Icons.Personalize, 0xFFD6409F, "Themes, layout and what the pages show"),
-    Colors("colors", "Colors", Icons.Theme, 0xFFAF52DE, "Colour palettes, the accent colour and the colour of buttons"),
-    Updates("updates", "Updates & backup", Icons.Update, 0xFF30A46C, "App and extension updates, backups"),
-    Accounts("account", "Accounts & sync", Icons.Person, 0xFFF76B15, "Sign in to your services, keep your lists up to date, lock the app"),
-    About("about", "About", Icons.Info, 0xFF00A2C7, "Version, help and links"),
-    /** Reached from Player, Subtitles; no entry of its own in the list */
+/** The groups of the list on the left: a caption over the pages that belong together */
+private enum class Section(val title: String) {
+    App("App"),
+    Content("Content and accounts"),
+    System("System"),
+}
+
+private enum class Page(val id: String, val title: String, val glyph: String, val tint: Long, val about: String, val section: Section? = null, val hidden: Boolean = false) {
+    /** The page Settings opens on: what is worth a look right now, the settings people change most, and a card for every page */
+    Overview("overview", "Overview", Icons.Home, 0xFF8B95A7, "What needs a look, the settings you change most, and every page"),
+
+    General("general", "General", Icons.Settings, 0xFF6E7BF2, "App language, downloads, the window and performance", Section.App),
+    Appearance("ui", "Appearance", Icons.Personalize, 0xFFD6409F, "Themes, layout and what the pages show", Section.App),
+    Colors("colors", "Colors", Icons.Theme, 0xFFAF52DE, "Colour palettes, the accent colour and the colour of buttons", Section.App),
+    Player("player", "Player", Icons.Play, 0xFFE5484D, "Playback, video, audio, subtitles and controls", Section.App),
+
+    Sources("sources", "Extensions and sources", Icons.Extensions, 0xFF8E4EC6, "Extension languages and order, extension updates, Stremio add-ons and torrents", Section.Content),
+    Accounts("account", "Accounts and sync", Icons.Person, 0xFFF76B15, "Sign in to your services, keep your lists up to date, lock the app", Section.Content),
+
+    Security("security", "Network and security", Icons.Lock, 0xFF2F9E8F, "DNS and blocked sites, Cloudflare checks and the sandbox that keeps extensions in check", Section.System),
+    Updates("updates", "Updates", Icons.Update, 0xFF30A46C, "This version, the update channel and the newest release", Section.System),
+    Backup("backup", "Backup and reset", Icons.Backup, 0xFF3E8FD0, "Save and restore your data, set up again or start over", Section.System),
+    About("about", "About", Icons.Info, 0xFF00A2C7, "Version, help and links", Section.System),
+
+    /** Reached from Extensions and sources; no entry of its own in the list */
+    Stremio("stremio", "Stremio and torrents", Icons.Link, 0xFF8E4EC6, "Add-ons, their sources and subtitles, torrent streaming", hidden = true),
+    /** Reached from Player; no entry of its own in the list */
     Subtitles("subtitles", "Subtitles", Icons.Subtitles, 0xFFFFB224, "How subtitles look", hidden = true),
 }
 
@@ -91,7 +107,10 @@ private fun groupsOf(page: Page): List<SettingGroup> = when (page) {
     Page.Player -> playerGroups()
     Page.Appearance -> appearanceGroups()
     Page.Colors -> colorGroups()
+    Page.Sources -> sourcesGroups()
+    Page.Security -> securityGroups()
     Page.Updates -> updateGroups()
+    Page.Backup -> backupGroups()
     Page.Accounts -> accountGroups()
     Page.About -> aboutGroups()
     // pages of their own (not lists of rows)
@@ -125,11 +144,17 @@ fun SettingsScreen(route: Route.Settings, entryId: Long? = null) {
                 Box(Modifier.height(12.dp))
                 TextBox(query, { query = it; view.query = it; scope.launch { scroll.scrollTo(0) } }, Modifier.fillMaxWidth(), placeholder = "Search settings", leadingIcon = Icons.Search)
                 Box(Modifier.height(12.dp))
-                Page.entries.filter { !it.hidden }.forEach { p ->
-                    // Extensions are managed from here now: the row sits just above About
-                    if (p == Page.About) CategoryRow("Extensions", Icons.Extensions, Color(0xFF8E4EC6), selected = false) { Navigator.goTab(Tab.Extensions) }
-                    CategoryRow(p.title, p.glyph, Color(p.tint), selected = query.isBlank() && (p == page || (page == Page.Subtitles && p == Page.Player))) { show(p) } }
-                Box(Modifier.weight(1f))
+                // a long list scrolls inside its own column: a short window must still reach About
+                Column(Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                    fun row(p: Page) = @Composable {
+                        CategoryRow(p.title, p.glyph, Color(p.tint), selected = query.isBlank() && (p == page || (page == Page.Subtitles && p == Page.Player) || (page == Page.Stremio && p == Page.Sources))) { show(p) }
+                    }
+                    row(Page.Overview)()
+                    for (section in Section.entries) {
+                        SectionCaption(section.title)
+                        Page.entries.filter { it.section == section && !it.hidden }.forEach { row(it)() }
+                    }
+                }
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
             FluentScrollbar(scroll)
@@ -162,11 +187,9 @@ fun SettingsScreen(route: Route.Settings, entryId: Long? = null) {
 @Composable
 private fun PageContent(page: Page) {
     if (page == Page.Subtitles) Button("Player", { SettingsNav.page = "player" }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, icon = Icons.ChevronLeft, modifier = Modifier.padding(bottom = 4.dp))
-    // the page's colour: a flat tinted square with its icon beside the title, the same square the page has in the list and in front of its rows
-    Row(Modifier.padding(bottom = 22.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-        IconBadge(60.dp, Color(page.tint)) { col -> Icon(page.glyph, size = 28.dp, tint = col) }
-        Box(Modifier.weight(1f)) { com.lagradost.desktop.ui.fluent.PageHeader(if (page == Page.Overview) "Settings" else page.title, subtitle = page.about) }
-    }
+    if (page == Page.Stremio) Button("Extensions and sources", { SettingsNav.page = "sources" }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, icon = Icons.ChevronLeft, modifier = Modifier.padding(bottom = 4.dp))
+    // a large title and its line, like every page (the coloured square stays where the page is listed, and in front of its rows)
+    Box(Modifier.padding(bottom = 22.dp, top = 4.dp)) { com.lagradost.desktop.ui.fluent.PageHeader(if (page == Page.Overview) "Settings" else page.title, subtitle = page.about) }
     androidx.compose.runtime.CompositionLocalProvider(LocalSettingsTint provides if (page == Page.Overview) Color.Unspecified else Color(page.tint)) {
         when (page) {
             Page.Overview -> OverviewPage()
@@ -188,6 +211,30 @@ private fun OutageNotices() {
     }
 }
 
+/** A new version (or one that is downloaded) is said at the top of the overview, with the way to the Updates page */
+@Composable
+private fun UpdateNotice() {
+    val status = com.lagradost.desktop.update.UpdateCheck.status
+    val release = when (status) {
+        is com.lagradost.desktop.update.UpdateCheck.Status.Available -> status.release
+        is com.lagradost.desktop.update.UpdateCheck.Status.Ready -> status.release
+        is com.lagradost.desktop.update.UpdateCheck.Status.Downloading -> status.release
+        else -> null
+    } ?: return
+    Box(Modifier.padding(bottom = 20.dp)) {
+        com.lagradost.desktop.ui.fluent.NoticeBar(
+            if (status is com.lagradost.desktop.update.UpdateCheck.Status.Ready) "Version ${release.label} is downloaded and ready to install." else "Version ${release.label} is available (you have ${com.lagradost.desktop.update.UpdateCheck.currentVersion}).",
+            action = "Open Updates", onAction = { SettingsNav.page = Page.Updates.id },
+        )
+    }
+}
+
+/** The small grey line over a group of pages in the list on the left */
+@Composable
+private fun SectionCaption(title: String) {
+    FText(title.uppercase(), Modifier.padding(start = 14.dp, top = 16.dp, bottom = 4.dp), style = Fluent.type.caption, color = Fluent.colors.textTertiary, maxLines = 1)
+}
+
 /** The settings people reach for most, pulled from their own pages (the same rows, so they work and are found by the search exactly alike) */
 @Composable
 private fun quickItems(): List<SettingItem> {
@@ -200,31 +247,29 @@ private fun quickItems(): List<SettingItem> {
 private fun OverviewPage() {
     val c = Fluent.colors
     val quick = quickItems()
+    UpdateNotice()
     if (quick.isNotEmpty()) {
         FText("Quick settings", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
         androidx.compose.runtime.CompositionLocalProvider(LocalRowIcons provides false) { RowCard(quick) }
         Box(Modifier.height(28.dp))
     }
-    FText("All settings", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val columns = if (maxWidth >= 620.dp) 2 else 1
-        // a tile per page; Extensions are managed from the Extensions tab, so that tile leaves the settings
-        val tiles = Page.entries.filter { !it.hidden && it != Page.Overview }.map { OverviewTile(it.title, it.about, it.glyph, Color(it.tint), it) } +
-            OverviewTile("Extensions", "Repositories, installed extensions and Stremio add-ons", Icons.Extensions, Color(0xFF8E4EC6), null)
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            tiles.chunked(columns).forEach { rowTiles ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    rowTiles.forEach { t ->
-                        CategoryTile(t.title, t.about, t.glyph, t.tint, Modifier.weight(1f)) { if (t.page != null) SettingsNav.page = t.page.id else Navigator.goTab(Tab.Extensions) }
+    for (section in Section.entries) {
+        FText(section.title, style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = if (maxWidth >= 620.dp) 2 else 1
+            val tiles = Page.entries.filter { it.section == section && !it.hidden }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                tiles.chunked(columns).forEach { rowTiles ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        rowTiles.forEach { t -> CategoryTile(t.title, t.about, t.glyph, Color(t.tint), Modifier.weight(1f)) { SettingsNav.page = t.id } }
+                        repeat(columns - rowTiles.size) { Box(Modifier.weight(1f)) }
                     }
-                    repeat(columns - rowTiles.size) { Box(Modifier.weight(1f)) }
                 }
             }
         }
+        Box(Modifier.height(24.dp))
     }
 }
-
-private class OverviewTile(val title: String, val about: String, val glyph: String, val tint: Color, val page: Page?)
 
 /** A page of the settings as a card: its square, its name and what is on it */
 @Composable
@@ -254,7 +299,7 @@ private fun CategoryTile(title: String, about: String, glyph: String, tint: Colo
 private fun RowCard(items: List<SettingItem>) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
-    Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).background(c.card, shape).hairBorder(c.stroke, shape)) {
+    Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape)) {
         androidx.compose.runtime.CompositionLocalProvider(LocalRowGroup provides true, LocalReserveIcon provides items.any { it.hasIcon }) {
             items.forEachIndexed { i, item ->
                 if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))

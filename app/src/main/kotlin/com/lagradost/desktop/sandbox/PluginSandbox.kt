@@ -120,6 +120,8 @@ object PluginSandbox {
         synchronized(this) {
             if (decided) return
             decided = true
+            // the extension sandbox process is itself the sandbox (a Windows AppContainer): no Java security manager in it
+            if (System.getProperty("cloudstream.worker") != null) { state = State.Off; return }
             val property = System.getProperty("cloudstream.sandbox")
             if (property == "off" || (property == null && !enabledSetting())) { state = State.Off; return }
             val audit = property == "audit"
@@ -239,7 +241,7 @@ object PluginSandbox {
         if (duplicate) return
         Log.w(TAG, "${if (blocked) "refused" else "would refuse"}: $plugin tried to $what  [${whereAmI()}]")
         if (blocked && told.add(plugin)) {
-            runCatching { com.lagradost.desktop.ui.Toasts.show("$plugin was stopped from trying to $what. See Settings > General > Security.", true) }
+            runCatching { com.lagradost.desktop.ui.Toasts.show("$plugin was stopped from trying to $what. See Settings > Network and security.", true) }
         }
     }
 

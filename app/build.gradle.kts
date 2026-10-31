@@ -875,7 +875,8 @@ fun compressRuntime(root: File) {
         val out = File(root, "runtime-compressed").also { it.deleteRecursively() }
         val proc = ProcessBuilder(
             jlink.absolutePath, "--add-modules", modules.joinToString(","), "--strip-debug", "--no-header-files", "--no-man-pages",
-            "--strip-native-commands", "--compress=zip-6", "--output", out.absolutePath,
+            // (the native commands stay: the extension sandbox starts its own Java process from runtime/bin/javaw.exe, 50 KB)
+            "--compress=zip-6", "--output", out.absolutePath,
         ).redirectErrorStream(true).start()
         val log = proc.inputStream.bufferedReader().readText()
         if (proc.waitFor() != 0 || !File(out, "bin/server/jvm.dll").isFile) error("jlink failed: $log")

@@ -52,6 +52,11 @@ object DataKeep {
         }.onFailure { Log.w(TAG, "restore failed: ${it.message}") }
     }
 
+    /** Deletes the copy (a reset that erases everything must not bring the old settings back at the next update) */
+    fun forget() {
+        runCatching { if (!explicit || System.getProperty("cloudstream.keep") != null) folder?.deleteRecursively() }
+    }
+
     /** Called after a snapshot of the settings (start, every 30 minutes) and when the app ends */
     fun mirror() {
         runCatching {

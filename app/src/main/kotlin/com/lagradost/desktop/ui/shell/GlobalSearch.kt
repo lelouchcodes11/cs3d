@@ -39,6 +39,12 @@ import com.lagradost.desktop.ui.fluent.TextBox
 import com.lagradost.desktop.ui.fluent.fluentClickable
 import com.lagradost.desktop.ui.fluent.rememberInteraction
 
+/** Whether the bar of the current look has a search box on the pages other than Home (the floating bar, the floating dock and the skins have none) */
+fun barHasSearchBox(): Boolean =
+    com.lagradost.desktop.ui.fluent.Skins.spec == null && com.lagradost.desktop.ui.fluent.Appearance.navPosition.let {
+        it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock
+    }
+
 /** The search box of the title bar: type-ahead suggestions and recent searches in a flyout */
 @Composable
 fun GlobalSearchBox(modifier: Modifier = Modifier, only: String? = null, onBlur: () -> Unit = {}, onDone: () -> Unit = {}) {

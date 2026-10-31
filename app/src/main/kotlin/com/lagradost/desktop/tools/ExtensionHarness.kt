@@ -200,6 +200,7 @@ object ExtensionHarness {
                 val page = api.getMainPage(1, MainPageRequest(data.name, data.data, data.horizontalImages))
                 val items = page?.items?.sumOf { it.list.size } ?: 0
                 firstUrl = page?.items?.firstOrNull { it.list.isNotEmpty() }?.list?.firstOrNull()?.url
+                if (items > 0 && firstUrl.isNullOrBlank()) println("   ! ${api.name}: the home page has $items items but the first has no address: ${page?.items?.firstOrNull { it.list.isNotEmpty() }?.list?.firstOrNull()}")
                 if (items > 0) "OK($items)" else "EMPTY"
             } catch (t: Throwable) {
                 "ERR(${t.javaClass.simpleName}: ${t.message?.take(80)})"
@@ -240,6 +241,9 @@ object ExtensionHarness {
                 // do the first links of different kinds answer with something a player can use?
                 val sample = synchronized(links) { links.distinctBy { it.name }.take(4) }
                 r.play = sample.joinToString(" | ") { l -> l.name.take(18) + ": " + probe(l) }
+                // an extension with a video interceptor (in the sandbox or in the app): the first link is read through it, as the player's proxies do
+                val viaInterceptor = links.firstNotNullOfOrNull { l -> runCatching { api.getVideoInterceptor(l) }.getOrNull()?.let { l to it } }
+                if (viaInterceptor != null) r.play += " | interceptor: " + probeThrough(viaInterceptor.first, viaInterceptor.second)
             }
             if (links.isNotEmpty()) "OK(${links.size} links, $subs subs)" else "EMPTY"
         } catch (t: Throwable) {
@@ -247,6 +251,16 @@ object ExtensionHarness {
             else "ERR(${t.javaClass.simpleName}: ${t.message?.take(80)})"
         }
     }
+
+    private fun probeThrough(link: ExtractorLink, interceptor: okhttp3.Interceptor): String = runCatching {
+        val headers = okhttp3.Headers.Builder().also { b -> link.headers.forEach { (k, v) -> runCatching { b.add(k, v) } } }
+        if (link.referer.isNotBlank() && headers.get("Referer") == null) headers.add("Referer", link.referer)
+        val client = com.lagradost.cloudstream3.app.baseClient.newBuilder().addInterceptor(interceptor).build()
+        client.newCall(okhttp3.Request.Builder().url(link.url).headers(headers.build()).build()).execute().use { res ->
+            val head = res.body.source().let { s -> s.request(200); s.buffer.snapshot().utf8().take(200) }
+            "HTTP ${res.code} ${res.header("Content-Type").orEmpty().take(40)} ${if (head.startsWith("#EXTM3U")) "m3u8" else "${head.length}b"}"
+        }
+    }.getOrElse { "ERR ${it.javaClass.simpleName}: ${it.message?.take(80)}" }
 
     private val probeClient: java.net.http.HttpClient by lazy {
         java.net.http.HttpClient.newBuilder().followRedirects(java.net.http.HttpClient.Redirect.ALWAYS).connectTimeout(java.time.Duration.ofSeconds(10)).build()

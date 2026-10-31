@@ -1400,8 +1400,6 @@ private fun SeekBar(s: PlayerSession) {
     }
 }
 
-private fun Modifier.offset2(xPx: Float): Modifier = this.then(Modifier.offsetPx(xPx, 0f))
-private fun Modifier.offsetY(yPx: Float): Modifier = this.then(Modifier.offsetPx(0f, yPx))
 private fun Modifier.offsetPx(x: Float, y: Float): Modifier =
     this.offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
 

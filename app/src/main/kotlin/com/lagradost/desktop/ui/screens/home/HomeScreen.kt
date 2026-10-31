@@ -271,7 +271,13 @@ fun HomeScreen() {
                     val rows = HomeLayout.rowsFor(apiName.orEmpty(), res.value.entries.filter { it.value.list.list.isNotEmpty() }.map { it.key to it.value })
                     if (rows.isEmpty()) {
                         item(key = "empty") {
-                            com.lagradost.desktop.ui.fluent.NoticeBar(
+                            // extensions that are not loaded because the sandbox cannot start: say that, not "install an extension"
+                            val held = com.lagradost.desktop.isolate.Isolation.blockedNames()
+                            if (held.isNotEmpty()) com.lagradost.desktop.ui.fluent.NoticeBar(
+                                com.lagradost.desktop.i18n.Tr.f("{0} extensions are not loaded because the sandbox could not start: {1}", held.size, com.lagradost.desktop.isolate.IsolatedHost.startFailure() ?: "?"),
+                                Modifier.padding(horizontal = gutter).padding(bottom = 22.dp),
+                                action = "Open Settings", onAction = { Navigator.goTab(com.lagradost.desktop.core.Tab.Settings) },
+                            ) else com.lagradost.desktop.ui.fluent.NoticeBar(
                                 // no extension chosen at all reads "from None" otherwise
                                 if (apiName.isNullOrBlank() || apiName.equals("none", ignoreCase = true)) "No extension is chosen yet. Install one in Extensions to get catalogues here, or pick a source at the top right."
                                 else "Nothing to show from $apiName yet. Pick another source at the top right, or install an extension.",
@@ -419,7 +425,7 @@ private fun SkeletonRow(cardWidth: Dp) {
 @Composable
 private fun HeroSkeleton(height: Dp) {
     // a dim lift of the page colour that fades out at the foot (a full-width shimmering slab was a big grey block on the black page), and the shapes of the text on it
-    Box(Modifier.fillMaxWidth().height(height).background(Brush.verticalGradient(0f to Fluent.colors.card, 0.7f to Color.Transparent))) {
+    Box(Modifier.fillMaxWidth().height(height).background(Fluent.colors.card.copy(alpha = 0.4f))) {
         Column(Modifier.align(Alignment.BottomStart).padding(start = gutter, bottom = 80.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.size(90.dp, 22.dp).clip(RoundedCornerShape(50)).shimmer())
             Box(Modifier.size(420.dp, 52.dp).clip(RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.control)).shimmer())
@@ -701,7 +707,7 @@ private fun ResumeCard(card: SearchResponse, width: Dp, subtitle: String?, menu:
                     if (!subtitle.isNullOrBlank()) FText(subtitle, style = Fluent.type.caption, color = Color(0xCCFFFFFF), maxLines = 1)
                 }
                 fraction?.let { f ->
-                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()) { com.lagradost.desktop.ui.fluent.ProgressBar(f, height = 3.dp, color = c.accent) }
+                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()) { com.lagradost.desktop.ui.fluent.ProgressBar(f, height = 3.dp, color = Color.White.copy(alpha = 0.92f)) }
                 }
             }
         }

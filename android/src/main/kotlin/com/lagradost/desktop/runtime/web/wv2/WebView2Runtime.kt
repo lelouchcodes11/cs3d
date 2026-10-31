@@ -215,6 +215,8 @@ object WebView2Runtime {
                 "--disable-backgrounding-occluded-windows",
                 "--disable-features=CalculateNativeWinOcclusion,msSmartScreenProtection,msEdgeShoppingAssistant,msWebOOUI,msPdfOOUI,HardwareMediaKeyHandling,MediaSessionService",
                 "--autoplay-policy=no-user-gesture-required",
+                // a page that is not the app's player (a hidden extension page, a check, an advert in one) is never heard: the video of the app plays in its own player
+                "--mute-audio",
                 "--disable-blink-features=AutomationControlled",
                 "--renderer-process-limit=4",
                 "--no-first-run",

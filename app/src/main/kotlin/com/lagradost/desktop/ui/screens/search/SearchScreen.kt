@@ -310,6 +310,11 @@ private fun ResultsHeader(
                 Button("Extensions", onProviders, icon = Icons.Filter, height = 36.dp)
             }
         }
+        // the looks whose bar has no search box (the floating bar, the dock, the skins) show one here: the search is changed where its results are
+        if (!com.lagradost.desktop.ui.shell.barHasSearchBox()) {
+            Box(Modifier.height(12.dp))
+            com.lagradost.desktop.ui.shell.GlobalSearchBox(Modifier.fillMaxWidth().widthIn(max = 560.dp), only = only)
+        }
         Box(Modifier.height(14.dp))
         // a slot of fixed height, so nothing below moves when the search ends
         Box(Modifier.fillMaxWidth().height(3.dp)) {

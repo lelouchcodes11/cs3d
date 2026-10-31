@@ -198,8 +198,10 @@ private fun StickyDays(t: TimetableState, list: LazyListState, count: (LocalDate
     // the header is item 2 (title, tabs, days): scrolled past its own place = stuck
     val stuck by remember { derivedStateOf { list.firstVisibleItemIndex > 2 || (list.firstVisibleItemIndex == 2 && list.firstVisibleItemScrollOffset > 0) } }
     val top by animateDpAsState(if (stuck) TopBarHeight + 6.dp else 0.dp, FluentMotion.tweenStd(160), label = "daysTop")
+    // the page colour behind the days only while they hold the top of the window over the list that scrolls under them (in their own place the page, and its glow, shows through)
+    val cover by androidx.compose.animation.core.animateFloatAsState(if (stuck) 1f else 0f, FluentMotion.tweenStd(160), label = "daysCover")
     Box(
-        Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to bg, 0.86f to bg, 1f to bg.copy(alpha = 0f))).padding(top = top, bottom = 18.dp),
+        Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to bg.copy(alpha = cover), 0.86f to bg.copy(alpha = cover), 1f to bg.copy(alpha = 0f))).padding(top = top, bottom = 18.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             for (i in 0 until 7) {
@@ -222,7 +224,7 @@ private fun DayButton(day: LocalDate, today: Boolean, on: Boolean, count: Int?, 
     Column(
         Modifier.fillMaxWidth().height(82.dp).graphicsLayer { scaleX = lift; scaleY = lift }
             .background(if (on) c.primaryFill(hovered, false) else SolidColor(if (hovered) c.cardHover else c.card), shape)
-            .hairBorder(if (on) c.primaryBorder(hovered) else c.stroke, shape)
+            .hairBorder(if (on) c.primaryBorder(hovered) else Color.Transparent, shape)
             .hoverable(source)
             .fluentClickable(source, true, shape, Role.Tab, onClick),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
