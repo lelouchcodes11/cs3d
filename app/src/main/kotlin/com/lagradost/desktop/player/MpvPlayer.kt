@@ -728,13 +728,6 @@ open class MpvPlayer : IPlayer {
         for ((k, v) in Upscaling.settings(com.lagradost.desktop.ui.fluent.Appearance.upscaler)) setMpvProperty(k, v)
     }
 
-    /** How the sound of the playing track is decoded: its codec, and whether it goes undecoded to the receiver ("spdif-ac3") */
-    fun audioDecodingNow(): String? {
-        val codec = getMpvPropertyString("audio-codec-name")?.takeIf { it.isNotBlank() } ?: return null
-        val format = getMpvPropertyString("audio-params/format").orEmpty()
-        return if (format.startsWith("spdif")) "$codec sent to the receiver / TV" else "$codec decoded by the app"
-    }
-
     /** The picture on screen as a PNG file, at the video's own size, without subtitles and controls (for reading the writing on it); false when mpv has none */
     fun captureFrame(file: java.io.File): Boolean {
         if (handle == null) return false
@@ -958,9 +951,6 @@ open class MpvPlayer : IPlayer {
         val range = liveWindow() ?: return
         seekTo((range.second * 1000).toLong(), PlayerEventSource.UI)
     }
-
-    /** How far (s) playback is behind the newest buffered picture of a live stream */
-    fun liveLatency(): Double? = if (!liveStream) null else liveWindow()?.let { (it.second - currentPositionMs / 1000.0).coerceAtLeast(0.0) }
 
     // a live channel that waits for data for this long is opened again at the live point (a stuck demuxer never recovers)
     @Volatile

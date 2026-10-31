@@ -149,7 +149,6 @@ fun HomeScreen() {
     val statusTypes by vm.availableWatchStatusTypes.observeAsState()
     val apiName by vm.apiName.observeAsState()
     // the page of the last visit is on screen because the fresh one could not be loaded
-    val staleReason by vm.staleReason.observeAsState()
 
     // customise and reload live in the top bar of the floating-dock look (no "Browse" header on Home)
     val rowNames = (page as? Resource.Success)?.value?.entries?.filter { it.value.list.list.isNotEmpty() }?.map { it.key }.orEmpty()
@@ -200,15 +199,6 @@ fun HomeScreen() {
             if (skin == null && com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }) item(key = "header") {
                 HomeHeader(vm, apiName, rowNames)
             }
-            staleReason?.let { reason ->
-                item(key = "stale") {
-                    com.lagradost.desktop.ui.fluent.NoticeBar(
-                        "${apiName ?: "This source"} could not be reached, so this is its page from your last visit. ${reason.take(120)}",
-                        Modifier.padding(horizontal = gutter).padding(bottom = 18.dp),
-                        action = "Try again", onAction = { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true) },
-                    )
-                }
-            }
             val resumeList = resume.orEmpty()
             val resumeShown = resumeList.isNotEmpty() && com.lagradost.desktop.ui.fluent.Appearance.homeContinue
             val bookmarksShown = bookmarks?.second?.isNotEmpty() == true
@@ -258,10 +248,18 @@ fun HomeScreen() {
                 null, is Resource.Loading -> items(3, key = { "sk$it" }) { SkeletonRow(cardWidth) }
                 is Resource.Failure -> {
                     item(key = "error") {
+                        val problems = com.lagradost.desktop.ui.components.ProblemText
+                        // a source that only needs setting up (Ultima before its sections are chosen) was announced as "could not be reached", with a
+                        // "Try again" that could never help: it says what to do and opens its settings page
+                        val setup = problems.asksForSettings(res.errorString)
                         com.lagradost.desktop.ui.fluent.NoticeBar(
-                            "${apiName ?: "This source"} could not be reached. ${res.errorString}",
+                            if (setup) "${apiName ?: "This source"} has nothing to show yet. ${res.errorString}"
+                            else "${apiName ?: "This source"} could not be reached. ${problems.of(res.errorString).text}",
                             Modifier.padding(horizontal = gutter).padding(bottom = 22.dp),
-                            action = "Try again", onAction = { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true) },
+                            action = if (setup) "Open its settings" else "Try again",
+                            onAction = {
+                                if (!setup || !problems.openProviderSettings(apiName)) vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true)
+                            },
                         )
                     }
                     // not an empty page: what is trending meanwhile

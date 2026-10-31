@@ -15,19 +15,6 @@ object DesktopPlatform {
     val isWindows = System.getProperty("os.name").lowercase(Locale.ROOT).contains("win")
     val isMac = System.getProperty("os.name").lowercase(Locale.ROOT).contains("mac")
 
-    /** Set by the UI, opens a url in the built in Chromium browser */
-    @Volatile
-    var inAppBrowser: ((String) -> Unit)? = null
-
-    fun openInAppBrowser(url: String) {
-        val handler = inAppBrowser
-        if (handler != null) {
-            handler(url)
-        } else {
-            openExternalBrowser(url)
-        }
-    }
-
     /** Opens the url with the default browser/handler of the OS */
     fun openExternalBrowser(url: String): Boolean {
         return try {

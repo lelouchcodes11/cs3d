@@ -274,14 +274,6 @@ fun FluentColors.primaryBorder(hovered: Boolean = false): Color = when {
     else -> Color.Transparent
 }
 
-/** Kept for the callers that asked for a glow under the main button */
-@Composable
-fun Modifier.accentGlow(shape: Shape, strength: Float = 1f): Modifier = this
-
-/** A frosted button on artwork, tinted with the button colour */
-fun FluentColors.tintedGlass(hovered: Boolean): Color =
-    androidx.compose.ui.graphics.lerp(Color.White, button, 0.45f).copy(alpha = if (hovered) 0.34f else 0.22f)
-
 @Composable
 fun Button(
     text: String,

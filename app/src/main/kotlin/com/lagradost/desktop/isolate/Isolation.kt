@@ -58,6 +58,13 @@ object Isolation {
         throw Blocked("$name is not loaded: the sandbox cannot start ($why)")
     }
 
+    /**
+     * Extensions whose whole job is the app's own data: Ultima's sync keeps the library, history, resume points and extension list of every device the
+     * same. In the sandbox it saw only the copy of the settings the sandbox gets (the library, history and accounts are kept out of it on purpose), so it
+     * synced that copy and what it pulled from the cloud never reached the app. They run in the app, watched by the Java guard of [PluginSandbox].
+     */
+    private val WORKS_ON_APP_DATA = setOf("ultima")
+
     /** Why an extension that is not in the sandbox is in the app; the Extensions page shows it */
     private val inApp = ConcurrentHashMap<String, String>()
 
@@ -141,6 +148,7 @@ object Isolation {
         // the user switched the sandbox off, or trusts this extension: it runs in the app, as they decided
         if (!enabledSetting()) { inApp[path] = "sandbox off"; return false }
         if (PluginSandbox.isTrusted(data.internalName)) { inApp[path] = "trusted"; return false }
+        if (data.internalName.lowercase() in WORKS_ON_APP_DATA) { inApp[path] = "syncs the app's library"; return false }
         if (!AppContainerLauncher.available) return cannotSandbox(path, data.internalName, "Windows cannot start it on this PC")
         if (data.internalName.lowercase() in moved()) return cannotSandbox(path, data.internalName, "its browser page could not be made")
         return when (val result = IsolatedHost.loadPlugin(IsolatedHost.Spec(path, data.internalName, data.url))) {

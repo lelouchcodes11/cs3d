@@ -50,8 +50,6 @@ object PluginSandbox {
     /** The latest things that were refused (or would have been, in audit mode), newest last */
     fun events(): List<Event> = synchronized(recent) { recent.toList() }
 
-    fun clearEvents() { synchronized(recent) { recent.clear() }; told.clear() }
-
     // ---- trusted extensions: the sandbox leaves these alone (the user's choice, from the list of what was blocked) --------------------------------------
 
     private const val TRUST_KEY = "desktop_extension_sandbox_trusted"

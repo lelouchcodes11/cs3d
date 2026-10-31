@@ -404,6 +404,7 @@ private fun PageHost() {
 
 private var lastSeen: List<Long> = emptyList()
 
+
 /** Scrolling a page down (some distance, so a nudge does not count) hides the bottom dock, scrolling up brings it back; nothing is consumed */
 private val dockScroll = object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
     private var travelled = 0f

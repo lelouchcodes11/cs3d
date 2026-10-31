@@ -965,6 +965,4 @@ object WinChrome {
         api.ShowWindow(hwnd, if (on) 3 else 9)
         maximized = api.IsZoomed(hwnd)
     }
-
-    fun isInstalled(): Boolean = enabled
 }

@@ -76,7 +76,9 @@ object UsableAddresses {
 
     fun wrap(delegate: Dns): Dns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
-            var all = resolveOrAskPublic(delegate, hostname)
+            // a name that is no host name ("*.m4uplay.*": an extractor's address pattern used as an address) makes the SecurityManager's permission check
+            // throw IllegalArgumentException, which is no IOException: OkHttp rethrew it on its dispatcher thread and it ended in crash.log
+            var all = try { resolveOrAskPublic(delegate, hostname) } catch (e: IllegalArgumentException) { throw java.net.UnknownHostException("$hostname is not a host name") }
             if (all.any { it is Inet6Address } && all.any { it is Inet4Address } && !ipv6Usable()) all = all.filter { it is Inet4Address }
             // addresses that just failed (see Quarantine) are tried last
             return if (all.size > 1) all.sortedBy { if (Quarantine.isBad(hostname, it)) 1 else 0 } else all

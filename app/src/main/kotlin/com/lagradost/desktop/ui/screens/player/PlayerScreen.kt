@@ -1400,9 +1400,6 @@ private fun SeekBar(s: PlayerSession) {
     }
 }
 
-private fun Modifier.offsetPx(x: Float, y: Float): Modifier =
-    this.offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
-
 /** Skip stamps as fractions of the duration */
 private fun PlayerSession.stampFractions(duration: Long): List<Pair<Float, Float>> =
     stampRanges().map { (a, b) -> (a.toFloat() / duration).coerceIn(0f, 1f) to (b.toFloat() / duration).coerceIn(0f, 1f) }

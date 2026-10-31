@@ -126,7 +126,6 @@ object TorrentEngine {
     fun chooseEnabled(on: Boolean) { load(); enabled = on; savePrefs(); if (!on) stop() }
     fun chooseCacheMb(mb: Int) { load(); cacheMb = mb.coerceIn(64, 4096); savePrefs(); settingsApplied = false }
     fun chooseEncrypt(on: Boolean) { load(); encrypt = on; savePrefs(); settingsApplied = false }
-    fun choosePort(p: Int) { load(); if (p != port) { stop(); port = p.coerceIn(1024, 65000); savePrefs() } }
 
     // ------------------------------------------------------------------ files
 

@@ -40,7 +40,6 @@ object HomeLayout {
 
     fun hidden(api: String): Set<String> { version; return read("desktop_home_hidden/$api").toSet() }
     fun order(api: String): List<String> { version; return read("desktop_home_order/$api") }
-    fun customised(api: String): Boolean = hidden(api).isNotEmpty() || order(api).isNotEmpty()
 
     fun save(api: String, order: List<String>, hidden: Set<String>) {
         write("desktop_home_order/$api", order)

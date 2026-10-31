@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -110,9 +111,31 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
     val lineW by animateFloatAsState(target?.second ?: 0f, spec, label = "tabW")
     val density = androidx.compose.ui.platform.LocalDensity.current
     val customBtn = FluentSettings.buttonColorOverride != null || Appearance.buttonStyle != ButtonStyle.White
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val base = Fluent.type.subtitle.copy(fontWeight = FontWeight.SemiBold)
     LeftToRight { rtl ->
-    Box(modifier.horizontalScroll(rememberScrollState())) {
-        Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.Bottom) {
+    BoxWithConstraints(modifier) {
+        // the roomiest size at which every tab is in view: a window that is not maximised has no room for eight tabs at the full size (the last
+        // ones were cut off and could not be reached with a mouse); only below the smallest size does the strip scroll
+        val room = with(density) { maxWidth.toPx() }
+        val (size, gap) = remember(tabs, counts, room, base, density.density) {
+            TabSizes.firstOrNull { (fontSize, gap) ->
+                val style = base.copy(fontSize = fontSize)
+                val labels = tabs.indices.sumOf { i ->
+                    val count = counts?.getOrNull(i)?.takeIf { it > 0 }?.let { with(density) { (6 + 8 * it.toString().length + 4).dp.toPx() } } ?: 0f
+                    (measurer.measure(tabs[i], style, maxLines = 1, softWrap = false).size.width + count).toDouble()
+                }
+                labels + with(density) { gap.toPx() } * (tabs.size - 1) <= room
+            } ?: TabSizes.last()
+        }
+        val scroll = rememberScrollState()
+        // below the smallest size the strip scrolls: the tab that is chosen is brought into view
+        androidx.compose.runtime.LaunchedEffect(selected, target, scroll.maxValue) {
+            val spot = target
+            if (spot != null && scroll.maxValue > 0) scroll.animateScrollTo((spot.first + spot.second / 2 - with(density) { maxWidth.toPx() } / 2).toInt().coerceIn(0, scroll.maxValue))
+        }
+    Box(Modifier.horizontalScroll(scroll)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.Bottom) {
             visual(tabs.size, rtl).forEach { i ->
                 val text = tabs[i]
                 val source = rememberInteraction()
@@ -125,7 +148,7 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
                         .fluentClickable(source, true, FluentShapes.pill, Role.Tab) { onSelect(i) },
                 ) {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        FText(text, style = Fluent.type.subtitle.copy(fontSize = 19.sp, fontWeight = FontWeight.SemiBold), color = tint, maxLines = 1, softWrap = false)
+                        FText(text, style = base.copy(fontSize = size), color = tint, maxLines = 1, softWrap = false)
                         counts?.getOrNull(i)?.takeIf { it > 0 }?.let { n ->
                             FText(n.toString(), style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = c.textTertiary, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 6.dp, bottom = 3.dp))
                         }
@@ -146,7 +169,11 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
         }
     }
     }
+    }
 }
+
+/** Font size and space between the tabs of [UnderlineTabs], from the roomiest to the tightest */
+private val TabSizes = listOf(19.sp to 30.dp, 17.sp to 22.dp, 15.sp to 16.dp)
 
 private fun Modifier.onPlacedAt(onPlace: (Float, Float) -> Unit): Modifier =
     this.then(Modifier.onGloballyPositioned { onPlace(it.positionInParent().x, it.size.width.toFloat()) })
@@ -421,12 +448,6 @@ fun ArtChip(text: String, accent: Boolean = false) {
         Modifier.hairBorder(Color.White.copy(alpha = if (accent) 0.7f else 0.45f), FluentShapes.pill)
             .padding(horizontal = 9.dp, vertical = 2.dp),
     ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = Color.White.copy(alpha = if (accent) 1f else 0.85f), maxLines = 1, softWrap = false) }
-}
-
-/** Overlay content on a 16:9 still with a gradient for legibility */
-@Composable
-fun BoxScope.BottomScrim(strength: Float = 0.8f) {
-    Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color.Black.copy(alpha = strength))))
 }
 
 /**

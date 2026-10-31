@@ -121,6 +121,17 @@ fun LibraryScreen() {
     var kind by remember { mutableStateOf(savedKind()) }
 
     LaunchedEffect(Unit) { vm.reloadPages(false) }
+    // the library changed under the open page (a sync extension such as Ultima pulled bookmarks from the phone, a title page changed a status):
+    // upstream's page only listens for reloadLibraryEvent and otherwise reloads when the Android screen resumes, which the desktop page never does
+    androidx.compose.runtime.DisposableEffect(vm) {
+        val reload: (Boolean) -> Unit = { com.lagradost.cloudstream3.utils.Coroutines.runOnMainThread { vm.reloadPages(true) } }
+        com.lagradost.cloudstream3.MainActivity.bookmarksUpdatedEvent += reload
+        com.lagradost.cloudstream3.MainActivity.reloadHomeEvent += reload
+        onDispose {
+            com.lagradost.cloudstream3.MainActivity.bookmarksUpdatedEvent -= reload
+            com.lagradost.cloudstream3.MainActivity.reloadHomeEvent -= reload
+        }
+    }
 
     val res = pages
     val titles = (res as? Resource.Success)?.value
@@ -181,7 +192,7 @@ fun LibraryScreen() {
                                 )
                                 Box(Modifier.height(16.dp))
                             }
-                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = "${if (kind == Kind.All) "${allTitles.size} titles" else "${items.size} of ${allTitles.size} titles · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = { Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart) })
+                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = "${if (kind == Kind.All) (if (allTitles.size == 1) "1 title" else "${allTitles.size} titles") else "${items.size} of ${allTitles.size} ${if (allTitles.size == 1) "title" else "titles"} · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = { Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart) })
                             Box(Modifier.height(18.dp))
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)

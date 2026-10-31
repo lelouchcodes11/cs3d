@@ -155,13 +155,16 @@ object Tmdb {
     private fun valid(j: JSONObject) = !(j.has("status_code") && !j.has("id") && !j.has("results"))
 
     private suspend fun fetch(url: String): JSONObject? {
-        // the body is read where the call runs: on the UI thread (the pages ask from a LaunchedEffect) that was a stall of 40 to 100 ms per answer
-        val text = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.get(url, timeout = 20).text } }.getOrNull() ?: return null
-        val j = runCatching { JSONObject(text) }.getOrNull() ?: return null
-        if (!valid(j)) return null
-        synchronized(cache) { cache[url] = System.currentTimeMillis() to j }
-        Disk.write(url, text)
-        return j
+        // the pages ask from a LaunchedEffect, i.e. on the UI thread: reading the body there was a stall of 40 to 100 ms per answer, and parsing it (a title's
+        // page is ~100 KB) and writing it to the disk cache showed up in the UI thread's profile at start-up too. All of it runs on the IO pool.
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val text = runCatching { app.get(url, timeout = 20).text }.getOrNull() ?: return@withContext null
+            val j = runCatching { JSONObject(text) }.getOrNull() ?: return@withContext null
+            if (!valid(j)) return@withContext null
+            synchronized(cache) { cache[url] = System.currentTimeMillis() to j }
+            Disk.write(url, text)
+            j
+        }
     }
 
     suspend fun json(path: String, vararg params: Pair<String, String>): JSONObject? {
@@ -169,8 +172,9 @@ object Tmdb {
         val query = (listOf("api_key" to key, "language" to "en-US") + params).joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v, "UTF-8") }
         val url = "$BASE$path?$query"
         synchronized(cache) { cache[url] }?.let { (at, j) -> if (System.currentTimeMillis() - at < TTL_MS) return j }
-        val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Disk.read(url) }
-        val parsed = saved?.let { (text, age) -> runCatching { JSONObject(text) }.getOrNull()?.takeIf { valid(it) }?.let { it to age } }
+        val parsed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            Disk.read(url)?.let { (text, age) -> runCatching { JSONObject(text) }.getOrNull()?.takeIf { valid(it) }?.let { it to age } }
+        }
         if (parsed != null) {
             val (j, age) = parsed
             synchronized(cache) { cache[url] = (System.currentTimeMillis() - age).coerceAtLeast(0L) to j }

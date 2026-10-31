@@ -274,7 +274,10 @@ private fun FailurePage(route: Route.Details, message: String, retry: () -> Unit
                 Icon(Icons.Warning, size = 26.dp, tint = c.caution)
             }
             FText("Could not load “${route.name}”", style = Fluent.type.titleLarge.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            FText(message, color = c.textSecondary, maxLines = 5, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.widthIn(max = 560.dp))
+            // the extension's raw exception text ("Unrecognized token ... JsonParser.java 2675") was the whole message: plain words, the original in small print
+            val problem = remember(message) { com.lagradost.desktop.ui.components.ProblemText.of(message) }
+            FText(problem.text, color = c.textSecondary, maxLines = 4, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.widthIn(max = 560.dp))
+            problem.detail?.let { FText(it, style = Fluent.type.caption, color = c.textTertiary, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.widthIn(max = 520.dp)) }
             Box(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button("Try again", retry, kind = ButtonKind.Accent, icon = Icons.Refresh)
@@ -478,12 +481,6 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                 // the part under the picture comes up a moment after it (a soft landing for the content of a title page)
                 Row(Modifier.reveal("details-tabs/" + route.url, 140).fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     com.lagradost.desktop.ui.fluent.UnderlineTabs(tabs.map { it.label }, tabs.indexOf(shown).coerceAtLeast(0), { tab = tabs[it] }, Modifier.weight(1f))
-                    if (shown == DetailsTab.Episodes) {
-                        // the season packs an extension lists among the episodes are not counted as episodes
-                        val packCount = shownEpisodes.count { isSeasonPack(it) }
-                        val text = if (packCount > 0 && shownEpisodes.size > packCount) "${shownEpisodes.size - packCount} episodes · $packCount season pack${if (packCount == 1) "" else "s"}" else count.str()
-                        text?.let { FText(it, Modifier.padding(horizontal = 16.dp), color = c.textSecondary) }
-                    }
                 }
             }
             when (shown) {
@@ -507,7 +504,11 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                     }
                     item(key = "ep-tools") {
                         Row(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(Modifier.weight(1f))
+                            // how many episodes there are: beside the tabs it covered the last of them in a window that was not maximised
+                            // (the season packs an extension lists among the episodes are not counted as episodes)
+                            val packCount = shownEpisodes.count { isSeasonPack(it) }
+                            val text = if (packCount > 0 && shownEpisodes.size > packCount) "${shownEpisodes.size - packCount} episodes · $packCount season pack${if (packCount == 1) "" else "s"}" else count.str()
+                            Box(Modifier.weight(1f)) { text?.let { FText(it, color = c.textSecondary, maxLines = 1) } }
                             // spoilers: one click hides or shows the stills and descriptions of the episodes ahead
                             com.lagradost.desktop.ui.fluent.Chip(
                                 if (hideSpoilers) "Spoilers hidden" else "Spoilers shown", hideSpoilers,
