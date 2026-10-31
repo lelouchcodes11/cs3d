@@ -22,12 +22,14 @@ internal object BrowserFetchInterceptor : Interceptor {
             runCatching { response.peekBody(4096).string().let { it.contains("Just a moment", true) || it.contains("challenge-platform", true) || it.contains("cf-chl", true) } }.getOrDefault(false)
         if (!challenged) return response
         val reply = ExtensionWorker.askApp("fetch", mapper.createObjectNode().put("url", request.url.toString()), 60_000) ?: return response
-        if (reply.get("code")?.asInt() != 200) return response
+        // 0: the rules do not let the app open a page for this site; 403: no clearance came (the extension's own answer to that is better than an empty one)
+        val code = reply.get("code")?.asInt() ?: 0
+        if (code == 0 || code == 403 || code == 503) return response
         val type = reply.get("type")?.asText().orEmpty().ifBlank { "text/html" }
         val text = reply.get("text")?.asText().orEmpty()
         response.close()
         return Response.Builder()
-            .request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+            .request(request).protocol(Protocol.HTTP_1_1).code(code).message(if (code == 200) "OK" else "from the browser")
             .header("Content-Type", type)
             .body(text.toResponseBody(type.toMediaTypeOrNull()))
             .build()

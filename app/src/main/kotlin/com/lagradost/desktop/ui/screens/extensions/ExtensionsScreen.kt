@@ -101,7 +101,8 @@ fun ExtensionsScreen() {
     val repos by ext.repositories.observeAsState()
     val stats by ext.pluginStats.observeAsState()
     val list by plugins.filteredPlugins.observeAsState()
-    var selected by remember { mutableStateOf<String?>(null) }
+    // the page opens on what is installed (it opened on the first repository when the list of repositories was already there, and showed that repository's one extension)
+    var selected by remember { mutableStateOf<String?>(INSTALLED) }
     var query by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -111,9 +112,6 @@ fun ExtensionsScreen() {
         com.lagradost.desktop.net.ExtensionIcons.start()
     }
     val repoList = repos.orEmpty()
-    LaunchedEffect(repoList.size) {
-        if (selected == null) selected = repoList.firstOrNull()?.url ?: INSTALLED
-    }
     LaunchedEffect(selected, repoList.size) {
         query = ""
         plugins.search(null)
