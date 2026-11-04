@@ -490,20 +490,20 @@ private fun SubtitleTimingPage(s: PlayerSession) {
                 StepButton("+") { s.setSubtitleDelay(s.subtitleDelayMs + 100) }
             }
         }
-        // automatic timing: listens to the voices (20 s or a little more), then moves the delay (SubtitleSync)
+        // automatic timing: matches the subtitle file to the voices, read ahead in the background (SubtitleSync)
         Column {
             FText("Automatic sync (experimental)", color = MenuColors.text)
             FText("Matches the lines to the voices. Reads a little of the video ahead.", style = Fluent.type.caption, color = MenuColors.tertiary)
             val sync = SubtitleSync.state
             Box(Modifier.padding(top = 8.dp)) {
-                if (sync is SubtitleSync.State.Reading) StepButton("Stop", wide = true) { SubtitleSync.cancel() }
+                if (sync is SubtitleSync.State.Reading) StepButton("Stop syncing", wide = true) { SubtitleSync.cancel() }
                 else StepButton("Sync now", wide = true) { SubtitleSync.start(s) }
             }
             SubtitleSync.label()?.let { FText(it, Modifier.padding(top = 4.dp), style = Fluent.type.caption, color = MenuColors.secondary) }
-            var auto by remember { mutableStateOf(SubtitleSync.automatic) }
+            // the same switch as Settings > Player > Subtitles > Auto subtitle sync
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FText("Every video", Modifier.weight(1f), color = MenuColors.text)
-                com.lagradost.desktop.ui.fluent.ToggleSwitch(auto, { auto = it; SubtitleSync.automatic = it })
+                FText("Sync every video", Modifier.weight(1f), color = MenuColors.text)
+                com.lagradost.desktop.ui.fluent.ToggleSwitch(SubtitleSync.automatic, { SubtitleSync.automatic = it })
             }
         }
         Column {

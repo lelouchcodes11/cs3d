@@ -45,14 +45,23 @@ object SubtitleSync {
     private var doneFor: String? = null
 
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
+    private var automaticState by mutableStateOf(runCatching { prefs().getBoolean(PREF, false) }.getOrDefault(false))
+
+    /** Sync every video (not live streams): one setting, shown in the player's Subtitles menu and in Settings > Player > Subtitles, both follow it at once */
     var automatic: Boolean
-        get() = runCatching { prefs().getBoolean(PREF, false) }.getOrDefault(false)
-        set(v) { runCatching { prefs().edit().putBoolean(PREF, v).apply() } }
+        get() = automaticState
+        set(v) {
+            automaticState = v
+            runCatching { prefs().edit().putBoolean(PREF, v).apply() }
+        }
 
     /** Called about once a second by the player screen: starts a sync for a new video + subtitle when the automatic sync is on */
     fun tick(s: PlayerSession) {
-        if (!automatic || job?.isActive == true) return
-        val key = key() ?: return
+        if (job?.isActive == true) return
+        val key = key()
+        // another video or subtitle: what the menu said about the last one ("Moved by -2.0 s") no longer applies
+        if (key != doneFor && state != State.Idle) state = State.Idle
+        if (!automatic || key == null) return
         if (key != doneFor) start(s)
     }
 
@@ -78,8 +87,13 @@ object SubtitleSync {
             if (shift == null) { state = State.Failed(why ?: "Could not match the lines to the voices"); return@launch }
             // lines that show `shift` bins after the voice are late by that much: the delay goes down by it
             val ms = shift * BIN_MS.toLong()
-            java.awt.EventQueue.invokeLater { s.setSubtitleDelay(s.subtitleDelayMs - ms) }
             state = State.Done(-ms)
+            // and a short note at the top of the picture, as when a subtitle loads
+            val note = "Subtitles auto-synced · " + label()
+            java.awt.EventQueue.invokeLater {
+                s.setSubtitleDelay(s.subtitleDelayMs - ms)
+                s.showSubtitleNote(note)
+            }
             android.util.Log.i("SubtitleSync", "moved the subtitles by ${-ms} ms")
         }
     }

@@ -107,6 +107,10 @@ internal fun playerGroups(): List<SettingGroup> {
         group("Subtitles") {
             link(stringResource(R.string.player_subtitles_settings), stringResource(R.string.player_subtitles_settings_des), "captions font size colour outline shadow background") { SettingsNav.page = "subtitles" }
             pref(subtitleEncodingPreference(), "charset utf-8 language characters")
+            // the same switch as "Sync every video" in the player's Subtitles menu
+            card("Auto subtitle sync (experimental)", "Matches subtitle files to the voices in every video (not live streams)", "automatic subtitle sync timing delay offset match voices align") {
+                com.lagradost.desktop.ui.fluent.ToggleSwitch(com.lagradost.desktop.ui.screens.player.SubtitleSync.automatic, { com.lagradost.desktop.ui.screens.player.SubtitleSync.automatic = it })
+            }
         },
         group("Controls") { controlItems() },
         group("Cache") { pref(up.title(stringResource(R.string.video_buffer_clear_settings)), "clear storage space delete temporary") },

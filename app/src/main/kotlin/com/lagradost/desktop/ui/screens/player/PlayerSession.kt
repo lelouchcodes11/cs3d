@@ -224,6 +224,11 @@ class PlayerSession(
     /** The "looking" pill waited long enough for this video (a title that has no subtitles must not carry it for as long as the sources load) */
     private var lookingGaveUp by mutableStateOf(false)
 
+    /** A short note in the same pill ("Subtitles auto-synced · Moved by -2.0 s", from the automatic subtitle timing) */
+    fun showSubtitleNote(text: String) {
+        subtitleStatus = SubtitleStatus(SubtitleLoadState.Loaded, text)
+    }
+
     /** The pill is over: its time ran out, or what it said is done. "Looking" is not offered again for this video. */
     fun clearSubtitleStatus(status: SubtitleStatus) {
         if (status === lookingStatus) lookingGaveUp = true
