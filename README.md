@@ -29,7 +29,7 @@ Runs your CloudStream extensions on the desktop, with a real <code>mpv</code> pl
 </p>
 
 > [!NOTE]
-> **A personal project.** This app was built entirely for my own needs as a developer, using vibe coding (AI-assisted development). It is shared as is: expect bugs, glitches and rough edges. Issues and pull requests are welcome, but there is no guarantee of support or fixes.
+> **A personal project.** I am not a developer. This app was made entirely for my own needs, using vibe coding (building with AI). It is shared as is: expect bugs, glitches and rough edges. Issues and pull requests are welcome, but there is no guarantee of support or fixes.
 
 ---
 
