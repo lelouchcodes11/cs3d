@@ -47,13 +47,34 @@ Windows SmartScreen may warn on first run because the installer is not signed: c
 
 ## Features
 
-- **Video player** built on mpv: hardware decoding, HLS/DASH, picture-in-picture, subtitles, optional Anime4K/FSR upscaling.
-- **CloudStream extensions** run directly on Windows; also Stremio add-ons and torrents.
-- **Explore and title pages** with TMDB and AniList: trailers, cast, reviews, spoiler-free episodes.
+### Extensions, as on Android
+
+- **Most CloudStream extensions work unchanged.** Add any repository (Phisher, CNCVerse, Mega and others) and install the same `.cs3` extensions the Android app uses; they update themselves at start.
+- **Extension settings pages open** just as they do on Android (logins, mirrors, quality choices and the rest).
+- **Cloudflare checks are solved the Android way:** when an extension needs a browser to pass a check, the app opens a real browser window for it, keeps the cookies and gives them back to the extension.
+- **Extractors, video interceptors, cookies and headers** behave as in the Android app, so links that play there play here.
+- **Stremio add-ons** and **torrents** too (the torrent engine is installed only when you agree to it).
+- **A sandbox around every extension:** extensions run in a locked-down Windows process that cannot read your files, start programs or reach your home network. See [SECURITY.md](SECURITY.md).
+
+### Player
+
+- Built on **mpv**: hardware decoding, HLS/DASH, ClearKey live channels, picture-in-picture, media keys, or open any video in your own mpv.
+- **Subtitles:** search online (OpenSubtitles, SubDL), a second subtitle, style, encoding, and a delay you can type.
+- **Automatic subtitle sync (experimental):** matches a subtitle file to the voices in about two seconds, in the background, for one video or every video.
+- **Audio delay**, stable volume and dynamic range, optional **Anime4K / FSR upscaling**.
+- **Skip intro and credits**, seek previews, a sleep timer, a screen dimmer, and translation of text inside the picture.
 - **Live TV** with a seek bar that follows each channel.
-- **Sync** with AniList, MyAnimeList and Simkl.
-- **Profiles** with an optional PIN lock, 14 themes, 10 languages, a screen dimmer and a low-end PC mode.
-- **Extension sandbox:** every extension runs in a locked-down Windows sandbox by default. See [SECURITY.md](SECURITY.md).
+
+### Browse and keep track
+
+- **Explore and title pages** with TMDB and AniList: trailers, cast, reviews, spoiler-free episodes, a release schedule with notifications.
+- **Sync** with AniList, MyAnimeList and Simkl; the Ultima extension's sync works too.
+- **Downloads**, a library with watch progress, and backup and restore of all your data.
+
+### Your app
+
+- **Profiles** with an optional PIN lock, 14 themes, 10 languages and a low-end PC mode.
+- A **portable** copy that keeps everything in its own folder, and an installer that updates itself.
 
 ## Getting started
 
