@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- **Automatic subtitle timing.** Player menu > Subtitles > Delay and size: *Sync automatically* listens to the voices for about a minute and a half and moves the subtitle delay so the lines match them; *Sync every video* does it once for each video. It uses a small audio meter inside mpv (nothing is downloaded or decoded twice) and changes nothing when it is not sure.
+- **Automatic subtitle timing (experimental).** Player menu > Subtitles > Delay and size: *Sync now* reads the next 2.5 minutes of the video's sound ahead in a hidden player (about 2 s on a fast connection) and moves the subtitle delay so the lines match the voices; *Every video* does it once for each video. Works with subtitle files (not subtitles inside the video, not live streams), never touches the sound you hear, and changes nothing when it is not sure.
+- **Audio delay**, and typed delays. Player menu > Audio delay moves the sound against the picture; a click on the delay number (audio or subtitles) lets you type it ("-350", "1.5 s").
+- **Subtitle options first.** In the Subtitles menu, delay, style, encoding and the add/search actions come before the list of files.
 - **Fast wheel scrolling no longer jumps backwards.** A wheel spun hard often sends one notch the wrong way; that notch used to cancel the scroll and pull the page up for a moment. The page also follows the wheel more closely.
 - **Pages open smoothly right after the start.** The main pages are prepared while the loading screen is up (it stays about 2 s longer), so their first visit no longer stalls (first opens about 45 % smoother). The start-up archive also covers the title page, the player and every settings page now.
 - **The app no longer gets stuck drawing slowly.** Closing it within 20 s a few times in a row counted as a graphics failure and moved it to a slower renderer for good. A start where you clicked or scrolled now counts as a good one.

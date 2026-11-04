@@ -241,7 +241,11 @@ object DevServer {
         }
     }
 
+    /** win=overlay on /key and /type: the keys go to the native player's controls window (its menu's text boxes) */
+    @Volatile private var keysToOverlay = false
+
     private fun keyTarget(): Component {
+        if (keysToOverlay) captureOverlayWindow()?.let { w -> return w.focusOwner ?: javax.swing.SwingUtilities.getDeepestComponentAt(w, w.width / 2, w.height / 2) ?: w }
         val w = window()
         return w.mostRecentFocusOwner ?: target(content().width / 2, content().height / 2).first
     }
@@ -535,6 +539,7 @@ object DevServer {
                 ok(ex)
             }
             "/key" -> {
+                keysToOverlay = q["win"] == "overlay"
                 val code = KeyEvent::class.java.getField("VK_" + q["name"]!!.uppercase()).getInt(null)
                 var modifiers = 0
                 if (q["ctrl"] == "1") modifiers = modifiers or InputEvent.CTRL_DOWN_MASK
@@ -572,6 +577,7 @@ object DevServer {
                 ok(ex, "during the hold: $during; after: ${com.lagradost.desktop.ui.screens.player.PlayerSession.active?.let { "boosting=${it.boosting} paused=${!it.showsPause}" }}")
             }
             "/type" -> {
+                keysToOverlay = q["win"] == "overlay"
                 for (c in q["text"] ?: "") key(KeyEvent.getExtendedKeyCodeForChar(c.code), 0, c)
                 ok(ex)
             }

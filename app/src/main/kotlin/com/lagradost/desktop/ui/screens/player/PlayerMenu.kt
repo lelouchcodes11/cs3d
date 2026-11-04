@@ -6,6 +6,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import com.lagradost.desktop.ui.fluent.Motion
@@ -78,6 +80,7 @@ enum class MenuPage(val title: String) {
     Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Tracks("Video & Audio"), Subtitles("Subtitles"), SecondSubtitle("Second subtitle"), SubtitleTiming("Subtitle delay and size"),
     Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"), Compressor("Dynamic range"),
     Upscaling("Upscaling"), Skip("Skip intro & credits"), ScreenText("Translate on-screen text"), Dimmer("Dimmer"), Sleep("Sleep timer"),
+    AudioDelay("Audio delay"),
 }
 
 /** Every panel and bubble over the video (menu, episodes, volume and seek bubbles, subtitle pill): one surface */
@@ -143,6 +146,7 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                     MenuPage.Tracks -> TracksPage(s)
                     MenuPage.Subtitles -> SubtitlesPage(s, onPage)
                     MenuPage.SubtitleTiming -> SubtitleTimingPage(s)
+                    MenuPage.AudioDelay -> AudioDelayPage(s)
                     MenuPage.SecondSubtitle -> SecondSubtitlePage(s)
                     MenuPage.Speed -> ChoicePage(speeds.map { speedLabel(it) }, speeds.indexOf(s.speed)) { s.changeSpeed(speeds[it]) }
                     MenuPage.Picture -> ChoicePage(Resize.entries.map { it.label }, Resize.entries.indexOf(s.resize)) { s.changeResize(Resize.entries[it]) }
@@ -179,6 +183,7 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         NavRow(Icons.Theme, "Dimmer", dimLabel(Appearance.dimmer)) { onPage(MenuPage.Dimmer) }
         NavRow(Icons.Clock, "Sleep timer", SleepTimer.label()) { onPage(MenuPage.Sleep) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
+        NavRow(Icons.Clock, "Audio delay", if (s.audioDelayMs != 0L) "${if (s.audioDelayMs > 0) "+" else ""}${s.audioDelayMs} ms" else null) { onPage(MenuPage.AudioDelay) }
         ToggleRow(Icons.Volume, "Stable volume", Appearance.stableVolume) {
             Appearance.stableVolume = it
             Appearance.save()
@@ -481,17 +486,17 @@ private fun SubtitleTimingPage(s: PlayerSession) {
             FText("Later: the text comes after the voice", style = Fluent.type.caption, color = MenuColors.tertiary)
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 StepButton("−") { s.setSubtitleDelay(s.subtitleDelayMs - 100) }
-                FText("${if (s.subtitleDelayMs > 0) "+" else ""}${s.subtitleDelayMs} ms", Modifier.weight(1f), style = Fluent.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = MenuColors.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                DelayValue(s, s.subtitleDelayMs, Modifier.weight(1f)) { s.setSubtitleDelay(it) }
                 StepButton("+") { s.setSubtitleDelay(s.subtitleDelayMs + 100) }
             }
         }
         // automatic timing: listens to the voices (20 s or a little more), then moves the delay (SubtitleSync)
         Column {
             FText("Automatic sync (experimental)", color = MenuColors.text)
-            FText("Matches the lines to the voices. Uses almost no power.", style = Fluent.type.caption, color = MenuColors.tertiary)
+            FText("Matches the lines to the voices. Reads a little of the video ahead.", style = Fluent.type.caption, color = MenuColors.tertiary)
             val sync = SubtitleSync.state
             Box(Modifier.padding(top = 8.dp)) {
-                if (sync is SubtitleSync.State.Listening) StepButton("Stop listening", wide = true) { SubtitleSync.cancel() }
+                if (sync is SubtitleSync.State.Reading) StepButton("Stop", wide = true) { SubtitleSync.cancel() }
                 else StepButton("Sync now", wide = true) { SubtitleSync.start(s) }
             }
             SubtitleSync.label()?.let { FText(it, Modifier.padding(top = 4.dp), style = Fluent.type.caption, color = MenuColors.secondary) }
@@ -608,6 +613,75 @@ private fun HeaderAction(text: String, onClick: () -> Unit) {
             .fluentClickable(source, true, shape, Role.Button, onClick).padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) { FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.SemiBold), color = MenuColors.secondary, maxLines = 1, softWrap = false) }
+}
+
+/** Audio delay (steps of 50 ms, or typed): for a sound that is ahead of or behind the picture (Bluetooth headphones, a badly made file) */
+@Composable
+private fun AudioDelayPage(s: PlayerSession) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column {
+            FText("Delay", color = MenuColors.text)
+            FText("Later: the sound comes after the picture", style = Fluent.type.caption, color = MenuColors.tertiary)
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                StepButton("−") { s.setAudioDelay(s.audioDelayMs - 50) }
+                DelayValue(s, s.audioDelayMs, Modifier.weight(1f)) { s.setAudioDelay(it) }
+                StepButton("+") { s.setAudioDelay(s.audioDelayMs + 50) }
+            }
+            FText("Click the number to type it", Modifier.padding(top = 4.dp), style = Fluent.type.caption, color = MenuColors.tertiary)
+        }
+        if (s.audioDelayMs != 0L) Box { StepButton("Reset", wide = true) { s.setAudioDelay(0) } }
+    }
+}
+
+/** "1500", "-250 ms", "1.5 s", "-0,4s" -> milliseconds (limited to 10 minutes either way); null when it is not a number */
+internal fun parseDelay(text: String): Long? {
+    val t = text.trim().lowercase().replace(',', '.').replace(" ", "")
+    val seconds = t.endsWith("s") && !t.endsWith("ms")
+    val number = t.removeSuffix("ms").removeSuffix("s").removePrefix("+").toDoubleOrNull() ?: return null
+    return Math.round(if (seconds) number * 1000 else number).coerceIn(-600_000L, 600_000L)
+}
+
+/** The delay as text; a click turns it into a box to type a value in (Enter keeps it, Esc leaves it) */
+@Composable
+private fun DelayValue(s: PlayerSession, ms: Long, modifier: Modifier, onSet: (Long) -> Unit) {
+    var editing by remember { mutableStateOf(false) }
+    val shown = "${if (ms > 0) "+" else ""}$ms ms"
+    if (!editing) {
+        val source = rememberInteraction()
+        val hovered by source.collectIsHoveredAsState()
+        val shape = RoundedCornerShape(8.dp)
+        Box(
+            modifier.padding(horizontal = 8.dp).height(34.dp).clip(shape).background(if (hovered) Color(0x1FFFFFFF) else Color.Transparent, shape)
+                .fluentClickable(source, true, shape, Role.Button) { editing = true },
+            contentAlignment = Alignment.Center,
+        ) { FText(shown, style = Fluent.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = MenuColors.text, maxLines = 1) }
+        return
+    }
+    var text by remember { mutableStateOf(ms.toString()) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var hadFocus by remember { mutableStateOf(false) }
+    fun close(keep: Boolean) {
+        if (keep) parseDelay(text)?.let(onSet)
+        editing = false
+        s.typing = false
+    }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // the controls window takes the keyboard while the box has it (otherwise the keys belong to the player)
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { s.typing = false } }
+    Box(modifier.padding(horizontal = 8.dp)) {
+        com.lagradost.desktop.ui.fluent.TextBox(
+            text, { v -> text = v.filter { it.isDigit() || it in "-+.,msMS " }.take(12) }, Modifier.fillMaxWidth(),
+            placeholder = "ms", focusRequester = focus, height = 34.dp,
+            onSubmit = { close(true) },
+            onKey = { e ->
+                if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && e.key == androidx.compose.ui.input.key.Key.Escape) { close(false); true } else false
+            },
+            onFocusChange = { f ->
+                s.typing = f
+                if (f) hadFocus = true else if (hadFocus && editing) close(true)
+            },
+        )
+    }
 }
 
 @Composable

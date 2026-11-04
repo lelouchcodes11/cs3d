@@ -191,6 +191,8 @@ class PlayerSession(
     var speed by mutableStateOf(1f); private set
     var resize by mutableStateOf(Resize.Fit); private set
     var subtitleDelayMs by mutableStateOf(0L); private set
+    /** The sound later (+) or earlier (-) than the picture, for this video (player menu > Audio delay) */
+    var audioDelayMs by mutableStateOf(0L); private set
 
     /** Short on-screen feedback for keyboard actions (volume, seek, speed ...), drawn like a macOS HUD */
     var hud by mutableStateOf<Hud?>(null); private set
@@ -579,6 +581,7 @@ class PlayerSession(
                 player.addTimeStamps(emptyList())
                 player.setSubtitleOffset(0)
                 subtitleDelayMs = 0
+                setAudioDelay(0)
             }
             applyVolume()
             applyResize()
@@ -1496,6 +1499,11 @@ class PlayerSession(
                 postSubtitleStatus(SubtitleLoadState.Failed, "No online subtitles found")
             } else applyOnlineSubtitle(first)
         }
+    }
+
+    fun setAudioDelay(ms: Long) {
+        audioDelayMs = ms
+        com.lagradost.desktop.player.MpvPlayer.active?.setMpvProperty("audio-delay", "%.3f".format(java.util.Locale.ROOT, ms / 1000.0))
     }
 
     fun setSubtitleDelay(ms: Long) {

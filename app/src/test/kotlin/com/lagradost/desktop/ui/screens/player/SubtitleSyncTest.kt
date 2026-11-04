@@ -72,3 +72,31 @@ class SubtitleSyncEarlyTest {
         }
     }
 }
+
+class SubtitleCueTest {
+    @Test
+    fun srtAndVtt() {
+        val srt = "1\n00:00:01,500 --> 00:00:03,250\nHi\n\n2\n01:02:03,040 --> 01:02:05,000\nThere\n"
+        assertEquals(listOf(1.5 to 3.25, 3723.04 to 3725.0), SubtitleSync.parseCues(srt))
+        val vtt = "WEBVTT\n\n00:01.000 --> 00:02.500\nShort\n"
+        assertEquals(listOf(1.0 to 2.5), SubtitleSync.parseCues(vtt))
+    }
+
+    @Test
+    fun ass() {
+        val ass = "[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:04.12,0:00:06.50,Default,,0,0,0,,Hello\n"
+        assertEquals(listOf(4.12 to 6.5), SubtitleSync.parseCues(ass))
+    }
+}
+
+class DelayInputTest {
+    @Test
+    fun typedDelays() {
+        assertEquals(1500L, parseDelay("1500"))
+        assertEquals(-250L, parseDelay(" -250 ms"))
+        assertEquals(1500L, parseDelay("1.5 s"))
+        assertEquals(-400L, parseDelay("-0,4s"))
+        assertEquals(300L, parseDelay("+300"))
+        assertNull(parseDelay("abc"))
+    }
+}

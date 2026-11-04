@@ -8,23 +8,24 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Automatic subtitle timing, made cheap: nothing is downloaded or decoded a second time. While the video plays, a small audio filter in mpv
- * (voice band pass + loudness meter, @ssync) reports how loud the voices are; ten times a second the app notes that loudness and whether a
- * subtitle line is on screen, keyed by the position in the video. From 20 s of playing on (every 5 s) it tries every shift of the lines
- * from -12 s to +12 s, takes the one where lines and voices line up best, moves the subtitle delay by it and takes the filter away again.
- * A result it is not sure of changes nothing. Off by default: the player menu (Subtitles > Delay and size) runs it once or for every video.
+ * Automatic subtitle timing, entirely in the background: the chosen subtitle file's line times are matched against the next ~2.5 minutes of
+ * the video's sound, decoded ahead by a hidden second mpv (AudioAhead; a few seconds on a good connection). The playing video and its sound
+ * are never touched (an earlier version put a voice filter into the playing sound while it listened, and the sound came out thin and
+ * modulated). It tries every shift of the lines from -12 s to +12 s, takes the one where lines and voices line up best and moves the subtitle
+ * delay by it; a result it is not sure of changes nothing. Subtitles inside the video file and live streams are left alone (the first are
+ * almost always in time, the second have nothing ahead to read). Off by default: the player menu (Subtitles > Delay and size) runs it once
+ * or for every video.
  */
 object SubtitleSync {
     sealed interface State {
         data object Idle : State
-        data class Listening(val seconds: Int) : State
+        data object Reading : State
         data class Done(val shiftMs: Long) : State
         data class Failed(val reason: String) : State
     }
@@ -33,17 +34,10 @@ object SubtitleSync {
         private set
 
     private const val PREF = "desktop_sub_autosync"
-    private const val LABEL = "ssync"
     private const val BIN_MS = 100
     private const val MAX_SHIFT_BINS = 120 // 12 s
-    // it decides as soon as the match is clear: from 20 s of playing on (checked every 5 s, with stricter rules while it has little),
-    // and keeps listening up to 3 minutes of playing when the sound is hard to read (music, noise); then it gives up and changes nothing
-    private const val FIRST_TRY_BINS = 200
-    private const val TRY_EVERY_BINS = 50
-    private const val RELAXED_BINS = 900
-    private const val MAX_BINS = 1800
-    private const val MIN_LINES = 6
-    private const val GIVE_UP_MS = 8 * 60_000L
+    /** How much sound is read ahead of the position (seconds of video) */
+    private const val AHEAD_SECONDS = 150.0
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
@@ -69,61 +63,85 @@ object SubtitleSync {
         return "$path|$sid"
     }
 
-    /** Listens and moves the subtitle delay once (the player menu's button; the automatic sync uses it too) */
+    /** Reads ahead and moves the subtitle delay once (the player menu's button; the automatic sync uses it too) */
     fun start(s: PlayerSession) {
         job?.cancel()
         val player = MpvPlayer.active ?: run { state = State.Failed("Nothing is playing"); return }
         val key = key() ?: run { state = State.Failed("Turn on subtitles first"); return }
         doneFor = key
-        state = State.Listening(0)
+        state = State.Reading
         job = scope.launch {
-            // voices sit between about 300 Hz and 3 kHz: music and effects outside it count less; the meter averages ~5 audio frames
-            val added = player.mpvCommandResult("af", "add", "@$LABEL:lavfi=[highpass=f=300,lowpass=f=3000,astats=metadata=1:reset=5:measure_perchannel=none:measure_overall=RMS_level]") >= 0
-            if (!added) { state = State.Failed("The player could not listen to the sound"); return@launch }
-            try {
-                val loud = HashMap<Int, Float>()
-                val text = HashMap<Int, Boolean>()
-                var lineStarts = 0
-                var wasText = false
-                var shift: Int? = null
-                var nextTry = FIRST_TRY_BINS
-                val began = System.currentTimeMillis()
-                while (isActive) {
-                    delay(BIN_MS.toLong())
-                    if (MpvPlayer.active !== player || key() != key) { state = State.Idle; return@launch }
-                    if (System.currentTimeMillis() - began > GIVE_UP_MS) { state = State.Failed("Not enough talking to match the lines"); return@launch }
-                    if (player.getMpvPropertyString("pause") == "yes" || player.getMpvPropertyString("seeking") == "yes") continue
-                    val pos = player.getMpvPropertyString("time-pos")?.toDoubleOrNull() ?: continue
-                    val rms = player.getMpvPropertyString("af-metadata/$LABEL")?.let { Regex("Overall\\.RMS_level\":\"(-?[0-9.]+|-inf)").find(it)?.groupValues?.get(1) }
-                    val db = rms?.toFloatOrNull()?.coerceAtLeast(-90f) ?: -90f
-                    val on = !player.getMpvPropertyString("sub-text").isNullOrBlank()
-                    if (on && !wasText) lineStarts++
-                    wasText = on
-                    // the filter hears the sound one audio buffer before the speakers play it (measured: 0.4 s off at 1x, 0.8 s at 2x with
-                    // audio-buffer=0.4): the loudness belongs that much later in the video than the position read now
-                    val ahead = (player.getMpvPropertyString("audio-buffer")?.toDoubleOrNull() ?: 0.2) * (player.getMpvPropertyString("speed")?.toDoubleOrNull() ?: 1.0)
-                    loud[((pos + ahead) * 1000 / BIN_MS).toInt()] = db
-                    text[(pos * 1000 / BIN_MS).toInt()] = on
-                    state = State.Listening(loud.size * BIN_MS / 1000)
-                    if (loud.size >= nextTry && lineStarts >= MIN_LINES) {
-                        nextTry = loud.size + TRY_EVERY_BINS
-                        // with little sound only a very clear match counts; from 90 s on the normal rules
-                        val early = loud.size < RELAXED_BINS
-                        val found = bestShift(loud, text, minPeak = if (early) 3f else 2.5f, minCorrelation = if (early) 0.3f else 0.2f, minLead = if (early) 1.6f else 1.3f)
-                        if (found != null) { shift = found; break }
-                    }
-                    if (loud.size >= MAX_BINS) break
-                }
-                if (shift == null) { state = State.Failed("Could not match the lines to the voices"); return@launch }
-                // lines that show `shift` bins after the voice are late by that much: the delay goes down by it
-                val ms = shift!! * BIN_MS.toLong()
-                java.awt.EventQueue.invokeLater { s.setSubtitleDelay(s.subtitleDelayMs - ms) }
-                state = State.Done(-ms)
-                android.util.Log.i("SubtitleSync", "moved the subtitles by ${-ms} ms (${loud.size} samples, $lineStarts lines)")
-            } finally {
-                runCatching { player.mpvCommandResult("af", "remove", "@$LABEL") }
+            val (shift, why) = runCatching { readAhead(player, s.subtitleDelayMs) }
+                .onFailure { android.util.Log.w("SubtitleSync", "reading ahead failed: ${it.message}") }
+                .getOrElse { null to "Could not read the video ahead" }
+            if (!isActive) return@launch
+            if (shift == null) { state = State.Failed(why ?: "Could not match the lines to the voices"); return@launch }
+            // lines that show `shift` bins after the voice are late by that much: the delay goes down by it
+            val ms = shift * BIN_MS.toLong()
+            java.awt.EventQueue.invokeLater { s.setSubtitleDelay(s.subtitleDelayMs - ms) }
+            state = State.Done(-ms)
+            android.util.Log.i("SubtitleSync", "moved the subtitles by ${-ms} ms")
+        }
+    }
+
+    /** The shift found from the subtitle file and the sound decoded ahead, or null and the reason it could not tell */
+    private suspend fun readAhead(player: MpvPlayer, delayMs: Long): Pair<Int?, String?> {
+        val duration = player.getMpvPropertyString("duration")?.toDoubleOrNull()
+        if (player.getMpvPropertyString("seekable") == "no" || duration == null) return null to "Not for live streams"
+        val from = player.getMpvPropertyString("time-pos")?.toDoubleOrNull() ?: return null to "Nothing is playing"
+        val length = minOf(AHEAD_SECONDS, duration - from)
+        if (length < 40.0) return null to "Too close to the end"
+        val cues = loadCues(player) ?: return null to "Works with subtitle files only"
+        if (cues.size < 10) return null to "Could not match the lines to the voices"
+        val context = kotlinx.coroutines.currentCoroutineContext()
+        val loud = com.lagradost.desktop.player.AudioAhead.read(player, from, length, 45_000) { !context.isActive }?.takeIf { it.size >= 300 }
+            ?: return null to "Could not read the video ahead"
+        // the lines as they show now (file time + the current delay), over the stretch that was read and the shifts around it
+        val d = delayMs / 1000.0
+        val first = (from * 10).toInt() - MAX_SHIFT_BINS - 5
+        val last = ((from + length) * 10).toInt() + MAX_SHIFT_BINS + 5
+        val text = HashMap<Int, Boolean>()
+        for (b in first..last) text[b] = false
+        for ((start, end) in cues) {
+            val a = Math.round((start + d) * 10).toInt().coerceAtLeast(first)
+            val z = Math.round((end + d) * 10).toInt().coerceAtMost(last + 1)
+            for (b in a until z) text[b] = true
+        }
+        return bestShift(loud, text) to null
+    }
+
+    /** Start and end (seconds) of every line of the chosen subtitle when it is a file mpv loaded (a path or an address), else null */
+    private suspend fun loadCues(player: MpvPlayer): List<Pair<Double, Double>>? {
+        val sid = player.getMpvPropertyString("sid") ?: return null
+        val count = player.getMpvPropertyString("track-list/count")?.toIntOrNull() ?: return null
+        val source = (0 until count).firstNotNullOfOrNull { i ->
+            if (player.getMpvPropertyString("track-list/$i/type") == "sub" && player.getMpvPropertyString("track-list/$i/id") == sid) player.getMpvPropertyString("track-list/$i/external-filename") else null
+        } ?: return null
+        val text = when {
+            source.startsWith("http://") || source.startsWith("https://") -> com.lagradost.cloudstream3.app.get(source).text
+            source.startsWith("memory://") -> source.removePrefix("memory://")
+            else -> java.io.File(source.removePrefix("file:///").removePrefix("file://")).takeIf { it.isFile }?.readText(Charsets.ISO_8859_1)
+        } ?: return null
+        return parseCues(text)
+    }
+
+    /** The times of SRT / WebVTT lines (00:01:02,345 --> 00:01:04,000) or, when there are none, of ASS Dialogue lines */
+    internal fun parseCues(text: String): List<Pair<Double, Double>> {
+        fun seconds(h: String?, m: String, s: String, f: String) = (h?.toIntOrNull() ?: 0) * 3600.0 + m.toInt() * 60 + s.toInt() + f.toInt() / Math.pow(10.0, f.length.toDouble())
+        val out = ArrayList<Pair<Double, Double>>()
+        val srt = Regex("""(?:(\d+):)?(\d{1,2}):(\d{2})[,.](\d{1,3})\s*-->\s*(?:(\d+):)?(\d{1,2}):(\d{2})[,.](\d{1,3})""")
+        for (m in srt.findAll(text)) {
+            val g = m.groupValues
+            out += seconds(g[1].ifEmpty { null }, g[2], g[3], g[4]) to seconds(g[5].ifEmpty { null }, g[6], g[7], g[8])
+        }
+        if (out.isEmpty()) {
+            val ass = Regex("""^Dialogue:\s*[^,]*,(\d+):(\d{2}):(\d{2})\.(\d{1,3}),(\d+):(\d{2}):(\d{2})\.(\d{1,3})""", RegexOption.MULTILINE)
+            for (m in ass.findAll(text)) {
+                val g = m.groupValues
+                out += seconds(g[1], g[2], g[3], g[4]) to seconds(g[5], g[6], g[7], g[8])
             }
         }
+        return out.filter { it.second > it.first }.sortedBy { it.first }
     }
 
     fun cancel() {
@@ -174,10 +192,9 @@ object SubtitleSync {
     }
 
     fun label(): String? = when (val st = state) {
-        is State.Listening -> "Listening… ${st.seconds} s"
+        State.Reading -> "Reading ahead…"
         is State.Done -> if (st.shiftMs == 0L) "Already in time" else "Moved by ${if (st.shiftMs > 0) "+" else ""}${"%.1f".format(st.shiftMs / 1000.0)} s"
         is State.Failed -> st.reason
         State.Idle -> null
     }
-
 }
