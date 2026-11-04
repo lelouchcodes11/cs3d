@@ -206,7 +206,7 @@ fun GroupBuilder.windowItems() {
 @Composable
 fun GroupBuilder.videoItems() {
     fun changed() = Appearance.save()
-    card("Native GPU player (beta)", "Smoothest playback and least CPU. Still in testing; applies to the next video", "mpv renderer hardware") {
+    card("Native GPU player (experimental)", "Smoothest playback and least CPU. Still in testing; applies to the next video", "mpv renderer hardware") {
         ToggleSwitch(Appearance.nativePlayer, { Appearance.nativePlayer = it; changed() })
     }
     card("Upscaling", "How small videos are enlarged (GPU player only). Anime4K by bloc97; FSR and CAS by AMD, ported by agyild (MIT).", "anime4k fsr scaler sharpen") {

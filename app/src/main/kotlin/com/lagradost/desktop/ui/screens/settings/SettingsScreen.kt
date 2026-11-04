@@ -77,7 +77,7 @@ private enum class Page(val id: String, val title: String, val glyph: String, va
     Accounts("account", "Accounts and sync", Icons.Person, 0xFFF76B15, "Sign in to your services, keep your lists up to date, lock the app", Section.Content),
 
     Security("security", "Network and security", Icons.Lock, 0xFF2F9E8F, "DNS and blocked sites, Cloudflare checks and the sandbox that keeps extensions in check", Section.System),
-    Updates("updates", "Updates", Icons.Update, 0xFF30A46C, "This version, the update channel and the newest release", Section.System),
+    Updates("updates", "Updates", Icons.Update, 0xFF30A46C, "This version and the newest release", Section.System),
     Backup("backup", "Backup and reset", Icons.Backup, 0xFF3E8FD0, "Save and restore your data, set up again or start over", Section.System),
     About("about", "About", Icons.Info, 0xFF00A2C7, "Version, help and links", Section.System),
 

@@ -264,7 +264,8 @@ object UpdateCheck {
 
     val lastChecked: Long get() = runCatching { prefs.getLong(KEY_CHECKED, 0L) }.getOrDefault(0L)
 
-    var channel: Channel by mutableStateOf(runCatching { Channel.of(prefs.getString(KEY_CHANNEL, null)) }.getOrNull() ?: defaultChannel(AppInfo.version))
+    // there is one release stream: the app follows the normal releases (a channel chosen in an older version is ignored; the choice is no longer shown)
+    var channel: Channel by mutableStateOf(Channel.Stable)
         private set
 
     /** The version the user chose to ignore ("Skip this version"): no banner for it until a newer one appears or it is cleared */

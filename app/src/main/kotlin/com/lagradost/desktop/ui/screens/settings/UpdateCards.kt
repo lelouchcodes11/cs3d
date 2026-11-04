@@ -39,7 +39,7 @@ import java.util.Date
 
 /**
  * Settings > Updates: where the app stands (this version, how it was installed, when it last looked), the newest release with its notes and the
- * ways to get it, and the choices (channel, automatic checks, a skipped version).
+ * ways to get it, and the choices (automatic checks, a skipped version).
  */
 @Composable
 fun UpdateCards() {
@@ -93,7 +93,7 @@ private fun StatusCard() {
             IconBadge(52.dp) { tint -> Icon(Icons.Update, size = 24.dp, tint = tint) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 FText("CloudStream ${UpdateCheck.currentVersion}", style = Fluent.type.subtitle)
-                FText(installLabel(UpdateCheck.installKind) + " · " + UpdateCheck.channel.label + " channel", style = Fluent.type.caption, color = c.textSecondary)
+                FText(installLabel(UpdateCheck.installKind), style = Fluent.type.caption, color = c.textSecondary)
                 FText(line + (if (status !is UpdateCheck.Status.Checking && last != null) " $last" else ""), color = if (status is UpdateCheck.Status.Failed) c.critical else c.text)
             }
             if (status is UpdateCheck.Status.Checking) ProgressRing(size = 22.dp, strokeWidth = 2.5.dp)
@@ -166,12 +166,6 @@ private fun OfferCard() {
 private fun PreferenceCards() {
     val c = Fluent.colors
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SettingsCard(
-            "Update channel",
-            UpdateCheck.channel.about + " Changing it looks for updates again.",
-        ) {
-            ComboBox(UpdateCheck.Channel.entries.toList(), UpdateCheck.channel, { it.label }, { UpdateCheck.chooseChannel(it) }, minWidth = 140.dp)
-        }
         SettingsCard(
             "Check for updates automatically",
             "Checks GitHub every few hours (never during a video) and shows a banner when a new version is out.",

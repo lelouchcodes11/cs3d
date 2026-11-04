@@ -178,11 +178,11 @@ internal fun accountGroups(): List<SettingGroup> {
     }
 }
 
-/** Settings > Updates: this version, the channel and the newest release (the cards are in UpdateCards) */
+/** Settings > Updates: this version and the newest release (the cards are in UpdateCards) */
 @Composable
 internal fun updateGroups(): List<SettingGroup> = listOf(
     group("") {
-        block("Check for updates", "This version, the update channel and automatic checks", "version release download install github automatic channel beta stable skip notes what's new") { UpdateCards() }
+        block("Check for updates", "This version, the newest release and automatic checks", "version release download install github automatic skip notes what's new") { UpdateCards() }
     },
 )
 

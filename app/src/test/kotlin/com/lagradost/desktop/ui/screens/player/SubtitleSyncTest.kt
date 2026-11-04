@@ -49,3 +49,26 @@ class SubtitleSyncTest {
         assertNull(SubtitleSync.bestShift(loud, text))
     }
 }
+
+class SubtitleSyncEarlyTest {
+    @Test
+    fun clearMatchIn30Seconds() {
+        val r = Random(5)
+        val speech = BooleanArray(300)
+        var i = 0
+        while (i < speech.size) { val on = 10 + r.nextInt(30); for (k in i until minOf(speech.size, i + on)) speech[k] = true; i += on + 5 + r.nextInt(25) }
+        val loud = speech.indices.associateWith { if (speech[it]) -22f + r.nextFloat() * 8f else -38f + r.nextFloat() * 14f }
+        val text = speech.indices.associateWith { speech.getOrElse(it - 20) { false } }
+        assertEquals(20, SubtitleSync.bestShift(loud, text, minPeak = 3f, minCorrelation = 0.3f, minLead = 1.6f))
+    }
+
+    @Test
+    fun earlyRulesIgnoreNoise() {
+        for (seed in 10..19) {
+            val r = Random(seed)
+            val loud = (0 until 300).associateWith { -30f + r.nextFloat() * 10f }
+            val text = (0 until 300).associateWith { r.nextInt(3) == 0 }
+            assertNull(SubtitleSync.bestShift(loud, text, minPeak = 3f, minCorrelation = 0.3f, minLead = 1.6f), "seed $seed")
+        }
+    }
+}

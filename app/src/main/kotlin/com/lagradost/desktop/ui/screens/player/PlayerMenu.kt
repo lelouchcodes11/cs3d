@@ -4,6 +4,7 @@ import com.lagradost.desktop.ui.fluent.hairBorder
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -441,8 +442,17 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     remember(s.listsVersion) { 0 } // subtitles that arrive while the menu is open: read again
     val groups = s.subtitles().groupBy { it.originalName }.entries.map { (name, list) -> name to list.sortedBy { it.nameSuffix.toIntOrNull() ?: 0 } }
     fun pick(sub: SubtitleData?) { pickState = sub; s.selectSubtitle(sub) }
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = (groups.indexOfFirst { it.first == pickState?.originalName }).coerceAtLeast(0))
+    // the options come first: with a long list of files they were far below it and had to be scrolled to
+    val state = rememberLazyListState()
     LazyColumn(Modifier.fillMaxWidth(), state = state) {
+        item { NavRow(Icons.Clock, "Delay and size", if (s.subtitleDelayMs != 0L) "${s.subtitleDelayMs} ms" else null) { onPage(MenuPage.SubtitleTiming) } }
+        item { NavRow(Icons.Subtitles, "Second subtitle", s.secondarySubtitle()?.originalName?.trim() ?: "Off") { onPage(MenuPage.SecondSubtitle) } }
+        item { ActionRow(Icons.Font, "Style…") { onPage(null); openSubtitleStyleDialog(s) } }
+        item { NavRow(Icons.Code, "Encoding",com.lagradost.desktop.player.SubtitleEncoding.label()) { onPage(null); com.lagradost.desktop.ui.showSubtitleEncodingDialog() } }
+        item { ActionRow(Icons.Folder, "Add a subtitle file…") { onPage(null); s.pickSubtitleFile() } }
+        item { ActionRow(Icons.Search, "Search online…") { onPage(null); openSubtitleSearch(s) } }
+        item { ActionRow(Icons.Download, "Add the first online result") { onPage(null); s.addFirstOnlineSubtitle() } }
+        item { Divider() }
         item { CheckRow("Off", pickState == null) { if (pickState != null) { groupOpen = null; pick(null) } } }
         for ((name, list) in groups) {
             val inGroup = pickState?.originalName == name
@@ -458,14 +468,6 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
                 }
             }
         }
-        item { Divider() }
-        item { NavRow(Icons.Subtitles, "Second subtitle", s.secondarySubtitle()?.originalName?.trim() ?: "Off") { onPage(MenuPage.SecondSubtitle) } }
-        item { NavRow(Icons.Clock, "Delay and size", if (s.subtitleDelayMs != 0L) "${s.subtitleDelayMs} ms" else null) { onPage(MenuPage.SubtitleTiming) } }
-        item { ActionRow(Icons.Font, "Style…") { onPage(null); openSubtitleStyleDialog(s) } }
-        item { NavRow(Icons.Code, "Encoding",com.lagradost.desktop.player.SubtitleEncoding.label()) { onPage(null); com.lagradost.desktop.ui.showSubtitleEncodingDialog() } }
-        item { ActionRow(Icons.Folder, "Add a subtitle file…") { onPage(null); s.pickSubtitleFile() } }
-        item { ActionRow(Icons.Search, "Search online…") { onPage(null); openSubtitleSearch(s) } }
-        item { ActionRow(Icons.Download, "Add the first online result") { onPage(null); s.addFirstOnlineSubtitle() } }
     }
 }
 
@@ -473,7 +475,7 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
 @Composable
 private fun SubtitleTimingPage(s: PlayerSession) {
     val size = com.lagradost.cloudstream3.ui.subtitles.SubtitlesFragment.subtitleStyleState.value.fixedTextSize ?: com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column {
             FText("Delay", color = MenuColors.text)
             FText("Later: the text comes after the voice", style = Fluent.type.caption, color = MenuColors.tertiary)
@@ -482,21 +484,22 @@ private fun SubtitleTimingPage(s: PlayerSession) {
                 FText("${if (s.subtitleDelayMs > 0) "+" else ""}${s.subtitleDelayMs} ms", Modifier.weight(1f), style = Fluent.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = MenuColors.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 StepButton("+") { s.setSubtitleDelay(s.subtitleDelayMs + 100) }
             }
-            // automatic timing: listens to the voices for a minute or two, then moves the delay (SubtitleSync)
+        }
+        // automatic timing: listens to the voices (20 s or a little more), then moves the delay (SubtitleSync)
+        Column {
+            FText("Automatic sync (experimental)", color = MenuColors.text)
+            FText("Matches the lines to the voices. Uses almost no power.", style = Fluent.type.caption, color = MenuColors.tertiary)
             val sync = SubtitleSync.state
             Box(Modifier.padding(top = 8.dp)) {
                 if (sync is SubtitleSync.State.Listening) StepButton("Stop listening", wide = true) { SubtitleSync.cancel() }
-                else StepButton("Sync automatically", wide = true) { SubtitleSync.start(s) }
+                else StepButton("Sync now", wide = true) { SubtitleSync.start(s) }
             }
             SubtitleSync.label()?.let { FText(it, Modifier.padding(top = 4.dp), style = Fluent.type.caption, color = MenuColors.secondary) }
-        }
-        Column {
             var auto by remember { mutableStateOf(SubtitleSync.automatic) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FText("Sync every video", Modifier.weight(1f), color = MenuColors.text)
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FText("Every video", Modifier.weight(1f), color = MenuColors.text)
                 com.lagradost.desktop.ui.fluent.ToggleSwitch(auto, { auto = it; SubtitleSync.automatic = it })
             }
-            FText("Matches the lines to the voices. Uses almost no power.", style = Fluent.type.caption, color = MenuColors.tertiary)
         }
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
