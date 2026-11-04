@@ -164,9 +164,17 @@ fun ApplicationScope.NativeWindow() {
                     } else if (!skip && all.size > 1) {
                         // after the start screen
                         com.lagradost.desktop.ui.Startup.revealed.await()
-                        // the last profile may be locked: the app waits behind the picker on an open one
+                        // the last profile may be locked: the app waits behind the picker on an open one (or behind the lock cover when every profile has a PIN)
                         com.lagradost.desktop.ui.shell.PinLock.leaveLocked()
                         com.lagradost.desktop.ui.shell.showAccountPicker(forStartup = true)
+                    } else {
+                        // one profile (or the picker switched off) and it has a PIN: the PIN is asked before anything shows; "Other profile" opens the
+                        // picker, where a new profile can be added
+                        val current = all.firstOrNull { it.keyIndex == com.lagradost.cloudstream3.utils.DataStoreHelper.selectedKeyIndex }
+                        if (current?.lockPin != null) {
+                            com.lagradost.desktop.ui.Startup.revealed.await()
+                            com.lagradost.desktop.core.AppVms.get<com.lagradost.cloudstream3.ui.account.AccountViewModel>().handleAccountSelect(current, com.lagradost.desktop.DesktopBootstrap.activity, true)
+                        }
                     }
                 }
             }
@@ -204,6 +212,8 @@ fun ApplicationScope.NativeWindow() {
                             com.lagradost.desktop.ui.StartupReveal {
                                 AppShell()
                             }
+                            // a profile with a PIN that nobody unlocked yet: its pages stay hidden (under the PIN pad and the profile picker)
+                            com.lagradost.desktop.ui.shell.LockCover()
                             // the native video player draws these in its controls window (this layer is behind the video then)
                             if (!com.lagradost.desktop.ui.screens.player.NativeVideo.overlayActive) {
                                 com.lagradost.desktop.ui.FluentRequestDialogs()

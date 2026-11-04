@@ -115,6 +115,8 @@ class AccountViewModel : ViewModel() {
             ) { pin ->
                 if (pin == null) return@showPinInputDialog
                 // Pin is correct, proceed
+                // desktop: the PIN was typed, the lock cover goes
+                com.lagradost.desktop.ui.shell.PinLock.covered = false
                 _isAllowedLogin.postValue(true)
                 _selectedKeyIndex.postValue(getAccounts(context).indexOf(account))
                 setAccount(account)
@@ -122,6 +124,8 @@ class AccountViewModel : ViewModel() {
             }
         } else {
             // No PIN set for the selected account, proceed
+            // desktop: a profile without a PIN, nothing to hide
+            com.lagradost.desktop.ui.shell.PinLock.covered = false
             _isAllowedLogin.postValue(true)
             _selectedKeyIndex.postValue(getAccounts(context).indexOf(account))
             setAccount(account)

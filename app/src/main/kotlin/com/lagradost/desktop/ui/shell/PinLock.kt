@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,10 +50,22 @@ import kotlinx.coroutines.launch
 object PinLock {
     const val LENGTH = 4
 
-    /** At least one profile stays without a PIN, so a forgotten PIN never locks anyone out of the app */
-    fun canLock(account: DataStoreHelper.Account): Boolean =
-        runCatching { DataStoreHelper.getAccounts(DesktopBootstrap.activity) }.getOrDefault(emptyList())
-            .any { it.keyIndex != account.keyIndex && it.lockPin == null }
+    /**
+     * Any profile can have a PIN, the only one too (the owner's wish: the app asks for it at the start). Someone who forgot it is not shut out of the
+     * app: the lock screen's Profiles button adds a new profile (the locked one's data stays behind its PIN).
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun canLock(account: DataStoreHelper.Account): Boolean = true
+
+    /**
+     * The open profile has a PIN and nobody typed it in this run: the pages stay hidden behind [LockCover]. Set from the start (the profile the app
+     * opens on), cleared when a profile is opened the proper way (its PIN typed, or a profile without one) in AccountViewModel.handleAccountSelect.
+     */
+    var covered by androidx.compose.runtime.mutableStateOf(
+        runCatching {
+            DataStoreHelper.getAccounts(DesktopBootstrap.activity).firstOrNull { it.keyIndex == DataStoreHelper.selectedKeyIndex }?.lockPin != null
+        }.getOrDefault(false),
+    )
 
     /** The app is never left open on a locked profile nobody unlocked (the start, a cancelled PIN): it moves to a profile without one */
     fun leaveLocked() {
@@ -134,23 +148,8 @@ private fun PinPad(expected: String?, onDone: (String) -> Unit) {
                 Box(Modifier.size(14.dp).background(if (i < typed.length) c.text else c.control, CircleShape))
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (row in listOf("123", "456", "789")) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (d in row) Key(d.toString()) { press(d) }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.width(72.dp).height(48.dp))
-                Key("0") { press('0') }
-                Key("⌫") { back() }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Key(label: String, onClick: () -> Unit) {
-    ButtonBase(onClick, Modifier.width(72.dp), ButtonKind.Standard, height = 48.dp, contentPadding = PaddingValues(0.dp)) { color ->
-        FText(label, style = Fluent.type.subtitle, color = color)
+        // typed on the keyboard (digits or the number pad, Backspace to correct): no on-screen pad (the owner's wish)
+        FText("Type the PIN on your keyboard", style = Fluent.type.caption, color = c.textTertiary)
     }
 }
 
@@ -166,4 +165,42 @@ private fun digitOf(key: Key): Char? = when (key) {
     Key.Eight, Key.NumPad8 -> '8'
     Key.Nine, Key.NumPad9 -> '9'
     else -> null
+}
+
+/**
+ * What shows instead of the pages while the open profile is locked ([PinLock.covered]): the start of the app on a profile with a PIN, also when
+ * it is the only profile, and after the PIN pad or the picker was closed without opening a profile. Nothing of the locked profile shows here.
+ * Under the dialogs (the PIN pad and the picker are drawn over it).
+ */
+@Composable
+fun LockCover() {
+    if (!PinLock.covered) return
+    val c = Fluent.colors
+    val ctx = DesktopBootstrap.activity
+    fun current() = runCatching { DataStoreHelper.getAccounts(ctx).firstOrNull { it.keyIndex == DataStoreHelper.selectedKeyIndex } }.getOrNull()
+    Box(
+        Modifier.fillMaxSize().background(c.bg)
+            // presses and the wheel stop here (only those: a parent that takes every event cancels its own buttons' clicks)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Final)
+                        if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press || e.type == androidx.compose.ui.input.pointer.PointerEventType.Scroll) e.changes.forEach { it.consume() }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            com.lagradost.desktop.ui.fluent.Icon(com.lagradost.desktop.ui.fluent.Icons.Lock, size = 36.dp, tint = c.textSecondary)
+            FText(current()?.name?.let { "$it is locked" } ?: "This profile is locked", style = Fluent.type.subtitle, color = c.text)
+            FText("Enter its PIN, or pick or add another profile", color = c.textSecondary)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                com.lagradost.desktop.ui.fluent.Button("Enter PIN", {
+                    current()?.let { com.lagradost.desktop.core.AppVms.get<com.lagradost.cloudstream3.ui.account.AccountViewModel>().handleAccountSelect(it, ctx, true) }
+                }, kind = ButtonKind.Accent, height = 40.dp)
+                com.lagradost.desktop.ui.fluent.Button("Profiles", { showAccountPicker(forStartup = true) }, height = 40.dp)
+            }
+        }
+    }
 }

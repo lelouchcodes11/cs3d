@@ -386,7 +386,7 @@ private fun openProfileEditor(account: DataStoreHelper.Account, onSaved: () -> U
                     com.lagradost.desktop.ui.fluent.ToggleSwitch(draft.startHere, { draft.startHere = it })
                 }
 
-                // the PIN lock; one profile always stays open so a forgotten PIN never locks anyone out
+                // the PIN lock: any profile, the only one too (a forgotten PIN: the lock screen's Profiles button adds a new profile)
                 val lockable = draft.pin != null || remember { PinLock.canLock(account) }
                 Row(
                     Modifier.fillMaxWidth().background(c.card, RoundedCornerShape(FluentShapes.card)).hairBorder(c.stroke, RoundedCornerShape(FluentShapes.card)).padding(horizontal = 16.dp, vertical = 12.dp),

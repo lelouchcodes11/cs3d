@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
+
+- **PIN lock for any profile, the only one too.** A profile with a PIN asks for it when the app opens; until it is typed (on the keyboard) nothing of that profile shows, and the lock screen offers the other profiles or a new one.
 
 - **Automatic subtitle timing (experimental).** Player menu > Subtitles > Delay and size: *Sync now* reads the next 2.5 minutes of the video's sound ahead in a hidden player (about 2 s on a fast connection) and moves the subtitle delay so the lines match the voices, then says so at the top of the picture ("Subtitles auto-synced · Moved by -2.0 s"). *Sync every video* (also Settings > Player > Subtitles > Auto subtitle sync, the same switch) does it once for each video. Works with subtitle files (not subtitles inside the video, not live streams), never touches the sound you hear, and changes nothing when it is not sure.
 - **Audio delay**, and typed delays. Player menu > Audio delay moves the sound against the picture; a click on the delay number (audio or subtitles) lets you type it ("-350", "1.5 s").
