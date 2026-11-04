@@ -36,10 +36,8 @@ fun GroupBuilder.securityItems() {
     var on by remember { mutableStateOf(com.lagradost.desktop.isolate.Isolation.enabledSetting() || PluginSandbox.enabledSetting()) }
     card(
         "Sandbox for extensions",
-        "Extensions are programs that anyone can publish. They run in a separate process that Windows itself locks down: whatever an extension does, it cannot read your documents or browser data, start programs, change files outside its own folder or reach your home network.\n" +
-            "A page that an extension needs (a Cloudflare check) is opened by the app, and shown in a window of the app only while you are using that extension.\n" +
-            "An extension you trust, and every extension when Windows cannot start the sandbox, runs in the app instead; the app then stops it from running programs, reading your documents, changing files outside this app's data folder or ending the app.\n" +
-            "Takes effect when the extensions load (the next start).",
+        "Extensions run in a locked-down Windows process. They cannot read your files, start programs or reach your home network.\n" +
+            "Applies from the next start.",
         "sandbox appcontainer isolate isolation process windows security malware plugins extensions harm protect virus safe permissions java",
     ) {
         ToggleSwitch(on, {
@@ -51,8 +49,7 @@ fun GroupBuilder.securityItems() {
     var fallback by remember { mutableStateOf(com.lagradost.desktop.isolate.Isolation.fallbackAllowed()) }
     card(
         "Run extensions in the app if the sandbox cannot start",
-        "Not safe. Normally an extension that cannot be put in the sandbox is not loaded at all, because in the app it could do to this PC what you can do.\n" +
-            "Turn this on only to keep using extensions while the sandbox is broken on this PC; a weaker Java guard then watches them.",
+        "Not safe. If the sandbox cannot start on this PC, extensions run in the app with a weaker guard.",
         "sandbox fallback unsafe insecure app run anyway cannot start blocked not loaded",
     ) {
         ToggleSwitch(fallback, {
@@ -60,11 +57,11 @@ fun GroupBuilder.securityItems() {
             com.lagradost.desktop.isolate.Isolation.setFallbackAllowed(it)
         })
     }
-    link("Where extensions run", "Which extensions run in the Windows sandbox and which in the app, and why.", "sandbox isolated app extensions list where status") { showWhereExtensionsRun() }
-    link("Blocked by the sandbox", "Actions of extensions that were stopped in this run (or would have been, in audit mode). If an extension stops working, this list says why.", "log blocked refused denied extension tried") { showBlocked() }
+    link("Where extensions run", "Which extensions run in the sandbox and which in the app.", "sandbox isolated app extensions list where status") { showWhereExtensionsRun() }
+    link("Blocked by the sandbox", "What the sandbox stopped in this run. Look here if an extension stops working.", "log blocked refused denied extension tried") { showBlocked() }
     link(
         "Trusted extensions",
-        "The sandbox leaves these extensions alone. Trust one from the blocked list only if you know it and need what the sandbox stopped.",
+        "Extensions the sandbox leaves alone. Trust only ones you know.",
         "trust allow exception whitelist extension sandbox",
     ) { showTrusted() }
 }

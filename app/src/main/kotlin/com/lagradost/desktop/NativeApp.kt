@@ -164,6 +164,8 @@ fun ApplicationScope.NativeWindow() {
                     } else if (!skip && all.size > 1) {
                         // after the start screen
                         com.lagradost.desktop.ui.Startup.revealed.await()
+                        // the last profile may be locked: the app waits behind the picker on an open one
+                        com.lagradost.desktop.ui.shell.PinLock.leaveLocked()
                         com.lagradost.desktop.ui.shell.showAccountPicker(forStartup = true)
                     }
                 }
@@ -178,6 +180,10 @@ fun ApplicationScope.NativeWindow() {
                         awaitPointerEventScope {
                             while (true) {
                                 val e = awaitPointerEvent(PointerEventPass.Initial)
+                                if (e.type == PointerEventType.Press || e.type == PointerEventType.Scroll) {
+                                    InputMode.lastInputAt = System.currentTimeMillis()
+                                    com.lagradost.desktop.platform.Graphics.markUsed()
+                                }
                                 if (e.type == PointerEventType.Press) {
                                     InputMode.keyboard = false
                                     InputMode.touchscreen = e.changes.any { it.type == androidx.compose.ui.input.pointer.PointerType.Touch } ||
@@ -212,6 +218,7 @@ fun ApplicationScope.NativeWindow() {
                 if (!com.lagradost.desktop.ui.screens.player.NativeVideo.overlayActive) {
                     RevealedTitleBar()
                 }
+                com.lagradost.desktop.ui.fluent.DimmerLayer()
             }
         }
     }
@@ -220,6 +227,7 @@ fun ApplicationScope.NativeWindow() {
 /** Window wide shortcuts of the native UI */
 object NativeKeys {
     fun onPreviewKey(e: KeyEvent): Boolean {
+        com.lagradost.desktop.ui.fluent.InputMode.lastInputAt = System.currentTimeMillis()
         // Space is held to play at 2x: the player needs to see it let go
         if (e.type == KeyEventType.KeyUp && e.key == Key.Spacebar) return playerKey(e)
         if (e.type != KeyEventType.KeyDown) return false

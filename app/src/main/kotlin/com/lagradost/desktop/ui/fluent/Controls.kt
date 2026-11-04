@@ -104,6 +104,10 @@ object InputMode {
 
     /** The touch layout: the title bar of a maximised window stays (there is no pointer to bring it back) */
     val touchUi: Boolean get() = Appearance.touchSwipes == TouchSwipes.On || (Appearance.touchSwipes == TouchSwipes.Auto && touchscreen)
+
+    /** When the user last pressed, turned the wheel or typed (work nobody asked for waits until they stop) */
+    @Volatile
+    var lastInputAt = 0L
 }
 
 @Composable

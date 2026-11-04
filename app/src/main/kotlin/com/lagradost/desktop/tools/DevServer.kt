@@ -835,6 +835,12 @@ object DevServer {
                     ok(ex, "font=${style.font} file=${style.typefaceFilePath} saved=${getCurrentSavedStyle().font}")
                 }
             }
+            "/subsync" -> {
+                // dev: automatic subtitle timing: /subsync?start=1 starts it on the playing video, /subsync shows where it is
+                val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
+                if (q["start"] == "1") com.lagradost.desktop.ui.screens.player.SubtitleSync.start(s)
+                ok(ex, "${com.lagradost.desktop.ui.screens.player.SubtitleSync.state} delay=${s.subtitleDelayMs}")
+            }
             "/addsub" -> {
                 // dev: add an external subtitle file to the playing video and select it
                 val p = com.lagradost.desktop.player.MpvPlayer.active ?: return ok(ex, "no player")

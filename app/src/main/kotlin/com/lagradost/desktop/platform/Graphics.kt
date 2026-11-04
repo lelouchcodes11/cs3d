@@ -169,11 +169,35 @@ object Graphics {
                     com.lagradost.desktop.ui.Toasts.show("The app did not start properly last time, so it now draws with $api. Change it in Settings > General > Performance.", true)
                 }
             }
+            autoLevel = now.level
             thread(name = "graphics-healthy", isDaemon = true) {
                 Thread.sleep(HEALTHY_AFTER_MS)
-                // the level stays, only the count of unhealthy starts goes back to zero
-                writeState(State(now.level, 0))
+                markHealthy()
             }
         }.onFailure { Log.w(TAG, "could not choose the renderer: ${it.message}") }
+    }
+
+    /** The level this automatic start chose (-1: not an automatic start, or this start already counted as healthy) */
+    @Volatile
+    private var autoLevel = -1
+
+    /** The level stays, only the count of unhealthy starts goes back to zero */
+    private fun markHealthy() {
+        val level = autoLevel
+        if (level < 0) return
+        autoLevel = -1
+        writeState(State(level, 0))
+    }
+
+    /**
+     * The user pressed or scrolled inside the app's own drawing (even the window's buttons are drawn by the app), so the window shows what it should and this
+     * start is a good one, also when it is closed within 20 s. Before, opening and closing the app quickly three times in a row (or the app restarting itself
+     * after a restore) moved it to a slower renderer for good, and the app stayed laggy. A blank window has nothing to press, so that case still steps down.
+     */
+    fun markUsed() {
+        val level = autoLevel
+        if (level < 0) return
+        autoLevel = -1
+        thread(name = "graphics-healthy", isDaemon = true) { writeState(State(level, 0)) }
     }
 }

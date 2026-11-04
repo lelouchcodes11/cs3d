@@ -209,6 +209,9 @@ object Appearance {
     /** Bottom dock only: it slides away while a page is scrolled down and comes back on scrolling up or at the bottom edge (off by default) */
     var dockAutoHide by mutableStateOf(false)
 
+    /** Screen dimmer: 0 = off, up to 0.8 = that much black over the whole app and the video, darker than the screen's lowest brightness */
+    var dimmer by mutableStateOf(0f)
+
     /** Subtitles: false = a styled subtitle (ASS, coloured SRT) keeps its own look, true = the user style for every subtitle ("universal") */
     var subtitleUniversal by mutableStateOf(false)
 
@@ -319,6 +322,7 @@ object Appearance {
             skinLayout = p.getBoolean(PREFIX + "skin_layout", true)
             wallpaper = (p.getString(PREFIX + "wallpaper", "") ?: "").takeIf { java.io.File(it).isFile } ?: ""
             wallpaperDim = p.getFloat(PREFIX + "wallpaper_dim", 0.8f).coerceIn(0.3f, 0.95f)
+            dimmer = p.getFloat(PREFIX + "dimmer", 0f).coerceIn(0f, 0.8f)
             animatedProfiles = p.getBoolean(PREFIX + "animated_profiles", true)
             touchSwipes = enumOf(p.getString(PREFIX + "touch_swipes", null), TouchSwipes.Auto)
             homeBanner = p.getBoolean(PREFIX + "home_banner", true)
@@ -380,6 +384,7 @@ object Appearance {
                 .putBoolean(PREFIX + "skin_layout", skinLayout)
                 .putString(PREFIX + "wallpaper", wallpaper)
                 .putFloat(PREFIX + "wallpaper_dim", wallpaperDim)
+                .putFloat(PREFIX + "dimmer", dimmer)
                 .putBoolean(PREFIX + "animated_profiles", animatedProfiles)
                 .putString(PREFIX + "touch_swipes", touchSwipes.name)
                 .putBoolean(PREFIX + "home_banner", homeBanner)
@@ -394,7 +399,7 @@ object Appearance {
         touchSwipes = TouchSwipes.Auto
         navPosition = NavPosition.Floating; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Large; backdrop = Backdrop.Black; buttonStyle = ButtonStyle.White; surfaceTint = SurfaceTint.Balanced; navAccentPill = false; glass = true; motion = Motion.Full; performance = PerformanceMode.Auto; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; controlsGuard = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; palette = Themes.DEFAULT_ID; themeGlow = false; skinLayout = true; hideSpoilers = true; hideSpoilerTitles = false
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; dimmer = 0f; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; controlsGuard = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; palette = Themes.DEFAULT_ID; themeGlow = false; skinLayout = true; hideSpoilers = true; hideSpoilerTitles = false
         FluentSettings.chooseAccent(null)
         FluentSettings.chooseButtonColor(null)
         save()

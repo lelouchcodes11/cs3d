@@ -64,7 +64,7 @@ fun StremioPage() {
         AddAddonCard()
         for (a in StremioAddons.addons.toList()) AddonCard(a)
         FText(
-            "Add-ons and extensions stay apart: an add-on's titles are played from the add-ons' sources and subtitles, and an extension's titles from that extension.",
+            "Add-on titles play from add-on sources, extension titles from their extension.",
             style = Fluent.type.caption, color = c.textTertiary, maxLines = 3, modifier = Modifier.padding(top = 6.dp, start = 2.dp).widthIn(max = 720.dp),
         )
     }
@@ -73,9 +73,8 @@ fun StremioPage() {
         TorrentCards()
     }
     FText(
-        "Stremio add-ons are made by other people and are not part of this app or of Stremio. This app is not made by or connected to Stremio; it speaks the open add-on protocol. " +
-            "Add only add-ons you trust: an add-on sees the title you open.",
-        style = Fluent.type.caption, color = c.textTertiary, maxLines = 4, modifier = Modifier.padding(top = 20.dp, start = 2.dp).widthIn(max = 720.dp),
+        "Add-ons are made by other people, not by this app or Stremio. Add only ones you trust: an add-on sees what you open.",
+        style = Fluent.type.caption, color = c.textTertiary, maxLines = 3, modifier = Modifier.padding(top = 20.dp, start = 2.dp).widthIn(max = 720.dp),
     )
 }
 
@@ -179,7 +178,7 @@ private fun TorrentCards() {
     val scope = rememberCoroutineScope()
     SettingsCard(
         "Torrent streaming",
-        "Plays the torrent sources of your add-ons (such as Torrentio) and of extensions, while they download. The engine is a separate program that runs on this PC only while a torrent plays.",
+        "Plays torrent sources while they download. The engine runs only while a torrent plays.",
     ) {
         ToggleSwitch(TorrentEngine.enabled, { on -> if (on) TorrentConsent.request({}, {}) else TorrentEngine.chooseEnabled(false) })
     }

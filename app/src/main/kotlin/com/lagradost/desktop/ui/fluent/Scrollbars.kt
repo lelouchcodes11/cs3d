@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
@@ -32,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 
 @Composable
@@ -53,12 +53,11 @@ private fun BoxScope.FadingScrollbar(adapter: ScrollbarAdapter, state: Scrollabl
     val hovered by source.collectIsHoveredAsState()
     val dragged by source.collectIsDraggedAsState()
     val moving = state.isScrollInProgress
-    // the mouse wheel moves a list in raw steps that [isScrollInProgress] does not report: the position itself is watched too
-    var moves by remember { mutableIntStateOf(0) }
-    LaunchedEffect(state) { snapshotFlow(position).drop(1).collect { moves++ } }
+    // the mouse wheel moves a list in raw steps that [isScrollInProgress] does not report: the position itself is watched too. Only a change of
+    // [recent] recomposes the bar (it used to count every move in a state: the bar recomposed and restarted its timer in every frame of a scroll)
     var recent by remember { mutableStateOf(false) }
-    LaunchedEffect(moving, moves) {
-        if (moving || moves > 0) { recent = true; delay(1100); recent = false }
+    LaunchedEffect(state) {
+        snapshotFlow(position).drop(1).collectLatest { recent = true; delay(1100); recent = false }
     }
     val shown = moving || recent || hovered || dragged
     val alpha by animateFloatAsState(if (shown) 1f else 0f, tween(if (shown) 120 else 420), label = "scrollbarAlpha")

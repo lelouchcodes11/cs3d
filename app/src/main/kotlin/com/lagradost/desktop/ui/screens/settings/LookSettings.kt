@@ -80,12 +80,12 @@ fun GroupBuilder.layoutItems() {
     // navigation position: small windows to pick from
     block(
         "Navigation position",
-        "Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.",
+        "Where the page tabs sit",
         "menu bar dock rail tabs top bottom left right capsule sidebar",
     ) {
         Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             FText("Navigation position", style = Fluent.type.body)
-            FText("Where the page list sits: a capsule floating at the top of the page, a pill of icons at the left, a rail at either side, tabs in the title bar, or a dock at the bottom.", style = Fluent.type.caption, color = c.textSecondary)
+            FText("Where the page tabs sit", style = Fluent.type.caption, color = c.textSecondary)
             Box(Modifier.height(14.dp))
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 for (p in NavPosition.entries) NavPreview(p, Appearance.navPosition == p) { Appearance.navPosition = p; changed() }
@@ -93,7 +93,7 @@ fun GroupBuilder.layoutItems() {
         }
     }
     if (Appearance.navPosition == NavPosition.Bottom) {
-        card("Hide the dock while scrolling", "The dock slides away when you scroll a page down and comes back when you scroll up or move the pointer to the bottom edge.") {
+        card("Hide the dock while scrolling", "Hides the dock while you scroll down") {
             ToggleSwitch(Appearance.dockAutoHide, { Appearance.dockAutoHide = it; if (!it) com.lagradost.desktop.ui.shell.ShellState.dockHidden = false; changed() })
         }
     }
@@ -131,10 +131,13 @@ fun GroupBuilder.layoutItems() {
     card("Interface size", "Makes everything larger or smaller than the Windows scale: ${(Appearance.uiScale * 100).toInt()} %", "zoom scale text size dpi") {
         Slider(Appearance.uiScale, { Appearance.uiScale = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0.8f..1.3f, onValueChangeFinished = { changed() })
     }
+    card("Screen dimmer", "Darker than your screen's lowest brightness", "brightness dim dark night low filter") {
+        Slider(Appearance.dimmer, { Appearance.dimmer = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0f..0.8f, onValueChangeFinished = { changed() })
+    }
     card("Spacing", "Room between and around items.", "density compact") {
         ComboBox(Density.entries.toList(), Appearance.density, { it.label }, { Appearance.density = it; changed() }, minWidth = 150.dp)
     }
-    card("Touchscreen swipes", "Auto recognises a finger on a touchscreen: swipe pages up and down and shelves sideways, tap to open. If your touchscreen is not recognised, choose On.", "touch finger swipe tablet scroll") {
+    card("Touchscreen swipes", "Auto detects a touchscreen. Choose On if yours is not detected.", "touch finger swipe tablet scroll") {
         ComboBox(com.lagradost.desktop.ui.fluent.TouchSwipes.entries.toList(), Appearance.touchSwipes, { it.label }, { Appearance.touchSwipes = it; changed() }, minWidth = 150.dp)
     }
     card("Animations", "Page transitions and hover effects.", "motion transitions reduce") {
@@ -190,10 +193,10 @@ fun GroupBuilder.homeItems() {
 @Composable
 fun GroupBuilder.windowItems() {
     fun changed() = Appearance.save()
-    card("Hide the title bar when maximized", "A maximized window shows only the app: the title bar slides in when the pointer touches the top edge of the screen. Full screen always works this way.", "maximise fullscreen") {
+    card("Hide the title bar when maximized", "A maximized window hides the title bar until you point at the top edge", "maximise fullscreen") {
         ToggleSwitch(Appearance.hideTitleBar, { Appearance.hideTitleBar = it; changed() })
     }
-    card("Several windows", "Starting the app again while it runs opens another window with its own player, so two things can play side by side. All windows share the same data and settings. Off: a second start only brings the first window to the front.", "multiple instances second") {
+    card("Several windows", "Starting the app again opens a second window. Off: it brings the first one to the front", "multiple instances second") {
         var multi by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.lagradost.desktop.platform.MultiInstance.enabled()) }
         ToggleSwitch(multi, { multi = it; com.lagradost.desktop.platform.MultiInstance.setEnabled(it) })
     }
@@ -203,13 +206,13 @@ fun GroupBuilder.windowItems() {
 @Composable
 fun GroupBuilder.videoItems() {
     fun changed() = Appearance.save()
-    card("Native GPU player (beta)", "mpv draws the video with its own GPU renderer, in step with your screen's refresh: the smoothest motion and the least CPU. Still being tested: if the picture or the controls misbehave, switch it off. Applies to the next video.", "mpv renderer hardware") {
+    card("Native GPU player (beta)", "Smoothest playback and least CPU. Still in testing; applies to the next video", "mpv renderer hardware") {
         ToggleSwitch(Appearance.nativePlayer, { Appearance.nativePlayer = it; changed() })
     }
-    card("Upscaling", "How the picture is enlarged when it is shown larger than it is: mpv's filters, FSR, or Anime4K for anime (modes A, B, C; they ask a lot of the graphics card). Native GPU player only; also in the player's menu. Anime4K by bloc97, FSR and CAS by AMD, ported by agyild (MIT).", "anime4k fsr scaler sharpen") {
+    card("Upscaling", "How small videos are enlarged (GPU player only). Anime4K by bloc97; FSR and CAS by AMD, ported by agyild (MIT).", "anime4k fsr scaler sharpen") {
         ComboBox(Upscaler.entries.toList(), Appearance.upscaler, { it.label }, { Appearance.upscaler = it; changed() }, minWidth = 240.dp)
     }
-    card("Smooth motion", "Blends the frames of 24 and 25 frames per second video so pans and scrolling credits do not judder on a 60 Hz screen. Turn it off if you prefer the pure frames.", "interpolation judder fps") {
+    card("Smooth motion", "Stops 24 and 25 fps video from juddering on a 60 Hz screen", "interpolation judder fps") {
         ToggleSwitch(Appearance.smoothMotion, { Appearance.smoothMotion = it; changed() })
     }
 }
@@ -218,7 +221,7 @@ fun GroupBuilder.videoItems() {
 @Composable
 fun GroupBuilder.smoothSourcesItem() {
     fun changed() = Appearance.save()
-    card("Prefer smooth sources", "4K, REMUX and very large files are tried after the lighter ones: they stall on slow hosts and drop frames on a weak graphics card. All of them stay in the Sources list. Off: the highest quality is tried first.", "4k remux buffering stall quality") {
+    card("Prefer smooth sources", "Tries lighter sources before 4K and REMUX, which often stall", "4k remux buffering stall quality") {
         ToggleSwitch(Appearance.smoothSources, { Appearance.smoothSources = it; changed() })
     }
 }
@@ -230,16 +233,16 @@ fun GroupBuilder.controlItems() {
     card("Player controls", "Modern: a floating bar over the picture. Classic: a full-width bar at the bottom.", "style bar") {
         ComboBox(PlayerStyle.entries.toList(), Appearance.playerStyle, { it.label }, { Appearance.playerStyle = it; changed() }, minWidth = 210.dp)
     }
-    card("Hide the player controls", "How long after the last mouse movement the controls go away. They stay while the pointer is on them, a button is held or a menu is open. The keyboard shortcuts work either way.", "auto hide timeout cursor") {
+    card("Hide the player controls", "How long until the controls hide after the mouse stops", "auto hide timeout cursor") {
         ComboBox(listOf(2, 4, 8, 15, 0), Appearance.controlsHideSeconds, { if (it == 0) "Never" else "After $it s" }, { Appearance.controlsHideSeconds = it; changed() }, minWidth = 150.dp)
     }
-    card("Controls safety net", "For a PC where the controls sometimes do not show: they come up when the pointer moves over the video even if the window got no mouse event, the C key shows them and keeps them there, and if the GPU player's controls window can not be seen or clicked the standard player takes over. Turn it off only if it gets in the way.", "controls missing not visible hidden stuck black fail-safe fallback") {
+    card("Controls safety net", "Shows the controls when they fail to appear on some PCs", "controls missing not visible hidden stuck black fail-safe fallback") {
         ToggleSwitch(Appearance.controlsGuard, { Appearance.controlsGuard = it; changed() })
     }
-    card("Seek preview", "A picture of the scene above the time when you point at the seek bar, read by a second, light player in the background. Turn it off to save bandwidth on a slow connection.", "thumbnail scrub bar") {
+    card("Seek preview", "A picture of the scene when you point at the seek bar", "thumbnail scrub bar") {
         ToggleSwitch(Appearance.seekPreviews, { Appearance.seekPreviews = it; changed() })
     }
-    card("Live TV window", "A live channel keeps a stretch of the past (20 seconds on some channels, 10 minutes on others). The seek bar is that stretch: the time into it on the left, how long it is on the right, LIVE at the newest picture and how far behind it you are. Turn it off for the plain bar.", "live tv channel rewind timeshift dvr seek bar") {
+    card("Live TV window", "Shows how far behind live you are on the seek bar", "live tv channel rewind timeshift dvr seek bar") {
         ToggleSwitch(Appearance.liveWindow, { Appearance.liveWindow = it; changed() })
     }
 }
@@ -318,7 +321,7 @@ private fun NavPreview(p: NavPosition, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun GroupBuilder.titleInfoItems() {
     fun changed() = Appearance.save()
-    card("Title information from TMDB", "Logos, backdrops, cast, ratings, reviews, trailers, where a title streams and the Explore lists; anime also get prequels and sequels from AniList. Off: the app never contacts TMDB or AniList for this. This product uses the TMDB API but is not endorsed or certified by TMDB.", "tmdb anilist cast logos ratings reviews privacy") {
+    card("Title information from TMDB", "Artwork, cast, ratings and trailers from TMDB and AniList. This product uses the TMDB API but is not endorsed or certified by TMDB.", "tmdb anilist cast logos ratings reviews privacy") {
         ToggleSwitch(Appearance.tmdbEnabled, { Appearance.tmdbEnabled = it; changed() })
     }
     if (Appearance.tmdbEnabled) card("Country", "Decides the age rating and the streaming services shown on title pages and in the Explore filters.", "region") {
@@ -331,7 +334,7 @@ fun GroupBuilder.titleInfoItems() {
 @Composable
 fun GroupBuilder.spoilerItems() {
     fun changed() = Appearance.save()
-    card("Hide spoilers in episode lists", "Blurs the still and hides the description of every episode after the one you watch next. The eye on a covered episode shows it.", "blur episode thumbnails description") {
+    card("Hide spoilers in episode lists", "Blurs episodes you have not reached yet", "blur episode thumbnails description") {
         ToggleSwitch(Appearance.hideSpoilers, { Appearance.hideSpoilers = it; changed() })
     }
     if (Appearance.hideSpoilers) card("Hide the titles as well", "A covered episode is called just \"Episode 12\" until you reach it.", "episode names") {
@@ -400,13 +403,13 @@ fun GroupBuilder.themeItems() {
         )
     }
 
-    block("Themes", "Default is this app's own look, in the colours of Settings > Colors. Netflix brings a whole interface: its navigation, billboard, rows, cards, profile screen and button shapes, with its colours. Every feature of the app stays where it is. No name or logo of the service is drawn.", "default netflix streaming interface layout red special profile billboard my list") {
+    block("Themes", "The app's own look, or Netflix's layout. Every feature stays.", "default netflix streaming interface layout red special profile billboard my list") {
         Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             val active = Themes.byId(Appearance.theme)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     FText("Themes", style = Fluent.type.bodyStrong)
-                    FText("Default is this app's own look, in the colours of Settings > Colors. Netflix brings a whole interface: its navigation, billboard, rows, cards, profile screen and button shapes, with its colours. Every feature of the app stays where it is. No name or logo of the service is drawn.", style = Fluent.type.caption, color = c.textSecondary)
+                    FText("The app's own look, or Netflix's layout. Every feature stays.", style = Fluent.type.caption, color = c.textSecondary)
                 }
                 Badge(if (active.special) active.name else "Default", accent = true)
             }
@@ -426,7 +429,7 @@ fun GroupBuilder.themeItems() {
         }
     }
 
-    card("Full interface", "A special theme brings its whole interface: its navigation, billboard, rows, cards, profile screen and button shapes (always on a dark page). Off: only its colours are used, the layout stays yours.") {
+    card("Full interface", "Off: only its colours are used, your layout stays") {
         ToggleSwitch(Appearance.skinLayout, { Appearance.skinLayout = it; Appearance.save() })
     }
 
@@ -461,13 +464,13 @@ fun GroupBuilder.colorItems() {
     val shape = RoundedCornerShape(FluentShapes.card)
 
     // 1. Clean Flat Colour Gallery (grid of all the palettes)
-    block("Colour palette", "Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.", "theme palette preset catppuccin nord dracula gruvbox slate graphite") {
+    block("Colour palette", "Classic keeps the pure black look", "theme palette preset catppuccin nord dracula gruvbox slate graphite") {
         Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             val special = Themes.byId(Appearance.theme).special
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     FText("Colour palette", style = Fluent.type.bodyStrong)
-                    FText("Classic keeps the default OLED black surfaces untouched. Pick any other palette for flat dark surfaces and a matching accent colour.", style = Fluent.type.caption, color = c.textSecondary)
+                    FText("Classic keeps the pure black look", style = Fluent.type.caption, color = c.textSecondary)
                 }
                 Badge(Themes.byId(Appearance.palette).name, accent = true)
             }
@@ -528,7 +531,7 @@ fun GroupBuilder.colorItems() {
     }
 
     // 3. Independent Button, Chip & Pill Colour Picker (Swatches + Custom Hex)
-    block("Button, chip & pill colour", "Keep the default crisp white buttons and pills, match the accent colour, or pick any solid colour for primary buttons (Watch now, Play), selected chips and active pills.", "color hex swatch primary") {
+    block("Button, chip & pill colour", "Colour of the main buttons, such as Play", "color hex swatch primary") {
         Column(Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(16.dp)) {
             val isDefaultWhite = FluentSettings.buttonColorOverride == null && Appearance.buttonStyle == ButtonStyle.White
             val isMatchAccent = FluentSettings.buttonColorOverride == null && Appearance.buttonStyle != ButtonStyle.White
@@ -538,7 +541,7 @@ fun GroupBuilder.colorItems() {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     FText("Button, chip & pill colour", style = Fluent.type.bodyStrong)
-                    FText("Keep the default crisp white buttons and pills, match the accent colour, or pick any solid colour for primary buttons (Watch now, Play), selected chips and active pills.", style = Fluent.type.caption, color = c.textSecondary)
+                    FText("Colour of the main buttons, such as Play", style = Fluent.type.caption, color = c.textSecondary)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     val previewDot = if (isDefaultWhite) c.text else c.button
@@ -599,7 +602,7 @@ fun GroupBuilder.colorItems() {
     }
 
     // 4. Button & Surface Style Controls
-    card("Button & pill style", "White (default) keeps primary buttons and pills crisp white unless a custom button colour is chosen. Solid colour and Tinted glass use the button or accent colour.") {
+    card("Button & pill style", "White keeps the main buttons white") {
         ComboBox(ButtonStyle.entries.toList(), Appearance.buttonStyle, { it.label }, { Appearance.buttonStyle = it; changed() }, minWidth = 190.dp)
     }
     card("Coloured navigation highlight", "Fill the active tab in the floating bar, side rail and dock with your button colour instead of neutral dark glass.") {

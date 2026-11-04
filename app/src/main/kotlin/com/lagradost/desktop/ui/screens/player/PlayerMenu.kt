@@ -76,7 +76,7 @@ import com.lagradost.desktop.ui.fluent.rememberInteraction
 enum class MenuPage(val title: String) {
     Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Tracks("Video & Audio"), Subtitles("Subtitles"), SecondSubtitle("Second subtitle"), SubtitleTiming("Subtitle delay and size"),
     Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"), Compressor("Dynamic range"),
-    Upscaling("Upscaling"), Skip("Skip intro & credits"), ScreenText("Translate on-screen text"),
+    Upscaling("Upscaling"), Skip("Skip intro & credits"), ScreenText("Translate on-screen text"), Dimmer("Dimmer"), Sleep("Sleep timer"),
 }
 
 /** Every panel and bubble over the video (menu, episodes, volume and seek bubbles, subtitle pill): one surface */
@@ -145,6 +145,8 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                     MenuPage.SecondSubtitle -> SecondSubtitlePage(s)
                     MenuPage.Speed -> ChoicePage(speeds.map { speedLabel(it) }, speeds.indexOf(s.speed)) { s.changeSpeed(speeds[it]) }
                     MenuPage.Picture -> ChoicePage(Resize.entries.map { it.label }, Resize.entries.indexOf(s.resize)) { s.changeResize(Resize.entries[it]) }
+                    MenuPage.Dimmer -> ChoicePage(dimLevels.map { dimLabel(it) }, dimLevels.indexOfFirst { kotlin.math.abs(it - Appearance.dimmer) < 0.01f }) { Appearance.dimmer = dimLevels[it]; Appearance.save() }
+                    MenuPage.Sleep -> ChoicePage(sleepMinutes.map { if (it == 0) "Off" else "$it min" }, if (SleepTimer.endsAt == 0L) 0 else -1) { SleepTimer.set(sleepMinutes[it]) }
                     MenuPage.Decoder -> DecoderPage()
                     MenuPage.Compressor -> CompressorPage()
                     MenuPage.Upscaling -> UpscalingPage()
@@ -173,6 +175,8 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         Divider()
         NavRow(Icons.Speed, "Playback speed", speedLabel(s.speed)) { onPage(MenuPage.Speed) }
         NavRow(Icons.Aspect, "Picture size", s.resize.label) { onPage(MenuPage.Picture) }
+        NavRow(Icons.Theme, "Dimmer", dimLabel(Appearance.dimmer)) { onPage(MenuPage.Dimmer) }
+        NavRow(Icons.Clock, "Sleep timer", SleepTimer.label()) { onPage(MenuPage.Sleep) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
         ToggleRow(Icons.Volume, "Stable volume", Appearance.stableVolume) {
             Appearance.stableVolume = it
@@ -397,7 +401,7 @@ private fun ScreenTextPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     ScreenText.version // a new choice: draw again
     LazyColumn(Modifier.fillMaxWidth()) {
         item { ActionRow(Icons.Language, if (ScreenText.state is ScreenText.State.Idle) "Translate this picture now" else "Put the translation away") { onPage(null); s.toggleScreenText() } }
-        item { Note("Reads the writing that is part of the picture (game windows, signs, letters, titles; the subtitles do not have it) and shows it translated over it, where it stands. Press T for the same. Playing or seeking puts it away.") }
+        item { Note("Translates writing in the picture (signs, titles, game text) and shows it over the video. Press T. Playing or seeking hides it.") }
         item { SectionLabel("The writing is in") }
         items(ScreenText.sources) { (name, tag) -> CheckRow(name, ScreenText.from() == tag) { ScreenText.setFrom(tag) } }
         item { SectionLabel("Translate it into") }
@@ -478,6 +482,21 @@ private fun SubtitleTimingPage(s: PlayerSession) {
                 FText("${if (s.subtitleDelayMs > 0) "+" else ""}${s.subtitleDelayMs} ms", Modifier.weight(1f), style = Fluent.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = MenuColors.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 StepButton("+") { s.setSubtitleDelay(s.subtitleDelayMs + 100) }
             }
+            // automatic timing: listens to the voices for a minute or two, then moves the delay (SubtitleSync)
+            val sync = SubtitleSync.state
+            Box(Modifier.padding(top = 8.dp)) {
+                if (sync is SubtitleSync.State.Listening) StepButton("Stop listening", wide = true) { SubtitleSync.cancel() }
+                else StepButton("Sync automatically", wide = true) { SubtitleSync.start(s) }
+            }
+            SubtitleSync.label()?.let { FText(it, Modifier.padding(top = 4.dp), style = Fluent.type.caption, color = MenuColors.secondary) }
+        }
+        Column {
+            var auto by remember { mutableStateOf(SubtitleSync.automatic) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FText("Sync every video", Modifier.weight(1f), color = MenuColors.text)
+                com.lagradost.desktop.ui.fluent.ToggleSwitch(auto, { auto = it; SubtitleSync.automatic = it })
+            }
+            FText("Matches the lines to the voices. Uses almost no power.", style = Fluent.type.caption, color = MenuColors.tertiary)
         }
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -658,5 +677,39 @@ private fun SecondSubtitlePage(s: PlayerSession) {
                 }
             }
         }
+    }
+}
+
+/** The screen dimmer's steps in the player menu (Settings > Look has the same as a slider) */
+private val dimLevels = listOf(0f, 0.2f, 0.4f, 0.6f, 0.7f, 0.8f)
+
+private fun dimLabel(level: Float): String = if (level <= 0f) "Off" else "${Math.round(level * 100)} % darker"
+
+private val sleepMinutes = listOf(0, 15, 30, 45, 60, 90, 120)
+
+/** Pauses the video after a while (falling asleep with the dimmer on). One timer for the app; a new video keeps it running. */
+object SleepTimer {
+    var endsAt by androidx.compose.runtime.mutableLongStateOf(0L)
+        private set
+    private var timer: java.util.Timer? = null
+
+    fun set(minutes: Int) {
+        timer?.cancel(); timer = null
+        if (minutes <= 0) { endsAt = 0L; return }
+        endsAt = System.currentTimeMillis() + minutes * 60_000L
+        timer = java.util.Timer("sleep-timer", true).apply {
+            schedule(object : java.util.TimerTask() {
+                override fun run() {
+                    java.awt.EventQueue.invokeLater { endsAt = 0L; runCatching { PlayerSession.active?.pause() } }
+                }
+            }, minutes * 60_000L)
+        }
+    }
+
+    fun label(): String {
+        val end = endsAt
+        if (end == 0L) return "Off"
+        val left = ((end - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0L) + 1
+        return "$left min left"
     }
 }

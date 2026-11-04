@@ -156,6 +156,13 @@ fun PlayerScreen(entry: Entry, route: Route.Player) {
             exit = { Navigator.back() },
         )
     }
+    // automatic subtitle timing (when it is on): once per video and subtitle, see SubtitleSync
+    androidx.compose.runtime.LaunchedEffect(session) {
+        while (true) {
+            kotlinx.coroutines.delay(1500)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SubtitleSync.tick(session) }
+        }
+    }
     DisposableEffect(session) {
         com.lagradost.desktop.platform.WinMedia.startMediaKeys()
         // like on Android the screen stays on for as long as the player is open (also while paused)

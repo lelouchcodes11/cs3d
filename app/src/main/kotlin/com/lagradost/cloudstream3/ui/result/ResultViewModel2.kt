@@ -2411,7 +2411,7 @@ class ResultViewModel2 : ViewModel() {
         val min = ranges.keys.minByOrNull { index ->
             kotlin.math.abs(
                 index.season - (preferStartSeason ?: 1)
-            ) + if (index.dubStatus == preferDubStatus) 0 else 100000
+            ) + (if (index.season == 0 && preferStartSeason != 0) 1 else 0) + if (index.dubStatus == preferDubStatus) 0 else 100000
         }
 
         // this takes the range most preferable by the user given the current sorting

@@ -213,15 +213,15 @@ internal fun aboutGroups(): List<SettingGroup> {
     val dir = AndroidRuntime.dataDir
     return listOf(
         group("") {
-            // the name, the version and the places to go, as one card with buttons (the rows of Telegram, Discord, support and the source code were four plain lines)
-            block("CloudStream for Windows", "Version ${AppInfo.version}", "version build github source code releases bug report license telegram discord chat community support donate razorpay upi india buy me a coffee international") { AboutHero() }
+            // the name, the version and the places to go, as one card with buttons (the rows of Discord, support and the source code were four plain lines)
+            block("CloudStream for Windows", "Version ${AppInfo.version}", "version build github source code releases bug report license discord chat community support donate razorpay upi india buy me a coffee international") { AboutHero() }
             link("The CloudStream project", "This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.", "upstream credits") { DesktopPlatform.openExternalBrowser("https://github.com/recloudstream/cloudstream") }
             link("Animated profile pictures", "Drawn characters and creatures that blink and float, plus short scene clips.", "avatar character anime credits") { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }
             block("Legal notice", null, "disclaimer copyright") { PreferenceCard(Preference.PreferenceItem.InfoPreference(title = stringResource(R.string.legal_notice_text))) }
         },
         group("Help") {
             link("Keyboard shortcuts", "The keys of the player: play, seek, volume, full screen, subtitles and more (F1 in the player shows the same list)", "hotkeys keys") { com.lagradost.desktop.ui.screens.player.Shortcuts.show() }
-            link("Copy diagnostics", "Puts what a bug report needs on the clipboard: versions, your PC and screens, VPN adapters, the player's output and the latest errors. Passwords and tokens are left out.", "bug report support debug") {
+            link("Copy diagnostics", "Copies what a bug report needs. Passwords and tokens are left out.", "bug report support debug") {
                 com.lagradost.desktop.Diagnostics.copyToClipboard { n -> com.lagradost.desktop.ui.Toasts.show("Diagnostics copied ($n lines): paste them into your message", false) }
             }
             link("Log file", "The last two runs of the app, for a bug report", "debug errors") {
@@ -244,7 +244,7 @@ private fun GroupBuilder.mpvItem() {
     val chosen = com.lagradost.desktop.player.ExternalPlayers.chosenMpv()
     val found = androidx.compose.runtime.remember(version) { com.lagradost.desktop.player.ExternalPlayers.mpvPath() }
     val about = when {
-        found == null -> "mpv.exe was not found (mpv.io, winget install mpv, scoop install mpv). Choose it here, then pick mpv as the preferred video player or use Open in mpv in the player's menu."
+        found == null -> "mpv.exe was not found. Install it (mpv.io or winget install mpv) or choose it here."
         chosen.isBlank() -> "Found: ${found.absolutePath}. Pick mpv as the preferred video player, or use Open in mpv in the player's menu."
         else -> "Your choice: ${found.absolutePath}"
     }
@@ -311,7 +311,7 @@ private fun stableVolumePreference(): Preference.PreferenceItem.SwitchPreference
     return Preference.PreferenceItem.SwitchPreference(
         preference = com.mihon.common.preference.StatePreferenceStore(look.stableVolumeState).field(get = { this }, set = { it }),
         title = "Stable volume",
-        subtitle = "Keeps music, effects and speech at about the same loudness, so you do not reach for the volume. Does not apply to the Hardware audio output.",
+        subtitle = "Keeps speech and effects at an even volume. Not with Hardware audio output.",
         onValueChanged = { v ->
             look.stableVolume = v
             look.save()

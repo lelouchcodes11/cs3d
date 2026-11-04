@@ -417,7 +417,10 @@ fun DialogLayer() {
                         val e = awaitPointerEvent()
                         // the card consumes its own clicks: a press that reaches the scrim is outside it
                         val outside = e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.changes.none { it.isConsumed }
-                        e.changes.forEach { it.consume() }
+                        // only presses and the wheel: a button under the pointer drops its click when any event during the press comes back
+                        // consumed, and Windows sends moves (also of 0 px, "Unknown" here) between press and release, so buttons in dialogs often
+                        // needed a second click
+                        if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press || e.type == androidx.compose.ui.input.pointer.PointerEventType.Scroll) e.changes.forEach { it.consume() }
                         if (outside && shown?.dismissOnOutside == true) { Overlays.dismiss(shown); shown.onClose() }
                     }
                 }
@@ -427,7 +430,7 @@ fun DialogLayer() {
             val windowWidth = maxWidth
             val windowHeight = maxHeight
             if (shown != null && shown.fullscreen) Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }) { shown.body { Overlays.dismiss(shown) } }
-            else if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.97f + 0.03f * a; scaleX = s; scaleY = s }.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) { ContentDialogCard(shown, windowWidth, windowHeight) }
+            else if (shown != null) Box(Modifier.graphicsLayer { val a = appear.value; alpha = a; val s = 0.97f + 0.03f * a; scaleX = s; scaleY = s }.pointerInput(Unit) { awaitPointerEventScope { while (true) { val e = awaitPointerEvent(); if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press) e.changes.forEach { it.consume() } } } }) { ContentDialogCard(shown, windowWidth, windowHeight) }
         }
     }
 }

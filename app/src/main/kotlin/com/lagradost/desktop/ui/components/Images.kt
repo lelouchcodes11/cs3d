@@ -57,8 +57,9 @@ fun RemoteImage(
         contentScale = contentScale,
         alpha = alpha,
         colorFilter = colorFilter,
-        // bicubic: small icons and downscaled posters stay crisp
-        filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+        // bilinear: the decoder already made the picture at the size of its place (ImageQuality), so a bicubic draw added nothing to see and cost the
+        // most of all drawing while a page scrolled (measured: software drawing of Home 41 -> 17 ms a frame, first GPU scroll stall 578 -> 361 ms)
+        filterQuality = androidx.compose.ui.graphics.FilterQuality.Low,
     )
 }
 

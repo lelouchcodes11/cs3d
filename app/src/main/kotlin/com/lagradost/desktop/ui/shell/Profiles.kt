@@ -236,6 +236,7 @@ private class ProfileDraft(val account: DataStoreHelper.Account) {
     var custom by mutableStateOf(account.customImage)
     var index by mutableIntStateOf(account.defaultImageIndex)
     var startHere by mutableStateOf(StartProfile.get() == account.keyIndex)
+    var pin by mutableStateOf(account.lockPin)
     fun asLook() = ProfileLook(style, palette, character)
 }
 
@@ -297,6 +298,14 @@ private fun copyProfilePicture(keyIndex: Int, file: java.io.File): String {
 
 /** The "Edit profile" window: name, show icon, animated character, or custom picture. */
 fun showProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit = {}) {
+    // a locked profile that is not the open one is only edited with its PIN
+    val pin = account.lockPin
+    if (pin != null && account.keyIndex != DataStoreHelper.selectedKeyIndex) {
+        PinLock.ask("PIN for ${account.name}", pin) { if (it != null) openProfileEditor(account, onSaved) }
+    } else openProfileEditor(account, onSaved)
+}
+
+private fun openProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit) {
     val draft = ProfileDraft(account)
     Overlays.show(
         Overlays.Dialog(
@@ -306,7 +315,7 @@ fun showProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit = {}
             onSecondary = { confirmDeleteProfile(account, onSaved) },
             primaryEnabled = { draft.name.isNotBlank() },
             onPrimary = {
-                val updated = account.copy(name = draft.name.trim(), customImage = draft.custom, defaultImageIndex = draft.index)
+                val updated = account.copy(name = draft.name.trim(), customImage = draft.custom, defaultImageIndex = draft.index, lockPin = draft.pin)
                 updateProfile(updated)
                 ProfileLooks.set(account.keyIndex, draft.asLook())
                 if (draft.startHere) StartProfile.set(account.keyIndex) else if (StartProfile.get() == account.keyIndex) StartProfile.set(null)
@@ -372,9 +381,26 @@ fun showProfileEditor(account: DataStoreHelper.Account, onSaved: () -> Unit = {}
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         FText("Open the app with this profile")
-                        FText("The app starts on this profile and does not ask who is watching. Without a choice it asks when there are several profiles.", style = Fluent.type.caption, color = c.textSecondary)
+                        FText("Skips the profile picker at start",style = Fluent.type.caption, color = c.textSecondary)
                     }
                     com.lagradost.desktop.ui.fluent.ToggleSwitch(draft.startHere, { draft.startHere = it })
+                }
+
+                // the PIN lock; one profile always stays open so a forgotten PIN never locks anyone out
+                val lockable = draft.pin != null || remember { PinLock.canLock(account) }
+                Row(
+                    Modifier.fillMaxWidth().background(c.card, RoundedCornerShape(FluentShapes.card)).hairBorder(c.stroke, RoundedCornerShape(FluentShapes.card)).padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        FText("Lock with a PIN")
+                        FText(if (lockable) "Asks for a 4 digit PIN to open this profile" else "Keep one profile without a PIN", style = Fluent.type.caption, color = c.textSecondary)
+                    }
+                    com.lagradost.desktop.ui.fluent.ToggleSwitch(draft.pin != null, { on ->
+                        val old = draft.pin
+                        if (on) PinLock.ask("Set a PIN", null) { pin -> if (pin != null) draft.pin = pin }
+                        else if (old != null) PinLock.ask("Enter the PIN", old) { pin -> if (pin != null) draft.pin = null }
+                    }, enabled = lockable)
                 }
 
                 // Search Bar

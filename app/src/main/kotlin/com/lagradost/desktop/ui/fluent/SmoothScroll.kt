@@ -27,7 +27,7 @@ import kotlin.math.exp
 /**
  * Wheel scrolling that glides. A mouse wheel notch moves a list by a fixed jump (the page jerks one step per notch); here each notch only adds
  * to a distance still to travel and the list follows it, frame by frame, covering a part of what is left each time (an exponential ease of about
- * 65 ms), so a flick of the wheel is a smooth run and notches in quick succession add up. Sideways wheels, Shift and Ctrl+wheel are left to whoever
+ * 50 ms), so a flick of the wheel is a smooth run and notches in quick succession add up. Sideways wheels, Shift and Ctrl+wheel are left to whoever
  * handles them (a shelf scrolls sideways, Ctrl zooms). Off with Settings > Look > Animations: Off.
  */
 @Composable
@@ -64,10 +64,18 @@ object ScrollActivity {
 private class WheelGlide(private val state: ScrollableState, private val scope: CoroutineScope) {
     private var remaining = 0f
     private var job: Job? = null
+    private var lastPushAt = 0L
 
     fun push(px: Float) {
+        val now = System.nanoTime()
+        val reverse = remaining != 0f && (remaining > 0f) != (px > 0f)
+        // A wheel spun hard often reports one notch the wrong way in the middle of the run. That tick took back everything still to come and
+        // moved the page the other way for a moment (a fast scroll down jumped up: felt as resistance). A small opposite tick within 90 ms of
+        // the last one, during a run, is that noise and is left out; turning the wheel back on purpose (after a pause, or harder) still reverses.
+        if (reverse && now - lastPushAt < 90_000_000L && abs(px) < abs(remaining) * 0.6f) return
+        lastPushAt = now
         // turning the wheel the other way takes back what was still to come
-        remaining = if (remaining != 0f && (remaining > 0f) != (px > 0f)) px else remaining + px
+        remaining = if (reverse) px else remaining + px
         if (job?.isActive != true) job = scope.launch { run() }
     }
 
@@ -93,6 +101,7 @@ private class WheelGlide(private val state: ScrollableState, private val scope: 
     }
 
     private companion object {
-        const val TAU = 0.065f
+        // how closely the page follows the wheel (it covers ~95 % of a notch in 3 x TAU): 65 ms felt like a lag behind the wheel
+        const val TAU = 0.05f
     }
 }

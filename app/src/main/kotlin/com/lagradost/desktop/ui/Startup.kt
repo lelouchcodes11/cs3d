@@ -52,6 +52,11 @@ object Startup {
 
     const val MAX_MS = 3_000L
 
+    /** The main pages are being prepared off screen under the loader (see ScreenWarmup in AppShell): the loader may stay this much longer for it */
+    @Volatile
+    var warming = false
+    const val WARM_MS = 3_000L
+
     /** The extension update (a background job that can take a minute) is waited for this long, no longer */
     const val ONLINE_WAIT_MS = 1_200L
     const val LOGO_DP = 88
@@ -93,14 +98,17 @@ fun StartupReveal(content: @Composable () -> Unit) {
         val started = System.currentTimeMillis()
         delay(350)
         showLine = true
-        while (System.currentTimeMillis() - started < Startup.MAX_MS) {
+        while (System.currentTimeMillis() - started < Startup.MAX_MS + (if (Startup.warming) Startup.WARM_MS else 0L)) {
             val pm = com.lagradost.cloudstream3.plugins.PluginManager
             val setup = com.lagradost.desktop.core.Navigator.current.route is com.lagradost.desktop.core.Route.Setup
             val now = System.currentTimeMillis()
             val stage = when {
                 setup -> null
                 !pm.loadedLocalPlugins -> "Loading extensions"
-                !pm.loadedOnlinePlugins && now - started < Startup.ONLINE_WAIT_MS -> "Updating extensions"                // smooth for 0.5 s (and a few frames drawn): nothing heavy is running on the UI thread any more
+                !pm.loadedOnlinePlugins && now - started < Startup.ONLINE_WAIT_MS -> "Updating extensions"
+                // the pages people open first are composed under the loader, so their first visit does not stall
+                Startup.warming -> "Getting ready"
+                // smooth for 0.5 s (and a few frames drawn): nothing heavy is running on the UI thread any more
                 now - lastJank < 500 || frames < 8 -> "Getting ready"
                 else -> null
             }

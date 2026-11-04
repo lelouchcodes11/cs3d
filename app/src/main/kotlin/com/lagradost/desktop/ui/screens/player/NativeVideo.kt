@@ -312,7 +312,13 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
             NativeVideo.overlayWindow = d
             onDispose { NativeVideo.overlayActive = false; if (NativeVideo.overlayWindow === d) NativeVideo.overlayWindow = null }
         }
-        FluentTheme { ScaledContent { content() } }
+        FluentTheme {
+            androidx.compose.foundation.layout.Box {
+                ScaledContent { content() }
+                // the video under this window is darkened with the rest of the app
+                com.lagradost.desktop.ui.fluent.DimmerLayer()
+            }
+        }
     }
     // The window follows the video's place. It used to ask Windows for that place every 16 ms (`locationOnScreen` is a blocking call into the
     // AWT toolkit thread, the same thread that runs the window procedure of the title bar and of mpv's child window): the UI-freeze log of a

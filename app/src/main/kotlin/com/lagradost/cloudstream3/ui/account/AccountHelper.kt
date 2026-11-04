@@ -237,133 +237,22 @@ object AccountHelper {
         errorText: String? = null,
         callback: (String?) -> Unit
     ) {
-        fun TextView.visibleWithText(@StringRes textRes: Int) {
-            isVisible = true
-            setText(textRes)
+        // the desktop asks on its own PIN pad; at the start a cancel goes to the profile picker on an unlocked profile (never the locked one)
+        val owner = DataStoreHelper.accounts.filter { currentPin != null && it.lockPin == currentPin }.singleOrNull()?.name
+        val title = when {
+            editAccount && currentPin == null -> "Set a PIN"
+            owner != null -> "PIN for $owner"
+            else -> "Enter the PIN"
         }
-
-        fun TextView.visibleWithText(text: String?) {
-            isVisible = true
-            setText(text)
-        }
-
-        val binding = LockPinDialogBinding.inflate(LayoutInflater.from(context))
-
-        val isPinSet = currentPin != null
-        val isNewPin = editAccount && !isPinSet
-        val isEditPin = editAccount && isPinSet
-
-        val titleRes = if (isEditPin) R.string.enter_current_pin else R.string.enter_pin
-
-        var isPinValid = false
-
-        val builder = AlertDialog.Builder(context, R.style.AlertDialogCustom)
-            .setView(binding.root)
-            .setTitle(titleRes)
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                callback.invoke(null)
-            }
-            .setOnCancelListener {
-                callback.invoke(null)
-            }
-            .setOnDismissListener {
-                if (!isPinValid) {
-                    callback.invoke(null)
-                }
-            }
-
         if (forStartup) {
-            val currentAccount = DataStoreHelper.accounts.firstOrNull {
-                it.keyIndex == DataStoreHelper.selectedKeyIndex
+            val other = {
+                com.lagradost.desktop.ui.shell.PinLock.leaveLocked()
+                com.lagradost.desktop.ui.shell.showAccountPicker(forStartup = true)
             }
-
-            builder.setTitle(context.getString(R.string.enter_pin_with_name, currentAccount?.name))
-            builder.setOnDismissListener {
-                if (!isPinValid) {
-                    context.getActivity()?.finish()
-                }
-            }
-            // So that if they don't know the PIN for the current account,
-            // they don't get completely locked out
-            builder.setNeutralButton(R.string.use_default_account) { _, _ ->
-                val activity = context.getActivity()
-                if (activity is AccountSelectActivity) {
-                    isPinValid = true
-                    activity.accountViewModel.handleAccountSelect(getDefaultAccount(context), activity)
-                }
-            }
+            com.lagradost.desktop.ui.shell.PinLock.ask(title, currentPin, other) { pin -> if (pin == null) other() else callback(pin) }
+        } else {
+            com.lagradost.desktop.ui.shell.PinLock.ask(title, currentPin, null, callback)
         }
-
-        if (isNewPin) {
-            if (errorText != null) binding.pinEditTextError.visibleWithText(errorText)
-            builder.setPositiveButton(R.string.setup_done) { _, _ ->
-                if (!isPinValid) {
-                    // If the done button is pressed and there is an error,
-                    // ask again, and mention the error that caused this.
-                    showPinInputDialog(
-                        context = binding.root.context,
-                        currentPin = null,
-                        editAccount = true,
-                        errorText = binding.pinEditTextError.text.toString(),
-                        callback = callback
-                    )
-                } else {
-                    val enteredPin = binding.pinEditText.text.toString()
-                    callback.invoke(enteredPin)
-                }
-            }
-        }
-
-        val dialog = builder.create()
-
-        binding.pinEditText.doOnTextChanged { text, _, _, _ ->
-            val enteredPin = text.toString()
-            val isEnteredPinValid = enteredPin.length == 4
-
-            if (isEnteredPinValid) {
-                if (isPinSet) {
-                    if (enteredPin != currentPin) {
-                        binding.pinEditTextError.visibleWithText(R.string.pin_error_incorrect)
-                        binding.pinEditText.text = null
-                        isPinValid = false
-                    } else {
-                        binding.pinEditTextError.isVisible = false
-                        isPinValid = true
-
-                        callback.invoke(enteredPin)
-                        dialog.dismissSafe()
-                    }
-                } else {
-                    binding.pinEditTextError.isVisible = false
-                    isPinValid = true
-                }
-            } else if (isNewPin) {
-                binding.pinEditTextError.visibleWithText(R.string.pin_error_length)
-                isPinValid = false
-            }
-        }
-
-        // Detect IME_ACTION_DONE
-        binding.pinEditText.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_DONE && isPinValid) {
-                val enteredPin = binding.pinEditText.text.toString()
-                callback.invoke(enteredPin)
-                dialog.dismissSafe()
-            }
-            true
-        }
-
-        // We don't want to accidentally have the dialog dismiss when clicking outside of it.
-        // That is what the cancel button is for.
-        dialog.setCanceledOnTouchOutside(false)
-
-        dialog.show()
-
-        // Auto focus on PIN input and show keyboard
-        binding.pinEditText.requestFocus()
-        binding.pinEditText.postDelayed({
-            showInputMethod(binding.pinEditText)
-        }, 200)
     }
 
     fun Activity?.showAccountSelectLinear() {
@@ -427,4 +316,4 @@ object AccountHelper {
             }
         }
     }
-}
+}

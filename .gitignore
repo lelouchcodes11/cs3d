@@ -31,3 +31,15 @@ desktop.ini
 
 # Requests and screenshots collected from users (private notes, not part of the repository)
 docs/feature-requests/
+
+# Working notes and one-off development tools (kept on the developer's PC, not part of the repository)
+docs/PLAN.md
+docs/IMPROVEMENT_PLAN.md
+docs/LIVE_TV.md
+tools/ultima-sync/
+tools/Scanner.java
+tools/StringScan.java
+tools/ApiChecker.java
+tools/extension-api/
+tools/lib/
+cloudstream-reference/

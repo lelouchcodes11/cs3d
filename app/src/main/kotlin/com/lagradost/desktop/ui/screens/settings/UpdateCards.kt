@@ -58,9 +58,9 @@ private fun installLabel(kind: UpdateCheck.InstallKind) = when (kind) {
 }
 
 private fun installAbout(kind: UpdateCheck.InstallKind) = when (kind) {
-    UpdateCheck.InstallKind.Setup -> "Update now downloads the new setup, checks it, closes the app, runs it and opens the app again. Your settings, accounts and extensions stay."
+    UpdateCheck.InstallKind.Setup -> "Downloads the update and restarts the app. Your data stays."
     UpdateCheck.InstallKind.Msi -> "Update now downloads the new MSI package, checks it and installs it. Your settings, accounts and extensions stay."
-    UpdateCheck.InstallKind.Portable -> "Update now downloads the new portable zip, checks it and replaces the program files. The data folder next to them stays."
+    UpdateCheck.InstallKind.Portable -> "Downloads the update and replaces the program files. Your data stays."
     UpdateCheck.InstallKind.Other -> "This is not an installed copy, so the app cannot replace itself: a new version is downloaded from the release page."
 }
 
@@ -174,7 +174,7 @@ private fun PreferenceCards() {
         }
         SettingsCard(
             "Check for updates automatically",
-            "A few seconds after the app is up, and again every few hours while it stays open (never during a video), it asks GitHub (${AppInfo.REPO}) for the list of releases and shows a banner when a newer one is out. Nothing but that request is sent.",
+            "Checks GitHub every few hours (never during a video) and shows a banner when a new version is out.",
         ) {
             ToggleSwitch(UpdateCheck.autoCheckEnabled, { UpdateCheck.setAutoCheck(it) })
         }

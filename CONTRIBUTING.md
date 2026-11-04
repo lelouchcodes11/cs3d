@@ -50,8 +50,8 @@ Thank you for your interest in contributing to **CloudStream for Windows**!
 | [`app/`](app) | Compose Desktop UI (`com.lagradost.desktop.ui`), native `libmpv` player (`com.lagradost.desktop.player`), Stremio & TorrServer integration, TMDB enrichment, in-app updater, and packaging tasks. |
 | [`android/`](android) | Desktop JVM implementation of the Android framework APIs (`Context`, `SharedPreferences`, `WebView` via WebView2/JCEF, `View`/`Fragment` bridge) that CloudStream and its `.cs3` extensions run on. |
 | [`library/`](library), [`shared/`](shared) | Upstream CloudStream 4.8 plugin contracts, extractors, and shared logic. |
-| [`tools/`](tools) | Build and packaging scripts (`tools/installer/cloudstream.iss`, `tools/patch-msi.ps1`, `tools/libmpv/build.sh`). |
-| [`docs/`](docs) | Architecture notes ([`docs/PLAN.md`](docs/PLAN.md)) and engineering roadmap ([`docs/IMPROVEMENT_PLAN.md`](docs/IMPROVEMENT_PLAN.md)). |
+| [`tools/`](tools) | Build and packaging scripts (`tools/installer/cloudstream.iss`, `tools/libmpv/build.sh`, `tools/i18n`). |
+| [`docs/`](docs) | Screenshots used by the README. |
 
 ---
 

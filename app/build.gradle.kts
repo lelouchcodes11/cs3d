@@ -918,11 +918,19 @@ fun trainStartupArchive(root: File) {
         }.getOrDefault(false)
         val deadline = System.currentTimeMillis() + 120_000
         while (System.currentTimeMillis() < deadline && !call("/state")) Thread.sleep(500)
-        for (route in listOf("home", "search&q=test", "library", "downloads", "extensions", "settings", "home")) {
+        for (route in listOf("home", "search&q=test", "explore", "library", "schedule", "history", "stats", "downloads", "extensions", "home")) {
             call("/nav?route=$route"); Thread.sleep(1200)
         }
-        // every settings page (the preference screens, the subtitle style editor, the account list): their classes and lambdas go into the archive too
-        for (page in listOf("general", "player", "subtitles", "ui", "updates", "account", "about")) {
+        // a title page (Cinemeta, the Stremio catalogue every copy lists, switched on in this throw-away folder) and the player on a generated silent
+        // test picture: after Home these are the most used screens, and without them their first visit after every start loaded its classes from the jars
+        call("/stremio?enable=https://v3-cinemeta.strem.io/manifest.json&on=1"); Thread.sleep(1000)
+        call("/open?api=Cinemeta&url=stremio://item/movie/tt1254207&name=Big%20Buck%20Bunny"); Thread.sleep(5000)
+        call("/playurl?url=av://lavfi:testsrc2=size=1280x720:rate=24&name=Test"); Thread.sleep(6000)
+        call("/nav?route=back"); Thread.sleep(1500)
+        // every settings page (the preference screens, the subtitle style editor, the account list): their classes and lambdas go into the archive too.
+        // Home in between: a settings route only changes the page when Settings is not open already
+        for (page in listOf("overview", "general", "ui", "colors", "player", "sources", "account", "security", "updates", "backup", "about")) {
+            call("/nav?route=home"); Thread.sleep(400)
             call("/nav?route=settings&q=$page"); Thread.sleep(1500)
         }
         call("/nav?route=home"); Thread.sleep(800)

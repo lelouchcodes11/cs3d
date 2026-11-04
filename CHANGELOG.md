@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Automatic subtitle timing.** Player menu > Subtitles > Delay and size: *Sync automatically* listens to the voices for about a minute and a half and moves the subtitle delay so the lines match them; *Sync every video* does it once for each video. It uses a small audio meter inside mpv (nothing is downloaded or decoded twice) and changes nothing when it is not sure.
+- **Fast wheel scrolling no longer jumps backwards.** A wheel spun hard often sends one notch the wrong way; that notch used to cancel the scroll and pull the page up for a moment. The page also follows the wheel more closely.
+- **Pages open smoothly right after the start.** The main pages are prepared while the loading screen is up (it stays about 2 s longer), so their first visit no longer stalls (first opens about 45 % smoother). The start-up archive also covers the title page, the player and every settings page now.
+- **The app no longer gets stuck drawing slowly.** Closing it within 20 s a few times in a row counted as a graphics failure and moved it to a slower renderer for good. A start where you clicked or scrolled now counts as a good one.
+- **Extensions no longer fail to load at random in the sandbox.** Two extensions loading at the same moment could break the shared list of providers (`ConcurrentModificationException`, "Could not load ...").
+- **Shorter settings texts** (sandbox, updates, Stremio, mpv, screen translation), with all translations. The Telegram links are gone for now.
+- **PIN lock for profiles, a screen dimmer, a sleep timer**, and dialog buttons that sometimes needed two clicks now take one.
+
 ## 1.0.9
 
 **Apple TV look, extensions in a Windows sandbox, Ultima sync fixed, delete a profile and reset the app**

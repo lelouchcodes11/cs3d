@@ -431,9 +431,9 @@ private fun lowOnMemory(): Boolean = runCatching {
     (java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean).freeMemorySize < 1_500L * 1024 * 1024
 }.getOrDefault(false)
 
-/** Returns once 60 frames in a row came within 22 ms of each other (gives up after 20 s) */
-private suspend fun awaitCalmFrames() {
-    val give = System.currentTimeMillis() + 20_000
+/** Returns once 60 frames in a row came within 22 ms of each other (gives up after [maxMs]) */
+private suspend fun awaitCalmFrames(maxMs: Long = 20_000) {
+    val give = System.currentTimeMillis() + maxMs
     var calm = 0
     var last = androidx.compose.runtime.withFrameNanos { it }
     while (calm < 60 && System.currentTimeMillis() < give) {
@@ -449,9 +449,32 @@ private fun ScreenWarmup() {
     var step by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
     val density = androidx.compose.ui.platform.LocalDensity.current
     LaunchedEffect(Unit) {
-        com.lagradost.desktop.ui.Startup.revealed.await()
-        // not while the extensions are still loading and updating (several seconds of heavy work in parallel, the pages would only add to it)
+        val startup = com.lagradost.desktop.ui.Startup
         val pm = com.lagradost.cloudstream3.plugins.PluginManager
+        // Under the loader (it stays up a little longer for this): nobody can click yet, so each page needs only a moment, and the first visit of
+        // every page after the start is already warm. -Dcloudstream.loaderwarm=false keeps the old way (warmed some seconds after the start).
+        var warmed = false
+        if (System.getProperty("cloudstream.loaderwarm") != "false" && !startup.revealed.isCompleted && Navigator.current.route !is Route.Setup && !lowOnMemory()) {
+            startup.warming = true
+            try {
+                // after the extensions are loaded (the pages show them), not during: both at once only made each slower
+                while (!pm.loadedLocalPlugins && !startup.revealed.isCompleted) delay(100)
+                awaitCalmFrames(maxMs = 1_500)
+                var i = 0
+                while (i < 5 && !startup.revealed.isCompleted) {
+                    step = i
+                    delay(300)
+                    i++
+                }
+                warmed = i == 5
+            } finally {
+                step = -1
+                startup.warming = false
+            }
+            if (warmed) android.util.Log.i("Startup", "pages warmed under the loader")
+        }
+        startup.revealed.await()
+        // not while the extensions are still loading and updating (several seconds of heavy work in parallel, the pages would only add to it)
         val giveUp = System.currentTimeMillis() + 60_000
         while (!(pm.loadedLocalPlugins && pm.loadedOnlinePlugins) && System.currentTimeMillis() < giveUp) delay(500)
         delay(3000)
@@ -460,13 +483,20 @@ private fun ScreenWarmup() {
         // the player's native library (a 39 MB DLL and its bindings) loads here too: the first video loaded it on the UI thread, about 100 ms of the first frame of the player
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.lagradost.desktop.player.Mpv.INSTANCE } }
         // the pages are composed off screen to warm them: with little free memory that work is what makes the window stall, so it is left out
-        if (lowOnMemory()) return@LaunchedEffect
-        for (i in 0 until 5) {
+        if (warmed || lowOnMemory()) return@LaunchedEffect
+        var i = 0
+        while (i < 5) {
             if (Navigator.current.route is Route.Player || lowOnMemory()) break
             // only while the window is calm: a page composed while the extensions are loading (or Chromium is starting) would add its own freeze
             awaitCalmFrames()
+            // and only while nobody scrolls, clicks or types (measured: Settings composed here under the first scroll of Home made it stutter);
+            // a page cut short by the user is warmed again later
+            if (System.currentTimeMillis() - com.lagradost.desktop.ui.fluent.InputMode.lastInputAt < 3000) { delay(1000); continue }
+            val started = System.currentTimeMillis()
             step = i
-            delay(1400)
+            while (System.currentTimeMillis() - started < 1400 && com.lagradost.desktop.ui.fluent.InputMode.lastInputAt < started) delay(100)
+            if (com.lagradost.desktop.ui.fluent.InputMode.lastInputAt < started) i++
+            step = -1
         }
         step = -1
     }
