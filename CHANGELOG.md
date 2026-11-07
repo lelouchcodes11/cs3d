@@ -9,6 +9,12 @@
 - **New episodes card at the start.** When new episodes are waiting, a small card in the bottom right corner says so ("EP 6 · Overgeared · +1 more"); a click opens the notifications.
 - **Low-end PC mode starts quicker.** The loading screen no longer waits for the pages to be prepared or for smooth frames on a weak PC, which made the start look frozen.
 - **Discord invite updated.** The old link in Settings > About and the support prompt had expired.
+- **Shorter right-click menu on titles.** Play, Open title page, *Add to library ›* (Watching, Completed, On-Hold, Dropped, Plan to Watch open beside it; the list the title is on is ticked) and Favourites. Menus can have such side lists now.
+- **No backward jump when turning the mouse wheel slowly.** A wheel often sends one stray notch the other way right after a real one; on slow scrolling that notch moved the page back each time. It is now ignored unless a second notch confirms the wheel really turned back. Touchpad scrolling also goes straight to the page. Settings > About > Copy diagnostics now lists the last wheel steps.
+- **Smoother wheel scrolling.** Each notch now speeds up and slows down gently, and quick notches flow into one glide (each notch used to start with a jolt).
+- **Reload on Home closes a check window.** An extension's "verify you are human" window or a Cloudflare check holding Home up is closed, then Home loads again.
+- **Check windows at most once an hour.** An extension's check window is not put up again within an hour, also when the app is opened again. Updates are not affected.
+- **Home reloads when its extension was just updated.** The update at start replaced the extension Home was showing: Home loads again with the new version.
 
 ## 1.1.0
 

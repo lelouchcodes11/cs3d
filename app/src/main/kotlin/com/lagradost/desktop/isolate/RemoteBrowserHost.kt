@@ -406,6 +406,11 @@ object RemoteBrowserHost {
 
     private fun showWindow(page: Page, extension: String?): Boolean {
         if (page.dialog != null) return true
+        // once an hour at most for an extension, also across restarts (opening the app again soon does not bring the same check back)
+        if (com.lagradost.desktop.runtime.web.CaptchaQuiet.recentlyShown(File(page.path).name)) {
+            Log.i(TAG, "a check window of ${File(page.path).name} was shown less than an hour ago: not again")
+            return false
+        }
         val ctx = DesktopBootstrap.activity
         val root = android.widget.LinearLayout(ctx)
         root.setOrientation(android.widget.LinearLayout.VERTICAL)
@@ -425,6 +430,7 @@ object RemoteBrowserHost {
         dialog.setOnCancelListener { userCancelled(page) }
         page.dialog = dialog
         dialog.show()
+        if (dialog.isShowing()) com.lagradost.desktop.runtime.web.CaptchaQuiet.markShown(File(page.path).name)
         // the app's own rules for such windows (not over and over) may have refused it: then there is no window to keep
         if (!dialog.isShowing()) { page.dialog = null; (page.view.getParent() as? ViewGroup)?.removeView(page.view); return false }
         // the extension lays its own clicks out by the size of its view (Turnstile's box): it is told the size the page really has
@@ -461,6 +467,11 @@ object RemoteBrowserHost {
             runCatching { page.view.destroy() }
             page.shutdown()
         }
+    }
+
+    /** The Reload button of Home: every check window that is up is closed, as if its Cancel was pressed */
+    fun cancelWindows() {
+        main.post { for (p in pages.values.toList()) if (p.dialog != null) userCancelled(p) }
     }
 
     /** The sandbox ended, or the extension was unloaded: its pages go with it */

@@ -54,6 +54,17 @@ class DesktopUiHost : UiHost {
         /** Dialogs asked for while a page dialog is open (or the other way round): they come up one after the other */
         private val waiting = ArrayDeque<Dialog>()
 
+        /** The Reload button of Home: every dialog holding a page (an extension's check) is closed, through its own Cancel when it has one */
+        fun cancelPageDialogs() {
+            EventQueue.invokeLater {
+                val gate = com.lagradost.desktop.runtime.web.CloudflareGate
+                for (d in (androidDialogs.toList() + waiting.toList())) {
+                    val decor = d.getWindow().getDecorView()
+                    if (gate.hasWebView(decor)) gate.cancelBrowserDialog(decor) { runCatching { d.cancel() } }
+                }
+            }
+        }
+
         /** Back / Esc for the topmost Android dialog: it cancels itself when it is cancelable; true when there was one */
         fun closeTopAndroidDialog(): Boolean {
             val dialog = androidDialogs.lastOrNull { it.isShowing() } ?: return false

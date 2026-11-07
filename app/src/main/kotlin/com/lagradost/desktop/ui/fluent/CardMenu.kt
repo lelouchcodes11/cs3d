@@ -119,8 +119,8 @@ object CardLibrary {
 }
 
 /**
- * Right click on a catalog title: a small menu at the pointer, like any desktop app's. Play and the title page first, then the library lists (the
- * one the title is on is ticked) and the favourites. The same calls the title page's buttons make.
+ * Right click on a catalog title: a small menu at the pointer, like any desktop app's. Play and the title page first, then "Add to library ›" (its
+ * lists open beside it) and the favourites.
  */
 @Composable
 fun CatalogCardMenu(card: SearchResponse, content: @Composable () -> Unit) {
@@ -132,14 +132,16 @@ private fun cardEntries(card: SearchResponse): List<MenuEntry> {
     val ctx = DesktopBootstrap.activity
     val status = CardLibrary.status(card)
     val favourite = CardLibrary.isFavourite(card)
-    val lists = WatchType.entries.filter { it != WatchType.NONE }
     return buildList {
         add(MenuItem("Play", Icons.Play) { Navigator.openDetails(card, START_ACTION_RESUME_LATEST, null) })
         add(MenuItem("Open title page", Icons.Info) { Navigator.openDetails(card) })
         add(MenuSeparator)
-        // the library: one click puts the title on a list; the list it is on is ticked, and clicking it again takes the title off
-        for (t in lists) add(MenuItem(if (t == status) "In ${ctx.getString(t.stringRes)}: remove" else "Add to ${ctx.getString(t.stringRes)}", Icons.Library, checked = t == status) { CardLibrary.setStatus(card, if (t == status) WatchType.NONE else t) })
-        add(MenuSeparator)
+        // the library: one row, its lists open beside it (the one the title is on is ticked; clicking it again takes the title off)
+        val lists = WatchType.entries.filter { it != WatchType.NONE }
+        add(MenuSub(if (status != WatchType.NONE) "In ${ctx.getString(status.stringRes)}" else "Add to library", Icons.Library, buildList {
+            for (t in lists) add(MenuItem(ctx.getString(t.stringRes), Icons.Library, checked = t == status) { CardLibrary.setStatus(card, if (t == status) WatchType.NONE else t) })
+            if (status != WatchType.NONE) { add(MenuSeparator); add(MenuItem("Remove from library", Icons.Delete, destructive = true) { CardLibrary.setStatus(card, WatchType.NONE) }) }
+        }))
         add(
             MenuItem(
                 if (favourite) "Remove from favourites" else "Add to favourites",

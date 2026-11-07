@@ -376,7 +376,13 @@ private fun HomeHeader(vm: HomeViewModel, apiName: String?, rowNames: List<Strin
             subtitle = apiName?.takeIf { it.isNotBlank() && it != "NONE" }?.let { "From $it" },
         ) {
             if (rowNames.isNotEmpty() && !apiName.isNullOrBlank()) IconButton(Icons.Edit, { HomeLayout.showDialog(apiName, rowNames) }, tooltip = "Customise Home: choose and order the rows", kind = ButtonKind.Standard, size = 36.dp)
-            IconButton(Icons.Refresh, { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true, fromUI = false) }, tooltip = "Reload home page", kind = ButtonKind.Standard, size = 36.dp)
+            IconButton(Icons.Refresh, {
+                // a check window (captcha) of an extension and a hidden Cloudflare check that hold the page up are closed first, then the page loads again
+                com.lagradost.desktop.runtime.web.CloudflareGate.cancelSolves()
+                com.lagradost.desktop.isolate.RemoteBrowserHost.cancelWindows()
+                com.lagradost.desktop.ui.DesktopUiHost.cancelPageDialogs()
+                vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true, fromUI = false)
+            }, tooltip = "Reload home page", kind = ButtonKind.Standard, size = 36.dp)
         }
     }
 }

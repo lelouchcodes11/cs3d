@@ -156,7 +156,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
                             mDismissed || mDialog == null -> {}
                             // its page runs hidden meanwhile and often passes the check by itself (AnimePahe's does): then there is nothing left to show
                             inUse && challengeOver() -> { Log.i("DialogFragment", "${javaClass.simpleName}: the held Cloudflare check passed by itself, no window"); dismissAllowingStateLoss() }
-                            inUse -> { Log.i("DialogFragment", "${javaClass.simpleName}: the extension is in use now, the held Cloudflare window is shown"); mDialog?.show(); watchChallenge() }
+                            inUse -> { Log.i("DialogFragment", "${javaClass.simpleName}: the extension is in use now, the held Cloudflare window is shown"); mDialog?.show(); com.lagradost.desktop.runtime.web.CaptchaQuiet.markShown(javaClass.simpleName); watchChallenge() }
                             else -> onDismiss(object : DialogInterface { override fun cancel() {}; override fun dismiss() {} })
                         }
                     }
@@ -173,6 +173,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
                 return
             }
             d.show()
+            if (isChallengeDialog()) com.lagradost.desktop.runtime.web.CaptchaQuiet.markShown(javaClass.simpleName)
             if (isChallengeDialog()) watchChallenge()
         }
     }
@@ -242,7 +243,9 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
             return true
         }
         val off = !com.lagradost.desktop.runtime.web.CloudflareGate.solversOn || !com.lagradost.desktop.runtime.web.CloudflareGate.inUseOwner(javaClass)
-        if (off || Challenges.open == 0 && System.currentTimeMillis() - Challenges.endedAt < Challenges.QUIET_MS) {
+        // and once an hour at most, also across restarts (CaptchaQuiet): opening the app again soon does not bring the same check window back
+        val quiet = Challenges.open == 0 && com.lagradost.desktop.runtime.web.CaptchaQuiet.recentlyShown(javaClass.simpleName)
+        if (off || quiet || Challenges.open == 0 && System.currentTimeMillis() - Challenges.endedAt < Challenges.QUIET_MS) {
             Log.i("DialogFragment", "${javaClass.simpleName}: " + if (off) "the Cloudflare solvers are off or this is not the extension in use, not shown" else "asked again so soon after the last one, not shown")
             mDismissed = true
             onDismiss(object : DialogInterface {

@@ -61,6 +61,7 @@ object Diagnostics {
         line("Window renderer", com.lagradost.desktop.platform.Graphics.note)
         line("Look", (if (com.lagradost.desktop.ui.fluent.Appearance.light) "light" else "full") + " (low-end PC mode: ${com.lagradost.desktop.ui.fluent.Appearance.performance.label}; ${com.lagradost.desktop.platform.LowEnd.describe()})")
         line("Extension sandbox", com.lagradost.desktop.sandbox.PluginSandbox.summary())
+        line("Wheel", com.lagradost.desktop.ui.fluent.WheelLog.text())
         val player = MpvPlayer.active
         if (player != null) {
             line("Player", "output ${player.getMpvPropertyString("current-vo")}, decoder ${player.getMpvPropertyString("hwdec-current")}, video ${player.getMpvPropertyString("video-params/w")}x${player.getMpvPropertyString("video-params/h")} at ${player.getMpvPropertyString("container-fps")} fps, display ${player.getMpvPropertyString("display-fps")} Hz, dropped ${player.getMpvPropertyString("frame-drop-count")}/${player.getMpvPropertyString("decoder-frame-drop-count")}")

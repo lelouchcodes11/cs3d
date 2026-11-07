@@ -127,6 +127,20 @@ class MenuItem(
 ) : MenuEntry
 object MenuSeparator : MenuEntry
 
+/** A row that opens [entries] beside the menu when the pointer rests on it (or it is clicked), like a desktop app's "Add to ›" */
+class MenuSub(val text: String, val icon: String? = null, val entries: List<MenuEntry>) : MenuEntry
+
+/** Beside the row it belongs to: to its right, or to its left when there is no room, kept inside the window */
+private class BesideAnchor : PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+        var x = anchorBounds.right + 6
+        if (x + popupContentSize.width > windowSize.width - 8) x = anchorBounds.left - popupContentSize.width - 6
+        var y = anchorBounds.top - 4
+        if (y + popupContentSize.height > windowSize.height - 8) y = windowSize.height - 8 - popupContentSize.height
+        return IntOffset(x.coerceAtLeast(8), y.coerceAtLeast(8))
+    }
+}
+
 @Composable
 fun MenuFlyout(
     entries: List<MenuEntry>,
@@ -135,11 +149,26 @@ fun MenuFlyout(
 ) {
     Popup(popupPositionProvider = position, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
         FlyoutSurface(Modifier.widthIn(min = 160.dp, max = 360.dp)) {
-            Column(Modifier.padding(vertical = 4.dp).width(IntrinsicSize.Max)) {
-                for (entry in entries) {
-                    when (entry) {
-                        MenuSeparator -> Box(Modifier.padding(vertical = 4.dp)) { Divider() }
-                        is MenuItem -> MenuRow(entry) { onDismiss(); entry.onClick() }
+            MenuColumn(entries, onDismiss)
+        }
+    }
+}
+
+@Composable
+private fun MenuColumn(entries: List<MenuEntry>, onDismiss: () -> Unit) {
+    // the submenu that is open (the pointer rests on its row); another row under the pointer closes it
+    var openSub by remember { mutableStateOf<MenuSub?>(null) }
+    Column(Modifier.padding(vertical = 4.dp).width(IntrinsicSize.Max)) {
+        for (entry in entries) {
+            when (entry) {
+                MenuSeparator -> Box(Modifier.padding(vertical = 4.dp)) { Divider() }
+                is MenuItem -> MenuRow(entry, onHover = { openSub = null }) { onDismiss(); entry.onClick() }
+                is MenuSub -> Box {
+                    MenuRow(MenuItem(entry.text, entry.icon) {}, open = openSub === entry, sub = true, onHover = { openSub = entry }) { openSub = if (openSub === entry) null else entry }
+                    if (openSub === entry) {
+                        Popup(popupPositionProvider = BesideAnchor(), properties = PopupProperties(focusable = false)) {
+                            FlyoutSurface(Modifier.widthIn(min = 160.dp, max = 360.dp)) { MenuColumn(entry.entries, onDismiss) }
+                        }
                     }
                 }
             }
@@ -148,17 +177,18 @@ fun MenuFlyout(
 }
 
 @Composable
-private fun MenuRow(item: MenuItem, onClick: () -> Unit) {
+private fun MenuRow(item: MenuItem, open: Boolean = false, sub: Boolean = false, onHover: (() -> Unit)? = null, onClick: () -> Unit) {
     val c = Fluent.colors
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
+    if (onHover != null) androidx.compose.runtime.LaunchedEffect(hovered) { if (hovered) { kotlinx.coroutines.delay(120); onHover() } }
     val shape = RoundedCornerShape(FluentShapes.row)
     Row(
         Modifier
             .padding(horizontal = 4.dp)
             .fillMaxWidth()
             .height(32.dp)
-            .background(if (hovered && item.enabled) c.subtleHover else Color.Transparent, shape)
+            .background(if ((hovered || open) && item.enabled) c.subtleHover else Color.Transparent, shape)
             .fluentClickable(source, item.enabled, shape, Role.Button, onClick)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -180,6 +210,10 @@ private fun MenuRow(item: MenuItem, onClick: () -> Unit) {
         if (item.shortcut != null) {
             Box(Modifier.width(24.dp))
             FText(item.shortcut, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+        }
+        if (sub) {
+            Box(Modifier.width(16.dp))
+            Icon(Icons.ChevronRightSmall, size = 10.dp, tint = c.textSecondary)
         }
     }
 }

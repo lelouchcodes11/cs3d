@@ -495,11 +495,17 @@ object DevServer {
             "/scroll" -> {
                 onEdt {
                     val (comp, p) = target(q["x"]!!.toInt(), q["y"]!!.toInt())
+                    // &precise=0.3: a touchpad-like fractional step
+                    val precise = q["precise"]?.toDoubleOrNull()
+                    if (precise != null) comp.dispatchEvent(MouseWheelEvent(comp, MouseEvent.MOUSE_WHEEL, System.currentTimeMillis(), 0, p.x, p.y, p.x, p.y, 0, false,
+                        MouseWheelEvent.WHEEL_UNIT_SCROLL, 3, 0, precise))
+                    else {
                     val amount = q["amount"]?.toInt() ?: 3
                     comp.dispatchEvent(
                         MouseWheelEvent(comp, MouseEvent.MOUSE_WHEEL, System.currentTimeMillis(), 0, p.x, p.y, 0, false,
                             MouseWheelEvent.WHEEL_UNIT_SCROLL, 3, amount)
                     )
+                    }
                 }
                 ok(ex)
             }

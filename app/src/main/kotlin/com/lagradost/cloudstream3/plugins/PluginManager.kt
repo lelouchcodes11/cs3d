@@ -380,6 +380,7 @@ object PluginManager {
         }
 
         val updatedPlugins = mutableListOf<String>()
+        val updatedPaths = java.util.Collections.synchronizedSet(HashSet<String>())
 
         outdatedPlugins.amap { pluginData ->
             if (pluginData.isDisabled) {
@@ -397,6 +398,7 @@ object PluginManager {
                     if (success) {
                         updatedPlugins.add(pluginData.onlineData.plugin.name)
                         com.lagradost.desktop.platform.PluginUpdateLog.record(pluginData.onlineData.plugin.name, pluginData.onlineData.plugin.version)
+                        updatedPaths.add(File(pluginData.savedData.filePath).absolutePath)
                     }
                 }
             }
@@ -413,6 +415,12 @@ object PluginManager {
         // ioSafe {
         loadedOnlinePlugins = true
         afterPluginsLoadedEvent.invoke(false)
+        // desktop: Home already shows the extension that was just updated (it loaded with the old version): it loads again with the new one
+        val home = com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(com.lagradost.cloudstream3.utils.DataStoreHelper.currentHomePage)
+        if (home?.sourcePlugin != null && File(home.sourcePlugin!!).absolutePath in updatedPaths) {
+            Log.i(TAG, "${home.name} was updated while Home showed it: Home loads again")
+            com.lagradost.cloudstream3.MainActivity.reloadHomeEvent.invoke(true)
+        }
         // }
 
         Log.i(TAG, "Plugin update done!")
