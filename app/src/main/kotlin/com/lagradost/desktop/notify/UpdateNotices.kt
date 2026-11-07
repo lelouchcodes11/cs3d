@@ -2,6 +2,8 @@ package com.lagradost.desktop.notify
 
 import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.DubStatus
 import com.lagradost.cloudstream3.EpisodeResponse
@@ -58,6 +60,26 @@ object UpdateNotices {
 
     val unread: Int get() = items.count { !it.read }
 
+    /**
+     * The corner card of new episodes (AppShell): the unread ones of an earlier run when the app opens, then what a check finds. Set once per
+     * find; the card clears it when it closes.
+     */
+    var popup by androidx.compose.runtime.mutableStateOf<List<Notice>>(emptyList())
+
+    /** How far the viewer is: the episode last played here or the AniList progress (the higher), the newest out, AniList's total */
+    class Progress(val seen: Int?, val out: Int?, val total: Int?) {
+        val behind: Int? get() = if (seen != null && out != null && out > seen) out - seen else null
+    }
+
+    fun progress(n: Notice): Progress {
+        val id = n.key.substringBefore(':').toIntOrNull()
+        val local = runCatching { DataStoreHelper.getLastWatched(id)?.episode }.getOrNull()
+        val aid = runCatching { DataStoreHelper.getSubscribedData(id)?.syncData?.get("anilist")?.toIntOrNull() }.getOrNull()
+        val al = aid?.let { AniListProgress.known[it] }
+        val seen = listOfNotNull(local, al?.seen).maxOrNull()
+        return Progress(seen, n.episode, al?.total)
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var started = false
     private val file: File get() = File(AndroidRuntime.dataDir, "notices.json")
@@ -67,6 +89,8 @@ object UpdateNotices {
         started = true
         scope.launch {
             load()
+            items.filter { !it.read }.takeIf { it.isNotEmpty() }?.let { kotlinx.coroutines.withContext(Dispatchers.Main) { popup = it } }
+            runCatching { AniListProgress.refresh() }
             delay(FIRST_CHECK_MS)
             while (true) {
                 runCatching { check() }.onFailure { Log.w(TAG, "check failed: $it") }
@@ -89,6 +113,7 @@ object UpdateNotices {
     }
 
     fun markAllRead() {
+        popup = emptyList()
         if (items.none { !it.read }) return
         for (i in items.indices) if (!items[i].read) items[i] = items[i].copy(read = true)
         save()
@@ -146,6 +171,7 @@ object UpdateNotices {
         )
         kotlinx.coroutines.withContext(Dispatchers.Main) {
             items.add(0, notice)
+            popup = listOf(notice) + popup.filter { it.key != notice.key }
             while (items.size > MAX_KEPT) items.removeAt(items.size - 1)
         }
         save()

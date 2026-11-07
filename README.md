@@ -9,7 +9,7 @@ Runs your CloudStream extensions on the desktop, with a real <code>mpv</code> pl
 
 <p align="center">
   <a href="../../releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%7C%2011%20(x64)-0078D4?style=for-the-badge&logo=windows11&logoColor=white"></a>
-  <a href="https://discord.gg/u82JU5JDM"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
+  <a href="https://discord.gg/9XJQx8eYSG"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -87,7 +87,7 @@ Windows SmartScreen may warn on first run because the installer is not signed: c
 - **Video stutters:** set **Upscaling** to Off in the player menu.
 - **Window flickers or the app is slow:** try **Settings → Performance**, or start **CloudStream (safe graphics)** from the Start menu.
 - **A source does not play:** turn off your VPN or Cloudflare WARP, or use **Reload sources** in the player.
-- **Report a bug:** open an [issue](../../issues/new/choose) with **Settings → About → Copy diagnostics**, or ask on [Discord](https://discord.gg/u82JU5JDM).
+- **Report a bug:** open an [issue](../../issues/new/choose) with **Settings → About → Copy diagnostics**, or ask on [Discord](https://discord.gg/9XJQx8eYSG).
 
 ## Build from source
 

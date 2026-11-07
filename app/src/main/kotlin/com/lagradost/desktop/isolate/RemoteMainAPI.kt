@@ -78,9 +78,17 @@ class RemoteMainAPI(private val meta: Meta) : MainAPI() {
      */
     override fun getVideoInterceptor(extractorLink: ExtractorLink): okhttp3.Interceptor? {
         moved?.let { return it.getVideoInterceptor(extractorLink) }
+        // a link on the extension's own little server (GoTaku serves its videos from http://127.0.0.1:<port>/...): that server runs in the sandbox,
+        // which this process cannot connect to (an AppContainer's loopback is closed to other processes), so every request of the link is made there
+        if (onLoopback(extractorLink.url)) return RemoteInterceptor(this, extractorLink)
         if (!meta.hasInterceptor) return null
         val has = runCatching { kotlinx.coroutines.runBlocking { callHost("hasInterceptor", 20_000, "link" to IsolationSerde.write(extractorLink, ExtractorLink::class.java)).asBoolean() } }.getOrDefault(false)
         return if (has) RemoteInterceptor(this, extractorLink) else null
+    }
+
+    private fun onLoopback(url: String): Boolean {
+        val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase()?.removePrefix("[")?.removeSuffix("]") ?: return false
+        return host == "localhost" || host == "::1" || host.startsWith("127.")
     }
 
     private fun body(vararg pairs: Pair<String, Any?>) =

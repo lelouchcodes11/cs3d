@@ -58,6 +58,17 @@ enum class AudioDecoder(val label: String, val detail: String, val spdif: String
 }
 
 /**
+ * Who decodes the picture. Auto: the graphics card (mpv's auto-safe list, d3d11va first). Some Intel and older AMD drivers show green
+ * blocks or green flashes with it (mostly HEVC / 10-bit), so Compatible uses the older DXVA2 path copied back to memory, and Off decodes on
+ * the processor (heavier, but no driver is involved). [native] is the value of the GPU player, [copy] the one of the standard player.
+ */
+enum class VideoDecoder(val label: String, val detail: String, val native: String, val copy: String) {
+    Auto("Auto", "The graphics card decodes. Fastest.", "auto-safe", "auto-copy-safe"),
+    Compatible("Compatible", "An older way of the graphics card. Try this for green or flickering pictures.", "dxva2-copy", "dxva2-copy"),
+    Off("Off (processor)", "No graphics card decoding. Fixes any decoder glitch, but heavier on slow PCs.", "no", "no"),
+}
+
+/**
  * CloudStream's dynamic range compressor (new on the phone in October 2026): loud scenes are turned down and quiet speech up, so the film
  * can be watched at night without the volume going up and down. The same three presets as the phone (threshold, makeup gain); ratio 8:1, attack
  * 5 ms, release 400 ms as there. mpv runs ffmpeg's `acompressor` for it (the filter takes linear values, not dB).
@@ -192,6 +203,9 @@ object Appearance {
     val audioDecoderState = mutableStateOf(AudioDecoder.Software)
     var audioDecoder by audioDecoderState
 
+    /** Who decodes the picture (see [VideoDecoder]); changed while a video plays it applies at once */
+    var videoDecoder by mutableStateOf(VideoDecoder.Auto)
+
     /** The compressor preset (Off, Light, Dialogue boost, Heavy); applies to the playing video at once */
     val dynamicRangeState = mutableStateOf(DynamicRange.Off)
     var dynamicRange by dynamicRangeState
@@ -305,6 +319,7 @@ object Appearance {
             // before the modes there was one switch, Anime4K on or off: it becomes Mode A
             upscaler = enumOf(p.getString(PREFIX + "upscaler", null), if (p.getBoolean(PREFIX + "anime4k", false)) Upscaler.Anime4kA else Upscaler.Off)
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
+            videoDecoder = enumOf(p.getString(PREFIX + "video_decoder", null), VideoDecoder.Auto)
             dynamicRange = enumOf(p.getString(PREFIX + "dynamic_range", null), DynamicRange.Off)
             stableVolume = p.getBoolean(PREFIX + "stable_volume", false)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
@@ -369,6 +384,7 @@ object Appearance {
                 .putBoolean(PREFIX + "auto_skip_delay_5s", autoSkipDelay5s)
                 .putBoolean(PREFIX + "show_remaining_time", showRemainingTime)
                 .putString(PREFIX + "audio_decoder", audioDecoder.name)
+                .putString(PREFIX + "video_decoder", videoDecoder.name)
                 .putString(PREFIX + "dynamic_range", dynamicRange.name)
                 .putBoolean(PREFIX + "dock_auto_hide", dockAutoHide)
                 .putBoolean(PREFIX + "sub_universal", subtitleUniversal)

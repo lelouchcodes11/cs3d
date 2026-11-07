@@ -44,6 +44,8 @@ object AiringSchedule {
         runCatching { DataStoreHelper.getAllSubscriptions().forEach { add(it.name, it.syncData) } }
         runCatching { DataStoreHelper.getAllBookmarkedData().forEach { add(it.name, it.syncData) } }
         runCatching { DataStoreHelper.getAllFavorites().forEach { add(it.name, it.syncData) } }
+        // what the AniList account is watching counts too (signed in only; the cache of the notification cards)
+        AniListProgress.known.values.forEach { ids += it.anilistId; norm(it.name).takeIf { n -> n.length >= 3 }?.let { n -> names += n } }
         return ids to names
     }
 
@@ -77,6 +79,7 @@ object AiringSchedule {
     // the reading of each page of the answer blocks its thread: on the UI thread (the page asks from a LaunchedEffect) that was a stall of 250 to 300 ms
     // when the timetable was opened for the first time
     private suspend fun fetch(from: Int, to: Int): List<Airing> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching { AniListProgress.refresh() }
         val (ids, names) = followed()
         val out = ArrayList<Airing>()
         var page = 1

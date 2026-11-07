@@ -109,7 +109,8 @@ fun StartupReveal(content: @Composable () -> Unit) {
                 // the pages people open first are composed under the loader, so their first visit does not stall
                 Startup.warming -> "Getting ready"
                 // smooth for 0.5 s (and a few frames drawn): nothing heavy is running on the UI thread any more
-                now - lastJank < 500 || frames < 8 -> "Getting ready"
+                // (not on a weak PC: its frames may never be calm, and a loader that stays for seconds looks like a hang; the app shows itself instead)
+                !com.lagradost.desktop.ui.fluent.Appearance.light && (now - lastJank < 500 || frames < 8) -> "Getting ready"
                 else -> null
             }
             if (stage == null) break

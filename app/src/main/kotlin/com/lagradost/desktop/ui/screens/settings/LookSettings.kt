@@ -212,6 +212,12 @@ fun GroupBuilder.videoItems() {
     card("Upscaling", "How small videos are enlarged (GPU player only). Anime4K by bloc97; FSR and CAS by AMD, ported by agyild (MIT).", "anime4k fsr scaler sharpen") {
         ComboBox(Upscaler.entries.toList(), Appearance.upscaler, { it.label }, { Appearance.upscaler = it; changed() }, minWidth = 240.dp)
     }
+    card("Hardware decoding", "${Appearance.videoDecoder.detail}", "green flicker glitch decoder hwdec gpu intel dxva") {
+        ComboBox(com.lagradost.desktop.ui.fluent.VideoDecoder.entries.toList(), Appearance.videoDecoder, { it.label }, {
+            Appearance.videoDecoder = it; changed()
+            com.lagradost.desktop.core.ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyVideoDecoder() }
+        }, minWidth = 190.dp)
+    }
     card("Smooth motion", "Stops 24 and 25 fps video from juddering on a 60 Hz screen", "interpolation judder fps") {
         ToggleSwitch(Appearance.smoothMotion, { Appearance.smoothMotion = it; changed() })
     }

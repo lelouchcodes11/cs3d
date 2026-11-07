@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Hardware decoding setting, for green or flickering pictures.** Settings > Player > Video and the player menu: *Auto* (the graphics card, as before), *Compatible* (an older way of the graphics card, which fixes the green flashes some Intel and AMD drivers show) and *Off* (the processor decodes). A change applies to the playing video at once.
+- **GoTaku (and other extensions with their own video server) plays again.** GoTaku serves its videos from a little server inside the extension; with the extension sandbox on, the app could not reach it ("That source did not work"). Those requests now go through the sandbox.
+- **Torrent picker, "Select a torrent to stream".** Right-click an episode (or the title's *More* menu) > *Find torrents…*: searches Nyaa and AnimeTosho for the title, with smart search (only this episode, batches if you want), episode number, resolution, trusted-only and providers on the left, and the releases on the right with group, episode, resolution, dual audio / multi subs badges, seeders, size and age, sortable. A click plays it with the torrent engine.
+- **Notifications look better.** Schedule > Notifications starts with an *Up next* card: the next episode of what you follow, with a live countdown, arrows to the others, and a line that fills as it gets closer. New-episode cards are bigger, show the episode that aired, how many you watched and how far behind you are, and their background comes forward under the pointer. Titles you are watching on a signed-in AniList account count as followed, and their progress is used, without any setup.
+- **New episodes card at the start.** When new episodes are waiting, a small card in the bottom right corner says so ("EP 6 · Overgeared · +1 more"); a click opens the notifications.
+- **Low-end PC mode starts quicker.** The loading screen no longer waits for the pages to be prepared or for smooth frames on a weak PC, which made the start look frozen.
+- **Discord invite updated.** The old link in Settings > About and the support prompt had expired.
+
 ## 1.1.0
 
 - **PIN lock for any profile, the only one too.** A profile with a PIN asks for it when the app opens; until it is typed (on the keyboard) nothing of that profile shows, and the lock screen offers the other profiles or a new one.

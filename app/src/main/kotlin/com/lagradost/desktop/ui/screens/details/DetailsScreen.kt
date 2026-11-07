@@ -833,6 +833,7 @@ private fun ActionRow(
                     buildList {
                         // the links of what Play opens are fetched again (an episode has this in its right-click / three dots menu too)
                         playEpisode?.let { ep -> add(MenuItem("Reload sources", Icons.Refresh) { vm.handleAction(EpisodeClickEvent(ACTION_RELOAD_EPISODE, ep)) }) }
+                        playEpisode?.let { ep -> add(MenuItem("Find torrents…", Icons.Download) { TorrentPicker.show(d.title, if (ep.tvType.isMovieType()) null else ep.episode, ep.poster, null) }) }
                         favorite?.let { fav ->
                             add(MenuItem(if (fav) "Remove from favourites" else "Add to favourites", if (fav) Icons.FavoriteFilled else Icons.Favorite, checked = fav) {
                                 vm.toggleFavoriteStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "Added to favourites" else "Removed from favourites", false) }
@@ -915,6 +916,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                 vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep))
             },
             MenuItem("Choose how to play…", Icons.Settings) { vm.handleAction(EpisodeClickEvent(ACTION_SHOW_OPTIONS, ep)) },
+            MenuItem("Find torrents…", Icons.Download) { TorrentPicker.show(ep.headerName, ep.episode, ep.poster ?: fallback, fallbackHeaders) },
             MenuSeparator,
             MenuItem(if (watched) "Mark as unwatched" else "Mark as watched", Icons.Check) { vm.handleAction(EpisodeClickEvent(ACTION_MARK_AS_WATCHED, ep)) },
             MenuItem("Mark all up to here as watched", Icons.Accept) { vm.handleAction(EpisodeClickEvent(ACTION_MARK_WATCHED_UP_TO_THIS_EPISODE, ep)) },

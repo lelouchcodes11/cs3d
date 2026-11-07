@@ -16,7 +16,7 @@ object AppInfo {
     /** News, new versions, help and feedback */
 
     /** The community server: chat, help, ideas */
-    const val DISCORD_URL = "https://discord.gg/u82JU5JDM"
+    const val DISCORD_URL = "https://discord.gg/9XJQx8eYSG"
 
     /** Donations from India (UPI and cards) */
     const val DONATE_URL = "https://razorpay.me/@lelouch11"

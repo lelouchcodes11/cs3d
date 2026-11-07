@@ -267,6 +267,7 @@ fun AppShell() {
             }
         }
         ToastLayer()
+        com.lagradost.desktop.core.Navigator.current.route.let { r -> if (r !is com.lagradost.desktop.core.Route.Player && r != com.lagradost.desktop.core.Route.Schedule) NewEpisodesPopup() }
         if (com.lagradost.desktop.tools.FrameStats.enabled) com.lagradost.desktop.tools.GpuBenchLayer()
         com.lagradost.desktop.ui.CloudflareSolveBar()
         com.lagradost.desktop.update.UpdateUi.Banner()
@@ -454,7 +455,9 @@ private fun ScreenWarmup() {
         // Under the loader (it stays up a little longer for this): nobody can click yet, so each page needs only a moment, and the first visit of
         // every page after the start is already warm. -Dcloudstream.loaderwarm=false keeps the old way (warmed some seconds after the start).
         var warmed = false
-        if (System.getProperty("cloudstream.loaderwarm") != "false" && !startup.revealed.isCompleted && Navigator.current.route !is Route.Setup && !lowOnMemory()) {
+        if (System.getProperty("cloudstream.loaderwarm") != "false" && !startup.revealed.isCompleted && Navigator.current.route !is Route.Setup && !lowOnMemory()
+            // a weak PC: the warm-up made the loader itself stutter (frames over 50 ms doubled), which reads as a hang at the start
+            && !com.lagradost.desktop.ui.fluent.Appearance.light) {
             startup.warming = true
             try {
                 // after the extensions are loaded (the pages show them), not during: both at once only made each slower

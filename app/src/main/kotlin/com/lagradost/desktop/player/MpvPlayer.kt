@@ -340,7 +340,7 @@ open class MpvPlayer : IPlayer {
             // display-resample + interpolation timed frames to the screen's refresh instead, but the refresh a child window sees is jittery
             // (mpv measured ~54 Hz, jitter 0.46 on a 60 Hz screen): 66 dropped and 155 mistimed frames in 40 s of 24p; audio timing: none
             Log.i(TAG, "native video window 0x${java.lang.Long.toHexString(wid)}")
-            for ((k, v) in listOf("wid" to wid.toString(), "vo" to (if (System.getProperty("cloudstream.novo") != null) "null" else "gpu"), "gpu-api" to "d3d11", "hwdec" to "auto-safe",
+            for ((k, v) in listOf("wid" to wid.toString(), "vo" to (if (System.getProperty("cloudstream.novo") != null) "null" else "gpu"), "gpu-api" to "d3d11", "hwdec" to com.lagradost.desktop.ui.fluent.Appearance.videoDecoder.native,
                 "osc" to "no", "osd-level" to "0", "input-default-bindings" to "no", "input-vo-keyboard" to "no", "input-media-keys" to "no", "media-controls" to "no", "input-cursor" to "no", "cursor-autohide" to "no", "keepaspect" to "yes", "background-color" to "#000000"))
                 mpv.mpv_set_option_string(ctx, k, v)
             // the upscaling mode of the settings (Off leaves mpv's own defaults alone)
@@ -351,7 +351,7 @@ open class MpvPlayer : IPlayer {
         } else {
             mpv.mpv_set_option_string(ctx, "vo", if (headless) "null" else "libmpv")
             // decoded frames are read back for the software renderer
-            mpv.mpv_set_option_string(ctx, "hwdec", "auto-copy-safe")
+            mpv.mpv_set_option_string(ctx, "hwdec", com.lagradost.desktop.ui.fluent.Appearance.videoDecoder.copy)
         }
         mpv.mpv_set_option_string(ctx, "audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
         // stable volume and the compressor of the settings (both off leaves the sound alone)
@@ -719,6 +719,9 @@ open class MpvPlayer : IPlayer {
 
     /** A new audio decoder choice (SW / HW / HW+) while a video plays: mpv reopens the sound in place, the position stays */
     fun applyAudioDecoder() = setMpvProperty("audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
+
+    /** A new video decoder choice while a video plays: mpv switches the decoder in place, the position stays */
+    fun applyVideoDecoder() = com.lagradost.desktop.ui.fluent.Appearance.videoDecoder.let { setMpvProperty("hwdec", if (native) it.native else it.copy) }
 
     /** A new compressor preset or Stable volume switch while a video plays: the audio filter chain is replaced (an empty value takes it away), the position stays */
     fun applyDynamicRange() = setMpvProperty("af", com.lagradost.desktop.ui.fluent.Appearance.audioFilter)

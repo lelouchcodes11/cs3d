@@ -423,6 +423,8 @@ object TorrentEngine {
             )
             for (re in patterns) videos.filter { re.containsMatchIn(it.path.substringAfterLast('/')) }.maxByOrNull { it.length }?.let { return it }
         }
+        // anime batches name their files "Title - 06 [1080p].mkv": the episode alone
+        if (episode != null) videos.filter { TorrentSearch.episodeOf(it.path.substringAfterLast('/')) == episode }.maxByOrNull { it.length }?.let { return it }
         return videos.maxByOrNull { it.length } ?: files.maxByOrNull { it.length }
     }
 

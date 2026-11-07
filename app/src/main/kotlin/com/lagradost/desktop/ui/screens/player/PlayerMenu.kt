@@ -80,7 +80,7 @@ enum class MenuPage(val title: String) {
     Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Tracks("Video & Audio"), Subtitles("Subtitles"), SecondSubtitle("Second subtitle"), SubtitleTiming("Subtitle delay and size"),
     Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"), Compressor("Dynamic range"),
     Upscaling("Upscaling"), Skip("Skip intro & credits"), ScreenText("Translate on-screen text"), Dimmer("Dimmer"), Sleep("Sleep timer"),
-    AudioDelay("Audio delay"),
+    AudioDelay("Audio delay"), VideoDecoder("Hardware decoding"),
 }
 
 /** Every panel and bubble over the video (menu, episodes, volume and seek bubbles, subtitle pill): one surface */
@@ -153,6 +153,7 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                     MenuPage.Dimmer -> ChoicePage(dimLevels.map { dimLabel(it) }, dimLevels.indexOfFirst { kotlin.math.abs(it - Appearance.dimmer) < 0.01f }) { Appearance.dimmer = dimLevels[it]; Appearance.save() }
                     MenuPage.Sleep -> ChoicePage(sleepMinutes.map { if (it == 0) "Off" else "$it min" }, if (SleepTimer.endsAt == 0L) 0 else -1) { SleepTimer.set(sleepMinutes[it]) }
                     MenuPage.Decoder -> DecoderPage()
+                    MenuPage.VideoDecoder -> VideoDecoderPage()
                     MenuPage.Compressor -> CompressorPage()
                     MenuPage.Upscaling -> UpscalingPage()
                     MenuPage.Skip -> SkipPage()
@@ -182,6 +183,7 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         NavRow(Icons.Aspect, "Picture size", s.resize.label) { onPage(MenuPage.Picture) }
         NavRow(Icons.Theme, "Dimmer", dimLabel(Appearance.dimmer)) { onPage(MenuPage.Dimmer) }
         NavRow(Icons.Clock, "Sleep timer", SleepTimer.label()) { onPage(MenuPage.Sleep) }
+        NavRow(Icons.Video, "Hardware decoding", Appearance.videoDecoder.label.substringBefore(" (")) { onPage(MenuPage.VideoDecoder) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
         NavRow(Icons.Clock, "Audio delay", if (s.audioDelayMs != 0L) "${if (s.audioDelayMs > 0) "+" else ""}${s.audioDelayMs} ms" else null) { onPage(MenuPage.AudioDelay) }
         ToggleRow(Icons.Volume, "Stable volume", Appearance.stableVolume) {
@@ -788,5 +790,23 @@ object SleepTimer {
         if (end == 0L) return "Off"
         val left = ((end - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0L) + 1
         return "$left min left"
+    }
+}
+
+/** Who decodes the picture (green or flickering pictures on some Intel / AMD drivers): a click switches the playing video's decoder in place */
+@Composable
+private fun VideoDecoderPage() {
+    var pick by remember { mutableStateOf(Appearance.videoDecoder) }
+    Column {
+        com.lagradost.desktop.ui.fluent.VideoDecoder.entries.forEach { d ->
+            CheckRow(d.label, d == pick, detail = d.detail) {
+                if (d != pick) {
+                    pick = d
+                    Appearance.videoDecoder = d
+                    Appearance.save()
+                    ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyVideoDecoder() }
+                }
+            }
+        }
     }
 }

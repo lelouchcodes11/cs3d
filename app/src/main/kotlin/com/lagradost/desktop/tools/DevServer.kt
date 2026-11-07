@@ -1168,6 +1168,11 @@ object DevServer {
                 }
                 ok(ex)
             }
+            "/torrents" -> {
+                // dev: the torrent picker of a title: /torrents?q=Overgeared&ep=6
+                onEdt { com.lagradost.desktop.ui.screens.details.TorrentPicker.show(q["q"] ?: "Overgeared", q["ep"]?.toIntOrNull(), q["poster"], null) }
+                ok(ex)
+            }
             "/sandboxstats" -> {
                 // dev: how much memory the extension sandbox's program uses
                 ok(ex, kotlinx.coroutines.runBlocking { com.lagradost.desktop.isolate.IsolatedHost.call("stats", com.lagradost.cloudstream3.mapper.createObjectNode(), 20_000) }.toString())
