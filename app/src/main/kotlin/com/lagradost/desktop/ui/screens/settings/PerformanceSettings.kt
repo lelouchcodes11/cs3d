@@ -28,7 +28,7 @@ fun GroupBuilder.performanceItems() {
         "For an old or small PC: shorter animations, no hover zoom or moving profile pictures, no seek preview, no frame blending in the video, smaller picture and texture caches.\n${LowEnd.describe()}\n$state",
         "slow lag laggy old weak low end potato ram memory cpu animations reduce light performance",
     ) {
-        ComboBox(PerformanceMode.entries.toList(), Appearance.performance, { it.label }, { Appearance.performance = it; changed() }, minWidth = 170.dp)
+        ComboBox(PerformanceMode.entries.toList(), Appearance.performance, { it.label }, { Appearance.performance = it; changed() }, minWidth = 230.dp)
     }
     card(
         "Graphics renderer",
@@ -39,7 +39,7 @@ fun GroupBuilder.performanceItems() {
         var restart by remember { mutableStateOf(false) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (restart) Button("Restart now", { AppRestart.request() }, kind = ButtonKind.Standard)
-            ComboBox(RenderChoice.entries.toList(), chosen, { it.label }, { chosen = it; Graphics.setChoice(it); restart = true }, minWidth = 170.dp)
+            ComboBox(RenderChoice.entries.toList(), chosen, { it.label }, { chosen = it; Graphics.setChoice(it); restart = true }, minWidth = 230.dp)
         }
     }
 }

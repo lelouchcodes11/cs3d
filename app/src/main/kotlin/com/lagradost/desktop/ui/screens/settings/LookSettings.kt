@@ -99,7 +99,7 @@ fun GroupBuilder.layoutItems() {
     }
     if (Appearance.navPosition == NavPosition.Left || Appearance.navPosition == NavPosition.Right) {
         card("Side rail", "Show the page names when the pointer is on the rail, never, or all the time.") {
-            ComboBox(NavStyle.entries.toList(), Appearance.navStyle, { it.label }, { Appearance.navStyle = it; changed() }, minWidth = 190.dp)
+            ComboBox(NavStyle.entries.toList(), Appearance.navStyle, { it.label }, { Appearance.navStyle = it; changed() }, minWidth = 230.dp)
         }
     }
     // corner radius with a live sample
@@ -135,13 +135,13 @@ fun GroupBuilder.layoutItems() {
         Slider(Appearance.dimmer, { Appearance.dimmer = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0f..0.8f, onValueChangeFinished = { changed() })
     }
     card("Spacing", "Room between and around items.", "density compact") {
-        ComboBox(Density.entries.toList(), Appearance.density, { it.label }, { Appearance.density = it; changed() }, minWidth = 150.dp)
+        ComboBox(Density.entries.toList(), Appearance.density, { it.label }, { Appearance.density = it; changed() }, minWidth = 230.dp)
     }
     card("Touchscreen swipes", "Auto detects a touchscreen. Choose On if yours is not detected.", "touch finger swipe tablet scroll") {
-        ComboBox(com.lagradost.desktop.ui.fluent.TouchSwipes.entries.toList(), Appearance.touchSwipes, { it.label }, { Appearance.touchSwipes = it; changed() }, minWidth = 150.dp)
+        ComboBox(com.lagradost.desktop.ui.fluent.TouchSwipes.entries.toList(), Appearance.touchSwipes, { it.label }, { Appearance.touchSwipes = it; changed() }, minWidth = 230.dp)
     }
     card("Animations", "Page transitions and hover effects.", "motion transitions reduce") {
-        ComboBox(Motion.entries.toList(), Appearance.motionChoice, { it.label }, { Appearance.motion = it; changed() }, minWidth = 150.dp)
+        ComboBox(Motion.entries.toList(), Appearance.motionChoice, { it.label }, { Appearance.motion = it; changed() }, minWidth = 230.dp)
     }
     card("Zoom on hover", "Posters and dock items grow a little under the pointer.", "hover") {
         ToggleSwitch(Appearance.hoverZoom, { Appearance.hoverZoom = it; changed() })
@@ -158,7 +158,7 @@ fun GroupBuilder.backgroundItems() {
             if (Appearance.theme != "classic" && Appearance.backdrop == Backdrop.Black) " Pure black is the look of the Classic theme: a colour theme brings its own page colour." else "",
         "ambient black background",
     ) {
-        ComboBox(Backdrop.entries.toList(), Appearance.backdrop, { it.label }, { Appearance.backdrop = it; changed() }, minWidth = 220.dp)
+        ComboBox(Backdrop.entries.toList(), Appearance.backdrop, { it.label }, { Appearance.backdrop = it; changed() }, minWidth = 230.dp)
     }
     card("See-through bars", "Bars, the dock and the open rail let the page show through a little.", "glass transparent blur acrylic") {
         ToggleSwitch(Appearance.glass, { Appearance.glass = it; changed() })
@@ -185,7 +185,7 @@ fun GroupBuilder.homeItems() {
         ToggleSwitch(Appearance.homeContinue, { Appearance.homeContinue = it; changed() })
     }
     card("Poster size", "Size of the posters in shelves and grids.", "cards thumbnails") {
-        ComboBox(PosterSize.entries.toList(), Appearance.posterSize, { it.label }, { Appearance.posterSize = it; changed() }, minWidth = 150.dp)
+        ComboBox(PosterSize.entries.toList(), Appearance.posterSize, { it.label }, { Appearance.posterSize = it; changed() }, minWidth = 230.dp)
     }
 }
 
@@ -210,13 +210,13 @@ fun GroupBuilder.videoItems() {
         ToggleSwitch(Appearance.nativePlayer, { Appearance.nativePlayer = it; changed() })
     }
     card("Upscaling", "How small videos are enlarged (GPU player only). Anime4K by bloc97; FSR and CAS by AMD, ported by agyild (MIT).", "anime4k fsr scaler sharpen") {
-        ComboBox(Upscaler.entries.toList(), Appearance.upscaler, { it.label }, { Appearance.upscaler = it; changed() }, minWidth = 240.dp)
+        ComboBox(Upscaler.entries.toList(), Appearance.upscaler, { it.label }, { Appearance.upscaler = it; changed() }, minWidth = 230.dp)
     }
     card("Hardware decoding", "${Appearance.videoDecoder.detail}", "green flicker glitch decoder hwdec gpu intel dxva") {
         ComboBox(com.lagradost.desktop.ui.fluent.VideoDecoder.entries.toList(), Appearance.videoDecoder, { it.label }, {
             Appearance.videoDecoder = it; changed()
             com.lagradost.desktop.core.ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyVideoDecoder() }
-        }, minWidth = 190.dp)
+        }, minWidth = 230.dp)
     }
     card("Smooth motion", "Stops 24 and 25 fps video from juddering on a 60 Hz screen", "interpolation judder fps") {
         ToggleSwitch(Appearance.smoothMotion, { Appearance.smoothMotion = it; changed() })
@@ -237,10 +237,10 @@ fun GroupBuilder.smoothSourcesItem() {
 fun GroupBuilder.controlItems() {
     fun changed() = Appearance.save()
     card("Player controls", "Modern: a floating bar over the picture. Classic: a full-width bar at the bottom.", "style bar") {
-        ComboBox(PlayerStyle.entries.toList(), Appearance.playerStyle, { it.label }, { Appearance.playerStyle = it; changed() }, minWidth = 210.dp)
+        ComboBox(PlayerStyle.entries.toList(), Appearance.playerStyle, { it.label }, { Appearance.playerStyle = it; changed() }, minWidth = 230.dp)
     }
     card("Hide the player controls", "How long until the controls hide after the mouse stops", "auto hide timeout cursor") {
-        ComboBox(listOf(2, 4, 8, 15, 0), Appearance.controlsHideSeconds, { if (it == 0) "Never" else "After $it s" }, { Appearance.controlsHideSeconds = it; changed() }, minWidth = 150.dp)
+        ComboBox(listOf(2, 4, 8, 15, 0), Appearance.controlsHideSeconds, { if (it == 0) "Never" else "After $it s" }, { Appearance.controlsHideSeconds = it; changed() }, minWidth = 230.dp)
     }
     card("Controls safety net", "Shows the controls when they fail to appear on some PCs", "controls missing not visible hidden stuck black fail-safe fallback") {
         ToggleSwitch(Appearance.controlsGuard, { Appearance.controlsGuard = it; changed() })
@@ -405,7 +405,7 @@ fun GroupBuilder.themeItems() {
             FluentSettings.themeMode,
             { when (it) { ThemeMode.System -> "Use system setting"; ThemeMode.Light -> "Light"; ThemeMode.Dark -> "Dark" } },
             { FluentSettings.chooseMode(it) },
-            minWidth = 190.dp,
+            minWidth = 230.dp,
         )
     }
 
@@ -609,13 +609,13 @@ fun GroupBuilder.colorItems() {
 
     // 4. Button & Surface Style Controls
     card("Button & pill style", "White keeps the main buttons white") {
-        ComboBox(ButtonStyle.entries.toList(), Appearance.buttonStyle, { it.label }, { Appearance.buttonStyle = it; changed() }, minWidth = 190.dp)
+        ComboBox(ButtonStyle.entries.toList(), Appearance.buttonStyle, { it.label }, { Appearance.buttonStyle = it; changed() }, minWidth = 230.dp)
     }
     card("Coloured navigation highlight", "Fill the active tab in the floating bar, side rail and dock with your button colour instead of neutral dark glass.") {
         ToggleSwitch(Appearance.navAccentPill, { Appearance.navAccentPill = it; changed() })
     }
     card("Surface & border tint", "How strongly cards, menus, controls and borders absorb the theme or accent colour.") {
-        ComboBox(SurfaceTint.entries.toList(), Appearance.surfaceTint, { it.label }, { Appearance.surfaceTint = it; changed() }, minWidth = 190.dp)
+        ComboBox(SurfaceTint.entries.toList(), Appearance.surfaceTint, { it.label }, { Appearance.surfaceTint = it; changed() }, minWidth = 230.dp)
     }
 }
 

@@ -51,6 +51,13 @@ object NativeVideo {
     /** The controls window is up: dialogs and messages are drawn there then (the main window's own layer is behind the video) */
     var overlayActive by mutableStateOf(false)
 
+    /**
+     * The controls window has drawn its first frames at its place over the video. Until then the video's window stays hidden and the loading screen is
+     * drawn by the main window: the video's window used to be shown first (a black plate for ~0.6 s, then the picture with a corner not yet covered,
+     * then the loading screen over a picture that was already playing, then the picture again).
+     */
+    var overlayPainted by mutableStateOf(false)
+
     /** The controls window itself, so the small window can be moved together with it (see WinChrome.place) */
     @Volatile
     var overlayWindow: java.awt.Window? = null
@@ -231,10 +238,39 @@ fun NativeVideoHost(modifier: Modifier, visible: Boolean = true) {
     // thread busy), and a window of its own that is shown in the middle of it stands on the screen unpainted, plain white, until the thread is free
     // again (measured: the whole window white for 250 to 370 ms in 3 of 5 first videos; a second video was clean).
     var added by remember { mutableStateOf(false) }
+    // the panel that holds the video's window: black at first, hidden while the main window shows the loading screen, shown again with the video
+    val panel = remember {
+        javax.swing.JPanel(null).apply {
+            background = java.awt.Color.BLACK; isOpaque = true
+            // no layout manager: the hidden video window keeps the panel's size (mpv makes its picture at that size before it is shown)
+            add(canvas)
+            addComponentListener(object : java.awt.event.ComponentAdapter() {
+                override fun componentResized(e: java.awt.event.ComponentEvent?) { canvas.setBounds(0, 0, width, height) }
+            })
+        }
+    }
+    // see-through only after the page has drawn (the loading screen under it): from the start it showed white while the page was being built
+    var seeThrough by remember { mutableStateOf(false) }
+    // the containers made black for the player and their own colours, given back when the page goes
+    var darkened by remember { mutableStateOf<List<Pair<java.awt.Component, java.awt.Color?>>>(emptyList()) }
+    DisposableEffect(Unit) { onDispose { darkened.forEach { (c, color) -> runCatching { c.background = color } } } }
     LaunchedEffect(canvas) {
         withFrameNanos { }; withFrameNanos { }
-        delay(100)
+        // the page has drawn its first frames (the loading screen): the black panel steps aside so it is seen (hidden before that, the window's
+        // unpainted white showed for ~0.4 s while the page was being built)
+        // (the containers behind it are made black first: their default grey-white showed for two frames when the panel stepped aside)
+        val behind = generateSequence(panel.parent) { it.parent }.takeWhile { it !is java.awt.Window }.toList()
+        val before = behind.map { it.background }
+        behind.forEach { it.background = java.awt.Color.BLACK }
+        darkened = behind.zip(before)
+        panel.isVisible = false
+        seeThrough = true
+        // shown once the controls window (with the same loading screen) lies over it, or after 1.5 s whatever happens (no controls window at all)
+        val start = System.currentTimeMillis()
+        while (!NativeVideo.overlayPainted && System.currentTimeMillis() - start < 1_500) delay(16)
+        canvas.setBounds(0, 0, panel.width, panel.height)
         canvas.isVisible = true
+        panel.isVisible = true
         added = true
     }
     DisposableEffect(added) {
@@ -244,17 +280,21 @@ fun NativeVideoHost(modifier: Modifier, visible: Boolean = true) {
     // a black panel around the video window (the default one is light grey) and the window's own background brush black (the default one is white):
     // both showed as a bright flash for about 0.4 s when the page opened
     SwingPanel(
-        factory = { javax.swing.JPanel(java.awt.BorderLayout()).apply { background = java.awt.Color.BLACK; isOpaque = true; add(canvas, java.awt.BorderLayout.CENTER) } },
-        modifier = modifier, background = androidx.compose.ui.graphics.Color.Black,
+        factory = { panel },
+        modifier = modifier, background = if (seeThrough && !added) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.ui.graphics.Color.Black,
     )
 }
 
 /** Where the video window is on the screen (its panel's place when it is hidden); null while the page is not on screen */
 private fun videoOrigin(canvas: Canvas): java.awt.Point? {
     if (canvas.isShowing) return canvas.locationOnScreen
-    val host = canvas.parent ?: return null
-    if (!host.isShowing) return null
-    return host.locationOnScreen.also { it.translate(canvas.x, canvas.y) }
+    // hidden (it is until the controls window has drawn): the first showing window above it, plus the offsets on the way
+    var x = canvas.x
+    var y = canvas.y
+    var c: java.awt.Component? = canvas.parent
+    while (c != null && !c.isShowing) { x += c.x; y += c.y; c = c.parent }
+    if (c == null) return null
+    return c.locationOnScreen.also { it.translate(x, y) }
 }
 
 /**
@@ -278,6 +318,11 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
     val overlayTest = remember { System.getProperty("cloudstream.overlaytest") }
     DialogWindow(onCloseRequest = {}, state = state, visible = placed && overlayTest != "hidden", undecorated = true, transparent = true, resizable = false, focusable = focusable) {
         shown[0] = window
+        // drawn at its place: the video's window may be shown under it now (see NativeVideo.overlayPainted)
+        LaunchedEffect(placed) {
+            if (placed) { withFrameNanos { }; withFrameNanos { }; delay(32); NativeVideo.overlayPainted = true }
+        }
+        DisposableEffect(Unit) { onDispose { NativeVideo.overlayPainted = false } }
         // a new window of this class is white until something paints it (the first frame of the first video of a run showed it as one half-white frame at the
         // moment the page changes): its own background brush is black from its first paint, like the video's window
         remember(window) {

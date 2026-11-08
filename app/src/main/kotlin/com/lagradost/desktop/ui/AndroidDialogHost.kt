@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import com.lagradost.desktop.ui.fluent.tabletVerticalScroll as verticalScroll
@@ -70,6 +72,7 @@ fun AndroidDialogHost(dialog: Dialog) {
     var shown by remember(dialog) { mutableStateOf(false) }
     LaunchedEffect(dialog) { shown = true }
     val appear by animateFloatAsState(if (shown) 1f else 0f)
+    if (dialog is com.lagradost.desktop.isolate.CheckDialog) { CheckFrame(dialog, appear); return }
 
     // Decor size follows the window layout (MATCH_PARENT fills the available width)
     val fillWidth = layoutWidth == ViewGroup.LayoutParams.MATCH_PARENT || isSheet || isAlert
@@ -164,4 +167,65 @@ private fun hasScrollingView(view: android.view.View): Boolean {
     if (name.endsWith("NestedScrollView") || name.endsWith("RecyclerView") || name.endsWith("ViewPager2")) return true
     if (view is ViewGroup) for (i in 0 until view.getChildCount()) if (view.getChildAt(i)?.let(::hasScrollingView) == true) return true
     return false
+}
+
+/**
+ * The check window of an extension in the sandbox (a Cloudflare page that wants a person): a card with what is going on and what to do, the page itself,
+ * and under it the site with a working ring and Cancel. Escape and a click on Cancel end it (the extension is told it was cancelled).
+ */
+@Composable
+private fun CheckFrame(dialog: com.lagradost.desktop.isolate.CheckDialog, appear: Float) {
+    val c = com.lagradost.desktop.ui.fluent.Fluent.colors
+    val type = com.lagradost.desktop.ui.fluent.Fluent.type
+    val decor = dialog.getWindow().getDecorView()
+    val lp = decor.getLayoutParams()
+    if (lp == null || lp.width != ViewGroup.LayoutParams.MATCH_PARENT || lp.height != ViewGroup.LayoutParams.MATCH_PARENT) {
+        SideEffect { decor.setLayoutParams(ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
+    }
+    // the site of the page, read again now and then (the check moves from the challenge address to the site)
+    var site by remember(dialog) { mutableStateOf("") }
+    LaunchedEffect(dialog) {
+        while (true) {
+            site = runCatching { java.net.URI(dialog.url() ?: "").host?.removePrefix("www.") }.getOrNull().orEmpty()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+    BoxWithConstraints(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f * appear)).pointerInput(dialog) { detectTapGestures { } },
+        contentAlignment = Alignment.Center,
+    ) {
+        val cardW = min(maxWidth - 48.dp, 760.dp)
+        val pageH = min(maxHeight - 240.dp, 500.dp).coerceAtLeast(220.dp)
+        val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.overlay)
+        androidx.compose.foundation.layout.Column(
+            Modifier.width(cardW).alpha(appear).clip(shape).background(c.flyout, shape).padding(20.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+        ) {
+            androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.size(44.dp).background(c.control, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                    com.lagradost.desktop.ui.fluent.Icon(com.lagradost.desktop.ui.fluent.Icons.Lock, size = 20.dp, tint = c.text)
+                }
+                androidx.compose.foundation.layout.Column(Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(3.dp)) {
+                    com.lagradost.desktop.ui.fluent.FText(
+                        dialog.extension?.let { com.lagradost.desktop.i18n.Tr.f("{0} needs you to pass a check", it) } ?: "An extension needs you to pass a check",
+                        style = type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 2,
+                    )
+                    com.lagradost.desktop.ui.fluent.FText(
+                        "The site checks that a person is watching. Tick the box if one shows: this window closes by itself once the check is passed.",
+                        style = type.caption, color = c.textSecondary, maxLines = 3,
+                    )
+                }
+            }
+            // the page (a window of its own under the app's drawing: nothing is drawn over it)
+            Box(Modifier.fillMaxWidth().height(pageH).clip(RoundedCornerShape(10.dp)).background(Color.White), propagateMinConstraints = true) {
+                AndroidViewHost(decor)
+            }
+            androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                com.lagradost.desktop.ui.fluent.ProgressRing(size = 14.dp, strokeWidth = 2.dp)
+                Box(Modifier.width(10.dp))
+                com.lagradost.desktop.ui.fluent.FText(if (site.isNotBlank()) com.lagradost.desktop.i18n.Tr.f("Waiting for {0}", site) else "Waiting for the check", style = type.caption, color = c.textTertiary, maxLines = 1, modifier = Modifier.weight(1f))
+                com.lagradost.desktop.ui.fluent.Button("Cancel", { dialog.cancel() })
+            }
+        }
+    }
 }

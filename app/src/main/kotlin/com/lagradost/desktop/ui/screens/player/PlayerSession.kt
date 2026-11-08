@@ -151,6 +151,9 @@ class PlayerSession(
     /** Shown over the video until playback starts; null once a source plays */
     var loadingText by mutableStateOf<String?>("Looking for sources…"); private set
 
+    /** When the loading screen started to fade in (0: not shown): the copy in the main window and the one in the controls window fade in together */
+    var loadingAppearAt = 0L
+
     /** When the source that is being started was asked for, so that the loading screen can say how long it has been waiting */
     var sourceStartedAt by mutableLongStateOf(0L); private set
 

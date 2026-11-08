@@ -24,18 +24,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
 import com.lagradost.desktop.runtime.web.CloudflareGate
-import com.lagradost.desktop.ui.fluent.Button
 import com.lagradost.desktop.ui.fluent.FText
 import com.lagradost.desktop.ui.fluent.Fluent
 import com.lagradost.desktop.ui.fluent.FluentShapes
 import com.lagradost.desktop.ui.fluent.ProgressRing
-import com.lagradost.desktop.ui.fluent.hairBorder
 import kotlinx.coroutines.delay
 
 /**
- * "Passing a Cloudflare check for <site>…" with a Cancel button, at the bottom of the window while a hidden page works on a site's check (the
- * request of an extension waits for it, up to a minute). It shows after a moment, so the checks that take a second never flash it. Cancel stops
- * the page, the extension's request goes on without the clearance, and the site is left alone for two minutes.
+ * A small chip in the bottom right corner while a hidden page works on a site's Cloudflare check: "Cloudflare check · <site>", a ring and a stop
+ * button. It was a bar in the middle of the window after 5 s, which the owner found in the way every time a source had a check ("that pausing
+ * popup"): it now waits 10 s (the checks that pass by themselves are done by then), sits out of the way, and never shows over the player or the
+ * setup. Stop ends the page, the extension's request goes on without the clearance, and the site is left alone for two minutes.
  */
 @Composable
 fun CloudflareSolveBar() {
@@ -48,32 +47,32 @@ fun CloudflareSolveBar() {
             delay(400)
         }
     }
-    // the checks that pass by themselves take a few seconds and are never seen
-    val waiting = solves.toList().filter { now - it.startedAt > 5000 }
-    // the text stays while the bar slides away
+    val route = com.lagradost.desktop.core.Navigator.current.route
+    val quietHere = route is com.lagradost.desktop.core.Route.Player || route is com.lagradost.desktop.core.Route.Setup
+    val waiting = if (quietHere) emptyList() else solves.toList().filter { now - it.startedAt > 10_000 }
+    // the text stays while the chip fades away
     val hosts = remember { arrayOf("") }
-    if (waiting.isNotEmpty()) hosts[0] = waiting.map { it.host }.distinct().joinToString(", ")
-    Box(Modifier.fillMaxSize().padding(bottom = 96.dp), contentAlignment = Alignment.BottomCenter) {
+    if (waiting.isNotEmpty()) hosts[0] = waiting.map { it.host.removePrefix("www.") }.distinct().joinToString(", ")
+    Box(Modifier.fillMaxSize().padding(end = 24.dp, bottom = 24.dp), contentAlignment = Alignment.BottomEnd) {
         AnimatedVisibility(
             waiting.isNotEmpty(),
-            enter = fadeIn() + slideInVertically { it / 2 },
-            exit = fadeOut() + slideOutVertically { it / 2 },
+            enter = fadeIn() + slideInVertically { it / 3 },
+            exit = fadeOut() + slideOutVertically { it / 3 },
         ) {
-            val shape = RoundedCornerShape(FluentShapes.card)
+            val shape = RoundedCornerShape(50)
             Row(
                 Modifier
-                    .widthIn(max = 560.dp)
-                    .shadow(18.dp, shape, clip = false)
+                    .widthIn(max = 460.dp)
+                    .shadow(12.dp, shape, clip = false)
                     .background(c.flyout, shape)
-                    .hairBorder(c.strokeStrong.copy(alpha = 0.4f), shape)
-                    .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ProgressRing(size = 18.dp, strokeWidth = 2.dp)
-                Box(Modifier.width(12.dp))
-                FText("Passing the Cloudflare check of ${hosts[0]}…", maxLines = 2, modifier = Modifier.weight(1f, fill = false))
-                Box(Modifier.width(14.dp))
-                Button("Cancel", { CloudflareGate.cancelSolves() })
+                ProgressRing(size = 14.dp, strokeWidth = 2.dp)
+                Box(Modifier.width(10.dp))
+                FText(com.lagradost.desktop.i18n.Tr.f("Passing the Cloudflare check of {0}…", hosts[0]), style = Fluent.type.caption, color = c.textSecondary, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                Box(Modifier.width(6.dp))
+                com.lagradost.desktop.ui.fluent.IconButton(com.lagradost.desktop.ui.fluent.Icons.Close, { CloudflareGate.cancelSolves() }, tooltip = "Stop", size = 26.dp, iconSize = 11.dp)
             }
         }
     }

@@ -211,7 +211,7 @@ private fun TorrentCards() {
         }
     }
     SettingsCard("Buffer size", "How much of the playing torrent is kept ready on the disk. A bigger buffer helps with seeking and slow swarms.") {
-        ComboBox(listOf(128, 256, 512, 1024, 2048), TorrentEngine.cacheMb, { if (it >= 1024) "${it / 1024} GB" else "$it MB" }, { TorrentEngine.chooseCacheMb(it) }, minWidth = 110.dp)
+        ComboBox(listOf(128, 256, 512, 1024, 2048), TorrentEngine.cacheMb, { if (it >= 1024) "${it / 1024} GB" else "$it MB" }, { TorrentEngine.chooseCacheMb(it) }, minWidth = 230.dp)
     }
     SettingsCard("Only encrypted connections", "Some internet providers slow plain torrent traffic down. Some peers do not support encryption, so fewer are found.") {
         ToggleSwitch(TorrentEngine.encrypt, { TorrentEngine.chooseEncrypt(it) })

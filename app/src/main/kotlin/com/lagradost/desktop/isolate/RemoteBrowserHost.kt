@@ -412,21 +412,11 @@ object RemoteBrowserHost {
             return false
         }
         val ctx = DesktopBootstrap.activity
-        val root = android.widget.LinearLayout(ctx)
-        root.setOrientation(android.widget.LinearLayout.VERTICAL)
-        val title = android.widget.TextView(ctx)
-        title.setText(if (extension != null) com.lagradost.desktop.i18n.Tr.f("{0} needs you to pass a check", extension) else com.lagradost.desktop.i18n.Tr.t("An extension needs you to pass a check"))
-        title.setPadding(24, 16, 24, 16)
-        title.setTextSize(16f)
-        root.addView(title)
         (page.view.getParent() as? ViewGroup)?.removeView(page.view)
-        root.addView(page.view, android.widget.LinearLayout.LayoutParams(WINDOW_WIDTH, WINDOW_HEIGHT))
-        val cancel = android.widget.Button(ctx)
-        cancel.setText(com.lagradost.desktop.i18n.Tr.t("Cancel"))
-        cancel.setOnClickListener { userCancelled(page) }
-        root.addView(cancel)
-        val dialog = android.app.Dialog(ctx)
-        dialog.setContentView(root)
+        // the page alone: the window around it (title, what to do, the site, Cancel) is drawn by the app (see CheckDialog), like an extension's own
+        // check window looks when it runs in the app; it was a bare line of text, the page and a grey button
+        val dialog = CheckDialog(ctx, extension) { runCatching { page.view.getUrl() }.getOrNull() }
+        dialog.setContentView(page.view)
         dialog.setOnCancelListener { userCancelled(page) }
         page.dialog = dialog
         dialog.show()
@@ -482,6 +472,10 @@ object RemoteBrowserHost {
     /** A check that is still on this long after it appeared is shown to the user */
     private const val CHALLENGE_SHOW_MS = 6_000L
 
-    private const val WINDOW_WIDTH = 760
-    private const val WINDOW_HEIGHT = 560
 }
+
+/**
+ * The window of a Cloudflare (or other "are you human") check that an extension in the sandbox needs passed: only its page is the content; the app draws the
+ * rest around it (see AndroidDialogHost). [extension] is the name shown, [url] the page's address (its site is shown under the page).
+ */
+class CheckDialog(context: android.content.Context, val extension: String?, val url: () -> String?) : android.app.Dialog(context)

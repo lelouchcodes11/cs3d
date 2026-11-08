@@ -657,7 +657,10 @@ private fun PlayerContent(s: PlayerSession) {
         }
         // the episode list is open: a click on the picture closes it and does not pause the video (below the controls, which keep working)
         if (showEpisodes && !pip) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { showEpisodes = false } })
-        if (s.loadingText != null && s.failure == null) LoadingOverlay(s) else if (s.failure != null) FailureOverlay(s)
+        // the loading screen fades out over the first picture (it used to cut away)
+        AnimatedVisibility(s.loadingText != null && s.failure == null, enter = androidx.compose.animation.EnterTransition.None, exit = fadeOut(tween(com.lagradost.desktop.ui.fluent.FluentMotion.ms(280)))) { LoadingOverlay(s) }
+        LaunchedEffect(s.loadingText == null) { if (s.loadingText == null) { delay(400); if (s.loadingText == null) s.loadingAppearAt = 0L } }
+        if (s.failure != null) FailureOverlay(s)
         // playing, but no picture moves: waiting for data (shown after 0.3 s so that short stalls do not flicker)
         BufferingRing(s.loadingText == null && s.failure == null && s.status == CSPlayerLoading.IsBuffering, Modifier.align(Alignment.Center))
         // a paused video says so, also when the controls are hidden
@@ -745,6 +748,8 @@ private fun PlayerContent(s: PlayerSession) {
             .pointerHoverIcon(if (!visible && !paused) blankCursor else PointerIcon.Default)
             .then(pointerWatch(!native)),
     ) {
+        // until the controls window lies over the video the main window draws the loading screen itself (the video's window is hidden till then)
+        if (native && !NativeVideo.overlayPainted && s.loadingText != null && s.failure == null && !s.closing) LoadingOverlay(s)
         if (native) NativeVideoHost(Modifier.fillMaxSize()) else VideoSurface(s, Modifier.fillMaxSize().then(tapGestures))
         if (native) {
             val dialogsOpen = com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty() || s.typing
@@ -1033,8 +1038,17 @@ private fun LoadingOverlay(s: PlayerSession) {
         ).joinToString("   ·   ")
     }
     // the screen settles in instead of cutting from the page to a black plate
-    val appear = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(Unit) { appear.animateTo(1f, tween(com.lagradost.desktop.ui.fluent.FluentMotion.ms(360), easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+    // (one start time for both copies: the main window's and the controls window's, which takes over a moment later and must not start again from nothing)
+    val appearMs = com.lagradost.desktop.ui.fluent.FluentMotion.ms(360)
+    val appear = remember { androidx.compose.animation.core.Animatable(if (s.loadingAppearAt == 0L || appearMs <= 0) 0f else ((System.currentTimeMillis() - s.loadingAppearAt).toFloat() / appearMs).coerceIn(0f, 1f)) }
+    LaunchedEffect(Unit) {
+        if (s.loadingAppearAt == 0L) s.loadingAppearAt = System.currentTimeMillis()
+        val left = (appearMs - (System.currentTimeMillis() - s.loadingAppearAt)).toInt().coerceAtLeast(0)
+        if (left > 0) appear.animateTo(1f, tween(left, easing = androidx.compose.animation.core.FastOutSlowInEasing)) else appear.snapTo(1f)
+    }
+    // the last words stay while the screen fades out
+    val lastText = remember { arrayOf("") }
+    s.loadingText?.let { lastText[0] = it }
     Box(
         // the page colour of the theme, as every other page (a blue-grey gradient used to show here)
         Modifier.fillMaxSize().background(playerPageColor()).pointerInput(Unit) { detectTapGestures { } },
@@ -1054,7 +1068,7 @@ private fun LoadingOverlay(s: PlayerSession) {
             if (facts.isNotBlank()) FText(facts, style = Fluent.type.bodyStrong.copy(fontSize = 13.sp), color = Color(0xCCFFFFFF), maxLines = 1)
             Box(Modifier.height(8.dp))
             ProgressBar(null, Modifier.width(360.dp), height = 3.dp)
-            FText(s.loadingText ?: "", color = Color(0xCCFFFFFF), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            FText(s.loadingText ?: lastText[0], color = Color(0xCCFFFFFF), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             // a torrent: who it is downloaded from and how far the first part is
             s.torrent?.let { t ->
                 if (t.peers > 0 || t.speedBps > 0) FText("${t.peers} peers (${t.seeds} seeds)" + (if (t.speedBps > 0) "  ·  " + com.lagradost.desktop.torrent.TorrentConsent.speed(t.speedBps) else ""), style = Fluent.type.caption, color = Color(0xB3FFFFFF))

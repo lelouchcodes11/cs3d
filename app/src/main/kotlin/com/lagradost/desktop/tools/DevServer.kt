@@ -1151,6 +1151,8 @@ object DevServer {
             "/cfgate" -> {
                 // dev: what the Cloudflare gate thinks of an extension: /cfgate?api=AnimePahe
                 val gate = com.lagradost.desktop.runtime.web.CloudflareGate
+                // /cfgate?fake=<host>: a pretend solve of 25 s, to look at the corner chip
+                q["fake"]?.let { h -> val solve = gate.beginSolve(h) {}; Thread { Thread.sleep(25_000); gate.endSolve(solve) }.apply { isDaemon = true }.start(); return ok(ex, "pretend solve of $h") }
                 val api = com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(q["api"]!!)
                 val host = api?.let { runCatching { java.net.URI(it.mainUrl).host }.getOrNull() }
                 ok(ex, "active=${gate.activeApis()} host=$host apisOfHost=${host?.let { gate.apisOfHost(it) }} apisOfLoader=${api?.let { gate.apisOfLoader(it.javaClass.classLoader) }} inUseHost=${host?.let { gate.inUseHost(it) }} inUseOwner=${api?.let { gate.inUseOwner(it.javaClass) }} allowsSolving=${host?.let { gate.allowsSolving(it) }}")

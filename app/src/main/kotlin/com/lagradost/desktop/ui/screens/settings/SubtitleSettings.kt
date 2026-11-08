@@ -106,7 +106,7 @@ fun SubtitleStyleEditor(modifier: Modifier = Modifier, initial: SaveCaptionStyle
                         val now = style
                         com.lagradost.desktop.core.ioTask { applyStyleEvent.invoke(now) }
                     },
-                    minWidth = 180.dp,
+                    minWidth = 230.dp,
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
