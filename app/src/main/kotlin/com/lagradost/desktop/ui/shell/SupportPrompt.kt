@@ -80,19 +80,18 @@ object SupportPrompt {
         val d = Overlays.Dialog(
             title = "Enjoying CloudStream for Windows?",
             primary = "★  Star on GitHub",
-            secondary = "♥  Donate (India)",
             close = "Later",
-            width = 480.dp,
+            width = 540.dp,
             onPrimary = { activeDialog = null; DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) },
-            onSecondary = { activeDialog = null; DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) },
             onClose = { activeDialog = null },
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 FText("It is free, has no ads and is made in spare time. A star on GitHub helps other people find it, and a donation keeps it growing. Thank you!", color = Fluent.colors.textSecondary)
-                // outside India the Razorpay page does not take the card: Buy Me a Coffee does
-                Button("Donate from anywhere (Buy Me a Coffee)", { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_INTL_URL) }, icon = Icons.Favorite, height = 34.dp)
-                // chat, news and help are on Discord
+                // the two ways to donate side by side (outside India the Razorpay page does not take the card: Buy Me a Coffee does), then Discord;
+                // the footer keeps one main action and "Later" (three buttons of the same weight there read as a form)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button("Donate (India)", { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) }, icon = Icons.Favorite, height = 34.dp)
+                    Button("Buy Me a Coffee", { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_INTL_URL) }, icon = Icons.Favorite, height = 34.dp)
                     Button("Discord server", { DesktopPlatform.openExternalBrowser(AppInfo.DISCORD_URL) }, icon = Icons.Link, height = 34.dp)
                 }
             }

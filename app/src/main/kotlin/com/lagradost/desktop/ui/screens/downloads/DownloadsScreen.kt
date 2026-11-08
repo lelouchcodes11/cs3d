@@ -133,12 +133,13 @@ fun DownloadsScreen() {
         Column(Modifier.padding(start = 36.dp, end = 36.dp, top = 20.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (folder != null) IconButton(Icons.Back, { folder = null; vm.clearChildren() }, tooltip = "All downloads", kind = ButtonKind.Standard, size = 40.dp)
-                com.lagradost.desktop.ui.fluent.PageHeader(folder?.data?.name ?: "Downloads", Modifier.weight(1f), icon = Icons.Download, tint = androidx.compose.ui.graphics.Color(0xFF3FBF7F), subtitle = if (folder == null) "Titles saved on this PC" else "Episodes") {
+                com.lagradost.desktop.ui.fluent.PageHeader(folder?.data?.name ?: "Downloads", Modifier.weight(1f), icon = Icons.Download, tint = androidx.compose.ui.graphics.Color(0xFF3FBF7F), subtitle = if (folder != null) "Episodes" else if ((downloaded ?: 0L) <= 0L && (free ?: 0L) > 0L) "Titles saved on this PC  ·  ${size(free ?: 0L)} free" else "Titles saved on this PC") {
                     IconButton(Icons.Refresh, { vm.updateHeaderList(ctx) }, tooltip = "Refresh", kind = ButtonKind.Standard, size = 36.dp)
                 }
             }
             val total = (used ?: 0L) + (free ?: 0L)
-            if (total > 0) {
+            // the storage bar only once something is saved: an empty grey bar on an empty page was a box with nothing to say (the free space is in the subtitle then)
+            if (total > 0 && (downloaded ?: 0L) > 0L) {
                 Column(Modifier.fillMaxWidth().glass(com.lagradost.desktop.ui.fluent.FluentShapes.card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // nothing downloaded: an empty track, not a dot that looks like progress
                     ProgressBar(if ((downloaded ?: 0L) <= 0L) 0f else ((downloaded ?: 0L).toFloat() / total).coerceIn(0.01f, 1f), height = 8.dp)
@@ -154,7 +155,9 @@ fun DownloadsScreen() {
             is Resource.Success -> {
                 val items = res.value
                 if (items.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Download, "No downloads yet", "Use the download action of an episode or movie to keep it offline.")
+                    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Download, "No downloads yet", "Use the download action of an episode or movie to keep it offline.") {
+                        com.lagradost.desktop.ui.fluent.Button("Browse titles", { com.lagradost.desktop.core.Navigator.goTab(com.lagradost.desktop.core.Tab.Home) }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Accent, icon = Icons.Home, height = 36.dp)
+                    }
                 } else LazyColumn(Modifier.fillMaxSize().smoothWheel(listState), state = listState, contentPadding = PaddingValues(start = 36.dp, end = 36.dp, top = 8.dp, bottom = 8.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(items, key = { it.data.id }) { item -> DownloadRow(item, onOpenFolder = { if (it is VisualDownloadCached.Header) folder = it }) }
                 }

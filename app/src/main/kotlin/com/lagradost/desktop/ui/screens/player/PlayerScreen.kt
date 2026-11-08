@@ -1,6 +1,5 @@
 package com.lagradost.desktop.ui.screens.player
 
-import com.lagradost.desktop.ui.fluent.hairBorder
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -1110,7 +1109,7 @@ private fun PausedBadge(s: PlayerSession, modifier: Modifier) {
     LaunchedEffect(Unit) { appear.animateTo(1f, androidx.compose.animation.core.spring(0.5f, 420f)) }
     Box(
         modifier.size(88.dp).graphicsLayer { scaleX = appear.value; scaleY = appear.value; alpha = ((appear.value - 0.6f) / 0.4f).coerceIn(0f, 1f) }
-            .clip(CircleShape).background(Color(0x73000000)).hairBorder(Color(0x4DFFFFFF), CircleShape)
+            .clip(CircleShape).background(Color(0x73000000))
             .pointerInput(Unit) { detectTapGestures { s.play() } },
         contentAlignment = Alignment.Center,
     ) {
@@ -1134,7 +1133,7 @@ private fun FailureOverlay(s: PlayerSession) {
             modifier = Modifier.widthIn(max = 640.dp).padding(horizontal = 32.dp).graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 14.dp.toPx() },
         ) {
             // Light mode's caution colour is a dark amber made for a light page: on the player's dark screen it is a bright one
-            Box(Modifier.size(52.dp).background(Color(0x26FFFFFF), CircleShape).hairBorder(Color(0x33FFFFFF), CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(52.dp).background(Color(0x26FFFFFF), CircleShape), contentAlignment = Alignment.Center) {
                 Icon(Icons.Warning, size = 24.dp, tint = if (Fluent.colors.dark) Fluent.colors.caution else Color(0xFFFFB84D))
             }
             FText(s.title, style = Fluent.type.bodyStrong.copy(fontSize = 15.sp), color = Color(0xCCFFFFFF), maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -1159,7 +1158,7 @@ internal fun SourcesPanel(s: PlayerSession, onClose: () -> Unit, modifier: Modif
     val items = s.sources().filter { it.usable || it.current }
     val shape = RoundedCornerShape(18.dp)
     Column(
-        modifier.width(420.dp).heightIn(max = 460.dp).clip(shape).background(Color(0xF0101114), shape).hairBorder(GlassBorder, shape)
+        modifier.width(420.dp).heightIn(max = 460.dp).clip(shape).background(Color(0xF0101114), shape)
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
         Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1304,7 +1303,7 @@ private fun GlassIconButton(glyph: String, tooltip: String, modifier: Modifier =
     val bg by androidx.compose.animation.animateColorAsState(if (hovered) Color(0x40FFFFFF) else Color(0x1FFFFFFF), com.lagradost.desktop.ui.fluent.FluentMotion.tweenStd(140))
     com.lagradost.desktop.ui.fluent.Tooltip(tooltip) {
         Box(
-            modifier.size(size).clip(CircleShape).background(bg, CircleShape).hairBorder(Color(0x33FFFFFF), CircleShape)
+            modifier.size(size).clip(CircleShape).background(bg, CircleShape)
                 .fluentClickable(source, true, CircleShape, Role.Button, onClick),
             contentAlignment = Alignment.Center,
         ) { Icon(glyph, size = 16.dp, tint = Color.White) }
@@ -1313,7 +1312,7 @@ private fun GlassIconButton(glyph: String, tooltip: String, modifier: Modifier =
 
 @Composable
 private fun InfoChip(text: String) {
-    Box(Modifier.background(Color(0x26FFFFFF), RoundedCornerShape(50)).hairBorder(Color(0x1AFFFFFF), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp)) {
+    Box(Modifier.background(Color(0x26FFFFFF), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp)) {
         FText(text, style = Fluent.type.caption, color = Color(0xE6FFFFFF), maxLines = 1, softWrap = false)
     }
 }
@@ -1392,7 +1391,7 @@ private fun SeekBar(s: PlayerSession) {
             val stillW = if (still != null) 160f else 88f
             Box(Modifier.align(Alignment.TopStart).offset { androidx.compose.ui.unit.IntOffset(((x - stillW / 2).coerceIn(0f, (width - stillW).coerceAtLeast(0f))).toInt(), if (still != null) -(40.dp.roundToPx() + 92.dp.roundToPx()) else -40) }) {
                 Column(
-                    Modifier.background(PlayerSurface, RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).hairBorder(PlayerSurfaceBorder, RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    Modifier.background(PlayerSurface, RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.small)).padding(horizontal = 10.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (still != null) {
@@ -1532,7 +1531,7 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
     val panelShape = RoundedCornerShape(18.dp)
     Column(
         Modifier.padding(top = if (com.lagradost.desktop.platform.WinChrome.windowedBar) 46.dp else 12.dp, end = 12.dp, bottom = 12.dp)
-            .fillMaxHeight().width(392.dp).clip(panelShape).background(Color(0xFF161719), panelShape).hairBorder(PlayerSurfaceBorder, panelShape)
+            .fillMaxHeight().width(392.dp).clip(panelShape).background(Color(0xFF161719), panelShape)
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
         Row(Modifier.fillMaxWidth().padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1742,7 +1741,7 @@ private fun SubtitlePill(s: PlayerSession, modifier: Modifier) {
         val st = status
         val shape = RoundedCornerShape(50)
         Row(
-            modifier.widthIn(max = 380.dp).background(PlayerSurface, shape).hairBorder(PlayerSurfaceBorder, shape).padding(start = 12.dp, end = 14.dp).height(32.dp),
+            modifier.widthIn(max = 380.dp).background(PlayerSurface, shape).padding(start = 12.dp, end = 14.dp).height(32.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (st.state) {
@@ -1764,7 +1763,7 @@ private fun BoostPill(s: PlayerSession, modifier: Modifier) {
     AnimatedVisibility(on, modifier, enter = fadeIn(tween(90)), exit = fadeOut(tween(180))) {
         val shape = RoundedCornerShape(50)
         Row(
-            Modifier.background(PlayerSurface, shape).hairBorder(PlayerSurfaceBorder, shape).padding(start = 14.dp, end = 16.dp).height(38.dp),
+            Modifier.background(PlayerSurface, shape).padding(start = 14.dp, end = 16.dp).height(38.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(Icons.Speed, size = 16.dp, tint = Color.White)
@@ -1794,7 +1793,7 @@ private fun HudOverlay(s: PlayerSession, modifier: Modifier) {
         val h = last ?: return@AnimatedVisibility
         val shape = RoundedCornerShape(50)
         Row(
-            Modifier.background(PlayerSurface, shape).hairBorder(PlayerSurfaceBorder, shape).padding(start = 14.dp, end = 16.dp).height(38.dp),
+            Modifier.background(PlayerSurface, shape).padding(start = 14.dp, end = 16.dp).height(38.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(h.glyph, size = 16.dp, tint = Color.White)
@@ -1817,7 +1816,7 @@ private fun TorrentPill(s: PlayerSession, modifier: Modifier) {
     if (s.loadingText != null) return
     val shape = RoundedCornerShape(50)
     Row(
-        modifier.widthIn(max = 420.dp).background(PlayerSurface, shape).hairBorder(PlayerSurfaceBorder, shape).padding(start = 12.dp, end = 14.dp).height(32.dp),
+        modifier.widthIn(max = 420.dp).background(PlayerSurface, shape).padding(start = 12.dp, end = 14.dp).height(32.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(Icons.Link, size = 14.dp, tint = Fluent.colors.accent)

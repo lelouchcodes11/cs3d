@@ -331,11 +331,19 @@ private fun ResultsHeader(
             }
             return
         }
+        // "All" first: with every kind on, eight white chips in a row looked like eight buttons pressed at once. While All is on the kinds are plain, and a
+        // click on one shows only that kind; taking the last kind off (or adding the last one) is All again
+        val allOn = types.isEmpty() || validTypes.all { it in types }
         com.lagradost.desktop.ui.fluent.TouchLazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item(key = "all") { Chip("All", allOn, onClick = { if (!allOn) onTypes(validTypes) }) }
             items(validTypes, key = { it.name }) { t ->
-                Chip(typeName(t), t in types, onClick = {
-                    val next = if (t in types) types - t else types + t
-                    onTypes(next)
+                Chip(typeName(t), !allOn && t in types, onClick = {
+                    val next = when {
+                        allOn -> listOf(t)
+                        t in types -> types - t
+                        else -> types + t
+                    }
+                    onTypes(if (next.isEmpty() || validTypes.all { it in next }) validTypes else next)
                 })
             }
         }

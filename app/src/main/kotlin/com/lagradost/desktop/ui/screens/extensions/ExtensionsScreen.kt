@@ -299,7 +299,7 @@ private fun RepoRow(
         Row(
             Modifier.fillMaxWidth()
                 .lightShadow(shape).clip(shape)
-                .let { if (selected) it.background(bg, shape).border(1.5.dp, c.selectedEdge, shape) else it.cardSurface(shape, hovered) }
+                .let { if (selected) it.background(bg, shape) else it.cardSurface(shape, hovered) }
                 .fluentClickable(source, true, shape, Role.Tab, onClick)
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -350,16 +350,16 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
     val counts = when { sources == 1 -> com.lagradost.desktop.i18n.Tr.t("1 source"); sources > 1 -> com.lagradost.desktop.i18n.Tr.f("{0} sources", sources); else -> "" }
     // one row: the icon, what the extension is and does, and its buttons at the right (the card is as tall as its text, not a fixed block with empty space in it)
     Row(
-        Modifier.fillMaxWidth().hoverable(source).lightShadow(shape).clip(shape).cardSurface(shape, hovered).padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().hoverable(source).lightShadow(shape).clip(shape).cardSurface(shape, hovered).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Box(Modifier.size(52.dp).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(46.dp).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
             Icon(Icons.Extensions, size = 22.dp, tint = c.textTertiary)
             // the Installed page lists what is on the disk, which has no icon: the repositories' icon of the same plugin is used
             val iconUrl = p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")
                 ?: if (local) com.lagradost.desktop.net.ExtensionIcons.iconForFile(p.url) else null
-            iconUrl?.let { RemoteImage(it, null, null, Modifier.size(52.dp), ContentScale.Crop) }
+            iconUrl?.let { RemoteImage(it, null, null, Modifier.size(46.dp), ContentScale.Crop) }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             FText(p.name, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)
@@ -384,7 +384,8 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
             }
         }, tooltip = "Extension settings", kind = ButtonKind.Standard, size = 34.dp)
         if (item.isDownloaded) {
-            Button("Uninstall", { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, local) }, enabled = !busy, icon = Icons.Delete, height = 34.dp)
+            // a round button like the settings one beside it: two different shapes side by side looked unfinished
+            IconButton(Icons.Delete, { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, local) } }, tooltip = "Uninstall", kind = ButtonKind.Standard, size = 34.dp)
         } else {
             com.lagradost.desktop.ui.fluent.PillButton(if (busy) "Installing…" else "Install", Icons.Download, primary = true, onClick = { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, false) } }, height = 34.dp)
         }

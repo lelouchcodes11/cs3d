@@ -474,7 +474,8 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().smoothWheel(listState), contentPadding = PaddingValues(bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "header") {
                 Header(vm, shownData, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty() || tmdbTrailer != null, (trailers.orEmpty().flatMap { t -> t.mirros.map { it.second } } + listOfNotNull(tmdbTrailer)).distinct(), tmdbLinks, tmdb,
-                    scroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE })
+                    scroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE },
+                    filmLike = (episodes as? Resource.Success)?.value?.size == 1 && seasons.orEmpty().size <= 1 && shownData.onGoingText.str()?.contains("ongoing", true) != true)
             }
             item(key = "trackers") { TrackerCard(sync) }
             if (tabs.isNotEmpty()) item(key = "tabs") {
@@ -649,6 +650,8 @@ private fun Header(
     links: List<Pair<String, String>>,
     tmdb: com.lagradost.desktop.tmdb.TmdbInfo?,
     scroll: () -> Float = { 0f },
+    // one episode in all of a finished title (an anime film, an OVA): it plays as a film, "Play", no "Up next E1" card
+    filmLike: Boolean = false,
 ) {
     val c = Fluent.colors
     val backdrop = d.backgroundPosterUrl ?: d.posterBackgroundImage
@@ -676,17 +679,20 @@ private fun Header(
         // which extension this page comes from (it decides the sources), small, at the right
         d.apiName.str()?.takeIf { it.isNotBlank() }?.let { api ->
             Column(Modifier.align(Alignment.TopEnd).padding(top = com.lagradost.desktop.ui.shell.TopBarHeight + 20.dp, end = 36.dp), horizontalAlignment = Alignment.End) {
-                FText("SOURCE", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, letterSpacing = 1.4.sp), color = Color(0x99FFFFFF), maxLines = 1)
-                FText(api, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
+                // a soft shadow: over bright artwork the white name was hard to read
+                val shade = androidx.compose.ui.graphics.Shadow(Color(0xB3000000), androidx.compose.ui.geometry.Offset(0f, 1f), 10f)
+                FText("SOURCE", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, letterSpacing = 1.4.sp, shadow = shade), color = Color(0xB3FFFFFF), maxLines = 1)
+                FText(api, style = Fluent.type.bodyStrong.copy(shadow = shade), color = Color.White, maxLines = 1)
             }
         }
 
         // a series: the episode the Play button opens, as a card (its still, where you are in it)
-        if (wide && playEpisode != null && !playEpisode.tvType.isMovieType()) {
+        val showUpNext = wide && playEpisode != null && !playEpisode.tvType.isMovieType() && !filmLike
+        if (showUpNext && playEpisode != null) {
             UpNextCard(vm, playEpisode, playEpisode.poster ?: backdrop ?: poster, d.posterHeaders, Modifier.align(Alignment.BottomEnd).padding(end = gutter, bottom = 34.dp).graphicsLayer { alpha = (1f - scroll() / (height.toPx() * 0.4f)).coerceIn(0f, 1f) })
         }
         Column(
-            Modifier.align(Alignment.BottomStart).padding(start = gutter, end = gutter, bottom = 30.dp).widthIn(max = 820.dp)
+            Modifier.align(Alignment.BottomStart).padding(start = gutter, end = if (showUpNext) gutter + UpNextWidth + 32.dp else gutter, bottom = 30.dp).widthIn(max = 820.dp)
                 .graphicsLayer { val s = scroll().coerceAtMost(height.toPx()); translationY = s * 0.18f; alpha = (1f - s / (height.toPx() * 0.55f)).coerceIn(0f, 1f) },
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -718,10 +724,12 @@ private fun Header(
             }
             d.vpnText.str()?.let { FText(it, style = Fluent.type.caption, color = c.caution) }
             Box(Modifier.height(4.dp))
-            ActionRow(vm, d, watch, favorite, subscribed, playEpisode, resumeText, hasTrailer, trailerUrls, links)
+            ActionRow(vm, d, watch, favorite, subscribed, playEpisode, resumeText, hasTrailer, trailerUrls, links, filmLike)
         }
     }
 }
+
+private val UpNextWidth = 330.dp
 
 /** The episode the Play button opens, as a glass card at the right of the header: its still, "Continue" or "Up next", the number and name, and a line for how far you are */
 @Composable
@@ -735,10 +743,9 @@ private fun UpNextCard(vm: ResultViewModel2, ep: ResultEpisode, image: String?, 
     Row(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .width(330.dp)
+            .width(UpNextWidth)
             .clip(shape)
-            .background(if (hovered) Color(0xE6141418) else Color(0xCC0B0B10), shape)
-            .hairBorder(Color(0x33FFFFFF), shape)
+            .background(if (hovered) Color(0xE62C2C2E) else Color(0xCC1C1C1E), shape)
             .fluentClickable(source, true, shape, Role.Button) { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep)) }
             .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -783,6 +790,7 @@ private fun ActionRow(
     hasTrailer: Boolean,
     trailerUrls: List<String>,
     links: List<Pair<String, String>>,
+    filmLike: Boolean = false,
 ) {
     val ctx = DesktopBootstrap.activity
     var bookmarkOpen by remember { mutableStateOf(false) }
@@ -790,12 +798,12 @@ private fun ActionRow(
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         if (playEpisode != null) {
             val label = when {
-                playEpisode.tvType.isMovieType() -> if (playEpisode.getRealPosition() > 0) "Resume" else "Play"
+                playEpisode.tvType.isMovieType() || filmLike -> if (playEpisode.getRealPosition() > 0) "Resume" else "Play"
                 else -> (if (playEpisode.getRealPosition() > 0) "Resume " else "Play ") + (if (playEpisode.season != null) "S${playEpisode.season} · " else "") + "E${playEpisode.episode}"
             }
             com.lagradost.desktop.ui.fluent.PillButton(label, Icons.Play, primary = true, onClick = { vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode)) }, height = 50.dp, modifier = Modifier.widthIn(min = 180.dp))
             // a film that was started: from the beginning instead (an episode has this in its ⋯ menu)
-            if (playEpisode.tvType.isMovieType() && playEpisode.getRealPosition() > 0) {
+            if ((playEpisode.tvType.isMovieType() || filmLike) && playEpisode.getRealPosition() > 0) {
                 com.lagradost.desktop.ui.fluent.PillButton("Start over", Icons.Previous, primary = false, onClick = {
                     com.lagradost.desktop.ui.screens.player.StartOver.request(playEpisode.id)
                     vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode))

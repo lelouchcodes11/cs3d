@@ -115,7 +115,8 @@ fun SettingsCard(
         Column(Modifier.weight(1f).widthIn(min = 120.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             FText(title, color = if (enabled) c.text else c.textDisabled, maxLines = 3)
             // a description is never cut: in a half-screen window a long translation beside a drop-down ("Follow Windows, or always use light or dark surfaces") took five lines
-            if (!subtitle.isNullOrBlank()) FText(subtitle, style = Fluent.type.caption, color = if (enabled) c.textSecondary else c.textDisabled, maxLines = 8)
+            // one sentence has no full stop (half the rows had one, half not): the same rule for all of them, after the translation (the table is keyed by the English text)
+            if (!subtitle.isNullOrBlank()) FText(com.lagradost.desktop.i18n.Tr.t(subtitle).let { s -> if (s.endsWith(".") && s.count { it == '.' } == 1) s.dropLast(1) else s }, style = Fluent.type.caption, color = if (enabled) c.textSecondary else c.textDisabled, maxLines = 8)
             if (below != null) { Box(Modifier.height(8.dp)); below() }
         }
         trailing()

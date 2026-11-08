@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -157,8 +158,9 @@ fun StatsScreen() {
                     Triple("Last 30 days", duration(data.monthMs), "${data.activeDays} days watched"),
                     Triple("Streak", "${data.streak} ${if (data.streak == 1) "day" else "days"}", "${data.titles} titles in the diary"),
                 )
-                if (wide) Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) { tiles.forEach { (a, b, c) -> Box(Modifier.weight(1f)) { Tile(a, b, c) } } }
-                else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { tiles.chunked(2).forEach { r -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { r.forEach { (a, b, c) -> Box(Modifier.weight(1f)) { Tile(a, b, c) } } } } }
+                // the tiles are as tall as the tallest (a caption on two lines made the first one stick out)
+                if (wide) Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(14.dp)) { tiles.forEach { (a, b, c) -> Box(Modifier.weight(1f).fillMaxHeight()) { Tile(a, b, c) } } }
+                else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { tiles.chunked(2).forEach { r -> Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) { r.forEach { (a, b, c) -> Box(Modifier.weight(1f).fillMaxHeight()) { Tile(a, b, c) } } } } }
             }
             item(key = "heat") { Card("Activity") { Heatmap(data.perDay, data.weekdays) } }
             item(key = "split") {
@@ -192,7 +194,7 @@ private fun Tile(label: String, value: String, sub: String) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
-        Modifier.fillMaxWidth().lightShadow(shape).clip(shape).cardSurface(shape).padding(18.dp),
+        Modifier.fillMaxSize().lightShadow(shape).clip(shape).cardSurface(shape).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         FText(label, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)

@@ -90,15 +90,14 @@ object Isolation {
      */
     suspend fun moveToApp(path: String, reason: String) {
         val spec = IsolatedHost.specOf(path) ?: return
-        remember(spec.internalName)
         if (!fallbackAllowed()) {
-            // the sandbox could not give it the browser page it asked for: it is not run in the app instead
-            Log.w(TAG, "${spec.internalName}: unloaded ($reason); running it in the app is not allowed")
-            unload(path)
-            blocked[path] = spec.internalName
-            inApp[path] = "blocked: $reason"
+            // the sandbox could not give it the browser page it asked for this time (no Edge WebView2 on this PC, too many pages open at once, a page
+            // that failed): only that page fails, the extension stays in the sandbox with everything else it does. It used to be unloaded and
+            // remembered as "needs the app", so it was never loaded again, even after the cause was gone: needing a browser is not dangerous.
+            Log.w(TAG, "${spec.internalName}: a browser page could not be made ($reason); it stays in the sandbox")
             return
         }
+        remember(spec.internalName)
         Log.i(TAG, "${spec.internalName}: moves to the app ($reason)")
         val remote = APIHolder.allProviders.toList().filter { it.sourcePlugin == path }.filterIsInstance<RemoteMainAPI>()
         unload(path)
@@ -150,7 +149,8 @@ object Isolation {
         if (PluginSandbox.isTrusted(data.internalName)) { inApp[path] = "trusted"; return false }
         if (data.internalName.lowercase() in WORKS_ON_APP_DATA) { inApp[path] = "syncs the app's library"; return false }
         if (!AppContainerLauncher.available) return cannotSandbox(path, data.internalName, "Windows cannot start it on this PC")
-        if (data.internalName.lowercase() in moved()) return cannotSandbox(path, data.internalName, "its browser page could not be made")
+        // found earlier to need the app's own browser: in the app only when the user allows extensions there; else the sandbox is tried again
+        if (data.internalName.lowercase() in moved() && fallbackAllowed()) { inApp[path] = "its browser page could not be made"; return false }
         return when (val result = IsolatedHost.loadPlugin(IsolatedHost.Spec(path, data.internalName, data.url))) {
             is IsolatedHost.Loaded.Providers -> {
                 val apis = result.providers.map { RemoteMainAPI(it) }

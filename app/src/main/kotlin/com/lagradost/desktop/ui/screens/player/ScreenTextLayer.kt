@@ -43,7 +43,7 @@ internal fun ScreenTextLayer(s: PlayerSession) {
         ScreenText.State.Idle -> {}
         is ScreenText.State.Working -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Row(
-                Modifier.padding(top = 56.dp).clip(RoundedCornerShape(50)).background(PlayerSurface, RoundedCornerShape(50)).border(1.dp, PlayerSurfaceBorder, RoundedCornerShape(50))
+                Modifier.padding(top = 56.dp).clip(RoundedCornerShape(50)).background(PlayerSurface, RoundedCornerShape(50))
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -73,7 +73,7 @@ private fun Showing(st: ScreenText.State.Showing) {
             val shape = RoundedCornerShape(6.dp)
             Box(
                 Modifier.offset(x, y).widthIn(min = (pictureW * b.w).coerceAtMost(boxW), max = boxW)
-                    .background(Color(0xEB0D0D10), shape).border(1.dp, Color(0x33FFFFFF), shape).padding(horizontal = 8.dp, vertical = 3.dp),
+                    .background(Color(0xEB0D0D10), shape).padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
                 FText(b.text, style = Fluent.type.body.copy(fontSize = fontSize.sp, lineHeight = (fontSize * 1.25f).sp), color = Color.White)
             }
@@ -81,7 +81,7 @@ private fun Showing(st: ScreenText.State.Showing) {
         // what it is, and how to put it away
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Row(
-                Modifier.padding(top = 18.dp).clip(RoundedCornerShape(50)).background(PlayerSurface, RoundedCornerShape(50)).border(1.dp, PlayerSurfaceBorder, RoundedCornerShape(50))
+                Modifier.padding(top = 18.dp).clip(RoundedCornerShape(50)).background(PlayerSurface, RoundedCornerShape(50))
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -98,7 +98,7 @@ private fun Problem(st: ScreenText.State.Problem) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val shape = RoundedCornerShape(14.dp)
         Column(
-            Modifier.widthIn(max = 460.dp).clip(shape).background(PlayerSurface, shape).border(1.dp, PlayerSurfaceBorder, shape).padding(20.dp),
+            Modifier.widthIn(max = 460.dp).clip(shape).background(PlayerSurface, shape).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FText(st.title, style = Fluent.type.bodyStrong, color = Color.White)

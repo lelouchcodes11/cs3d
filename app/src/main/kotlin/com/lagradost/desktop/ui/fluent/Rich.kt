@@ -173,7 +173,7 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
 }
 
 /** Font size and space between the tabs of [UnderlineTabs], from the roomiest to the tightest */
-private val TabSizes = listOf(19.sp to 30.dp, 17.sp to 22.dp, 15.sp to 16.dp)
+private val TabSizes = listOf(17.sp to 28.dp, 16.sp to 22.dp, 14.sp to 16.dp)
 
 private fun Modifier.onPlacedAt(onPlace: (Float, Float) -> Unit): Modifier =
     this.then(Modifier.onGloballyPositioned { onPlace(it.positionInParent().x, it.size.width.toFloat()) })

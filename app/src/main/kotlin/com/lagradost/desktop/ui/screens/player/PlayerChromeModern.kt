@@ -1,6 +1,5 @@
 package com.lagradost.desktop.ui.screens.player
 
-import com.lagradost.desktop.ui.fluent.hairBorder
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -303,7 +302,7 @@ private fun TimeLeft(s: PlayerSession) {
 @Composable
 private fun QualityBadge(text: String) {
     val shape = RoundedCornerShape(5.dp)
-    Box(Modifier.clip(shape).background(Color(0x2EFFFFFF), shape).hairBorder(Color(0x59FFFFFF), shape).padding(horizontal = 6.dp, vertical = 1.dp)) {
+    Box(Modifier.clip(shape).background(Color(0x2EFFFFFF), shape).padding(horizontal = 6.dp, vertical = 1.dp)) {
         FText(text, style = Fluent.type.caption.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp), color = Color.White, maxLines = 1, softWrap = false)
     }
 }
@@ -354,7 +353,6 @@ internal fun GlassButton(
     Tooltip(tooltip) {
         Box(
             modifier.size(size).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(bg, CircleShape)
-                .let { if (glass) it.hairBorder(GlassBorder, CircleShape) else it }
                 .fluentClickable(source, true, CircleShape, Role.Button, onClick),
             contentAlignment = Alignment.Center,
         ) { content() }
@@ -583,12 +581,10 @@ private fun SeekBubble(thumb: androidx.compose.ui.graphics.ImageBitmap?, crop: I
                     if (stamp != null) FText(stamp, style = Fluent.type.caption, color = Color(0xFFFFD54F), maxLines = 1, softWrap = false)
                     FText(label, style = Fluent.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = Color.White, maxLines = 1, softWrap = false)
                 }
-                // the border drawn over the picture (not around it): no dark frame between the still and the edge
-                Box(Modifier.fillMaxSize().hairBorder(GlassBorder, shape))
             }
         } else {
             Column(
-                Modifier.background(Color(0xE6121316), shape).hairBorder(GlassBorder, shape).padding(horizontal = 12.dp, vertical = 5.dp),
+                Modifier.background(Color(0xE6121316), shape).padding(horizontal = 12.dp, vertical = 5.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (stamp != null) FText(stamp, style = Fluent.type.caption, color = Color(0xFFFFD54F), maxLines = 1, softWrap = false)

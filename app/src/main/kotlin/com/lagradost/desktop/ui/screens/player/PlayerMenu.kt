@@ -1,6 +1,5 @@
 package com.lagradost.desktop.ui.screens.player
 
-import com.lagradost.desktop.ui.fluent.hairBorder
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
@@ -116,7 +115,7 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                 translationY = (1f - appear.value) * 16.dp.toPx() * (if (fromTop) -1f else 1f)
                 transformOrigin = TransformOrigin(originX, if (fromTop) 0f else 1f)
             }
-            .clip(shape).background(MenuColors.card, shape).hairBorder(MenuColors.border, shape)
+            .clip(shape).background(MenuColors.card, shape)
             // clicks on the card stay on the card (the layer behind it closes the menu)
             .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
     ) {

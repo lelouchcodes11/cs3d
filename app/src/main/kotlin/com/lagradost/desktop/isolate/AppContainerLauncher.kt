@@ -83,11 +83,14 @@ object AppContainerLauncher {
 
     /**
      * Policies Windows enforces on the program whatever its code does: no extension points (hooks that load a DLL into a program), no DLL from a network share or from a low
-     * integrity folder. Strict handle checks are turned OFF on purpose: an AppContainer program has them on, and with them on the Java runtime dies (EXCEPTION_INVALID_HANDLE)
+     * integrity folder, DLLs looked up in System32 first (a planted DLL next to the program is not picked), every image relocated and the heap and stack laid
+     * out at random (bottom-up + high-entropy ASLR), the program ended at the first heap corruption, and no font that is not a system font (font files are
+     * a classic way into the kernel). Strict handle checks are turned OFF on purpose: an AppContainer program has them on, and with them on the Java runtime dies (EXCEPTION_INVALID_HANDLE)
      * when one thread closes a socket another is polling, which OkHttp's connection racing does all the time; the isolation does not depend on them. A start without
      * these policies is made when this Windows does not know one of them.
      */
-    private const val MITIGATIONS = (1L shl 32) or (1L shl 52) or (1L shl 56) or (2L shl 24)
+    private const val MITIGATIONS = (1L shl 32) or (1L shl 52) or (1L shl 56) or (2L shl 24) or
+        (1L shl 8) or (1L shl 12) or (1L shl 16) or (1L shl 20) or (1L shl 48) or (1L shl 60)
 
     const val CAPABILITY_INTERNET_CLIENT = "S-1-15-3-1"
 
@@ -319,9 +322,11 @@ object AppContainerLauncher {
     private fun jobFor(memoryLimitBytes: Long): Pointer? {
         val job = kernel.CreateJobObjectW(null, null) ?: return null
         val limits = Memory(144).also { it.clear() }
-        // KILL_ON_JOB_CLOSE (0x2000) | ACTIVE_PROCESS (0x8) | PROCESS_MEMORY (0x100)
-        limits.setInt(16, 0x2000 or 0x8 or 0x100)
+        // KILL_ON_JOB_CLOSE (0x2000) | ACTIVE_PROCESS (0x8) | PROCESS_MEMORY (0x100) | DIE_ON_UNHANDLED_EXCEPTION (0x400) | PRIORITY_CLASS (0x20):
+        // one process, no crash dialog, and below-normal priority so a busy extension can never make the app's window or the video stutter
+        limits.setInt(16, 0x2000 or 0x8 or 0x100 or 0x400 or 0x20)
         limits.setInt(40, 1)
+        limits.setInt(56, 0x4000)
         limits.setLong(112, memoryLimitBytes)
         val ui = Memory(4).also { it.setInt(0, 0xFF) }
         val ok = kernel.SetInformationJobObject(job, 9, limits, 144) && kernel.SetInformationJobObject(job, 4, ui, 4)
