@@ -58,6 +58,11 @@ object NativeVideo {
      */
     var overlayPainted by mutableStateOf(false)
 
+    /** The player page has drawn its first frames: only then is the controls window shown (shown while the first page of a run was still being built, it stood
+     *  there unpainted, one white frame) */
+    @Volatile
+    var pageDrawn = false
+
     /** The controls window itself, so the small window can be moved together with it (see WinChrome.place) */
     @Volatile
     var overlayWindow: java.awt.Window? = null
@@ -253,9 +258,11 @@ fun NativeVideoHost(modifier: Modifier, visible: Boolean = true) {
     var seeThrough by remember { mutableStateOf(false) }
     // the containers made black for the player and their own colours, given back when the page goes
     var darkened by remember { mutableStateOf<List<Pair<java.awt.Component, java.awt.Color?>>>(emptyList()) }
+    DisposableEffect(Unit) { onDispose { NativeVideo.pageDrawn = false } }
     DisposableEffect(Unit) { onDispose { darkened.forEach { (c, color) -> runCatching { c.background = color } } } }
     LaunchedEffect(canvas) {
         withFrameNanos { }; withFrameNanos { }
+        NativeVideo.pageDrawn = true
         // the page has drawn its first frames (the loading screen): the black panel steps aside so it is seen (hidden before that, the window's
         // unpainted white showed for ~0.4 s while the page was being built)
         // (the containers behind it are made black first: their default grey-white showed for two frames when the panel stepped aside)
@@ -389,7 +396,7 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
                         if (at.x != lastX || at.y != lastY) { state.position = WindowPosition(at.x.dp, at.y.dp); lastX = at.x; lastY = at.y }
                         if (canvas.width != lastW || canvas.height != lastH) { state.size = DpSize(canvas.width.dp, canvas.height.dp); lastW = canvas.width; lastH = canvas.height }
                         // in place: let the window take its bounds, then show it
-                        if (!placed && lastW > 0 && lastH > 0) {
+                        if (!placed && lastW > 0 && lastH > 0 && NativeVideo.pageDrawn) {
                             delay(80); placed = true
                             android.util.Log.i("NativeVideo", "controls window placed ${System.currentTimeMillis() - openedAt} ms after the page opened (${lastW}x$lastH at $lastX,$lastY)")
                         }
