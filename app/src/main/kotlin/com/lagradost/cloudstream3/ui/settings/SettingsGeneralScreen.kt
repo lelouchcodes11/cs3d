@@ -165,7 +165,8 @@ object SettingsGeneralScreen : SearchableSettings {
                 preferenceItems = persistentListOf(
                     Preference.PreferenceItem.TextPreference(
                         icon = painterResource(R.drawable.netflix_download),
-                        subtitle = downloadPathVisual,
+                        // desktop: the default folder is named too (the row was blank until a folder was chosen: nobody could see where downloads go)
+                        subtitle = downloadPathVisual?.takeIf { it.isNotBlank() } ?: remember { runCatching { com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement.getDefaultDir(context)?.filePath() }.getOrNull() },
                         title = stringResource(R.string.download_path_pref),
                         onClick = {
                             // This is not a ListPreference because the old selection system is

@@ -227,6 +227,9 @@ object DesktopBootstrap {
      */
     @OptIn(UnsafeSSL::class)
     fun onCreate(act: MainActivity, loadPlugins: Boolean = true, activityLifecycle: Boolean = true) {
+        // the extension sandbox process runs this too: it only loads extensions and answers the app, so the app's own chores (Stremio add-ons, backups,
+        // the GitHub reachability check) are not done there; they cost about half a second of its start and made network calls from the sandbox
+        val worker = System.getProperty("cloudstream.worker") != null
         app.initClient(act, ignoreSSL = false)
         insecureApp.initClient(act, ignoreSSL = true)
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: clients ready")
@@ -244,13 +247,15 @@ object DesktopBootstrap {
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: theme and locale")
         if (!activityLifecycle) MainActivity.afterPluginsLoadedEvent += ::loadClonedSites
         // Stremio add-ons with catalogs are providers: made after every load of the extensions (which may rebuild the list) and at the start
-        MainActivity.afterPluginsLoadedEvent += { ioSafe { com.lagradost.desktop.stremio.StremioAddons.syncProviders() } }
-        com.lagradost.desktop.stremio.StremioAddons.start()
+        if (!worker) {
+            MainActivity.afterPluginsLoadedEvent += { ioSafe { com.lagradost.desktop.stremio.StremioAddons.syncProviders() } }
+            com.lagradost.desktop.stremio.StremioAddons.start()
+        }
         if (activityLifecycle) act.performCreate(null as Bundle?)
         act.updateTv()
 
         // backup when we update the app, I don't trust myself to not boot lock users, might want to make this a setting?
-        safe {
+        if (!worker) safe {
             val appVer = BuildConfig.VERSION_NAME
             val lastAppAutoBackup: String = act.getKey<String>("VERSION_NAME") ?: ""
             if (appVer != lastAppAutoBackup) {
@@ -268,7 +273,7 @@ object DesktopBootstrap {
         }
 
         // Automatically enable jsdelivr if cant connect to raw.githubusercontent.com
-        if (act.getKey<Boolean>(act.getString(R.string.jsdelivr_proxy_key)) == null && act.isNetworkAvailable()) {
+        if (!worker && act.getKey<Boolean>(act.getString(R.string.jsdelivr_proxy_key)) == null && act.isNetworkAvailable()) {
             main {
                 // Desktop: one retry, the first launch converts every extension and can starve the 5s check
                 if (act.checkGithubConnectivity() || kotlinx.coroutines.delay(3000).let { act.checkGithubConnectivity() }) {
@@ -299,7 +304,7 @@ object DesktopBootstrap {
         }
 
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: plugins launched")
-        act.setUpBackup()
+        if (!worker) act.setUpBackup()
 
         CommonActivity.init(act)
 

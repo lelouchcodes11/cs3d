@@ -142,6 +142,8 @@ val appLanguages = arrayListOf(
 ).sortedBy { it.first.lowercase(Locale.ROOT) } // ye, we go alphabetical, so ppl don't put their lang on top
 
 fun Pair<String, String>.nameNextToFlagEmoji(): String {
+    // desktop: Windows draws no flag emoji (a flag showed as two letters: "GB English"), so the name stands alone
+    if (System.getProperty("os.name").orEmpty().startsWith("Windows")) return this.first
     // fallback to [A][A] -> [?] question mak flag
     val flag = SubtitleHelper.getFlagFromIso(this.second) ?: "\ud83c\udde6\ud83c\udde6"
 

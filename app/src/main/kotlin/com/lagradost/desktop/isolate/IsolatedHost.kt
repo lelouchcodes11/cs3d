@@ -193,26 +193,29 @@ object IsolatedHost {
         grantOnce(nativeDir, false)
 
         val argFile = File(workerRoot, "worker.args")
-        // an argument file: one quoted option per line, a backslash written twice
-        fun q(s: String) = "\"" + s.replace("\\", "\\\\") + "\""
-        argFile.writeText(
-            listOf(
-                "-Xms64m", "-Xmx768m", "-XX:MaxMetaspaceSize=384m", "-Xss4m", "-XX:+UseSerialGC",
-                "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED",
-                "-Djava.awt.headless=true", "-Dfile.encoding=UTF-8", "-Dcloudstream.worker=true",
-                q("-XX:ErrorFile=" + File(tmp, "hs_err_%p.log").absolutePath), "-XX:-CreateCoredumpOnCrash",
-                q("-Dcloudstream.data=" + data.absolutePath),
-                q("-Djava.io.tmpdir=" + tmp.absolutePath), q("-Djna.tmpdir=" + tmp.absolutePath),
-                q("-Duser.home=" + data.absolutePath),
-                q("-Djna.boot.library.path=" + nativeDir.absolutePath), "-Djna.nounpack=true",
-                q("-Dskiko.library.path=" + nativeDir.absolutePath),
-                q("-Djava.library.path=" + listOf(nativeDir, File(javaHome, "bin")).joinToString(File.pathSeparator) { it.absolutePath }),
-                *(if (System.getProperty("cloudstream.workerdebug") != null) arrayOf("-Djna.debug_load=true", "-Djna.debug_load.jna=true") else emptyArray()),
-                *(if (System.getProperty("cloudstream.workerprobe") != null) arrayOf("-Dcloudstream.workerprobe=1") else emptyArray()),
-                "-cp", q(classpath.joinToString(File.pathSeparator)),
-                "com.lagradost.desktop.isolate.ExtensionWorker",
-            ).joinToString("\n"),
+        // the program's options with [d] as its data folder and [t] as its temporary one (the start-up archive is made with the same ones, see WorkerCds)
+        fun options(d: File, t: File): List<String> = listOf(
+            "-Xms64m", "-Xmx768m", "-XX:MaxMetaspaceSize=384m", "-Xss4m", "-XX:+UseSerialGC",
+            "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "-Djava.awt.headless=true", "-Dfile.encoding=UTF-8", "-Dcloudstream.worker=true",
+            "-XX:ErrorFile=" + File(t, "hs_err_%p.log").absolutePath, "-XX:-CreateCoredumpOnCrash",
+            "-Dcloudstream.data=" + d.absolutePath,
+            "-Djava.io.tmpdir=" + t.absolutePath, "-Djna.tmpdir=" + t.absolutePath,
+            "-Duser.home=" + d.absolutePath,
+            "-Djna.boot.library.path=" + nativeDir.absolutePath, "-Djna.nounpack=true",
+            "-Dskiko.library.path=" + nativeDir.absolutePath,
+            "-Djava.library.path=" + listOf(nativeDir, File(javaHome, "bin")).joinToString(File.pathSeparator) { it.absolutePath },
+            *(if (System.getProperty("cloudstream.workerdebug") != null) arrayOf("-Djna.debug_load=true", "-Djna.debug_load.jna=true") else emptyArray()),
+            *(if (System.getProperty("cloudstream.workerprobe") != null) arrayOf("-Dcloudstream.workerprobe=1") else emptyArray()),
+            "-cp", classpath.joinToString(File.pathSeparator),
+            "com.lagradost.desktop.isolate.ExtensionWorker",
         )
+        // the start-up archive, when the app has made one for this version: read only for the sandbox (it lies outside the sandbox's own folder)
+        val cds = WorkerCds.archive(workerRoot, javaHome, classpath)?.takeIf { grantOnce(it.parentFile, false) }
+        val cdsOptions = if (cds != null) listOf("-XX:SharedArchiveFile=" + cds.absolutePath, "-Xshare:auto") else emptyList()
+        // an argument file: one quoted option per line, a backslash written twice; the JVM's own messages go to standard error (standard output is the channel to the app)
+        fun q(s: String) = "\"" + s.replace("\\", "\\\\") + "\""
+        argFile.writeText((cdsOptions + WorkerCds.quietLog + options(data, tmp)).joinToString("\n") { if (it.startsWith("-") && !it.contains(File.separatorChar) && !it.contains(' ')) it else q(it) })
         AppContainerLauncher.grant(container, argFile, write = false)
         // the app's own runtime (jlink) has javaw.exe and no java.exe; javaw has no console window, and the pipes are its standard streams all the same
         val javaExe = listOf("bin/java.exe", "bin/javaw.exe").map { File(javaHome, it) }.firstOrNull { it.isFile } ?: error("no java.exe or javaw.exe in $javaHome")
@@ -221,6 +224,8 @@ object IsolatedHost {
         val env = linkedMapOf("SystemRoot" to systemRoot, "windir" to systemRoot, "TEMP" to tmp.absolutePath, "TMP" to tmp.absolutePath, "PATH" to "$systemRoot\\system32",
             // Windows does not start an AppContainer program without this variable
             "LOCALAPPDATA" to data.absolutePath)
+        if (cds == null) WorkerCds.trainLater(workerRoot, javaHome, javaExe, classpath, env, ::options)
+        else Log.i(TAG, "the sandbox starts with its start-up archive (${cds.name})")
         val child = AppContainerLauncher.launch(container, "\"${javaExe.absolutePath}\" @\"${argFile.absolutePath}\"", data, env, MEMORY_LIMIT, policies)
         Thread({ child.stderr.bufferedReader().forEachLine { noteOutput(it); Log.i("worker", it.take(500)) } }, "worker-log").apply { isDaemon = true }.start()
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Extensions are ready about a second sooner after every start.** The sandbox program now starts from a start-up archive of its own classes (ready in 2.2 s instead of 3.2 s on a test PC) and no longer does the app's own chores at its start (Stremio add-ons, backups, a GitHub check: they also made network calls from the sandbox). The archive is made once per version by the app itself, outside the sandbox, a minute and a half after the start, and the sandbox may only read it.
+- **Settings fixes.** *Preferred media* listed "Video" twice (the "Others" kind had the same name); the app language list showed "GB English", "FR Français" (Windows draws no flag emoji): it shows the names alone; *Download path* now says where downloads go before a folder is chosen.
 - **No more camera (or microphone, location) requests.** Web pages the app opens in the background for extensions (a site check, a page with adverts in it) could ask for the camera, and Windows then asked you whether CloudStream may use it. Every such request is now refused silently, and the app's browser never touches a real camera or microphone.
 - **The first video opens quicker.** The subtitle fonts were prepared on the first Play, on the thread that draws the window (about a third of that pause); they are prepared in the background at start now.
 - **Calmer episode grid.** Episodes you have not reached yet no longer say "Description hidden to avoid spoilers" under every card, and the stills have no outline.

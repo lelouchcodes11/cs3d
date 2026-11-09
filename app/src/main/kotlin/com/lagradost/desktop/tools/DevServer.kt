@@ -316,6 +316,8 @@ object DevServer {
                     "open" -> userDbg.OpenIcon(hwnd.pointer)
                     "showna" -> u.ShowWindow(hwnd, 9)
                     "back" -> u.SetWindowPos(hwnd, WinDef.HWND(com.sun.jna.Pointer.createConstant(1)), 0, 0, 0, 0, 0x0013)
+                    // restored (so it draws) but never activated and under every other window: tests while the owner works
+                    "behind" -> { u.ShowWindow(hwnd, 4); u.SetWindowPos(hwnd, WinDef.HWND(com.sun.jna.Pointer.createConstant(1)), 0, 0, 0, 0, 0x0013) }
                 }
                 Thread.sleep(700)
                 val overlay = java.awt.Window.getWindows().firstOrNull { it is java.awt.Dialog && it.isShowing && it.isUndecorated }?.let { WinDef.HWND(Native.getComponentPointer(it)) }

@@ -33,7 +33,7 @@ object SettingsProvidersScreen : SearchableSettings {
         TvType.Torrent -> R.string.torrent_singular
         TvType.AsianDrama -> R.string.asian_drama_singular
         TvType.Live -> R.string.live_singular
-        TvType.Others -> R.string.other_singular
+        TvType.Others -> R.string.others // desktop: other_singular says "Video", the same as TvType.Video (the list showed "Video" twice)
         TvType.NSFW -> R.string.nsfw_singular
         TvType.Music -> R.string.music_singular
         TvType.AudioBook -> R.string.audio_book_singular
