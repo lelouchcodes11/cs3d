@@ -44,6 +44,9 @@ object WinChrome {
     var maximized by mutableStateOf(false)
         private set
 
+    /** Dev: the window behaves as if maximized without being so (to test the bar that hides itself while the owner works in front of the test window) */
+    fun devPretendMaximized(on: Boolean) { maximized = on }
+
     /** Full screen (borderless over the monitor): no caption buttons, no frame */
     var fullscreen by mutableStateOf(false)
         private set
@@ -69,6 +72,8 @@ object WinChrome {
 
     private const val REVEAL_DWELL_MS = 140L
     private var hotSince = 0L
+    private var nearTopSince = 0L
+    private var lastRevealLog = 0L
 
     /** The caption buttons are hidden (maximized window, pointer away from the top): the hit test then reports the band as a drag area only */
     @Volatile
@@ -132,6 +137,15 @@ object WinChrome {
         } else hotSince = 0L
         if (revealed && !(over && y <= keep)) revealed = false
         captionHidden = !revealed
+        // the owner (2026-11-09) saw the bar not come at the top edge of the maximized window and it could not be reproduced: when the pointer is near the
+        // top of the window and the bar stays hidden for a while, what was measured is written to the log (once a minute at most)
+        if (!revealed && fake == null && y in -12..12 && x in 0 until (client[2] - client[0])) {
+            if (nearTopSince == 0L) nearTopSince = now
+            if (now - nearTopSince > 1_500 && now - lastRevealLog > 60_000) {
+                lastRevealLog = now
+                android.util.Log.w("WinChrome", "pointer at the top edge but no title bar: inside=$inside pointer=${p[0]},${p[1]} origin=${origin[0]},${origin[1]} client=${client.joinToString()} dpi=$dpi hot=$hot y=$y hotSince=$hotSince autoHides=$autoHides maximized=$maximized fullscreen=$fullscreen")
+            }
+        } else nearTopSince = 0L
     }
 
     /** Areas of the band that are controls (search box, avatar, back button, ...): window coordinates, px */

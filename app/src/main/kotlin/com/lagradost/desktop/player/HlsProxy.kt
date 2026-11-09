@@ -70,6 +70,7 @@ object HlsProxy {
             interceptorsById.remove(id)
             streamSubtitlesById.remove(id)
             variantsById.remove(id)
+            liveFirstRead.removeIf { it.startsWith("$id|") }
             // what is known of a live stream's window goes with the stream (the playlist reader of [keepFresh] stops when the headers are gone)
             timelines.keys.removeIf { it.startsWith("$id|") }
             liveWindows.remove(id)
@@ -100,6 +101,7 @@ object HlsProxy {
         interceptorsById.clear()
         streamSubtitlesById.clear()
         variantsById.clear()
+        liveFirstRead.clear()
         for ((_, calls) in activeCalls) {
             for (call in calls) {
                 runCatching { call.cancel() }
@@ -167,6 +169,9 @@ object HlsProxy {
     }
 
     private val MP4_BOXES = listOf("ftyp", "styp", "moof", "sidx")
+
+    /** Live playlists whose start segment was fetched ahead already (id|address) */
+    private val liveFirstRead: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     private val sidePool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "HlsProxy-side").apply { isDaemon = true } }
 
@@ -543,6 +548,15 @@ object HlsProxy {
         var nextIsVariant = false
         // a recorded media playlist: its first segment is fetched now (see firstSegments); byte ranges are left alone
         var prefetchFirst = System.getProperty("cloudstream.noprefetch") == null && !master && text.contains("#EXT-X-ENDLIST") && text.contains("#EXTINF") && !text.contains("#EXT-X-BYTERANGE")
+        // a LIVE media playlist, the first time it is read: the segment the player starts on (ffmpeg starts 3 from the end) is fetched now. All the
+        // qualities are read at the same moment (see the end of this function), so their first segments come in parallel; the player opened them one
+        // after the other, ~4.6 s of a 8.3 s start of a live channel with 5 qualities (Android plays one quality and starts in ~2 s). Once per playlist:
+        // later reloads of the playlist are segments the player already has.
+        val liveStart = if (System.getProperty("cloudstream.noprefetch") == null && !master && !text.contains("#EXT-X-ENDLIST") && text.contains("#EXTINF") &&
+            !text.contains("#EXT-X-BYTERANGE") && liveFirstRead.add("$id|${playlistUrl.substringBefore('?')}")) {
+            (text.lineSequence().count { it.isNotBlank() && !it.startsWith("#") } - 3).coerceAtLeast(0)
+        } else -1
+        var segmentIndex = 0
         // segments dressed up as pictures or scripts: all of them come through here, without the fake header (see withoutDisguise)
         val disguised = !master && !text.contains("#EXT-X-BYTERANGE") && text.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("#") }
             ?.let { DISGUISED.containsMatchIn(it.trim().substringBefore('?').substringBefore('#')) } == true
@@ -582,12 +596,14 @@ object HlsProxy {
                 }
                 else -> {
                     val absolute = resolve(playlistUrl, line.trim())
+                    val isLiveStart = !master && segmentIndex++ == liveStart
                     // variants are playlists (through here); media segments stay on their server
                     if (master && nextIsVariant) variants.add(absolute)
                     out.append(
                         when {
                             master && nextIsVariant -> playlistAddress(absolute, id)
                             prefetchFirst -> { prefetchFirst = false; prefetchSegment(absolute, id, headers) }
+                            isLiveStart -> prefetchSegment(absolute, id, headers)
                             disguised || intercepted -> viaProxy(absolute)
                             else -> absolute
                         },

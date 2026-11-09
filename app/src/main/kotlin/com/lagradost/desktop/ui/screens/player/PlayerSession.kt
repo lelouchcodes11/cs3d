@@ -190,7 +190,8 @@ class PlayerSession(
     var activeStamp by mutableStateOf<VideoSkipStamp?>(null); private set
 
     var volume by mutableStateOf(prefs.getInt(VOLUME_KEY, 100)); private set
-    var muted by mutableStateOf(false); private set
+    // (-Dcloudstream.mute=true: test runs on the owner's PC start every video muted; the session applies its own mute state to the player, so it is set here)
+    var muted by mutableStateOf(System.getProperty("cloudstream.mute") == "true"); private set
     var speed by mutableStateOf(1f); private set
     var resize by mutableStateOf(Resize.Fit); private set
     var subtitleDelayMs by mutableStateOf(0L); private set
@@ -246,7 +247,8 @@ class PlayerSession(
     var episodeVersion by mutableStateOf(0); private set
 
     // ---- internal ----
-    private var selectedLink: VideoLink? = null
+    // observed (the Sources list marks it): a plain field left the list on the old source after another was picked
+    private var selectedLink by mutableStateOf<VideoLink?>(null)
     private var selectedSubtitle: SubtitleData? = null
     /** The viewer chose a subtitle (or none) in this episode: the language based automatic choice must not take it back */
     private var subtitleChosenByUser = false

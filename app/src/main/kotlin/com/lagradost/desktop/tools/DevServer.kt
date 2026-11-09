@@ -720,6 +720,8 @@ object DevServer {
                     sb.append("native=").append(com.lagradost.desktop.core.Navigator.stack.joinToString(" > ") { it.route.toString().take(80) }).append('\n')
                     sb.append("fluentDialogs=").append(com.lagradost.desktop.ui.fluent.Overlays.dialogs.size).append('\n')
                     sb.append("activities=").append(com.lagradost.desktop.ActivityStack.activities.joinToString { it.javaClass.simpleName }).append('\n')
+                    val wc = com.lagradost.desktop.platform.WinChrome
+                    sb.append("chrome: enabled=${wc.enabled} maximized=${wc.maximized} keepBar=${wc.keepBar} autoHides=${wc.autoHides} windowedBar=${wc.windowedBar} revealed=${wc.revealed} overlayActive=${com.lagradost.desktop.ui.screens.player.NativeVideo.overlayActive} overlayPainted=${com.lagradost.desktop.ui.screens.player.NativeVideo.overlayPainted}\n")
                     for (e in mainNavController()?.backStackSnapshot().orEmpty()) {
                         val id = e.destination.id
                         sb.append(runCatching { ctx.resources.getResourceEntryName(id) }.getOrDefault(id.toString())).append('\n')
@@ -1358,6 +1360,11 @@ object DevServer {
             "/maximize" -> {
                 // dev: /maximize?on=0 restores the window, on=1 maximizes it
                 com.lagradost.desktop.platform.WinChrome.toggleMaximized(q["on"] != "0")
+                ok(ex)
+            }
+            "/pretendmax" -> {
+                // dev: the window acts maximized without being maximized (title bar hidden, revealed at the top edge): /pretendmax?on=1
+                onEdt { com.lagradost.desktop.platform.WinChrome.devPretendMaximized(q["on"] == "1") }
                 ok(ex)
             }
             "/pointer" -> {

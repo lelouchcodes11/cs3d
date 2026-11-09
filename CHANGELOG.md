@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Live channels start sooner.** The player reads the start of every quality of a live HLS channel before it plays; the app now fetches those pieces all at once (a 5-quality cricket channel: 8.3 s to the picture before, 5.9-7.7 s now).
+- **Live DASH channels no longer fail at the first piece.** The player reads the first piece of a live DASH stream twice at the start (once to learn the stream, once to play); the app refused the second request (a rule against a repeat loop later in the stream), and some channels never started.
+- **The source list marks the source you picked.** After choosing another source in the player, the list kept the first one highlighted as "Starting".
+- **A wrong "the site no longer has this video" is gone.** The quick failure on HTTP 404 (previous change) also fired when the 404 came from the app's own live-stream helper; it now only applies when the address itself was not found.
 - **A dead link fails at once, and says why.** A source the site answered "not found" for was opened a second way first, and the next source (or the message) came about 20 s later; now it is at once. The message says what the site answered: "the site no longer has this video (HTTP 404)", "the site refused it (HTTP 403)", "the site is limiting requests: try again in a minute", "the site has a problem right now" (it said only "loading failed").
 - **Poster under the pointer:** the episode count gives way to the play and add buttons (half of "6 eps" showed beside the play button).
 - **Extensions are ready about a second sooner after every start.** The sandbox program now starts from a start-up archive of its own classes (ready in 2.2 s instead of 3.2 s on a test PC) and no longer does the app's own chores at its start (Stremio add-ons, backups, a GitHub check: they also made network calls from the sandbox). The archive is made once per version by the app itself, outside the sandbox, a minute and a half after the start, and the sandbox may only read it.

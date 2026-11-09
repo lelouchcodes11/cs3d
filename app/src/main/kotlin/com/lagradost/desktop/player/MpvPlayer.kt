@@ -220,6 +220,8 @@ open class MpvPlayer : IPlayer {
     private var rangeTried = false
     @Volatile
     private var lastHttpStatus = 0
+    /** The demuxer read the manifest (it logged about its playlists or fragments): an HTTP error after that is one of a fragment, often the app's own DASH/HLS server refusing a repeated request with 404, never "the address is gone" */
+    @Volatile private var manifestRead = false
     @Volatile
     private var preferredSubtitle: SubtitleData? = null
     // External subtitles are added to the file that plays once it is open: SubtitleData id -> mpv track id
@@ -367,6 +369,8 @@ open class MpvPlayer : IPlayer {
         mpv.mpv_set_option_string(ctx, "sub-clear-on-seek", "yes")
         // the fonts of the subtitle style settings, found by libass by their family names
         runCatching { SubtitleStyler.prepareFonts(); mpv.mpv_set_option_string(ctx, "sub-fonts-dir", SubtitleStyler.fontsDir.absolutePath) }
+        // test runs on the owner's PC: -Dcloudstream.mute=true keeps every player silent from its first frame
+        if (System.getProperty("cloudstream.mute") == "true") runCatching { mpv.mpv_set_option_string(ctx, "mute", "yes") }
         // AudioManager STREAM_MUSIC + LoudnessEnhancer boost (up to 200%)
         mpv.mpv_set_option_string(ctx, "volume-max", "200")
         // a longer audio buffer (mpv's default is 0.2 s) rides out a busy moment of the PC without a crackle
@@ -502,6 +506,7 @@ open class MpvPlayer : IPlayer {
                             val text = it.text?.trimEnd()
                             Log.w("mpv", "[${it.prefix}] $text")
                             // "[curl] HTTP error 403" / "[ffmpeg] http: HTTP error 403 Forbidden": why a plain file did not open
+                            if (it.prefix?.startsWith("ffmpeg/demuxer") == true) manifestRead = true
                             if (text != null && text.contains("HTTP error")) {
                                 Regex("HTTP error (\\d{3})").find(text)?.groupValues?.get(1)?.toIntOrNull()?.let { code -> lastHttpStatus = code }
                             }
@@ -521,7 +526,7 @@ open class MpvPlayer : IPlayer {
                                 mainHandler.post {
                                     currentContext?.let { ctx -> loadPlayer(ctx, true, currentLink, currentUri, startPositionMs, activeSubtitles, preferredSubtitle, true, false) }
                                 }
-                            } else if (failed != null && !proxyTried && (isHls(failed) || isDash(failed)) && !(wrapper && useProxy) && lastHttpStatus !in GONE_STATUS) {
+                            } else if (failed != null && !proxyTried && (isHls(failed) || isDash(failed)) && !(wrapper && useProxy) && !(lastHttpStatus in GONE_STATUS && !manifestRead)) {
                                 // (not after "not found" / "gone": the site said so, the same address the other way only made the next source wait ~20 s)
                                 // once more the other way: plain when the playlist server failed, through it when the plain address did
                                 proxyTried = true
@@ -539,7 +544,7 @@ open class MpvPlayer : IPlayer {
                                 }
                             } else {
                                 // what the site answered, in words (the screen said only "loading failed")
-                                val why = when (lastHttpStatus) {
+                                val why = when (if (manifestRead) 0 else lastHttpStatus) {
                                     404, 410 -> "the site no longer has this video (HTTP $lastHttpStatus)"
                                     401, 403 -> "the site refused it (HTTP $lastHttpStatus)"
                                     429 -> "the site is limiting requests (HTTP 429): try again in a minute"
@@ -1116,6 +1121,7 @@ open class MpvPlayer : IPlayer {
             if (System.getProperty("cloudstream.forcerange") != null && isPlainFile(link)) useRangeProxy = true
         }
         lastHttpStatus = 0
+        manifestRead = false
         currentLink = link
         currentUri = data
         startPositionMs = startPosition

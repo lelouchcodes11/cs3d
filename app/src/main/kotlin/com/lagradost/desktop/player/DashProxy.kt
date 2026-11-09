@@ -211,6 +211,12 @@ object DashProxy {
         /** The last segment sent completely, by stream (its address without the number) */
         val last = ConcurrentHashMap<String, String>()
 
+        /** How many different segments each stream has been sent: the first one may be asked twice (the player reads it to learn the stream, then opens
+         *  it again to play; refusing that killed the start of some live channels, "Error when loading first fragment") */
+        val sentCount = ConcurrentHashMap<String, Int>()
+        /** Streams whose first segment was already sent a second time (once only: more would be the loop the refusal is for) */
+        val firstRepeated: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
         @Volatile
         var live = false
 
@@ -518,7 +524,7 @@ object DashProxy {
         }
         // a segment of a live stream that was sent just now is not sent again, see the notes above
         val key = if (matched != null) "track:" + matched.first.id else if (!isManifest && entry.live) rest.replace(TIMED, "$1").takeIf { it != rest } else null
-        if (key != null && entry.last[key] == rest) {
+        if (key != null && entry.last[key] == rest && ((entry.sentCount[key] ?: 0) >= 2 || !entry.firstRepeated.add(key))) {
             if (trace || entry.repeats++ % 25 == 0) Log.i(TAG, "live segment asked for again, refused (${entry.repeats}): ${rest.takeLast(60)}")
             Thread.sleep(250)
             ex.sendResponseHeaders(404, -1)
@@ -534,7 +540,7 @@ object DashProxy {
                 val hit = runCatching { pending.get(15, TimeUnit.SECONDS) }.getOrNull()
                 if (hit != null && !entry.cancelled && serveCached(ex, hit)) {
                     if (trace) Log.i(TAG, "TRACE from memory ${rest.takeLast(30)}")
-                    if (key != null) entry.last[key] = rest
+                    if (key != null) { if (entry.last[key] != rest) entry.sentCount.merge(key, 1, Int::plus); entry.last[key] = rest }
                     return
                 }
             }
@@ -605,7 +611,7 @@ object DashProxy {
                         try { out.write(buffer, 0, n) } catch (e: IOException) { return } // the player went away
                         sent += n
                     }
-                    if (key != null && (length < 0 || sent == length)) entry.last[key] = rest
+                    if (key != null && (length < 0 || sent == length)) { if (entry.last[key] != rest) entry.sentCount.merge(key, 1, Int::plus); entry.last[key] = rest }
                     return
                 }
             } catch (e: IOException) {
