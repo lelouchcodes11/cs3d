@@ -205,7 +205,8 @@ fun PosterCard(
                     Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Overlay("★ " + s.toString(10, 1)) }
                 }
                 episodeCount(item)?.let { n ->
-                    Box(Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = if (item.watchedFraction() != null) 10.dp else 6.dp)) { Overlay(if (n == 1) "1 ep" else "$n eps") }
+                    // it fades as the play / add buttons come up in the same corner (half of "6 eps" showed beside the play button)
+                    Box(Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = if (item.watchedFraction() != null) 10.dp else 6.dp).graphicsLayer { alpha = 1f - info }) { Overlay(if (n == 1) "1 ep" else "$n eps") }
                 }
                 if (info > 0.01f) {
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = info }) {

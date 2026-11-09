@@ -55,6 +55,8 @@ open class MpvPlayer : IPlayer {
 
         /** Client errors that bounded ranges, headers and the app's HTTP client can cure; 404/410 and rate limits (429) they cannot */
         private val RANGE_RETRY_STATUS = setOf(400, 403, 405, 406, 416)
+        /** Answers that say the address itself is gone: no point in opening it another way */
+        private val GONE_STATUS = setOf(404, 410, 451)
 
         /** Tools without a window (link tests): no video output, no audio device */
         @Volatile
@@ -519,7 +521,8 @@ open class MpvPlayer : IPlayer {
                                 mainHandler.post {
                                     currentContext?.let { ctx -> loadPlayer(ctx, true, currentLink, currentUri, startPositionMs, activeSubtitles, preferredSubtitle, true, false) }
                                 }
-                            } else if (failed != null && !proxyTried && (isHls(failed) || isDash(failed)) && !(wrapper && useProxy)) {
+                            } else if (failed != null && !proxyTried && (isHls(failed) || isDash(failed)) && !(wrapper && useProxy) && lastHttpStatus !in GONE_STATUS) {
+                                // (not after "not found" / "gone": the site said so, the same address the other way only made the next source wait ~20 s)
                                 // once more the other way: plain when the playlist server failed, through it when the plain address did
                                 proxyTried = true
                                 useProxy = !useProxy
@@ -535,7 +538,15 @@ open class MpvPlayer : IPlayer {
                                     currentContext?.let { ctx -> loadPlayer(ctx, true, currentLink, currentUri, startPositionMs, activeSubtitles, preferredSubtitle, true, false) }
                                 }
                             } else {
-                                postEvent(ErrorEvent(androidx.media3.common.PlaybackException(message, null, androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED)))
+                                // what the site answered, in words (the screen said only "loading failed")
+                                val why = when (lastHttpStatus) {
+                                    404, 410 -> "the site no longer has this video (HTTP $lastHttpStatus)"
+                                    401, 403 -> "the site refused it (HTTP $lastHttpStatus)"
+                                    429 -> "the site is limiting requests (HTTP 429): try again in a minute"
+                                    in 500..599 -> "the site has a problem right now (HTTP $lastHttpStatus)"
+                                    else -> message
+                                }
+                                postEvent(ErrorEvent(androidx.media3.common.PlaybackException(why, null, androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED)))
                             }
                         }
                         if (end != null && end.reason == Mpv.MPV_END_FILE_REASON_EOF) {

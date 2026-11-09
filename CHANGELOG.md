@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A dead link fails at once, and says why.** A source the site answered "not found" for was opened a second way first, and the next source (or the message) came about 20 s later; now it is at once. The message says what the site answered: "the site no longer has this video (HTTP 404)", "the site refused it (HTTP 403)", "the site is limiting requests: try again in a minute", "the site has a problem right now" (it said only "loading failed").
+- **Poster under the pointer:** the episode count gives way to the play and add buttons (half of "6 eps" showed beside the play button).
 - **Extensions are ready about a second sooner after every start.** The sandbox program now starts from a start-up archive of its own classes (ready in 2.2 s instead of 3.2 s on a test PC) and no longer does the app's own chores at its start (Stremio add-ons, backups, a GitHub check: they also made network calls from the sandbox). The archive is made once per version by the app itself, outside the sandbox, a minute and a half after the start, and the sandbox may only read it.
 - **Settings fixes.** *Preferred media* listed "Video" twice (the "Others" kind had the same name); the app language list showed "GB English", "FR Français" (Windows draws no flag emoji): it shows the names alone; *Download path* now says where downloads go before a folder is chosen.
 - **No more camera (or microphone, location) requests.** Web pages the app opens in the background for extensions (a site check, a page with adverts in it) could ask for the camera, and Windows then asked you whether CloudStream may use it. Every such request is now refused silently, and the app's browser never touches a real camera or microphone.
