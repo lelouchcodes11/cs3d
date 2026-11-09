@@ -174,6 +174,9 @@ object JcefRuntime {
             "--disable-features=CalculateNativeWinOcclusion,HardwareMediaKeyHandling,MediaSessionService,OptimizationGuideModelExecution,OptimizationGuideOnDeviceModel,OnDeviceModelService",
             "--autoplay-policy=no-user-gesture-required",
             "--mute-audio",
+            // no page may ask for the camera, the microphone, the location or notifications
+            "--deny-permission-prompts",
+            "--use-fake-device-for-media-stream",
             "--disable-blink-features=AutomationControlled",
             "--no-first-run",
             "--no-default-browser-check",

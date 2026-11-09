@@ -23,6 +23,7 @@ internal abstract class Wv2Browser(private val initialWidth: Int = 1280, private
         val IID_SOURCE_CHANGED = Com.iid("3c067f9f-5388-4772-8b48-79f7ef1ab37c")
         val IID_NAVIGATION_COMPLETED = Com.iid("d33a35bf-1c49-4f98-93ab-006e0533fe1c")
         val IID_SCRIPT_DIALOG = Com.iid("ef381bf9-afa8-4e37-91c4-8ac48524bdfb")
+        val IID_PERMISSION_REQUESTED = Com.iid("15e1c6a3-c72a-4df3-91d7-d097fbec6bfd")
         val IID_PROCESS_FAILED = Com.iid("79e0aea4-990b-42d9-aa1d-0fcc2e5bc7f1")
         val IID_NEW_WINDOW = Com.iid("d4c185fe-c81c-4989-97af-2d3fa7ab5651")
         val IID_TITLE_CHANGED = Com.iid("f5f2b923-953e-4042-9f95-f3a118e1afd4")

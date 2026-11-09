@@ -167,6 +167,9 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
         }
         on(core, 15, IID_NAVIGATION_COMPLETED) { _, a -> if (a != null) onNavigationCompleted(core, a) }
         on(core, 21, IID_SCRIPT_DIALOG) { _, a -> if (a != null) onScriptDialog(a) }
+        // camera, microphone, location, notifications, clipboard...: a page in the app (an extension's page, a check, an advert inside one) never gets them,
+        // and nobody is asked (Windows asked the user whether CloudStream may use the camera). PermissionRequested args: put_State(7) = DENY (2)
+        on(core, 23, IID_PERMISSION_REQUESTED) { _, a -> if (a != null) { Com.call(a, 7, 2); Log.i(TAG, "a page asked for permission ${Com.getInt(a, 4) ?: -1}: denied") } }
         on(core, 25, IID_PROCESS_FAILED) { _, a ->
             val kind = a?.let { Com.getInt(it, 3) } ?: -1
             if (kind == 0) rt.post { rt.onBrowserProcessExited() }

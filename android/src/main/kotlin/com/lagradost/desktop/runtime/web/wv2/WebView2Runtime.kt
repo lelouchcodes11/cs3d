@@ -217,6 +217,9 @@ object WebView2Runtime {
                 "--autoplay-policy=no-user-gesture-required",
                 // a page that is not the app's player (a hidden extension page, a check, an advert in one) is never heard: the video of the app plays in its own player
                 "--mute-audio",
+                // no page may ask for the camera, the microphone, the location or notifications (it is refused without a prompt)
+                "--deny-permission-prompts",
+                "--use-fake-device-for-media-stream",
                 "--disable-blink-features=AutomationControlled",
                 "--renderer-process-limit=4",
                 "--no-first-run",

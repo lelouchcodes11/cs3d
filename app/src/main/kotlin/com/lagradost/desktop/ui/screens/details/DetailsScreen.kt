@@ -948,7 +948,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
             Box(
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                     .graphicsLayer { scaleX = lift; scaleY = lift }
-                    .clip(shape).background(c.card).hairBorder(if (hovered) c.strokeStrong else c.stroke, shape),
+                    .clip(shape).background(c.card),
             ) {
                 if (pack) {
                     // an archive, not a picture: the folder, and what it is (quality, size) in big letters
@@ -968,7 +968,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                 if (covered) {
                     Box(Modifier.matchParentSize().background(Color(0x66000000)))
                     Row(
-                        Modifier.align(Alignment.Center).clip(RoundedCornerShape(50)).background(Color(0x99000000)).hairBorder(Color(0x40FFFFFF), RoundedCornerShape(50))
+                        Modifier.align(Alignment.Center).clip(RoundedCornerShape(50)).background(Color(0x99000000))
                             .fluentClickable(rememberInteraction(), true, RoundedCornerShape(50), Role.Button) { uncovered = true }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1015,9 +1015,9 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                     if (open) MenuFlyout(menu(), onDismiss = { open = false })
                 }
             }
-            ep.description?.takeIf { it.isNotBlank() }?.let {
-                if (covered) FText("Description hidden to avoid spoilers", style = Fluent.type.caption.copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic), color = c.textTertiary, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
-                else FText(stripHtml(it), style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 3.dp))
+            // an episode not reached yet (spoilers hidden) shows no line at all: "Description hidden to avoid spoilers" under every card of the grid was noise
+            if (!covered) ep.description?.takeIf { it.isNotBlank() }?.let {
+                FText(stripHtml(it), style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 3.dp))
             }
         }
     }

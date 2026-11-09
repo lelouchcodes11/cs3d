@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **No more camera (or microphone, location) requests.** Web pages the app opens in the background for extensions (a site check, a page with adverts in it) could ask for the camera, and Windows then asked you whether CloudStream may use it. Every such request is now refused silently, and the app's browser never touches a real camera or microphone.
+- **The first video opens quicker.** The subtitle fonts were prepared on the first Play, on the thread that draws the window (about a third of that pause); they are prepared in the background at start now.
+- **Calmer episode grid.** Episodes you have not reached yet no longer say "Description hidden to avoid spoilers" under every card, and the stills have no outline.
 - **Smooth start of a video.** Pressing Play cut to a black window for about half a second, then the picture flashed in with a corner not yet covered, the loading screen came back over it, and the picture again. Now the loading screen (title, artwork, progress) shows as soon as the player page is drawn, the video stays hidden until the controls lie over it, and the loading screen fades out over the first picture.
 - **A proper window for a site check of an extension in the sandbox.** When a source needs you to pass a Cloudflare check, the window now says which extension needs it and what to do, shows the page in a frame, the site it waits for with a working ring, and Cancel. It was a line of text, the page and a grey button.
 - **The Cloudflare notice no longer gets in the way.** "Passing the Cloudflare check of ..." was a bar in the middle of the window after 5 s; it is now a small chip in the bottom right corner after 10 s (most checks pass before), with a stop button, and never over the player.

@@ -45,6 +45,7 @@ object SubtitleStyler {
     }
 
     /** Writes the packaged fonts to [fontsDir]; their family names are what mpv's `sub-font` asks for */
+    @Synchronized
     fun prepareFonts() {
         for (font in SubtitleFont.entries) {
             if (font.resource == 0 || families.containsKey(font)) continue

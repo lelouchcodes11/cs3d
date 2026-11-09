@@ -1399,6 +1399,12 @@ object DevServer {
                     wv.getSettings().setJavaScriptEnabled(true)
                     wv.setWebViewClient(object : android.webkit.WebViewClient() {
                         override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                            // &js=<script>: runs it, waits 3 s, answers with the page title (a permission test sets it: getUserMedia -> "denied:NotAllowedError")
+                            q["js"]?.let { js ->
+                                view?.evaluateJavascript(js, null)
+                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ view?.evaluateJavascript("document.title") { t -> result.complete("title=$t"); view.destroy() } }, 3000)
+                                return
+                            }
                             val c = android.webkit.CookieManager.getInstance().getCookie(url)
                             val jar = com.lagradost.desktop.runtime.web.WebCookies.all().joinToString { it.domain + "|" + it.name + "|" + it.path }
                             result.complete("page=$url cookie=$c jar=[$jar] webview2=${com.lagradost.desktop.runtime.web.WebRuntime.usesWebView2}")
