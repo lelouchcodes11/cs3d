@@ -39,6 +39,9 @@ import kotlin.system.exitProcess
 
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main(args: Array<String>) {
+    // an empty -Dcloudstream.data= is no data folder: File("") is the folder the app was started from, and the app then wrote its whole profile
+    // there (seen in a test run) and "Reset app" would delete in it. Every reader of the property falls back to the normal folder once it is gone
+    if (System.getProperty("cloudstream.data")?.isBlank() == true) System.clearProperty("cloudstream.data")
     // Java2D starts a Direct3D 9 pipeline of its own for every AWT window. Skia draws this app's window itself, so it is not needed, and creating that
     // device is a known cause of the whole screen flickering for a moment when a Java window opens on a PC with an old graphics driver. Must be set
     // before the first AWT class is touched; `-Dsun.java2d.d3d=true` on the command line brings it back.

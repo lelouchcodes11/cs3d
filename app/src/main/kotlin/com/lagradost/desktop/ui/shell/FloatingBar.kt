@@ -94,6 +94,10 @@ internal fun FloatingTopBar() {
         val wide = maxWidth / 2 >= rightNeed + 250.dp
         val tight = maxWidth / 2 < rightNeed + 150.dp
         val narrow = maxWidth < 760.dp
+        // a see-through bar lies on a banner (Home, a title, a person): in Light mode its buttons were dark grey on the dark picture (the search and
+        // reload buttons and the extension chooser could hardly be seen); there they take the dark set of the theme, like the banner's own text
+        val overArt = !ShellState.topBarSolid && !Fluent.colors.dark
+        androidx.compose.runtime.CompositionLocalProvider(com.lagradost.desktop.ui.fluent.LocalFluentColors provides (if (overArt) com.lagradost.desktop.ui.fluent.LocalFluentDarkColors.current ?: Fluent.colors else Fluent.colors)) {
         Row(Modifier.fillMaxSize().padding(start = 14.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!com.lagradost.desktop.platform.WinChrome.windowedBar) {
                 IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("topBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)")
@@ -114,6 +118,7 @@ internal fun FloatingTopBar() {
             }
             AccountAvatar()
             Box(Modifier.width(captionInset))
+        }
         }
         NavCapsule(
             compact = !wide,

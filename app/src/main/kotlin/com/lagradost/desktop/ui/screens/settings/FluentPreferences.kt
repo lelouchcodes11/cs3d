@@ -112,14 +112,17 @@ fun SettingsCard(
         // of the engine's rows and the Windows glyphs of the others then read as one set
         if (icon != null && LocalRowIcons.current) IconBadge(36.dp) { tint -> Image(icon, null, Modifier.size(18.dp), colorFilter = ColorFilter.tint(if (enabled) tint else c.textDisabled)) }
         else if (icon == null && LocalRowIcons.current && LocalReserveIcon.current) Box(Modifier.size(36.dp))
-        Column(Modifier.weight(1f).widthIn(min = 120.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            FText(title, color = if (enabled) c.text else c.textDisabled, maxLines = 3)
-            // a description is never cut: in a half-screen window a long translation beside a drop-down ("Follow Windows, or always use light or dark surfaces") took five lines
-            // one sentence has no full stop (half the rows had one, half not): the same rule for all of them, after the translation (the table is keyed by the English text)
-            if (!subtitle.isNullOrBlank()) FText(com.lagradost.desktop.i18n.Tr.t(subtitle).let { s -> if (s.endsWith(".") && s.count { it == '.' } == 1) s.dropLast(1) else s }, style = Fluent.type.caption, color = if (enabled) c.textSecondary else c.textDisabled, maxLines = 8)
-            if (below != null) { Box(Modifier.height(8.dp)); below() }
-        }
-        trailing()
+        // the control beside the text while the text keeps a readable width, under it (at the right) when not: in a half-screen window a 230 dp
+        // drop-down left the description a column of one or two words per line ("Follow / Windows, or / always use / light or dark / surfaces")
+        BesideOrUnder(Modifier.weight(1f), text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                FText(title, color = if (enabled) c.text else c.textDisabled, maxLines = 3)
+                // a description is never cut
+                // one sentence has no full stop (half the rows had one, half not): the same rule for all of them, after the translation (the table is keyed by the English text)
+                if (!subtitle.isNullOrBlank()) FText(com.lagradost.desktop.i18n.Tr.t(subtitle).let { s -> if (s.endsWith(".") && s.count { it == '.' } == 1) s.dropLast(1) else s }, style = Fluent.type.caption, color = if (enabled) c.textSecondary else c.textDisabled, maxLines = 8)
+                if (below != null) { Box(Modifier.height(8.dp)); below() }
+            }
+        }, control = trailing)
         if (onClick != null) Icon(Icons.ChevronRightSmall, size = 12.dp, tint = c.textSecondary)
     }
 }
@@ -342,4 +345,41 @@ internal fun IconBadge(size: androidx.compose.ui.unit.Dp = 36.dp, tint: Color = 
         Modifier.size(size).background(if (neutral) c.control else tint.copy(alpha = if (c.dark) 0.18f else 0.14f), shape),
         contentAlignment = Alignment.Center,
     ) { content(iconColor) }
+}
+
+/**
+ * [text] with [control] beside it at the right (vertically centred) while the text keeps at least [minText]; otherwise [control] goes under the
+ * text, at the right. Only the width decides, so a switch (small) stays beside the text in any window and a wide drop-down moves under it in a narrow one.
+ */
+@Composable
+private fun BesideOrUnder(modifier: Modifier, text: @Composable () -> Unit, control: @Composable () -> Unit, minText: androidx.compose.ui.unit.Dp = 220.dp) {
+    androidx.compose.ui.layout.Layout(contents = listOf(text, control), modifier = modifier) { (textM, controlM), cs ->
+        val gap = 16.dp.roundToPx()
+        val loose = cs.copy(minWidth = 0, minHeight = 0)
+        val controls = controlM.map { it.measure(loose) }
+        val cw = controls.maxOfOrNull { it.width } ?: 0
+        val ch = controls.maxOfOrNull { it.height } ?: 0
+        val full = if (cs.hasBoundedWidth) cs.maxWidth else Int.MAX_VALUE
+        val beside = cw == 0 || !cs.hasBoundedWidth || full - cw - gap >= minText.roundToPx()
+        if (beside) {
+            val textW = if (cw == 0) full else (full - cw - gap).coerceAtLeast(0)
+            val texts = textM.map { it.measure(loose.copy(maxWidth = textW)) }
+            val th = texts.maxOfOrNull { it.height } ?: 0
+            val w = if (cs.hasBoundedWidth) cs.maxWidth else (texts.maxOfOrNull { it.width } ?: 0) + (if (cw > 0) gap + cw else 0)
+            val h = maxOf(th, ch).coerceAtLeast(cs.minHeight)
+            layout(w, h) {
+                texts.forEach { it.placeRelative(0, (h - it.height) / 2) }
+                controls.forEach { it.placeRelative(w - it.width, (h - it.height) / 2) }
+            }
+        } else {
+            val texts = textM.map { it.measure(loose.copy(maxWidth = full)) }
+            val th = texts.maxOfOrNull { it.height } ?: 0
+            val space = 10.dp.roundToPx()
+            val h = (th + space + ch).coerceAtLeast(cs.minHeight)
+            layout(full, h) {
+                texts.forEach { it.placeRelative(0, 0) }
+                controls.forEach { it.placeRelative(full - it.width, th + space) }
+            }
+        }
+    }
 }

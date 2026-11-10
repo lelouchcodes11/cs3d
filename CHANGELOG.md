@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Settings read well in a half-screen window.** A drop-down kept its full width beside its description, which became a column of one or two words per line. Now a control that doesn't fit beside the text goes under it; switches stay beside it.
+- **Light mode fixes.** On Home, the search and reload buttons and the extension picker were dark grey on the dark banner and could hardly be seen; over a banner they are now drawn light. On a title page, "Completed" / "Ongoing" and the next-episode line were dark blue on the picture; they now use the light shade of the accent. White extension logos with a see-through background (AniVortex) no longer vanish on the light tile.
+- **Player menu:** *Audio delay* shows "Off" like the rows around it (it showed nothing).
+- **A safer start with an empty data-folder setting.** An empty `-Dcloudstream.data=` made the app use the folder it was started from as its data folder, and *Reset app* would have deleted in that folder. An empty setting is now ignored.
 - **No more "★ 0".** A title nobody has rated yet showed a zero score (the Home banner, poster badges, Explore, episode lists), which read as a terrible film. A missing score is now simply not shown.
 - **Drop-down arrows sit at the right edge.** In every drop-down (Settings, Library, the title page) the arrow followed the text, so a wide box read "Dark ⌄" and then empty space.
 - **The Extensions page counts the same way twice.** The header said "29 installed" while the list under it said "26 extensions": the header counted an extension once for every repository that lists it. Both now count what is installed. When your language or type filter hides some, the list says so ("24 of 26 shown").

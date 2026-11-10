@@ -184,7 +184,7 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         NavRow(Icons.Clock, "Sleep timer", SleepTimer.label()) { onPage(MenuPage.Sleep) }
         NavRow(Icons.Video, "Hardware decoding", Appearance.videoDecoder.label.substringBefore(" (")) { onPage(MenuPage.VideoDecoder) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
-        NavRow(Icons.Clock, "Audio delay", if (s.audioDelayMs != 0L) "${if (s.audioDelayMs > 0) "+" else ""}${s.audioDelayMs} ms" else null) { onPage(MenuPage.AudioDelay) }
+        NavRow(Icons.Clock, "Audio delay", if (s.audioDelayMs != 0L) "${if (s.audioDelayMs > 0) "+" else ""}${s.audioDelayMs} ms" else "Off") { onPage(MenuPage.AudioDelay) }
         ToggleRow(Icons.Volume, "Stable volume", Appearance.stableVolume) {
             Appearance.stableVolume = it
             Appearance.save()

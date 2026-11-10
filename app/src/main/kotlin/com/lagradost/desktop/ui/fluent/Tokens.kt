@@ -209,6 +209,9 @@ object FluentShapes {
 }
 
 val LocalFluentColors = compositionLocalOf<FluentColors> { error("FluentTheme missing") }
+
+/** The dark set of the same theme and accent: for controls that lie on artwork (a see-through top bar over a banner) whatever the app mode is */
+val LocalFluentDarkColors = compositionLocalOf<FluentColors?> { null }
 val LocalFluentType = compositionLocalOf<FluentType> { error("FluentTheme missing") }
 
 object Fluent {
@@ -295,8 +298,9 @@ fun FluentTheme(content: @Composable () -> Unit) {
     val colors = remember(dark, accent, black, preset, btnOverride, tintStrength) {
         fluentColors(dark, accent, btnOverride).themed(preset, tintStrength).let { if (dark && black) it.oled() else it }
     }
+    val darkColors = remember(dark, colors, accent, black, preset, btnOverride, tintStrength) { if (dark) colors else fluentColors(true, accent, btnOverride).themed(preset, tintStrength) }
     val type = remember { fluentType(FluentFonts.text) }
-    CompositionLocalProvider(LocalFluentColors provides colors, LocalFluentType provides type, content = content)
+    CompositionLocalProvider(LocalFluentColors provides colors, LocalFluentDarkColors provides darkColors, LocalFluentType provides type, content = content)
 }
 
 /** Everything but the window's caption buttons (which the title bar hit test places at the Windows scale) follows the UI scale */

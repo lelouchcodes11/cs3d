@@ -314,7 +314,7 @@ private fun RepoRow(
                     customIcon()
                 } else {
                     Icon(fallbackIcon, size = 18.dp, tint = if (selected) c.text else c.textSecondary)
-                    if (iconUrl != null) RemoteImage(iconUrl, null, null, Modifier.size(42.dp), ContentScale.Crop)
+                    if (iconUrl != null) RemoteImage(iconUrl, null, null, Modifier.size(42.dp).then(if (c.dark) Modifier else Modifier.background(androidx.compose.ui.graphics.Color(0xFF2C2C2E))), ContentScale.Crop)
                 }
             }
             Column(Modifier.weight(1f)) {
@@ -364,7 +364,9 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
             // the Installed page lists what is on the disk, which has no icon: the repositories' icon of the same plugin is used
             val iconUrl = p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")
                 ?: if (local) com.lagradost.desktop.net.ExtensionIcons.iconForFile(p.url) else null
-            iconUrl?.let { RemoteImage(it, null, null, Modifier.size(46.dp), ContentScale.Crop) }
+            // logos are made for the phone app's dark page: a white one with a see-through ground (AniVortex) vanished on the light tile of Light mode,
+            // so it lies on a dark tile there (an opaque logo covers the tile, so it looks the same either way)
+            iconUrl?.let { RemoteImage(it, null, null, Modifier.size(46.dp).then(if (c.dark) Modifier else Modifier.background(androidx.compose.ui.graphics.Color(0xFF2C2C2E))), ContentScale.Crop) }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             FText(p.name, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)

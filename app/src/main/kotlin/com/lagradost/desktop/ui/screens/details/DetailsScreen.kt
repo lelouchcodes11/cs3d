@@ -705,7 +705,8 @@ private fun Header(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (facts.isNotEmpty()) FText(facts.joinToString("  •  "), style = Fluent.type.bodyStrong, color = Color(0xE6FFFFFF), maxLines = 1)
                 (d.contentRatingText.str()?.takeIf { it.isNotBlank() } ?: tmdb?.certification)?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }
-                d.onGoingText.str()?.takeIf { it.isNotBlank() }?.let { FText(it, style = Fluent.type.bodyStrong, color = c.accentText, maxLines = 1) }
+                // over the picture: the accent of the dark set (the light set's dark blue could not be read on the banner in Light mode)
+                d.onGoingText.str()?.takeIf { it.isNotBlank() }?.let { FText(it, style = Fluent.type.bodyStrong, color = (com.lagradost.desktop.ui.fluent.LocalFluentDarkColors.current ?: c).accentText, maxLines = 1) }
             }
             // line two: the scores (each says whose it is) and the genres
             val genres = d.tags.take(4)
@@ -717,7 +718,7 @@ private fun Header(
                 scoreText?.let { ScoreMark(it, d.apiName.str()) }
                 if (genres.isNotEmpty()) FText(genres.joinToString("  •  "), style = Fluent.type.bodyStrong, color = Color(0xCCFFFFFF), maxLines = 1)
             }
-            d.nextAiringEpisode.str()?.let { ep -> FText("$ep ${d.nextAiringDate.str().orEmpty()}", color = c.accentText, maxLines = 1) }
+            d.nextAiringEpisode.str()?.let { ep -> FText("$ep ${d.nextAiringDate.str().orEmpty()}", color = (com.lagradost.desktop.ui.fluent.LocalFluentDarkColors.current ?: c).accentText, maxLines = 1) }
             var expanded by remember { mutableStateOf(false) }
             val plot = stripHtml(d.plotText.str().orEmpty())
             if (plot.isNotBlank()) {
