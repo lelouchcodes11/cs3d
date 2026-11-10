@@ -548,7 +548,10 @@ object DashProxy {
         }
         // a segment of a live stream that was sent just now is not sent again, see the notes above
         val key = if (matched != null) "track:" + matched.first.id else if (!isManifest && entry.live) rest.replace(TIMED, "$1").takeIf { it != rest } else null
-        if (key != null && entry.last[key] == rest && ((entry.sentCount[key] ?: 0) >= 2 || !entry.firstRepeated.add(key))) {
+        // The loop happens at the live edge only (the stale list ends there). A repeat of a segment with 3 or more listed after it is the player
+        // reading it again on purpose (WILLOW, 30 s behind the edge: 26 refusals in 4 minutes, each one a piece of sound skipped): it is answered.
+        val wellBehindEdge = matched != null && matched.first.following(matched.second, 3, entry.serverNow()).size >= 3
+        if (key != null && !wellBehindEdge && entry.last[key] == rest && ((entry.sentCount[key] ?: 0) >= 2 || !entry.firstRepeated.add(key))) {
             if (trace || entry.repeats++ % 25 == 0) Log.i(TAG, "live segment asked for again, refused (${entry.repeats}): ${rest.takeLast(60)}")
             Thread.sleep(250)
             ex.sendResponseHeaders(404, -1)

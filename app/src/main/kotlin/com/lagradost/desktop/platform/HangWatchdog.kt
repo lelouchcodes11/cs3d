@@ -36,8 +36,17 @@ object HangWatchdog {
                     edt = Thread.currentThread()
                     lastAnswer = System.currentTimeMillis()
                 }
+                val before = System.currentTimeMillis()
                 Thread.sleep(200)
                 val now = System.currentTimeMillis()
+                // a 200 ms sleep that took seconds: the PC was asleep (or the app suspended), not the UI thread stuck. It wrote a
+                // "did not answer for 3140536 ms" hang report and a 52-minute freeze into jank.txt after the owner's PC slept (2026-11-10)
+                // (the wall clock: it jumps over the time asleep, the performance counter may not)
+                if (now - before > 5_000) {
+                    lastAnswer = now
+                    jankSince = 0L; firstStack = ""; lastStack = ""; reported = false
+                    continue
+                }
                 val stuck = now - lastAnswer
                 if (stuck >= JANK_MS) {
                     if (jankSince == 0L) jankSince = lastAnswer

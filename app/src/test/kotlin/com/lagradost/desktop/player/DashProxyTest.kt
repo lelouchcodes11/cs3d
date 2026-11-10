@@ -37,6 +37,43 @@ class DashProxyTest {
         DashProxy.cancel(wrapped2)
     }
 
+    /** A live segment asked for again is refused only at the live edge (the stale-manifest loop); well behind it the repeat is answered */
+    @Test
+    fun liveRepeatRefusedOnlyAtTheEdge() {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), 0), 0)
+        server.createContext("/") { ex ->
+            val path = ex.requestURI.path
+            val body = if (path.endsWith(".mpd")) """<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" availabilityStartTime="1970-01-01T00:00:00Z" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT60S">
+ <Period id="1" start="PT0S">
+  <AdaptationSet mimeType="audio/mp4" contentType="audio">
+   <SegmentTemplate timescale="1000" media="audio_${'$'}Time${'$'}.mp4" initialization="audio_init.mp4">
+    <SegmentTimeline><S t="1000000000" d="2000" r="9"/></SegmentTimeline>
+   </SegmentTemplate>
+   <Representation id="a1" bandwidth="128000" codecs="mp4a.40.2"/>
+  </AdaptationSet>
+ </Period>
+</MPD>""".toByteArray() else ByteArray(1000) { 1 }
+            ex.sendResponseHeaders(200, body.size.toLong()); ex.responseBody.write(body); ex.close()
+        }
+        server.start()
+        try {
+            val wrapped = DashProxy.wrap("http://127.0.0.1:${server.address.port}/live/cenc.mpd", emptyMap())
+            val client = okhttp3.OkHttpClient()
+            fun get(name: String) = client.newCall(okhttp3.Request.Builder().url(wrapped.substringBeforeLast('/') + "/" + name).build()).execute().use { it.code }
+            assertEquals(200, get("cenc.mpd"))
+            // 7 segments listed after this one: the player reading it again is answered every time
+            val old = "audio_${1_000_000_000L + 2 * 2000}.mp4"
+            assertEquals(listOf(200, 200, 200), List(3) { get(old) })
+            // the newest listed segment, after the stream was read from before: the loop guard refuses a repeat
+            val edge = "audio_${1_000_000_000L + 9 * 2000}.mp4"
+            assertEquals(listOf(200, 404, 404), List(3) { get(edge) })
+            DashProxy.cancel(wrapped)
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test
     fun testDashProxyInFlightCancellation() {
         val mockServer = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), 0), 0)
