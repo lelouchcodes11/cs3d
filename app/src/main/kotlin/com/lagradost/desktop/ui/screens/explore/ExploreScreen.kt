@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.explore
 
+import com.lagradost.desktop.ui.fluent.shown
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -183,7 +184,7 @@ internal fun ExploreHero(first: ExploreRow) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         typeLabel(item.type)?.let { ArtChip(it, accent = true) }
                         item.year?.let { ArtChip(it.toString()) }
-                        item.score?.let { ArtChip("★ " + it.toString(10, 1)) }
+                        item.score.shown()?.let { ArtChip("★ " + it.toString(10, 1)) }
                     }
                     FText(item.name, style = Fluent.type.titleLarge.copy(fontSize = 38.sp, lineHeight = 44.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black), color = Color.White, maxLines = 2)
                     item.overview?.let { FText(it, color = Color(0xD9FFFFFF), maxLines = 2) }

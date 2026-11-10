@@ -260,7 +260,8 @@ fun <T> ComboBox(
     var anchorWidth by remember { mutableStateOf(0) }
     val density = LocalDensity.current
     Box(modifier.onSizeChanged { anchorWidth = it.width }) {
-        Row(
+        // the arrow sits at the right edge of the box (it followed the text, so a wide box read "Dark ⌄" and then empty space)
+        Box(
             Modifier
                 .defaultMinSize(minWidth = minWidth)
                 .height(height)
@@ -268,24 +269,25 @@ fun <T> ComboBox(
                 .hairBorder(if (enabled && (hovered || open)) c.text.copy(alpha = if (open) 0.55f else 0.32f) else c.stroke, shape)
                 .fluentClickable(source, enabled, shape, Role.DropdownList) { open = !open }
                 .padding(start = 14.dp, end = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            contentAlignment = Alignment.CenterStart,
         ) {
-            if (icon != null) {
-                Icon(icon, size = 14.dp, tint = c.textSecondary)
-                Box(Modifier.width(8.dp))
+            Row(Modifier.padding(end = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (icon != null) {
+                    Icon(icon, size = 14.dp, tint = c.textSecondary)
+                    Box(Modifier.width(8.dp))
+                }
+                if (selected != null && leadingItem != null) {
+                    leadingItem(selected)
+                    Box(Modifier.width(8.dp))
+                }
+                val text = selected?.let(label) ?: placeholder
+                FText(text, Modifier.weight(1f, fill = false), color = if (selected == null) c.textTertiary else c.text, maxLines = 1)
+                if (selected != null && trailingItem != null) {
+                    Box(Modifier.width(6.dp))
+                    trailingItem(selected)
+                }
             }
-            if (selected != null && leadingItem != null) {
-                leadingItem(selected)
-                Box(Modifier.width(8.dp))
-            }
-            val text = selected?.let(label) ?: placeholder
-            FText(text, Modifier.weight(1f, fill = false), color = if (selected == null) c.textTertiary else c.text, maxLines = 1)
-            if (selected != null && trailingItem != null) {
-                Box(Modifier.width(6.dp))
-                trailingItem(selected)
-            }
-            Box(Modifier.width(12.dp))
-            Icon(Icons.ChevronDownSmall, size = 12.dp, tint = c.textSecondary)
+            Icon(Icons.ChevronDownSmall, size = 12.dp, tint = c.textSecondary, modifier = Modifier.align(Alignment.CenterEnd))
         }
         if (open) {
             Popup(popupPositionProvider = BelowAnchor(2), onDismissRequest = { open = false }, properties = PopupProperties(focusable = true)) {

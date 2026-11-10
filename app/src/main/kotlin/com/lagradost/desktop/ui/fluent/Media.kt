@@ -201,7 +201,7 @@ fun PosterCard(
                     qualityLabel(item.quality)?.let { Overlay(it) }
                     dubLabel(item)?.let { Overlay(it) }
                 }
-                item.score?.let { s ->
+                item.score.shown()?.let { s ->
                     Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Overlay("★ " + s.toString(10, 1)) }
                 }
                 episodeCount(item)?.let { n ->
@@ -414,3 +414,6 @@ fun tvTypeName(t: TvType): String = when (t) {
     TvType.Podcast -> "Podcasts"
     TvType.Video -> "Videos"
 }
+
+/** A score worth showing: none for 0 (sites and TMDB give 0 for a title nobody has rated yet; "★ 0" read as a terrible film) */
+fun com.lagradost.cloudstream3.Score?.shown(): com.lagradost.cloudstream3.Score? = this?.takeIf { it.toInt(10000) > 0 }

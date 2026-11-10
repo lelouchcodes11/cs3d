@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.home
 
+import com.lagradost.desktop.ui.fluent.shown
 import com.lagradost.desktop.ui.fluent.fadeIntoPage
 import com.lagradost.desktop.ui.fluent.reveal
 import com.lagradost.desktop.ui.fluent.composeAhead
@@ -612,7 +613,7 @@ private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp, tmdbLogo:
                 item.tags?.take(3)?.forEach { add(it) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                item.score?.let { s ->
+                item.score.shown()?.let { s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                         com.lagradost.desktop.ui.fluent.Icon(Icons.StarFilled, size = 15.dp, tint = Color(0xFFFFC53D))
                         FText(s.toString(10, 1), style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)

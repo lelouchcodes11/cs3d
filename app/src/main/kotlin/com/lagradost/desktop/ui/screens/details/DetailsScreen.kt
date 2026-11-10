@@ -1,5 +1,6 @@
 package com.lagradost.desktop.ui.screens.details
 
+import com.lagradost.desktop.ui.fluent.shown
 import com.lagradost.desktop.ui.fluent.hairBorder
 
 import com.lagradost.desktop.ui.fluent.smoothWheel
@@ -1004,7 +1005,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                     }
                     if (ep.isFiller == true || ep.score != null) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (ep.isFiller == true) Badge("Filler")
-                        ep.score?.let { FText("★ " + it.toString(10, 1), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1) }
+                        ep.score.shown()?.let { FText("★ " + it.toString(10, 1), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1) }
                     }
                 }
                 // the download of this episode, in sight (it was only in the menu beside it)

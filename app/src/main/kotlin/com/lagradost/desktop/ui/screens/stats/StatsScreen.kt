@@ -152,15 +152,16 @@ fun StatsScreen() {
             }
             item(key = "tiles") {
                 val wide = maxWidth >= 760.dp
+                val pageW = maxWidth
                 val tiles = listOf(
                     Triple("All time", duration(data.allMs), if (data.loggedMs < data.allMs) "includes what you watched before the diary" else "of video"),
                     Triple("Last 7 days", duration(data.weekMs), "${duration(data.todayMs)} today"),
-                    Triple("Last 30 days", duration(data.monthMs), "${data.activeDays} days watched"),
-                    Triple("Streak", "${data.streak} ${if (data.streak == 1) "day" else "days"}", "${data.titles} titles in the diary"),
+                    Triple("Last 30 days", duration(data.monthMs), "${data.activeDays} ${if (data.activeDays == 1) "day" else "days"} watched"),
+                    Triple("Streak", "${data.streak} ${if (data.streak == 1) "day" else "days"}", "${data.titles} ${if (data.titles == 1) "title" else "titles"} in the diary"),
                 )
                 // the tiles are as tall as the tallest (a caption on two lines made the first one stick out)
-                if (wide) Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(14.dp)) { tiles.forEach { (a, b, c) -> Box(Modifier.weight(1f).fillMaxHeight()) { Tile(a, b, c) } } }
-                else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { tiles.chunked(2).forEach { r -> Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) { r.forEach { (a, b, c) -> Box(Modifier.weight(1f).fillMaxHeight()) { Tile(a, b, c) } } } } }
+                if (wide) Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(14.dp)) { tiles.forEach { (a, b, c) -> Box(Modifier.weight(1f).fillMaxHeight()) { Tile(a, b, c, (pageW - 72.dp - 42.dp) / 4 - 36.dp) } } }
+                else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { tiles.chunked(2).forEach { r -> Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) { r.forEach { (a, b, c) -> Box(Modifier.weight(1f).fillMaxHeight()) { Tile(a, b, c, (pageW - 72.dp - 12.dp) / 2 - 36.dp) } } } } }
             }
             item(key = "heat") { Card("Activity") { Heatmap(data.perDay, data.weekdays) } }
             item(key = "split") {
@@ -190,7 +191,7 @@ fun StatsScreen() {
 }
 
 @Composable
-private fun Tile(label: String, value: String, sub: String) {
+private fun Tile(label: String, value: String, sub: String, room: androidx.compose.ui.unit.Dp) {
     val c = Fluent.colors
     val shape = RoundedCornerShape(FluentShapes.card)
     Column(
@@ -198,8 +199,11 @@ private fun Tile(label: String, value: String, sub: String) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         FText(label, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
-        // a long value ("24 Std. 46 Min.") is set smaller instead of being cut in a narrow card
-        FText(value, style = if (value.length <= 10) Fluent.type.title else Fluent.type.subtitle, maxLines = 2)
+        // a long value ("24 Std. 46 Min.") is set smaller instead of being cut in a narrow card; in a wide card it keeps the size of the others
+        // ("37 h 48 min" was the one small number in a row of four at any width). [room] is the text width of the card, worked out by the
+        // page: the cards sit in a row of intrinsic height, which a BoxWithConstraints here cannot be measured in (the page came up empty)
+        val fits = value.length <= 10 || room >= 16.dp * value.length
+        FText(value, style = if (fits) Fluent.type.title else Fluent.type.subtitle, maxLines = 2)
         FText(sub, style = Fluent.type.caption, color = c.textTertiary, maxLines = 2)
     }
 }
@@ -266,9 +270,11 @@ private fun Heatmap(perDay: Map<LocalDate, Long>, weekdays: LongArray) {
     // as many weeks as fit (a year at most)
     val weeks = ((maxWidth + 3.dp) / (15.dp + 3.dp)).toInt().coerceIn(12, 53)
     val start = today.minusDays((today.dayOfWeek.value - 1).toLong()).minusWeeks((weeks - 1).toLong())
-    Canvas(Modifier.fillMaxWidth().height((15 + 3).dp * 7)) {
+    // a wide window holds more than a year: the cells grow to fill the card (up to 22 dp) instead of stopping short of its right edge
+    val cellDp = ((maxWidth + 3.dp) / weeks - 3.dp).coerceIn(15.dp, 22.dp)
+    Canvas(Modifier.fillMaxWidth().height((cellDp + 3.dp) * 7)) {
         val gap = 3.dp.toPx()
-        val cell = 15.dp.toPx()
+        val cell = cellDp.toPx()
         for (w in 0 until weeks) for (d in 0 until 7) {
             val day = start.plusWeeks(w.toLong()).plusDays(d.toLong())
             if (day.isAfter(today)) continue

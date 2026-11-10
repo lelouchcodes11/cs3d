@@ -101,6 +101,11 @@ fun ExtensionsScreen() {
     val repos by ext.repositories.observeAsState()
     val stats by ext.pluginStats.observeAsState()
     val list by plugins.filteredPlugins.observeAsState()
+    // what is installed, counted like the Installed list (one per file): the repository statistics counted an extension once per repository that
+    // lists it, so the header said 29 while the list below showed 26
+    val installedCount = remember(stats, list) {
+        runCatching { (com.lagradost.cloudstream3.plugins.PluginManager.getPluginsOnline() + com.lagradost.cloudstream3.plugins.PluginManager.getPluginsLocal()).distinctBy { it.filePath }.size }.getOrNull()
+    }
     // the page opens on what is installed (it opened on the first repository when the list of repositories was already there, and showed that repository's one extension)
     var selected by remember { mutableStateOf<String?>(INSTALLED) }
     var query by remember { mutableStateOf("") }
@@ -136,7 +141,7 @@ fun ExtensionsScreen() {
                 com.lagradost.desktop.ui.fluent.PageHeader("Extensions", Modifier.weight(1f), icon = Icons.Extensions, tint = androidx.compose.ui.graphics.Color(0xFFB07CFF), subtitle = "Add a repository, then install the providers you want")
                 stats?.let { s ->
                     if (!compact) {
-                        StatTile(Icons.Download, s.downloaded.toString(), "installed")
+                        StatTile(Icons.Download, (installedCount ?: s.downloaded).toString(), "installed")
                         StatTile(Icons.Extensions, s.notDownloaded.toString(), "available")
                         if (s.disabled > 0) StatTile(Icons.Warning, s.disabled.toString(), "disabled")
                     }
@@ -194,7 +199,7 @@ fun ExtensionsScreen() {
                         val heading = @Composable { m: Modifier ->
                             Column(m) {
                                 FText(if (sel == INSTALLED) "Installed extensions" else repo?.name ?: "Extensions", style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 1)
-                                FText(repo?.url ?: "${list?.second?.size ?: 0} extensions", style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+                                FText(repo?.url ?: (list?.second?.size ?: 0).let { n -> val all = installedCount ?: n; if (sel == INSTALLED && query.isBlank() && all > n) "$n of $all shown: your language or type filter hides the others" else "$n extensions" }, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
                             }
                         }
                         val filterBox = @Composable { m: Modifier ->
