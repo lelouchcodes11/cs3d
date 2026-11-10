@@ -210,9 +210,11 @@ internal object FramePacer {
     private fun waitUntil(deadline: Long) {
         val wait = deadline - System.nanoTime()
         if (wait <= 0L || wait > MAX_HOLD_NS) return
-        // park for the bulk, spin for the last millisecond (parking wakes up late by up to a millisecond or two)
-        if (wait > 2_500_000L) {
-            val asked = wait - 1_500_000L
+        // park for the bulk, spin only the last 0.3 ms. The deadline is 2 ms after a refresh and the frame then has a whole refresh to be
+        // drawn, so waking a little late is harmless; parking overshot 0.23 ms on average (measured), and spinning 1.5 ms per frame burned
+        // 3-9 % of a core for nothing (24-60 fps)
+        if (wait > 600_000L) {
+            val asked = wait - 300_000L
             val t0 = System.nanoTime()
             java.util.concurrent.locks.LockSupport.parkNanos(asked)
             val over = System.nanoTime() - t0 - asked

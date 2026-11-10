@@ -96,7 +96,21 @@ open class MpvPlayer : IPlayer {
     private val frameInfo = com.sun.jna.Memory(16)
     private val noBlock = com.sun.jna.Memory(8).apply { setInt(0, 0) }
     @Volatile private var frameInfoWorks = true
+    /**
+     * Threads mpv's software renderer converts (colours, size) each frame with. mpv's default is one per logical processor: on a 16-thread PC
+     * playback took 0.76-0.92 of a core in all, with 2-4 threads 0.24-0.41 (the same frames, ~3 ms each): waking and syncing 16 threads for a
+     * few milliseconds of work cost more than the work. Large frames (above ~1440p-ish 2.2 MP) get 4 so a 60 fps video still finishes in time.
+     * -Dcloudstream.zimgthreads=auto|<n> overrides it (A/B).
+     */
+    @Volatile private var zimgThreads = "2"
+
+    private fun zimgThreadsFor(pixels: Long): String = System.getProperty("cloudstream.zimgthreads")
+        ?: minOf(if (pixels > 2_200_000L) 4 else 2, Runtime.getRuntime().availableProcessors().coerceAtLeast(1)).toString()
+
     private val frameRenderer = com.lagradost.desktop.runtime.ui.VideoFrameRenderer { w, h, stride, address ->
+        zimgThreadsFor(w.toLong() * h).let { want ->
+            if (want != zimgThreads) { zimgThreads = want; mainHandler.post { setMpvProperty("zimg-threads", want) } }
+        }
         var targetNs = 0L
         val rendered = synchronized(renderLock) {
             val rc = renderContext ?: return@synchronized false
@@ -356,6 +370,9 @@ open class MpvPlayer : IPlayer {
             mpv.mpv_set_option_string(ctx, "vo", if (headless) "null" else "libmpv")
             // decoded frames are read back for the software renderer
             mpv.mpv_set_option_string(ctx, "hwdec", com.lagradost.desktop.ui.fluent.Appearance.videoDecoder.copy)
+            // few picture-conversion threads (see zimgThreadsFor)
+            zimgThreads = zimgThreadsFor(0L)
+            mpv.mpv_set_option_string(ctx, "zimg-threads", zimgThreads)
         }
         mpv.mpv_set_option_string(ctx, "audio-spdif", com.lagradost.desktop.ui.fluent.Appearance.audioDecoder.spdif)
         // stable volume and the compressor of the settings (both off leaves the sound alone)

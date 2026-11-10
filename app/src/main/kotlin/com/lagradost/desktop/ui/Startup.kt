@@ -82,22 +82,43 @@ fun StartupReveal(content: @Composable () -> Unit) {
     val leave = remember { Animatable(0f) } // 0 -> 1: the loader fades away, the app settles in
     var gone by remember { mutableStateOf(false) }
     var showLine by remember { mutableStateOf(false) }
+    // the line and the stage text fade in (they popped in at once)
+    val lineAlpha by androidx.compose.animation.core.animateFloatAsState(if (showLine) 1f else 0f, tween(240, easing = LinearEasing))
     // the last time a frame took long (the "hand" of a busy start): the app is shown once the window has been smooth for a moment
     var lastJank by remember { mutableStateOf(System.currentTimeMillis()) }
     var frames by remember { mutableStateOf(0) }
+    // the loader's own pauses (a frozen line is what a slow start looks like): logged when the app is revealed
+    val pauses = remember { StringBuilder() }
+    var pauseCount by remember { mutableStateOf(0) }
+    // System.currentTimeMillis() of the last frame over 50 ms (read by the reveal below; not state: nothing redraws for it)
+    val lastPauseAt = remember { longArrayOf(System.currentTimeMillis()) }
+    // the app is drawn under the (opaque) loader from the moment the start has settled: see the reveal
+    var drawApp by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        var previous = androidx.compose.runtime.withFrameNanos { it }
+        val first = androidx.compose.runtime.withFrameNanos { it }
+        var previous = first
+        var lastPause = first
         while (true) {
             val now = androidx.compose.runtime.withFrameNanos { it }
             frames++
-            if ((now - previous) / 1_000_000 > 90) lastJank = System.currentTimeMillis()
+            val gapMs = (now - previous) / 1_000_000
+            if (gapMs > 90) lastJank = System.currentTimeMillis()
+            if (gapMs > 50) {
+                lastPause = now
+                lastPauseAt[0] = System.currentTimeMillis()
+                pauseCount++
+                if (pauses.length < 400) pauses.append((now - first) / 1_000_000).append(':').append(gapMs).append("ms(").append(Startup.stage.ifEmpty { "-" }.take(9)).append(if (showLine) ",line" else "").append(if (leave.value > 0f) ",fade" else if (drawApp) ",draw" else "").append(") ")
+            }
+            // The moving line only when the start is slow (1.2 s) and the window has been calm for a moment: the first ~0.8 s after the window opens are its own first draws
+            // and the app being built under the loader (pauses of 0.1-0.5 s, measured), and a line that freezes there is what looks like a hang.
+            // Until then the logo stands alone, as in the native splash before it; a quick start never shows the line.
+            if (!showLine && now - first >= 1_200_000_000L && now - lastPause >= 300_000_000L) showLine = true
             previous = now
         }
     }
     LaunchedEffect(Unit) {
         val started = System.currentTimeMillis()
         delay(350)
-        showLine = true
         while (System.currentTimeMillis() - started < Startup.MAX_MS + (if (Startup.warming) Startup.WARM_MS else 0L)) {
             val pm = com.lagradost.cloudstream3.plugins.PluginManager
             val setup = com.lagradost.desktop.core.Navigator.current.route is com.lagradost.desktop.core.Route.Setup
@@ -120,17 +141,22 @@ fun StartupReveal(content: @Composable () -> Unit) {
         }
         android.util.Log.i("Startup", "settled after ${System.currentTimeMillis() - started} ms (local=${com.lagradost.cloudstream3.plugins.PluginManager.loadedLocalPlugins} online=${com.lagradost.cloudstream3.plugins.PluginManager.loadedOnlinePlugins} home=${homeSettled()})")
         Startup.stage = ""
-        // a moment for Home to lay out its content under the loader
+        // The app's first draw happens under the still loader, not in the fade: Home's pictures and shapes going to the graphics card for the
+        // first time paused the fade 3-5 times (60-300 ms, measured with fast extensions). The loader waits until those frames are done (0.7 s at most).
+        drawApp = true
         delay(180)
+        val drawnBy = System.currentTimeMillis() + 700
+        while (System.currentTimeMillis() < drawnBy && System.currentTimeMillis() - lastPauseAt[0] < 200) delay(30)
         leave.animateTo(1f, tween(FluentMotion.ms(360).coerceAtLeast(1), easing = FluentMotion.standard))
         gone = true
+        android.util.Log.i("Startup", "loader: $frames frames, $pauseCount pauses over 50 ms: $pauses")
         Startup.revealed.complete(Unit)
     }
     Box(Modifier.fillMaxSize()) {
-        // The app is not drawn while the loader is up; when the reveal begins it is drawn as it is (no alpha, no scale: a whole-window layer that
+        // The app is not drawn while the loader is up (only from the moment the start has settled, under the opaque loader, for its first draw); when the reveal begins it is drawn as it is (no alpha, no scale: a whole-window layer that
         // fades in and grows a little was two off-screen passes per frame and soft text, which a weak graphics chip showed as stutter and flicker)
         // and the loader, a plain colour with the logo, fades away over it
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (leave.value > 0f) 1f else 0f }) { content() }
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (drawApp || leave.value > 0f) 1f else 0f }) { content() }
         if (!gone) {
             Box(
                 Modifier.fillMaxSize().graphicsLayer { alpha = 1f - leave.value; compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha }.background(c.bg),
@@ -147,7 +173,7 @@ fun StartupReveal(content: @Composable () -> Unit) {
                     // one slim indeterminate line
                     Box(
                         Modifier.width(132.dp).height(3.dp)
-                            .graphicsLayer { alpha = if (showLine) 1f else 0f }
+                            .graphicsLayer { alpha = lineAlpha }
                             .drawBehind {
                                 val r = CornerRadius(size.height / 2)
                                 drawRoundRect(track, cornerRadius = r)
@@ -159,7 +185,7 @@ fun StartupReveal(content: @Composable () -> Unit) {
                             },
                     )
                     Box(Modifier.height(12.dp))
-                    FText(Startup.stage, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1, modifier = Modifier.graphicsLayer { alpha = if (showLine) 1f else 0f })
+                    FText(Startup.stage, style = Fluent.type.caption, color = c.textTertiary, maxLines = 1, modifier = Modifier.graphicsLayer { alpha = lineAlpha })
                 }
             }
         }

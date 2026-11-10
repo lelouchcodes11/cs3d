@@ -452,10 +452,11 @@ private fun ScreenWarmup() {
     LaunchedEffect(Unit) {
         val startup = com.lagradost.desktop.ui.Startup
         val pm = com.lagradost.cloudstream3.plugins.PluginManager
-        // Under the loader (it stays up a little longer for this): nobody can click yet, so each page needs only a moment, and the first visit of
-        // every page after the start is already warm. -Dcloudstream.loaderwarm=false keeps the old way (warmed some seconds after the start).
+        // Under the loader only with -Dcloudstream.loaderwarm=true. It made the loader hang: with the extensions loaded quickly, 15-22 pauses of
+        // 0.1-1.4 s while the line was moving (62-171 frames in ~5.5 s) and the start 2-3 s longer (loader 5.4-5.9 s, without it 1.4-1.5 s).
+        // The pages are warmed after the start instead, while the window is calm (below).
         var warmed = false
-        if (System.getProperty("cloudstream.loaderwarm") != "false" && !startup.revealed.isCompleted && Navigator.current.route !is Route.Setup && !lowOnMemory()
+        if (System.getProperty("cloudstream.loaderwarm") == "true" && !startup.revealed.isCompleted && Navigator.current.route !is Route.Setup && !lowOnMemory()
             // a weak PC: the warm-up made the loader itself stutter (frames over 50 ms doubled), which reads as a hang at the start
             && !com.lagradost.desktop.ui.fluent.Appearance.light) {
             startup.warming = true
