@@ -87,9 +87,9 @@ fun buildDefaultClient(context: Context, ignoreSSL: Boolean = false): OkHttpClie
                 // (what the race between two addresses does to the slower one): there one address is tried after the other
                 // and a Cloudflare check that refuses a request is passed to the app's browser (see isolate/BrowserFetch.kt)
                 .apply { if (System.getProperty("cloudstream.worker") != null) { fastFallback(false); addInterceptor(com.lagradost.desktop.isolate.BrowserFetchInterceptor) } }
-                // a Cloudflare pass goes with the User-Agent of the browser that earned it (see net/CloudflarePass.kt). Not in the sandbox: Cloudflare refuses its
-                // connection even with the browser's pass and User-Agent (measured), and the browser fallback above serves those requests
-                .apply { if (System.getProperty("cloudstream.worker") == null && System.getProperty("cloudstream.cfpass") != "off") addInterceptor(com.lagradost.desktop.net.CloudflarePass.requests) }
+                // a Cloudflare pass goes with the User-Agent of the browser that earned it (see net/CloudflarePass.kt). In the sandbox, whose connection Cloudflare
+                // refuses even then (measured), a refused request is made by the app instead (inside the browser fallback above, which is then not needed)
+                .apply { if (System.getProperty("cloudstream.cfpass") != "off") addInterceptor(if (System.getProperty("cloudstream.worker") != null) com.lagradost.desktop.net.CloudflarePass.sandbox else com.lagradost.desktop.net.CloudflarePass.requests) }
                 .eventListenerFactory(com.lagradost.desktop.net.Quarantine.listenerFactory)
                 .addInterceptor(com.lagradost.desktop.net.RetryQuickFailures)
                 // reads what AniList / MyAnimeList / Simkl / Kitsu answer (an outage, a refused sign-in) for the pages to say so; the answer itself is not changed

@@ -393,6 +393,8 @@ object IsolatedHost {
             "webview" -> webview(req)
             // a page of a site whose Cloudflare check was passed, fetched by the app's browser (see BrowserFetch)
             "fetch" -> BrowserFetch.serve(b)
+            // a request of an extension that Cloudflare refused in the sandbox, made by the app with the pass its browser holds (see net/CloudflarePass.kt)
+            "cfFetch" -> com.lagradost.desktop.net.CloudflarePass.serve(b)
             // the pages of the browsers that extensions in the sandbox build (see RemoteBrowserHost) and the window for one of them
             "wv" -> RemoteBrowserHost.serve(b)
             "dialogShow" -> mapper.valueToTree<JsonNode>(RemoteBrowserHost.dialogShow(b))
