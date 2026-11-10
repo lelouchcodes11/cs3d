@@ -61,7 +61,8 @@ object ImageLoader {
             /** Pass interceptors with care, unnecessary passing tokens to servers
             or image hosting services causes unauthorized exceptions **/
             .components {
-                add(OkHttpNetworkFetcherFactory(callFactory = { buildDefaultClient(context) }))
+                // desktop: pictures of a site whose Cloudflare check the browser passed carry that pass (see net/CloudflarePass.kt)
+                add(OkHttpNetworkFetcherFactory(callFactory = { buildDefaultClient(context).newBuilder().addInterceptor(com.lagradost.desktop.net.CloudflarePass.pictures).build() }))
                 // desktop: no BitmapFactoryDecoder/bitmapConfig (Android-only); resource ids need a fetcher on the JVM
                 add(coil3.ResourceIntFetcher.Factory(context))
                 add(WrappedImageFallback)

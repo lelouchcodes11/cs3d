@@ -119,8 +119,7 @@ object DevServer {
     // ---------------------------------------------------------------------------------------------
     // Capture: PrintWindow renders the window even when other windows cover it
 
-    private fun capture(): BufferedImage {
-        val frame = window()
+    private fun capture(frame: java.awt.Window = window()): BufferedImage {
         val hwnd = WinDef.HWND(Native.getComponentPointer(frame))
         val rect = WinDef.RECT()
         User32.INSTANCE.GetWindowRect(hwnd, rect)
@@ -440,7 +439,11 @@ object DevServer {
             "/screenshot" -> {
                 val out = ByteArrayOutputStream()
                 // ?sk=1: what Skia drew (the window's Skia layer), for when PrintWindow returns a blank window (screen locked, window covered)
-                if (q["sk"] != null) {
+                // ?dialog=1: the newest window of the app that is shown other than the main one (a check window)
+                if (q["dialog"] != null) {
+                    val d = java.awt.Window.getWindows().lastOrNull { it.isShowing && it !== window() && it.width > 200 } ?: return ok(ex, "no dialog")
+                    ImageIO.write(capture(d), "png", out)
+                } else                 if (q["sk"] != null) {
                     val img = skiaShot(window()) ?: return ok(ex, "no skia layer")
                     ImageIO.write(img, "png", out)
                 } else ImageIO.write(capture(), "png", out)
@@ -1405,6 +1408,28 @@ object DevServer {
                 q["url"]?.let { u -> q["value"]?.let { v -> android.webkit.CookieManager.getInstance().setCookie(u, v) } }
                 Thread.sleep(1500)
                 ok(ex, com.lagradost.desktop.runtime.web.WebCookies.all().joinToString("\n") { it.domain + "|" + it.name + "|" + it.path + "|" + it.value.take(12) })
+            }
+            "/okget" -> {
+                // dev: a request from the app's own HTTP client with the browser's cookies and User-Agent (is a Cloudflare pass usable outside the browser?):
+                // /okget?url=https://animepahe.pw/&tls=jdk|app&h2=0
+                val url = q["url"]!!
+                val base = com.lagradost.cloudstream3.app.baseClient
+                val client = base.newBuilder().apply {
+                    if (q["tls"] == "jdk") {
+                        val ctx = javax.net.ssl.SSLContext.getInstance("TLS", "SunJSSE").apply { init(null, null, null) }
+                        val tm = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm()).apply { init(null as java.security.KeyStore?) }.trustManagers[0] as javax.net.ssl.X509TrustManager
+                        sslSocketFactory(ctx.socketFactory, tm)
+                    }
+                    if (q["h2"] == "0") protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+                    q["ip"]?.let { v -> dns(object : okhttp3.Dns { override fun lookup(hostname: String) = okhttp3.Dns.SYSTEM.lookup(hostname).filter { if (v == "4") it is java.net.Inet4Address else it is java.net.Inet6Address } }) }
+                }.build()
+                val ua = q["ua"] ?: com.lagradost.desktop.runtime.web.WebRuntime.defaultUserAgent
+                val cookie = com.lagradost.desktop.runtime.web.WebCookies.header(url)?.let { c -> if (q["only"] == "cf") c.split("; ").filter { it.startsWith("cf_clearance=") }.joinToString("; ") else c }
+                val req = okhttp3.Request.Builder().url(url).header("User-Agent", ua).apply { if (q["ext"] != null) { header("accept-language", "en-US,en;q=0.9"); if ("r" in q["ext"]!!) header("referer", "https://animepahe.pw/"); if ("c" in q["ext"]!!) header("Cache-Control", "max-age=0") } }.apply { if (q["ch"] == "1") { header("sec-ch-ua", "\"Chromium\";v=\"158\", \"Microsoft Edge\";v=\"158\", \"Not/A)Brand\";v=\"99\""); header("sec-ch-ua-mobile", "?0"); header("sec-ch-ua-platform", "\"Windows\""); header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"); header("Accept-Language", "en-US,en;q=0.9"); header("Sec-Fetch-Dest", "document"); header("Sec-Fetch-Mode", "navigate"); header("Sec-Fetch-Site", "none"); header("Upgrade-Insecure-Requests", "1") } }.apply { cookie?.let { header("Cookie", it) } }.build()
+                val out = runCatching {
+                    client.newCall(req).execute().use { r -> "code=${r.code} protocol=${r.protocol} tls=${r.handshake?.tlsVersion} cipher=${r.handshake?.cipherSuite} mitigated=${r.header("cf-mitigated")} title=${Regex("<title>([^<]*)").find(r.body.string())?.groupValues?.get(1)}" }
+                }.getOrElse { "error $it" }
+                ok(ex, "$out\nua=$ua\nclearance=${cookie?.contains("cf_clearance=") == true} provider=${javax.net.ssl.SSLContext.getDefault().provider.name}")
             }
             "/cookietest" -> {
                 // dev: what a plugin login sees: a WebView page sets a cookie, onPageFinished reads it with CookieManager.getCookie (UI thread)
