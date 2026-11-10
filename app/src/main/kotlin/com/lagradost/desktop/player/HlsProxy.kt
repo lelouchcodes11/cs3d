@@ -166,6 +166,9 @@ object HlsProxy {
     private fun firstSegment(ex: HttpExchange) {
         val url = query(ex, "u") ?: return fail(ex, IllegalArgumentException("no address"))
         val id = query(ex, "h") ?: ""
+        // a part of a file (#EXT-X-BYTERANGE: Kisskh's segments are ranges of one 400 MB file): that range, passed on as it comes. Without the Range
+        // header the whole file was read into memory for every segment (a 20 s wait, then the app ran out of memory).
+        ex.requestHeaders.getFirst("Range")?.let { range -> return passRange(ex, url, id, range) }
         val ready = firstSegments.remove("$id|$url")?.let { runCatching { it.result.get(30, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() }
         // asked for again later (a seek back to the start), or the early fetch failed: fetched now
         val (code, fetched) = ready?.takeIf { it.first in 200..299 } ?: getFull(url, headersById[id] ?: emptyMap(), interceptorsById[id], id).let { it.first to it.second }
@@ -173,6 +176,33 @@ object HlsProxy {
         val body = withoutDisguise(fetched)
         ex.sendResponseHeaders(200, body.size.toLong())
         ex.responseBody.use { it.write(body) }
+    }
+
+    private fun passRange(ex: HttpExchange, url: String, id: String, range: String) {
+        val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: toUri(url).toString().toHttpUrl())
+        var userAgent = false
+        for ((k, v) in headersById[id].orEmpty()) {
+            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Accept-Encoding", true) || k.equals("Range", true)) continue
+            if (k.equals("User-Agent", true)) userAgent = true
+            com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
+        }
+        if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
+        builder.header("Range", range)
+        val interceptor = interceptorsById[id]
+        val client = com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(0, java.util.concurrent.TimeUnit.SECONDS).apply { interceptor?.let { addInterceptor(it) } }.build()
+        val call = client.newCall(builder.build())
+        activeCalls.computeIfAbsent(id) { java.util.concurrent.CopyOnWriteArrayList() }.add(call)
+        try {
+            call.execute().use { r ->
+                if (r.code !in 200..299) { ex.sendResponseHeaders(r.code, -1); ex.close(); return }
+                for (h in listOf("Content-Range", "Content-Type", "Accept-Ranges")) r.header(h)?.let { ex.responseHeaders.set(h, it) }
+                val length = r.body.contentLength()
+                ex.sendResponseHeaders(r.code, if (length >= 0) length else 0)
+                ex.responseBody.use { out -> r.body.byteStream().copyTo(out, 64 * 1024) }
+            }
+        } finally {
+            activeCalls[id]?.remove(call)
+        }
     }
 
     /** Segment addresses that pretend to be something else (`seg-0.webp`, `chunk-1.js`): the video behind a fake file header */

@@ -57,8 +57,16 @@ internal object WorkerInterceptors {
         val o = open[b.get("id").asLong()] ?: error("this answer is closed")
         o.used = System.currentTimeMillis()
         val buffer = ByteArray(b.get("max").asInt(1_048_576).coerceIn(1, 4_194_304))
-        val n = o.source.read(buffer)
-        return if (n < 0) mapper.createObjectNode().put("eof", true) else mapper.createObjectNode().put("data", Base64.getEncoder().encodeToString(buffer.copyOf(n)))
+        // the piece is filled (a read hands out only what has arrived, often 8 KB): every call is a round trip for the app. "last": the answer ended with it.
+        var n = 0
+        var ended = false
+        while (n < buffer.size) {
+            val got = o.source.read(buffer, n, buffer.size - n)
+            if (got < 0) { ended = true; break }
+            n += got
+        }
+        if (n == 0) return mapper.createObjectNode().put("eof", true)
+        return mapper.createObjectNode().put("data", Base64.getEncoder().encodeToString(if (n == buffer.size) buffer else buffer.copyOf(n))).put("last", ended)
     }
 
     fun close(id: Long) {

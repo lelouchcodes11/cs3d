@@ -258,6 +258,11 @@ object DashProxy {
         /** The highest video bandwidth the player is given (0: all), see [DashQuality] */
         @Volatile
         var maxBandwidth = 0L
+        /** A live manifest is given to the player with one video quality (see [capQuality]): the one picked in the quality menu (0: the best for the screen) */
+        @Volatile var exactBandwidth = 0L
+        /** All the video qualities of the live manifest, and the one the player was given (0: all of them were given) */
+        @Volatile var reps: List<DashQuality.Rep> = emptyList()
+        @Volatile var given = 0L
 
         /** The video bandwidths the manifest lists, lowest first */
         @Volatile
@@ -316,6 +321,21 @@ object DashProxy {
     private fun capQuality(entry: Entry, bytes: ByteArray): ByteArray {
         val xml = String(bytes, Charsets.UTF_8)
         if (entry.ladder.isEmpty()) entry.ladder = DashQuality.videoBandwidths(xml)
+        // LIVE: one video quality for the player. ffmpeg opens every representation and reads a fragment of each before it plays (WILLOW FHD, 6 video
+        // qualities + audio: 8.5 s to the picture, ~6.8 s of it spent opening them one by one); the quality menu lists them all and opens the channel again
+        // on the one picked. The automatic cap (a lower quality after buffering) still applies. -Dcloudstream.livetrim=off: all of them, as before.
+        if (entry.live && System.getProperty("cloudstream.livetrim") != "off") {
+            if (entry.reps.isEmpty()) entry.reps = DashQuality.videoReps(xml)
+            if (entry.reps.size > 1) {
+                val screen = runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.maxOf { it.displayMode.height } }.getOrDefault(1080).coerceAtLeast(1080)
+                val pick = DashQuality.pick(entry.reps, screen, entry.maxBandwidth, entry.exactBandwidth)
+                if (pick != null) {
+                    if (entry.given != pick.bandwidth) Log.i(TAG, "live manifest: the player gets one quality, ${pick.height ?: "?"}p (${pick.bandwidth / 1000} kb/s, ${entry.reps.size} in the manifest)")
+                    entry.given = pick.bandwidth
+                    return DashQuality.only(xml, pick.bandwidth).toByteArray(Charsets.UTF_8)
+                }
+            }
+        }
         if (entry.maxBandwidth <= 0L || entry.ladder.size < 2) return bytes
         return DashQuality.cap(xml, entry.maxBandwidth).toByteArray(Charsets.UTF_8)
     }
@@ -424,6 +444,9 @@ object DashProxy {
     /** The cap of a [wrap] address (0: none) */
     fun maxBandwidth(address: String?): Long = entryOf(address)?.maxBandwidth ?: 0L
 
+    /** The video qualities of a live manifest that was given to the player with one of them, and the bandwidth of that one; null when it got them all */
+    fun liveQualities(address: String?): Pair<List<DashQuality.Rep>, Long>? = entryOf(address)?.takeIf { it.given > 0L && it.reps.size > 1 }?.let { it.reps to it.given }
+
     /** Whether a [wrap] address plays a live (dynamic) manifest */
     fun isLive(address: String): Boolean = address.substringAfter("/d/", "").substringBefore("/").let { entries[it]?.live == true }
 
@@ -452,12 +475,13 @@ object DashProxy {
     }
 
     /** Address to give the player instead of [url] (the manifest); segments are asked for next to it */
-    fun wrap(url: String, headers: Map<String, String>, maxBandwidth: Long = 0L, startBehindSeconds: Double = 0.0): String {
+    fun wrap(url: String, headers: Map<String, String>, maxBandwidth: Long = 0L, startBehindSeconds: Double = 0.0, exactBandwidth: Long = 0L): String {
         if (entries.size > 50) entries.clear()
         val id = Integer.toHexString(url.hashCode()) + "-" + System.nanoTime().toString(16)
         val name = url.substringBefore('?').substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80).ifEmpty { "manifest.mpd" }
         entries[id] = Entry(url, headers, name).also {
             it.maxBandwidth = maxBandwidth
+            it.exactBandwidth = exactBandwidth
             // a live channel opened at a given distance behind its live edge (the player's seek past its memory, or another source): 0 is the default, 30 s
             if (startBehindSeconds > 0.0) it.startBehind = startBehindSeconds
         }

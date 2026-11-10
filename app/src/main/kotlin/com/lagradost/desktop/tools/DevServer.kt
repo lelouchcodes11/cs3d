@@ -1471,12 +1471,16 @@ object DevServer {
                 val wanted = q["link"]!!
                 val api = com.lagradost.cloudstream3.APIHolder.apis.firstOrNull { it.name.lowercase().contains(providerName) } ?: return ok(ex, "no provider")
                 val found = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                    for (page in api.mainPage.take(3)) {
-                        val home = runCatching { api.getMainPage(1, com.lagradost.cloudstream3.MainPageRequest(page.name, page.data, page.horizontalImages)) }.getOrNull() ?: continue
-                        for (item in home.items.flatMap { it.list }.take(20)) {
+                    // &q=<text>: the first search results instead of the main page (series too: their first episode)
+                    val searched = q["q"]?.let { text -> runCatching { api.search(text, 1)?.items?.take(5) }.getOrNull() }
+                    for (page in if (searched != null) listOf(null) else api.mainPage.take(3)) {
+                        val items = searched ?: page?.let { p -> runCatching { api.getMainPage(1, com.lagradost.cloudstream3.MainPageRequest(p.name, p.data, p.horizontalImages)) }.getOrNull()?.items?.flatMap { it.list }?.take(20) } ?: continue
+                        for (item in items) {
                             val data = when (val r = runCatching { api.load(item.url) }.getOrNull()) {
                                 is com.lagradost.cloudstream3.LiveStreamLoadResponse -> r.dataUrl
                                 is com.lagradost.cloudstream3.MovieLoadResponse -> r.dataUrl
+                                is com.lagradost.cloudstream3.TvSeriesLoadResponse -> r.episodes.firstOrNull()?.data
+                                is com.lagradost.cloudstream3.AnimeLoadResponse -> r.episodes.values.flatten().firstOrNull()?.data
                                 else -> null
                             } ?: continue
                             val links = java.util.Collections.synchronizedList(ArrayList<com.lagradost.cloudstream3.utils.ExtractorLink>())

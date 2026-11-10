@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Kisskh plays in under 2 seconds instead of hanging.** Its episodes are one big file that the player reads piece by piece. With the extension sandbox on, the app downloaded the whole 400 MB file for every piece: a 20-second stall, then the app could run out of memory. Now only the requested piece is fetched. First picture in 1.8 s; a jump to 25 minutes takes 1.6 s. The sandbox also passes video to the player in 1 MB pieces instead of 8 KB ones.
+- **Live DASH channels start sooner too.** WILLOW FHD: 8.5 s before, 1.3-3.6 s now. JIO TV: 2.8 s. Like live HLS, the player gets the one quality that suits your screen. The quality menu lists every quality and reopens the channel on the one you pick (about 1 s). When two qualities have the same height, the menu also shows their bitrate.
+
 - **Live channels start in about half the time.** A live HLS channel is now opened with one quality, the best for your screen (the player used to open and read every quality first). PTV SPORTS: 8.3 s to the picture before, 3.3-4.9 s now. The quality menu still lists every quality; picking another opens the channel on it (about 2 s). Recorded videos keep all their qualities as before.
 - **Reload page in the site-check window**, for a check page that stays blank or keeps showing "Just a moment...".
 - **The title bar comes back at the top edge in more cases.** The bar also appears when the pointer is at the very top of the screen the maximized window fills (it stayed hidden after making a new profile with a PIN on one PC).

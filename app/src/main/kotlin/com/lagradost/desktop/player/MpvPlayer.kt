@@ -993,6 +993,8 @@ open class MpvPlayer : IPlayer {
     // Quality of a live DASH channel: it plays the best quality and ffmpeg cannot change it in an open stream (see DashQuality), so a channel that keeps
     // buffering (12 s of stalls in 45 s, or one stall of 12 s) is opened again with the next lower quality as the cap, for as long as this run lasts.
     private val dashCap = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    /** The video quality picked in the menu for a live DASH channel (its bandwidth), by link: the next open of it gets that one */
+    private val dashExact = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val stallLog = java.util.ArrayDeque<LongArray>()
     private var lastQualityStep = 0L
 
@@ -1016,7 +1018,7 @@ open class MpvPlayer : IPlayer {
         if (!liveStream || !isDash(link) || qualityLocked || videoChosen || now - lastQualityStep < 60_000) return false
         val ladder = DashProxy.ladder(playingAddress)
         if (ladder.size < 2) return false
-        val current = DashProxy.maxBandwidth(playingAddress).takeIf { it > 0 } ?: ladder.last()
+        val current = DashProxy.liveQualities(playingAddress)?.second ?: DashProxy.maxBandwidth(playingAddress).takeIf { it > 0 } ?: ladder.last()
         val next = DashQuality.below(ladder, current) ?: return false
         dashCap[link.url] = next
         lastQualityStep = now
@@ -1229,7 +1231,7 @@ open class MpvPlayer : IPlayer {
                         putAll(link.headers)
                         if (link.referer.isNotBlank() && link.headers.keys.none { it.equals("Referer", ignoreCase = true) }) put("Referer", link.referer)
                     }
-                    if (isDash(link)) DashProxy.wrap(address, sent, dashCap[link.url] ?: System.getProperty("cloudstream.dashcap")?.toLongOrNull() ?: 0L, liveStartBehindS.also { liveStartBehindS = 0.0 }) else HlsProxy.wrap(address, sent, videoInterceptor(link), liveStartBehindS.also { liveStartBehindS = 0.0 }).also { hlsAddress = it }
+                    if (isDash(link)) DashProxy.wrap(address, sent, dashCap[link.url] ?: System.getProperty("cloudstream.dashcap")?.toLongOrNull() ?: 0L, liveStartBehindS.also { liveStartBehindS = 0.0 }, dashExact[link.url] ?: 0L) else HlsProxy.wrap(address, sent, videoInterceptor(link), liveStartBehindS.also { liveStartBehindS = 0.0 }).also { hlsAddress = it }
                 } else address
             }
             data != null -> data.uri.toString()
@@ -1921,6 +1923,15 @@ open class MpvPlayer : IPlayer {
             }
         }
 
+        // a live DASH manifest given to the player with one video quality (see DashProxy.capQuality): every quality is listed, picking another opens it
+        DashProxy.liveQualities(playingAddress)?.let { (reps, given) ->
+            val qualities = reps.sortedByDescending { it.bandwidth }.map { r ->
+                // two qualities of the same height (two bitrates of 720p) are told apart by their bitrate
+                val twin = r.height != null && reps.count { it.height == r.height } > 1
+                val label = r.height?.let { h -> if (twin) "${h}p · ${"%.1f".format(r.bandwidth / 1_000_000.0)} Mb/s" else "${h}p" } ?: "${r.bandwidth / 1000} kb/s"
+                VideoTrack("dash:${r.bandwidth}", label, null, null, r.height, curVideo?.sampleMimeType) }
+            return CurrentTracks(qualities.firstOrNull { it.id == "dash:$given" } ?: curVideo, curAudio, curTexts, qualities, audios, texts)
+        }
         // a live HLS master given to the player with one quality (see HlsProxy.liveVariant): every quality of the master is listed, picking another opens it
         HlsProxy.liveVariant(hlsAddress)?.let { playing ->
             val variants = HlsProxy.variants(hlsAddress)
@@ -1957,6 +1968,20 @@ open class MpvPlayer : IPlayer {
 
     override fun setMaxVideoSize(width: Int, height: Int, id: String?) {
         if (id == null) return
+        // a quality of a live DASH channel that was given one: opened again on the one picked
+        if (id.startsWith("dash:")) {
+            val bw = id.substringAfter(':').toLongOrNull() ?: return
+            if (bw == DashProxy.liveQualities(playingAddress)?.second) return
+            videoChosen = true
+            val link = currentLink
+            val ctx = currentContext
+            if (link != null && ctx != null) {
+                dashExact[link.url] = bw
+                dashCap.remove(link.url)
+                mainHandler.post { loadPlayer(ctx, true, link, currentUri, null, activeSubtitles, preferredSubtitle, !userPaused, false) }
+            }
+            return
+        }
         // a quality of a live master that was given one quality: the channel opens again on the one picked (live: at the live edge, no position)
         if (id.startsWith("live:")) {
             val n = id.substringAfter(':').toIntOrNull() ?: return

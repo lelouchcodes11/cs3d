@@ -41,18 +41,25 @@ class RemoteInterceptor(private val api: RemoteMainAPI, private val link: Extrac
             .headers(headers).body(RemoteSource(id).buffer().asResponseBody(headers["Content-Type"]?.toMediaTypeOrNull(), length)).build()
     }
 
-    /** The body of the answer: a piece of up to a megabyte is asked for when the player reads on */
+    /**
+     * The body of the answer: a piece of up to a megabyte is asked for when the player reads on, and handed out as the reader asks. The reader (okio) asks
+     * for 8 KB at a time: a call per read made a 2 MB video segment ~250 calls to the sandbox (Kisskh: the first segment took more than 20 s).
+     */
     private class RemoteSource(private val id: Long) : Source {
         private var done = false
         private var closed = false
+        private val pending = Buffer()
 
         override fun read(sink: Buffer, byteCount: Long): Long {
-            if (done || closed) return -1
-            val reply = runBlocking { IsolatedHost.call("interceptRead", mapper.createObjectNode().put("id", id).put("max", minOf(byteCount, 1_048_576L).toInt()), 120_000) }
-            if (reply.get("eof")?.asBoolean() == true) { done = true; return -1 }
-            val bytes = Base64.getDecoder().decode(reply.get("data").asText())
-            sink.write(bytes)
-            return bytes.size.toLong()
+            if (closed) return -1
+            if (pending.size == 0L) {
+                if (done) return -1
+                val reply = runBlocking { IsolatedHost.call("interceptRead", mapper.createObjectNode().put("id", id).put("max", PIECE), 120_000) }
+                if (reply.get("eof")?.asBoolean() == true) { done = true; return -1 }
+                pending.write(Base64.getDecoder().decode(reply.get("data").asText()))
+                if (reply.get("last")?.asBoolean() == true) done = true
+            }
+            return pending.read(sink, minOf(byteCount, pending.size))
         }
 
         override fun timeout(): Timeout = Timeout.NONE
@@ -61,6 +68,10 @@ class RemoteInterceptor(private val api: RemoteMainAPI, private val link: Extrac
             if (closed) return
             closed = true
             runCatching { runBlocking { IsolatedHost.call("interceptClose", mapper.createObjectNode().put("id", id), 10_000) } }
+        }
+
+        private companion object {
+            const val PIECE = 1_048_576
         }
     }
 }
