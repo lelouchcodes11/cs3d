@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Live channels start in about half the time.** A live HLS channel is now opened with one quality, the best for your screen (the player used to open and read every quality first). PTV SPORTS: 8.3 s to the picture before, 3.3-4.9 s now. The quality menu still lists every quality; picking another opens the channel on it (about 2 s). Recorded videos keep all their qualities as before.
+- **Reload page in the site-check window**, for a check page that stays blank or keeps showing "Just a moment...".
+- **The title bar comes back at the top edge in more cases.** The bar also appears when the pointer is at the very top of the screen the maximized window fills (it stayed hidden after making a new profile with a PIN on one PC).
+- **Cloudflare cookies are the browser's.** Cloudflare cookies the app or an extension writes are no longer copied over the ones the check page is using.
 - **Live channels start sooner.** The player reads the start of every quality of a live HLS channel before it plays; the app now fetches those pieces all at once (a 5-quality cricket channel: 8.3 s to the picture before, 5.9-7.7 s now).
 - **Live DASH channels no longer fail at the first piece.** The player reads the first piece of a live DASH stream twice at the start (once to learn the stream, once to play); the app refused the second request (a rule against a repeat loop later in the stream), and some channels never started.
 - **The source list marks the source you picked.** After choosing another source in the player, the list kept the first one highlighted as "Starting".

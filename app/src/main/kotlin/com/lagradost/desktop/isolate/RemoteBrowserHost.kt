@@ -415,7 +415,7 @@ object RemoteBrowserHost {
         (page.view.getParent() as? ViewGroup)?.removeView(page.view)
         // the page alone: the window around it (title, what to do, the site, Cancel) is drawn by the app (see CheckDialog), like an extension's own
         // check window looks when it runs in the app; it was a bare line of text, the page and a grey button
-        val dialog = CheckDialog(ctx, extension) { runCatching { page.view.getUrl() }.getOrNull() }
+        val dialog = CheckDialog(ctx, extension, url = { runCatching { page.view.getUrl() }.getOrNull() }, reload = { main.post { runCatching { page.view.reload() } } })
         dialog.setContentView(page.view)
         dialog.setOnCancelListener { userCancelled(page) }
         page.dialog = dialog
@@ -478,4 +478,4 @@ object RemoteBrowserHost {
  * The window of a Cloudflare (or other "are you human") check that an extension in the sandbox needs passed: only its page is the content; the app draws the
  * rest around it (see AndroidDialogHost). [extension] is the name shown, [url] the page's address (its site is shown under the page).
  */
-class CheckDialog(context: android.content.Context, val extension: String?, val url: () -> String?) : android.app.Dialog(context)
+class CheckDialog(context: android.content.Context, val extension: String?, val url: () -> String?, val reload: () -> Unit = {}) : android.app.Dialog(context)

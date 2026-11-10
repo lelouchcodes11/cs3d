@@ -224,6 +224,9 @@ private fun CheckFrame(dialog: com.lagradost.desktop.isolate.CheckDialog, appear
                 com.lagradost.desktop.ui.fluent.ProgressRing(size = 14.dp, strokeWidth = 2.dp)
                 Box(Modifier.width(10.dp))
                 com.lagradost.desktop.ui.fluent.FText(if (site.isNotBlank()) com.lagradost.desktop.i18n.Tr.f("Waiting for {0}", site) else "Waiting for the check", style = type.caption, color = c.textTertiary, maxLines = 1, modifier = Modifier.weight(1f))
+                // a page that sits on a blank or endless "Just a moment..." (seen on the owner's PC): loaded again on a click
+                com.lagradost.desktop.ui.fluent.Button("Reload page", { dialog.reload() }, icon = com.lagradost.desktop.ui.fluent.Icons.Refresh)
+                Box(Modifier.width(8.dp))
                 com.lagradost.desktop.ui.fluent.Button("Cancel", { dialog.cancel() })
             }
         }

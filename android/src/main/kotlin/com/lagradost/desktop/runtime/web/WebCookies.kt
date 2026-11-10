@@ -257,6 +257,17 @@ object WebCookies {
         return true
     }
 
+    private fun cloudflareCookie(name: String): Boolean = name == "cf_clearance" || name == "__cf_bm" || name == "_cfuvid" || name == "__cflb" || name.startsWith("cf_chl")
+
+    @Volatile private var keptCount = 0
+    @Volatile private var lastKeptLog = 0L
+
+    private fun noteKept(cookie: WebCookie) {
+        keptCount++
+        val now = System.currentTimeMillis()
+        if (now - lastKeptLog > 10_000) { lastKeptLog = now; android.util.Log.i("WebCookies", "a Cloudflare cookie written by the app was not given to the browser (${cookie.name} of ${cookie.domain}, $keptCount so far)") }
+    }
+
     /** Stores [cookie] (an expired one deletes) and gives it to the running engine */
     fun put(cookie: WebCookie) {
         ensureLoaded()
@@ -264,7 +275,12 @@ object WebCookies {
             revision++
             if (cookie.expired()) cookies.remove(cookie.key) else cookies[cookie.key] = cookie
             // Enqueue the native write before a later reader can obtain its revision ticket.
-            backend?.let { b -> runCatching { if (cookie.expired()) b.delete(cookie) else b.push(cookie) } }
+            // Cloudflare's own cookies are the browser's: only the browser gets a real clearance, and the session cookie of a request the app made itself
+            // (another client to Cloudflare) or a clearance an extension saved earlier and writes back overwrote the one the check page was using, so every
+            // fresh pass was refused and the page reloaded on "Just a moment..." again and again (AnimePahe, 2026-11-09). Wiping one still reaches the browser.
+            val keptFromBrowser = !cookie.expired() && cloudflareCookie(cookie.name)
+            if (keptFromBrowser && backend != null) noteKept(cookie)
+            backend?.let { b -> runCatching { if (cookie.expired()) b.delete(cookie) else if (!keptFromBrowser) b.push(cookie) } }
         }
         scheduleSave()
     }

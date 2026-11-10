@@ -1362,6 +1362,13 @@ object DevServer {
                 com.lagradost.desktop.platform.WinChrome.toggleMaximized(q["on"] != "0")
                 ok(ex)
             }
+            "/quality" -> {
+                // dev: the player's qualities as the menu lists them (current marked), /quality?pick=<id> picks one like the menu
+                val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player")
+                q["pick"]?.let { id -> onEdt { s.videoTracks().firstOrNull { it.id == id }?.let { s.selectVideo(it) } } }
+                val cur = s.currentVideo()?.id
+                ok(ex, s.videoTracks().joinToString("\n") { (if (it.id == cur) "* " else "  ") + "${it.id} ${it.label} ${it.height}" })
+            }
             "/pretendmax" -> {
                 // dev: the window acts maximized without being maximized (title bar hidden, revealed at the top edge): /pretendmax?on=1
                 onEdt { com.lagradost.desktop.platform.WinChrome.devPretendMaximized(q["on"] == "1") }

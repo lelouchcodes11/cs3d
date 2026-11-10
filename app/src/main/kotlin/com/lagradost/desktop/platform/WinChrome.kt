@@ -130,12 +130,22 @@ object WinChrome {
         // a thin strip at the very edge, and the pointer has to stay there a moment (a flick past the edge does not show the bar)
         val hot = (2 * scale).toInt().coerceAtLeast(2)
         val keep = (BUTTON_HEIGHT_DP * scale).toInt() + 2
+        // also the top edge of the SCREEN the window fills: the owner saw the bar stay hidden after making a profile with a PIN (2026-11-09), which points at
+        // the window's measured top being a few pixels off the screen's; the pointer at the very top of the monitor always counts
+        val monitorTop = runCatching {
+            val u = com.sun.jna.platform.win32.User32.INSTANCE
+            val mon = u.MonitorFromWindow(com.sun.jna.platform.win32.WinDef.HWND(hwnd.pointer), 2) // MONITOR_DEFAULTTONEAREST
+            val info = com.sun.jna.platform.win32.WinUser.MONITORINFO()
+            if (u.GetMonitorInfo(mon, info).booleanValue()) info.rcMonitor.top else null
+        }.getOrNull()
+        val atScreenTop = fake == null && inside && monitorTop != null && p[1] <= monitorTop + hot && x >= 0 && x < client[2] - client[0]
         // shown at the top edge; hidden at once when the pointer is off the bar (or off the window)
-        if (over && y <= hot) {
+        if ((over && y <= hot) || atScreenTop) {
             if (hotSince == 0L) hotSince = now
             if (now - hotSince >= REVEAL_DWELL_MS) revealed = true
         } else hotSince = 0L
-        if (revealed && !(over && y <= keep)) revealed = false
+        val inBarOnScreen = fake == null && inside && monitorTop != null && p[1] <= monitorTop + keep && x >= 0 && x < client[2] - client[0]
+        if (revealed && !(over && y <= keep) && !inBarOnScreen) revealed = false
         captionHidden = !revealed
         // the owner (2026-11-09) saw the bar not come at the top edge of the maximized window and it could not be reproduced: when the pointer is near the
         // top of the window and the bar stays hidden for a while, what was measured is written to the log (once a minute at most)

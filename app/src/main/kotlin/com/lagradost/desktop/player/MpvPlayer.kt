@@ -1921,6 +1921,15 @@ open class MpvPlayer : IPlayer {
             }
         }
 
+        // a live HLS master given to the player with one quality (see HlsProxy.liveVariant): every quality of the master is listed, picking another opens it
+        HlsProxy.liveVariant(hlsAddress)?.let { playing ->
+            val variants = HlsProxy.variants(hlsAddress)
+            if (variants.size > 1) {
+                val qualities = variants.mapIndexed { n, v -> VideoTrack("live:$n", v.height?.let { "${it}p" } ?: "Quality ${n + 1}", null, v.width, v.height, curVideo?.sampleMimeType) }
+                    .sortedByDescending { (it.height ?: 0) * 10_000L + (variants.getOrNull(it.id!!.substringAfter(':').toInt())?.bandwidth ?: 0L) / 1000 }
+                return CurrentTracks(qualities.firstOrNull { it.id == "live:$playing" } ?: curVideo, curAudio, curTexts, qualities, audios, texts)
+            }
+        }
         // an HLS master: each quality is an mpv "edition" (the track list only has the tracks of the current one), listed as video tracks
         if (getMpvPropertyString("file-format") == "hls") {
             val editions = getMpvPropertyString("edition-list/count")?.toIntOrNull() ?: 0
@@ -1948,6 +1957,17 @@ open class MpvPlayer : IPlayer {
 
     override fun setMaxVideoSize(width: Int, height: Int, id: String?) {
         if (id == null) return
+        // a quality of a live master that was given one quality: the channel opens again on the one picked (live: at the live edge, no position)
+        if (id.startsWith("live:")) {
+            val n = id.substringAfter(':').toIntOrNull() ?: return
+            if (n == HlsProxy.liveVariant(hlsAddress)) return
+            videoChosen = true
+            HlsProxy.chooseLiveVariant(hlsAddress, n)
+            val link = currentLink
+            val ctx = currentContext
+            if (link != null && ctx != null) mainHandler.post { loadPlayer(ctx, true, link, currentUri, null, activeSubtitles, preferredSubtitle, !userPaused, false) }
+            return
+        }
         // a quality of an HLS master (see readTracks): mpv switches to that variant's streams in place
         if (id.startsWith("edition:")) {
             videoChosen = true

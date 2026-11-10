@@ -49,6 +49,34 @@ object HlsProxy {
     fun variants(address: String): List<Variant> =
         address.substringAfter("h=", "").substringBefore("&").takeIf { it.isNotEmpty() }?.let { variantsById[it] } ?: emptyList()
 
+    /**
+     * A LIVE master is given to the player with one quality only. ffmpeg opens every quality of a master and reads a segment of each before it plays
+     * (a 5-quality channel: ~6-8 s to the picture; Android's player opens one and starts in ~2 s). The chosen one is the best for the screen (as
+     * [MpvPlayer] picks among editions), or the one picked in the quality menu, which opens the channel again ([chooseLiveVariant]).
+     * The full list stays in [variants] for the menu. -Dcloudstream.livetrim=off gives the player every quality as before.
+     */
+    private val trimmedById = ConcurrentHashMap<String, Int>()
+    private val masterById = ConcurrentHashMap<String, String>()
+    private val chosenByMaster = ConcurrentHashMap<String, Int>()
+
+    /** The quality the player was given of this live master (index into [variants]), or null when it was given all of them */
+    fun liveVariant(address: String): Int? = idOf(address)?.let { trimmedById[it] }
+
+    /** The quality picked in the menu for this live master: the next open of the channel gets that one */
+    fun chooseLiveVariant(address: String, index: Int) {
+        val master = idOf(address)?.let { masterById[it] } ?: return
+        chosenByMaster[master] = index
+    }
+
+    private fun idOf(address: String): String? = address.substringAfter("h=", "").substringBefore("&").takeIf { it.isNotEmpty() }
+
+    /** The quality a player plays best on this PC: the highest up to the screen (at least 1080 lines), else the richest */
+    private fun bestFor(list: List<Variant>): Int? {
+        val cap = runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.maxOf { it.displayMode.height } }.getOrDefault(1080).coerceAtLeast(1080)
+        return (list.withIndex().filter { (it.value.height ?: 0) in 1..cap }.maxWithOrNull(compareBy({ it.value.height ?: 0 }, { it.value.bandwidth }))
+            ?: list.withIndex().maxByOrNull { it.value.bandwidth })?.index
+    }
+
     private class Prefetched(val result: java.util.concurrent.CompletableFuture<Pair<Int, ByteArray>>, val at: Long)
     private val firstSegments = ConcurrentHashMap<String, Prefetched>()
 
@@ -70,6 +98,7 @@ object HlsProxy {
             interceptorsById.remove(id)
             streamSubtitlesById.remove(id)
             variantsById.remove(id)
+            trimmedById.remove(id); masterById.remove(id)
             liveFirstRead.removeIf { it.startsWith("$id|") }
             // what is known of a live stream's window goes with the stream (the playlist reader of [keepFresh] stops when the headers are gone)
             timelines.keys.removeIf { it.startsWith("$id|") }
@@ -101,6 +130,7 @@ object HlsProxy {
         interceptorsById.clear()
         streamSubtitlesById.clear()
         variantsById.clear()
+        trimmedById.clear(); masterById.clear()
         liveFirstRead.clear()
         for ((_, calls) in activeCalls) {
             for (call in calls) {
@@ -613,9 +643,41 @@ object HlsProxy {
             }
             out.append('\n')
         }
+        // a live master: one quality for the player (see trimmedById). Whether it is live is read from the quality it would play.
+        if (master && variants.size > 1 && System.getProperty("cloudstream.livetrim") != "off") {
+            val list = variantsById[id].orEmpty()
+            val key = playlistUrl.substringBefore('?')
+            val pick = chosenByMaster[key]?.takeIf { it in variants.indices } ?: bestFor(list)?.takeIf { it in variants.indices }
+            if (pick != null) {
+                val probe = runCatching { fetch(variants[pick], id, headers, forPlayer = false).get(4, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull()
+                if (probe != null && probe.status in 200..299 && !probe.final) {
+                    masterById[id] = key
+                    trimmedById[id] = pick
+                    Log.i(TAG, "live master: the player gets one quality, ${list.getOrNull(pick)?.height ?: "?"}p (${pick + 1} of ${variants.size})")
+                    for (url in audio + subtitles) fetch(url, id, headers, forPlayer = false)
+                    return keepOneVariant(out.toString(), pick)
+                }
+            }
+        }
         // The player opens every variant and rendition one after the other (a master of a big service lists dozens of
         // subtitle playlists, which took ~10 s). They all load now, at the same time.
         for (url in variants + audio + subtitles) fetch(url, id, headers, forPlayer = false)
+        return out.toString()
+    }
+
+    /** [master] with only its [index]-th quality (its #EXT-X-STREAM-INF line and the address after it); renditions stay */
+    private fun keepOneVariant(master: String, index: Int): String {
+        val out = StringBuilder(master.length)
+        var n = -1
+        var skipNext = false
+        for (line in master.lineSequence()) {
+            when {
+                line.startsWith("#EXT-X-STREAM-INF") -> { n++; skipNext = n != index; if (!skipNext) out.append(line).append('\n') }
+                skipNext && line.isNotBlank() && !line.startsWith("#") -> skipNext = false
+                skipNext -> {}
+                else -> out.append(line).append('\n')
+            }
+        }
         return out.toString()
     }
 
