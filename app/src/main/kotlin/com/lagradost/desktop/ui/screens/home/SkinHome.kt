@@ -78,7 +78,7 @@ internal val SkinRowOverlap: Dp = 96.dp
 
 /**
  * The billboard at the top of Home in Netflix's interface: the title that is featured fills the width with its text low at the left (logo or name, how well it
- * matches, a few lines of the story, Play and More Info) and the age rating on a dark strip at the right edge. The titles the page loaded take turns every nine
+ * matches, a few lines of the story, Play and More Info) and the age rating on a dark strip at the right edge. The titles the page loaded take turns every fifteen
  * seconds (the pointer on the billboard holds it); small marks show which one is up.
  */
 @Composable

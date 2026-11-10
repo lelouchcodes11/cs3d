@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The Home banner changes slides every 15 seconds** (was 9). Each change redraws the whole window for about a second, which was most of what an open, idle Home cost. Measured: about 10 % of a processor core before, 7.7 % now.
 - **Less battery use with Home open in the background.** The Home banner's progress line redrew the whole window 8 times a second, even with another app in front or the window minimised (9-10 % of a processor core for nothing). It now pauses while the window isn't active and carries on where it stopped when you come back: 1.6 % in the background, 4 % minimised.
 - **Settings read well in a half-screen window.** A drop-down kept its full width beside its description, which became a column of one or two words per line. Now a control that doesn't fit beside the text goes under it; switches stay beside it.
 - **Light mode fixes.** On Home, the search and reload buttons and the extension picker were dark grey on the dark banner and could hardly be seen; over a banner they are now drawn light. On a title page, "Completed" / "Ongoing" and the next-episode line were dark blue on the picture; they now use the light shade of the accent. White extension logos with a see-through background (AniVortex) no longer vanish on the light tile.

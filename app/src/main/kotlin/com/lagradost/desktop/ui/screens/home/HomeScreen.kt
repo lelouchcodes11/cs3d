@@ -527,7 +527,9 @@ private fun HomeHero(all: List<LoadResponse>, height: Dp, compact: Boolean, widt
     }
 }
 
-internal const val HERO_MS = 9000
+// how long a banner slide stays: each change redraws the whole window for about a second (0.9 s fade), the main cost of an idle Home (measured:
+// about 8-10 % of a core at 9 s, 2 % with the slides held; 15 s: 7.7 %, A/B on one build), so 15 s; -Dcloudstream.heroms=<ms> for A/B
+internal val HERO_MS = System.getProperty("cloudstream.heroms")?.toIntOrNull()?.coerceAtLeast(2000) ?: 15_000
 internal const val HERO_TICK_MS = 120
 
 @Composable
