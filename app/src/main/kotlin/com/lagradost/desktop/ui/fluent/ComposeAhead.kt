@@ -14,6 +14,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.ui.composed
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.onFocusedBoundsChanged
+import androidx.compose.ui.layout.onGloballyPositioned
 
 /**
  * A page of shelves composes a row only when it comes into view (Compose for Desktop has no look-ahead for lazy lists): the first scroll over a page
@@ -51,4 +56,32 @@ fun rememberComposeAhead(step: Dp = 450.dp): State<Dp>? {
         ahead.value = step * 2
     }
     return ahead
+}
+
+/**
+ * The keyboard focus in a list made taller by [composeAhead]: the list takes a card in the look-ahead part below the window for one in view and does not
+ * scroll to it (the Down key on Home moved the focus to rows under the window's edge). A focused element outside the part in view is scrolled in, clear
+ * of the top bar ([top]) and the bottom edge ([bottom]). Only for the keyboard: a click focuses what is already in view.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun Modifier.followKeyboardFocus(state: androidx.compose.foundation.lazy.LazyListState, top: Dp = 120.dp, bottom: Dp = 32.dp): Modifier = composed {
+    val list = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    Modifier.onGloballyPositioned { list[0] = it }.onFocusedBoundsChanged { focused ->
+        val l = list[0] ?: return@onFocusedBoundsChanged
+        if (focused == null || !focused.isAttached || !l.isAttached || !InputMode.keyboard) return@onFocusedBoundsChanged
+        val r = l.localBoundingBoxOf(focused, clipBounds = false)
+        val t = with(density) { top.toPx() }
+        val b = l.size.height - with(density) { bottom.toPx() }
+        val delta = when {
+            r.bottom > b -> (r.bottom - b).coerceAtMost(r.top - t)
+            // within the first screenful of the page: the page goes back to its start (the art at the top of Home is shown whole)
+            state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset > 0 && r.top + state.firstVisibleItemScrollOffset < l.size.height * 0.8f -> -state.firstVisibleItemScrollOffset.toFloat()
+            // near the top: the element goes to the upper middle (at the start of the page that is the top: the art at the top of Home fades out as it scrolls away)
+            r.top < maxOf(t, l.size.height * 0.3f) -> r.top - l.size.height * 0.45f
+            else -> 0f
+        }
+        if (delta != 0f) scope.launch { state.animateScrollBy(delta) }
+    }
 }

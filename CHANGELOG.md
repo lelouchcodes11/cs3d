@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Arrow keys move around Home.** Left, Right, Up and Down go to the nearest card or button that way, like on a TV. The page scrolls to follow, and Up from the rows shows the art at the top whole again. Before, the arrows did nothing (only Tab moved).
 - **Kisskh plays in under 2 seconds instead of hanging.** Its episodes are one big file that the player reads piece by piece. With the extension sandbox on, the app downloaded the whole 400 MB file for every piece: a 20-second stall, then the app could run out of memory. Now only the requested piece is fetched. First picture in 1.8 s; a jump to 25 minutes takes 1.6 s. The sandbox also passes video to the player in 1 MB pieces instead of 8 KB ones.
 - **Live DASH channels start sooner too.** WILLOW FHD: 8.5 s before, 1.3-3.6 s now. JIO TV: 2.8 s. Like live HLS, the player gets the one quality that suits your screen. The quality menu lists every quality and reopens the channel on the one you pick (about 1 s). When two qualities have the same height, the menu also shows their bitrate.
 

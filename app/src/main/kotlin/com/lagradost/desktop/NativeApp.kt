@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.foundation.onFocusedBoundsChanged
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
@@ -75,8 +77,12 @@ fun ApplicationScope.NativeWindow() {
         title = com.lagradost.desktop.ui.shell.ShellState.windowTitle,
         icon = painterResource(R.mipmap.ic_launcher),
         onPreviewKeyEvent = NativeKeys::onPreviewKey,
+        onKeyEvent = NativeKeys::onKey,
     ) {
         DesktopUiHost.window = window
+        // the arrow keys move the focus (see NativeKeys.onKey)
+        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+        androidx.compose.runtime.SideEffect { NativeKeys.focusManager = focusManager }
         remember { com.lagradost.desktop.platform.StartupProfile.mark("window content composing") }
         // the rest of the extensions load once the first frame is up (see PluginLoadGate)
         LaunchedEffect(Unit) { delay(700); com.lagradost.cloudstream3.plugins.PluginLoadGate.firstFrame.complete(Unit) }
@@ -182,6 +188,8 @@ fun ApplicationScope.NativeWindow() {
             Box(
                 Modifier
                     .fillMaxSize()
+                    // where the keyboard focus is (for the Up and Down keys, see NativeKeys.onKey)
+                    .then(@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class) Modifier.onFocusedBoundsChanged { NativeKeys.focused = it })
                     .onSizeChanged { DisplaySync.sync(density.density, density.fontScale, it.width, it.height) }
                     .pointerInput(Unit) {
                         // pointer use hides the keyboard focus rings
@@ -266,6 +274,46 @@ object NativeKeys {
             else -> playerKey(e)
         }
     }
+
+    @Volatile var focusManager: androidx.compose.ui.focus.FocusManager? = null
+
+    /**
+     * An arrow key that nothing on the page used (a text box, a slider and the player use theirs) moves the focus to the nearest card or button that way, like
+     * on a TV: on the desktop Compose moves the focus with Tab only, so the arrows did nothing on Home. Lazy rows scroll the focused card into view.
+     */
+    fun onKey(e: KeyEvent): Boolean {
+        if (e.type != KeyEventType.KeyDown || e.isAltPressed || e.isCtrlPressed) return false
+        if (Navigator.current.route is com.lagradost.desktop.core.Route.Player) return false
+        val direction = when (e.key) {
+            Key.DirectionLeft -> androidx.compose.ui.focus.FocusDirection.Left
+            Key.DirectionRight -> androidx.compose.ui.focus.FocusDirection.Right
+            Key.DirectionUp -> androidx.compose.ui.focus.FocusDirection.Up
+            Key.DirectionDown -> androidx.compose.ui.focus.FocusDirection.Down
+            else -> return false
+        }
+        val fm = focusManager ?: return false
+        if (runCatching { fm.moveFocus(direction) }.getOrDefault(false)) return true
+        // Down from the top bar found nothing (Compose's search does not leave it): the focus goes along the Tab order until it is below (or above) where it was
+        val down = direction == androidx.compose.ui.focus.FocusDirection.Down
+        if (!down && direction != androidx.compose.ui.focus.FocusDirection.Up) return false
+        val start = focusedRect() ?: return false
+        val step = if (down) androidx.compose.ui.focus.FocusDirection.Next else androidx.compose.ui.focus.FocusDirection.Previous
+        var moved = 0
+        while (moved < 40 && runCatching { fm.moveFocus(step) }.getOrDefault(false)) {
+            moved++
+            val r = focusedRect() ?: break
+            if (if (down) r.top >= start.bottom - 1f else r.bottom <= start.top + 1f) return true
+        }
+        // nothing that way: the focus goes back where it was
+        val back = if (down) androidx.compose.ui.focus.FocusDirection.Previous else androidx.compose.ui.focus.FocusDirection.Next
+        repeat(moved) { runCatching { fm.moveFocus(back) } }
+        return false
+    }
+
+    /** The focused element (reported by the window's root) */
+    @Volatile var focused: androidx.compose.ui.layout.LayoutCoordinates? = null
+
+    private fun focusedRect(): androidx.compose.ui.geometry.Rect? = focused?.takeIf { it.isAttached }?.let { it.boundsInWindow() }
 
     /** The player's shortcuts work for the whole window, whatever has the focus (nothing while a dialog is open) */
     private fun playerKey(e: KeyEvent): Boolean = !e.isAltPressed && com.lagradost.desktop.ui.screens.player.PlayerKeys.handler?.invoke(e) == true

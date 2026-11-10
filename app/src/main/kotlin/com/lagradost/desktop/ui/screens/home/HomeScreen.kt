@@ -3,6 +3,7 @@ package com.lagradost.desktop.ui.screens.home
 import com.lagradost.desktop.ui.fluent.fadeIntoPage
 import com.lagradost.desktop.ui.fluent.reveal
 import com.lagradost.desktop.ui.fluent.composeAhead
+import com.lagradost.desktop.ui.fluent.followKeyboardFocus
 import com.lagradost.desktop.ui.fluent.smoothWheel
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -181,7 +182,7 @@ fun HomeScreen() {
         FluentScrollbar(listState, com.lagradost.desktop.ui.shell.TopBarHeight)
         // the rows of the next screenful are composed while the page is idle (see composeAhead), not in the frames of the first scroll
         val ahead = com.lagradost.desktop.ui.fluent.rememberComposeAhead()
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().composeAhead(ahead).smoothWheel(listState), contentPadding = com.lagradost.desktop.ui.fluent.lazyPadding(ahead, bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().followKeyboardFocus(listState).composeAhead(ahead).smoothWheel(listState), contentPadding = com.lagradost.desktop.ui.fluent.lazyPadding(ahead, bottom = com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "hero") {
                 val res = preview
                 val items = (res as? Resource.Success)?.value?.second.orEmpty()
