@@ -145,7 +145,9 @@ internal fun accountGroups(): List<SettingGroup> {
     val auto by settings.player.autoStatusSync.collectAsState()
     val upstream = SettingsAccountScreen.getPreferences().filterIsInstance<Preference.PreferenceGroup>().filter { it.enabled }
     return buildList {
-        upstream.firstOrNull()?.let { accounts -> add(group("Accounts") { accounts.preferenceItems.forEach { pref(it, "sign in log in anilist mal myanimelist simkl kitsu opensubtitles") } }) }
+        // each row its own words: one shared list ("... opensubtitles") made every account (MAL, Kitsu, AniList, Simkl...) a result for "subtitle", and
+        // every one of them for "mal"
+        upstream.firstOrNull()?.let { accounts -> add(group("Accounts") { accounts.preferenceItems.forEach { pref(it, "sign in log in account " + accountWords(it.title)) } }) }
         add(
             group("Lists") {
                 pref(
@@ -357,4 +359,16 @@ private fun audioDecoderPreference(): Preference.PreferenceItem.ListPreference<c
             true
         },
     )
+}
+
+/** More words a person may search for one account row (its own name is searched anyway) */
+internal fun accountWords(title: String): String {
+    val t = title.lowercase()
+    return when {
+        t == "mal" || "myanimelist" in t -> "myanimelist anime list tracker"
+        "anilist" in t || "kitsu" in t || "simkl" in t -> "anime list tracker"
+        "opensubtitles" in t || "subdl" in t -> "subtitles subtitle captions"
+        "animeskip" in t -> "skip intro opening ending"
+        else -> ""
+    }
 }

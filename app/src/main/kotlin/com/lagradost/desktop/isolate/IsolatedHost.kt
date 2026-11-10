@@ -196,6 +196,9 @@ object IsolatedHost {
         // the program's options with [d] as its data folder and [t] as its temporary one (the start-up archive is made with the same ones, see WorkerCds)
         fun options(d: File, t: File): List<String> = listOf(
             "-Xms64m", "-Xmx768m", "-XX:MaxMetaspaceSize=384m", "-Xss4m", "-XX:+UseSerialGC",
+            // give memory back after a busy spell, as the app does: with the defaults (70 % free allowed) the heap kept what a search across all
+            // extensions had grown it to (298 MB held for 128 MB used). Owner's extensions, 4 searches, idle: 484/462 -> 433/425 MB in memory
+            "-XX:MaxHeapFreeRatio=30", "-XX:MinHeapFreeRatio=10",
             "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED",
             "-Djava.awt.headless=true", "-Dfile.encoding=UTF-8", "-Dcloudstream.worker=true",
             "-XX:ErrorFile=" + File(t, "hs_err_%p.log").absolutePath, "-XX:-CreateCoredumpOnCrash",
@@ -207,6 +210,8 @@ object IsolatedHost {
             "-Djava.library.path=" + listOf(nativeDir, File(javaHome, "bin")).joinToString(File.pathSeparator) { it.absolutePath },
             *(if (System.getProperty("cloudstream.workerdebug") != null) arrayOf("-Djna.debug_load=true", "-Djna.debug_load.jna=true") else emptyArray()),
             *(if (System.getProperty("cloudstream.workerprobe") != null) arrayOf("-Dcloudstream.workerprobe=1") else emptyArray()),
+            // tests: more options for the sandbox's Java (-Dcloudstream.workerjvm=-XX:A,-XX:B), after the ones above so they win
+            *(System.getProperty("cloudstream.workerjvm")?.split(',')?.filter { it.isNotBlank() }?.toTypedArray() ?: emptyArray()),
             "-cp", classpath.joinToString(File.pathSeparator),
             "com.lagradost.desktop.isolate.ExtensionWorker",
         )

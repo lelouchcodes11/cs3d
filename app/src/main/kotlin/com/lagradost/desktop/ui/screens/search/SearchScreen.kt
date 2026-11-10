@@ -9,6 +9,7 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -200,18 +201,22 @@ fun SearchScreen(route: Route.Search) {
             else shown.entries.sortedBy { com.lagradost.desktop.net.ExtensionPriority.rank(it.key) }.associate { it.key to it.value }
         }
         val searched = (total - pending.size).coerceAtLeast(0)
-        val header: @Composable () -> Unit = {
-            ResultsHeader(query, loading, searched, total, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } })
+        val header: @Composable (androidx.compose.ui.unit.Dp) -> Unit = { inset ->
+            ResultsHeader(query, loading, searched, total, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } }, inset = inset)
         }
 
         val mergedList = if (merged) interleave(results.values.map { it.list }) else emptyList()
         if (merged && mergedList.isNotEmpty()) {
             PosterGrid(mergedList, showType = true, header = {
-                item(span = { GridItemSpan(maxLineSpan) }) { header() }
+                // the grid starts 12 dp lower than the list (TopBarHeight + 20 against + 8): lifted by that, the header and its "By extension / All results"
+                // switch stay where they were when the view is switched (the switch moved away from under the pointer)
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Box(Modifier.layout { m, c -> val p = m.measure(c); val lift = 12.dp.roundToPx(); layout(p.width, (p.height - lift).coerceAtLeast(0)) { p.place(0, -lift) } }) { header(0.dp) }
+                }
             })
         } else {
             LazyColumn(Modifier.fillMaxSize().smoothWheel(listState), state = listState, contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
-                item(key = "header") { header() }
+                item(key = "header") { header(gutter) }
                 results.entries.forEach { (name, list) ->
                     item(key = "p-$name") {
                         val fresh = remember { name !in seen }
@@ -296,8 +301,10 @@ private fun ResultsHeader(
     onTypes: (List<TvType>) -> Unit,
     onMerged: (Boolean) -> Unit,
     onProviders: () -> Unit,
+    // 0 inside the poster grid of "All results", which has the same margin of its own (the header stood 36 dp further in than the posters)
+    inset: androidx.compose.ui.unit.Dp = gutter,
 ) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = inset).padding(bottom = 22.dp)) {
         val subtitle = when {
             only != null -> "Searching $only"
             loading && total > 0 -> "Searched $searched of $total extensions"

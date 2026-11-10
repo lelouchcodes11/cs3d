@@ -78,26 +78,30 @@ object AndroidResourceImages {
     private fun resolveAttributes(xml: String): String {
         val res = AndroidRuntime.context.resources
         val theme = AndroidRuntime.context.theme
-        return Regex("\"(\\?(?:attr/)?([A-Za-z0-9_]+)|@color/([A-Za-z0-9_]+)|@android:color/([A-Za-z0-9_]+))\"").replace(xml) { m ->
+        return Regex("\"(\\?(android:)?(?:attr/)?([A-Za-z0-9_]+)|@color/([A-Za-z0-9_]+)|@android:color/([A-Za-z0-9_]+))\"").replace(xml) { m ->
             val color: Int? = try {
                 when {
-                    m.groupValues[2].isNotEmpty() -> {
-                        val attr = res.getIdentifier(m.groupValues[2], "attr", AndroidRuntime.PACKAGE_NAME)
-                            .takeIf { it != 0 }
-                            ?: res.getIdentifier(m.groupValues[2], "attr", "android")
-                        val a = theme.obtainStyledAttributes(intArrayOf(attr))
-                        try {
-                            if (a.hasValue(0)) a.getColor(0, 0) else null
-                        } finally {
-                            a.recycle()
+                    m.groupValues[3].isNotEmpty() -> {
+                        // ?android:attr/x is the platform's attribute; ?attr/x the app's (or the platform's when the app has none of that name)
+                        val name = m.groupValues[3]
+                        val attr = if (m.groupValues[2].isNotEmpty()) res.getIdentifier(name, "attr", "android")
+                        else res.getIdentifier(name, "attr", AndroidRuntime.PACKAGE_NAME).takeIf { it != 0 }
+                            ?: res.getIdentifier(name, "attr", "android")
+                        if (attr == 0) null else {
+                            val a = theme.obtainStyledAttributes(intArrayOf(attr))
+                            try {
+                                if (a.hasValue(0)) a.getColor(0, 0) else null
+                            } finally {
+                                a.recycle()
+                            }
                         }
                     }
 
-                    m.groupValues[3].isNotEmpty() -> res.getColor(
-                        res.getIdentifier(m.groupValues[3], "color", AndroidRuntime.PACKAGE_NAME), theme
+                    m.groupValues[4].isNotEmpty() -> res.getColor(
+                        res.getIdentifier(m.groupValues[4], "color", AndroidRuntime.PACKAGE_NAME), theme
                     )
 
-                    else -> when (m.groupValues[4]) {
+                    else -> when (m.groupValues[5]) {
                         "white" -> 0xFFFFFFFF.toInt()
                         "black" -> 0xFF000000.toInt()
                         "transparent" -> 0

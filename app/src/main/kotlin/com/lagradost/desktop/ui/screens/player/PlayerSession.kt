@@ -157,8 +157,12 @@ class PlayerSession(
     /** When the source that is being started was asked for, so that the loading screen can say how long it has been waiting */
     var sourceStartedAt by mutableLongStateOf(0L); private set
 
-    /** "Source 3 of 82" while a source is being started */
-    var sourcePosition by mutableStateOf<String?>(null); private set
+    /** Where the source being started stands among the usable ones (-1 = none being started) */
+    private var sourceIndex by mutableStateOf(-1)
+
+    /** "Source 3 of 82" while a source is being started; the total is the live count, the same one as "82 sources found" next to it (it was frozen at
+     *  the start: "Source 1 of 64" under "73 sources found") */
+    val sourcePosition: String? get() = if (sourceIndex >= 0 && linksFound > 1) "Source ${sourceIndex + 1} of $linksFound" else null
 
     /** A source is being opened (as opposed to sources still being looked for): the loading screen offers to skip it */
     val startingSource: Boolean get() = playerActive && loadingText != null && !waitingForMore
@@ -178,6 +182,27 @@ class PlayerSession(
     val waitingForMoreSources: Boolean get() = waitingForMore
     var linksFound by mutableStateOf(0); private set
     var canSkipLoading by mutableStateOf(false); private set
+
+    /**
+     * When the best source found so far starts by itself (System.currentTimeMillis, 0 = not planned, -1 = the user is choosing). The Android rule
+     * waits for every extension unless a top-quality source turns up: with StreamPlay's dozens of sub-sources that was a minute and more on
+     * "Looking for sources…" while 76 playable ones were already there, until "Play now" was pressed. The search goes on after the start.
+     */
+    var autoPlayAt by mutableStateOf(0L); private set
+
+    /** The list of sources was opened: the user picks, nothing starts by itself */
+    fun holdAutoPlay() { if (!playerActive) autoPlayAt = -1L }
+
+    private fun planAutoPlay() {
+        if (autoPlayAt != 0L || playerActive || !canSkipLoading) return
+        val at = System.currentTimeMillis() + AUTO_PLAY_MS
+        autoPlayAt = at
+        scope.launch {
+            delay(AUTO_PLAY_MS)
+            if (autoPlayAt == at && !playerActive && canSkipLoading) skipLoading()
+        }
+    }
+
     var failure by mutableStateOf<String?>(null); private set
 
     /** Sources are still being collected in the background (after "Play now", or while the first one plays) */
@@ -341,6 +366,7 @@ class PlayerSession(
             linksFound = usable
             sourcesVersion++
             canSkipLoading = usable > 0 && vm.generator?.canSkipLoading == true
+            planAutoPlay()
             if (title.isBlank()) updateTitle()
             if (waitingForMore) firstUsableLink()?.let {
                 waitingForMore = false
@@ -477,7 +503,7 @@ class PlayerSession(
     private fun waitForMoreSources(text: String) {
         selectedLink?.let { bad -> vm.modifyState { addError(bad) } }
         waitingForMore = true
-        sourcePosition = null
+        sourceIndex = -1
         loadingText = text
     }
 
@@ -541,7 +567,7 @@ class PlayerSession(
         sourceStartedAt = System.currentTimeMillis()
         val usable = vm.state.sortLinks(qualityProfile).filter { it.shouldUseLink }
         val at = usable.indexOfFirst { it.link == link }
-        sourcePosition = if (at >= 0 && usable.size > 1) "Source ${at + 1} of ${usable.size}" else null
+        sourceIndex = at
         sourceName = link.first?.name ?: link.second?.name
         resolution = null
         if (!sameEpisode) {
@@ -670,6 +696,7 @@ class PlayerSession(
         playerActive = false
         loadingText = "Looking for sources…"
         canSkipLoading = false
+        autoPlayAt = 0L
         vm.modifyState { setError(emptyList()) }
     }
 
@@ -766,7 +793,7 @@ class PlayerSession(
                     com.lagradost.desktop.net.LastSource.remember(selectedLink?.first)
                     (currentMeta as? ResultEpisode)?.let { com.lagradost.desktop.stats.ResumeExtras.setSource(it.parentId, selectedLink?.first?.name?.lineSequence()?.firstOrNull()?.trim()) }
                     loadingText = null
-                    sourcePosition = null
+                    sourceIndex = -1
                     waitingForMore = false
                     fallbackLink = null
                     vm.forceClearCache = false
@@ -2109,6 +2136,9 @@ class PlayerSession(
         var active: PlayerSession? = null
         const val VOLUME_KEY = "desktop_player_volume"
         const val AUDIO_LANG_KEY = "desktop_player_audio_lang"
+
+        /** How long after the first playable source the best one found starts by itself (see [autoPlayAt]) */
+        const val AUTO_PLAY_MS = 6_000L
 
         /** Jumps that come within this time of each other are one run in the seek bubble (it also stays up that long) */
         const val SEEK_BUBBLE_MS = 1_000L

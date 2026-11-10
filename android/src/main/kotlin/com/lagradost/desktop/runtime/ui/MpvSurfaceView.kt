@@ -6,11 +6,12 @@ import android.view.View
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
-import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.Data
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.ImageInfo
 import java.awt.EventQueue
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -43,7 +44,7 @@ open class MpvSurfaceView @JvmOverloads constructor(
     val stats = VideoFrameStats()
 
     /** A finished frame and the time mpv wants it on screen (System.nanoTime units, 0 = unknown) */
-    class Stamped(val image: Image, val targetNs: Long)
+    class Stamped(val image: Image, val targetNs: Long, val buffer: Data? = null)
 
     /** What a refresh shows: [first], and over it [second] with the weight [alpha] when the video changes frame inside that refresh */
     class Blend {
@@ -110,7 +111,48 @@ open class MpvSurfaceView @JvmOverloads constructor(
     @Volatile
     private var targetHeight = 0
     private val pending = AtomicBoolean(false)
-    private var bitmap: Bitmap? = null
+
+    /**
+     * Frame memory the player renders into. A frame's image is made over its buffer without a copy; the buffer comes back here when the UI is done with
+     * the image ([release]) and is reused, so a frame costs neither a copy nor fresh memory (fresh memory costs the same as a copy: Windows clears
+     * every new page). Skia keeps the memory alive itself while anything still draws from it.
+     */
+    private val freeBuffers = ConcurrentLinkedQueue<Data>()
+
+    @Volatile
+    private var bufferBytes = 0
+
+    /** Set by the host while nothing can show the video (the window is minimised): frames are rendered small and not published */
+    @Volatile
+    var offScreen = false
+
+    private var offScreenBuffer: Data? = null // render thread only
+
+    /** Render thread: a buffer of [bytes] bytes, a reused one when one is free */
+    private fun takeBuffer(bytes: Int): Data {
+        if (bytes != bufferBytes) {
+            bufferBytes = bytes
+            while (true) (freeBuffers.poll() ?: break).close()
+        }
+        while (true) {
+            val free = freeBuffers.poll() ?: break
+            if (free.size == bytes) return free
+            free.close()
+        }
+        return Data.makeUninitialized(bytes)
+    }
+
+    /** A buffer the UI no longer draws from: kept for the next frame unless the size changed or enough are kept already */
+    private fun giveBack(buffer: Data) {
+        if (buffer.size == bufferBytes && freeBuffers.size < KEPT_BUFFERS) freeBuffers.add(buffer) else buffer.close()
+    }
+
+    /** UI thread: a frame the UI will not draw again */
+    private fun release(s: Stamped) {
+        s.image.close()
+        s.buffer?.let { giveBack(it) }
+    }
+
     private val executor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "VideoSurface-Render").apply { isDaemon = true; priority = Thread.NORM_PRIORITY + 3 }
     }
@@ -133,26 +175,35 @@ open class MpvSurfaceView @JvmOverloads constructor(
         val w = targetWidth
         val h = targetHeight
         if (w <= 0 || h <= 0) return
+        if (offScreen) {
+            // nothing shows the frame: it is still taken from the player (which waits for each one, so its pace and its clock stay as they are), at
+            // a small size, and not handed to the UI
+            val small = offScreenBuffer ?: Data.makeUninitialized(OFF_SCREEN_W * OFF_SCREEN_H * 4).also { offScreenBuffer = it }
+            r.renderFrame(OFF_SCREEN_W, OFF_SCREEN_H, OFF_SCREEN_W * 4, small.writableData())
+            return
+        }
         val started = System.nanoTime()
         val cpu = threadBean.currentThreadCpuTime
         val (rw, rh) = renderSize(w, h)
-        val bmp = bitmap?.takeIf { it.width == rw && it.height == rh } ?: Bitmap().also {
-            it.allocPixels(ImageInfo.makeN32(rw, rh, ColorAlphaType.OPAQUE))
-            bitmap?.close()
-            bitmap = it
+        val stride = rw * 4
+        val buffer = takeBuffer(stride * rh)
+        val image = try {
+            if (!r.renderFrame(rw, rh, stride, buffer.writableData())) null
+            // the image shares the buffer (no copy: copying a 1080p frame into a new image took 2.5 ms of this thread for every frame)
+            else Image.makeRaster(ImageInfo.makeN32(rw, rh, ColorAlphaType.OPAQUE), buffer, stride)
+        } catch (t: Throwable) {
+            giveBack(buffer)
+            throw t
         }
-        val pixels = bmp.peekPixels() ?: return
-        if (!r.renderFrame(rw, rh, bmp.rowBytes, pixels.addr)) return
-        bmp.notifyPixelsChanged()
-        val image = Image.makeFromBitmap(bmp)
+        if (image == null) { giveBack(buffer); return }
         stats.frame(System.nanoTime() - started, threadBean.currentThreadCpuTime - cpu, rw, rh)
         val target = lastTargetNs
         EventQueue.invokeLater {
             frame = image
-            recent.addLast(Stamped(image, target))
+            recent.addLast(Stamped(image, target, buffer))
             // normally only the newest frame is kept; smooth motion mixes two neighbours and keeps one more in reserve
             val keep = if (smoothMotion) 3 else 1
-            while (recent.size > keep) recent.removeFirst().image.close()
+            while (recent.size > keep) release(recent.removeFirst())
             if (smoothMotion) updateBlendUseful() else if (blendUseful) blendUseful = false
             frameVersion.intValue++
             present.published(frameVersion.intValue)
@@ -225,7 +276,7 @@ open class MpvSurfaceView @JvmOverloads constructor(
 
     fun clearFrame() {
         EventQueue.invokeLater {
-            while (recent.isNotEmpty()) recent.removeFirst().image.close()
+            while (recent.isNotEmpty()) release(recent.removeFirst())
             frame = null
             frameVersion.intValue++
         }
@@ -234,6 +285,13 @@ open class MpvSurfaceView @JvmOverloads constructor(
     companion object {
         /** 2560 x 1440 by default; -Dcloudstream.rendercap=<pixels> changes it, 0 switches the limit off */
         val maxRenderPixels: Long = System.getProperty("cloudstream.rendercap")?.toLongOrNull() ?: 3_700_000L
+
+        /** Free frame buffers kept for reuse: smooth motion holds 3 frames, one is being rendered, one may wait for the UI */
+        private const val KEPT_BUFFERS = 4
+
+        /** The size a frame is rendered at while [offScreen] */
+        private const val OFF_SCREEN_W = 160
+        private const val OFF_SCREEN_H = 90
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {

@@ -940,7 +940,14 @@ private fun VideoSurface(s: PlayerSession, modifier: Modifier) {
     surface.smoothMotion = smooth
     // smooth motion: while a video whose frame rate does not divide the screen's plays, the picture is drawn on every refresh (a mix of the two frames
     // around it, see MpvSurfaceView.pick); otherwise it is drawn when a frame arrives
-    val everyRefresh = smooth && surface.blendUseful && s.status == CSPlayerLoading.IsPlaying
+    // a minimised window shows nothing: frames are not drawn then (the video kept being drawn 24 times a second into the minimised window, as much
+    // CPU as on screen: 186 ms a second while somebody only listens)
+    val minimized = com.lagradost.desktop.ui.DesktopUiHost.windowState?.isMinimized == true
+    LaunchedEffect(surface, minimized) {
+        surface.offScreen = minimized
+        if (!minimized) surface.requestRender()
+    }
+    val everyRefresh = smooth && surface.blendUseful && s.status == CSPlayerLoading.IsPlaying && !minimized
     LaunchedEffect(surface, everyRefresh) {
         if (!everyRefresh) return@LaunchedEffect
         while (true) {
@@ -1088,16 +1095,32 @@ private fun LoadingOverlay(s: PlayerSession) {
                 }
                 if (waited >= 6) FText("Waiting for the source… ${waited} s", color = Color(0x99FFFFFF), style = Fluent.type.caption)
             }
-            if (s.linksFound > 0) FText("${s.linksFound} source${if (s.linksFound == 1) "" else "s"} found" + if (s.loadingMore) " · still looking" else "", color = Color(0x99FFFFFF), style = Fluent.type.caption)
+            // the best source found starts by itself a few seconds after the first one: the countdown says when
+            var autoPlayIn by remember(s.autoPlayAt) { mutableStateOf(0) }
+            LaunchedEffect(s.autoPlayAt) {
+                while (s.autoPlayAt > 0L) {
+                    autoPlayIn = ((s.autoPlayAt - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
+                    delay(250)
+                }
+            }
+            val autoPlaying = s.autoPlayAt > 0L && s.canSkipLoading && !s.startingSource && !s.waitingForMoreSources
+            if (s.linksFound > 0) FText(
+                "${s.linksFound} source${if (s.linksFound == 1) "" else "s"} found" + when {
+                    autoPlaying -> " · playing the best in $autoPlayIn s"
+                    s.loadingMore -> " · still looking"
+                    else -> ""
+                },
+                color = Color(0x99FFFFFF), style = Fluent.type.caption,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                 when {
                     // a source is starting: it can be skipped instead of waiting for it to give up
                     s.startingSource -> if (s.hasNextMirror) Button("Try next source", { s.nextMirror() }, kind = ButtonKind.Accent, icon = Icons.Next)
                     s.waitingForMoreSources -> Button("Stop looking", { s.skipLoading() }, icon = Icons.Refresh)
-                    s.canSkipLoading -> Button("Play now (${s.linksFound})", { s.skipLoading() }, kind = ButtonKind.Accent, icon = Icons.Play)
+                    s.canSkipLoading -> Button("Play now", { s.skipLoading() }, kind = ButtonKind.Accent, icon = Icons.Play)
                 }
-                // the sources found so far, to pick one by hand without waiting
-                if (s.linksFound > 0) Button(if (listOpen) "Hide sources" else "Show sources (${s.linksFound})", { listOpen = !listOpen }, icon = Icons.Link)
+                // the sources found so far, to pick one by hand without waiting (opening the list stops the countdown: the user is choosing)
+                if (s.linksFound > 0) Button(if (listOpen) "Hide sources" else "Show sources", { listOpen = !listOpen; if (listOpen) s.holdAutoPlay() }, icon = Icons.Link)
                 Button("Cancel", { Navigator.back() })
             }
         }
@@ -1156,7 +1179,7 @@ private fun FailureOverlay(s: PlayerSession) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                 if (s.hasNextMirror) Button("Try next source", { s.nextMirror() }, kind = ButtonKind.Accent, icon = Icons.Next)
                 Button("Reload sources", { s.reloadSources() }, icon = Icons.Refresh)
-                if (s.linksFound > 0) Button(if (listOpen) "Hide sources" else "Show sources (${s.linksFound})", { listOpen = !listOpen }, icon = Icons.Link)
+                if (s.linksFound > 0) Button(if (listOpen) "Hide sources" else "Show sources (${s.linksFound})", { listOpen = !listOpen; if (listOpen) s.holdAutoPlay() }, icon = Icons.Link)
                 Button("Back", { Navigator.back() })
             }
         }

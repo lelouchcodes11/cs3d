@@ -45,6 +45,28 @@ class WebCookiesTest {
         assertEquals(listOf(old), WebCookies.all())
     }
 
+    @Test fun flushOnTheUiThreadDoesNotWaitForABusyBrowserButStillSaves() {
+        WebCookies.put(old)
+        // a browser busy with a page: it never answers the cookie read
+        WebCookies.backend = object : WebCookies.BrowserBackend {
+            override fun push(cookie: WebCookie) {}
+            override fun delete(cookie: WebCookie) {}
+            override fun deleteAll() {}
+            override fun readCookies(complete: (List<WebCookie>?) -> Unit) {}
+        }
+        var took = 0L
+        java.awt.EventQueue.invokeAndWait {
+            val t0 = System.nanoTime()
+            WebCookies.flush()
+            took = (System.nanoTime() - t0) / 1_000_000
+        }
+        assertTrue(took < 50, "the UI thread waited $took ms")
+        val file = java.io.File(AndroidRuntime.dataDir, "web/cookies.bin")
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!file.isFile && System.currentTimeMillis() < deadline) Thread.sleep(50)
+        assertTrue(file.isFile, "the jar was saved by the writer thread")
+    }
+
     @Test fun noBrowserUsesPersistedJarWithoutStartingOne() {
         WebCookies.put(old)
         assertEquals("session=synthetic-old", WebCookies.freshHeader(url))

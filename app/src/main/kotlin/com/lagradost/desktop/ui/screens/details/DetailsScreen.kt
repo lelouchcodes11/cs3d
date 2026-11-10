@@ -1037,6 +1037,24 @@ private fun TrackerCard(sync: SyncViewModel) {
     val ctx = DesktopBootstrap.activity
     // the model changes the status object in place and posts the same object again: a plain observeAsState would see "no change"
     var version by remember(sync) { mutableStateOf(0) }
+    // what the services last said (status, score, episodes): the changes made here differ from it until "Save". The model edits its answer in
+    // place, so the values are copied when an answer arrives (the first one, and each one after a load or a save)
+    var saved by remember(sync) { mutableStateOf<Triple<Any?, Int?, Int?>?>(null) }
+    var answerComing by remember(sync) { mutableStateOf(true) }
+    DisposableEffect(sync) {
+        val answers =androidx.lifecycle.Observer<Any?> { value ->
+            when (value) {
+                is Resource.Loading -> answerComing = true
+                is Resource.Success<*> -> if (answerComing) {
+                    answerComing = false
+                    (value.value as? com.lagradost.cloudstream3.syncproviders.SyncAPI.AbstractSyncStatus)?.let { saved = Triple(it.status, it.score?.toInt(10), it.watchedEpisodes) }
+                }
+                else -> {}
+            }
+        }
+        sync.userData.observeForever(answers)
+        onDispose { sync.userData.removeObserver(answers) }
+    }
     DisposableEffect(sync) {
         val bump = androidx.lifecycle.Observer<Any?> { version++ }
         sync.userData.observeForever(bump)
@@ -1056,6 +1074,8 @@ private fun TrackerCard(sync: SyncViewModel) {
     val user = sync.userData.value
     val status = (user as? Resource.Success)?.value
     val total = status?.maxEpisodes ?: (sync.metadata.value as? Resource.Success)?.value?.totalEpisodes
+    // changed here and not sent yet: "Save" is the thing to press; otherwise the services already have what is shown
+    val unsaved = status != null && saved != null && saved != Triple(status.status, status.score?.toInt(10), status.watchedEpisodes)
 
     Row(
         Modifier.fillMaxWidth().padding(horizontal = gutter).padding(top = 4.dp, bottom = 22.dp),
@@ -1064,6 +1084,7 @@ private fun TrackerCard(sync: SyncViewModel) {
         Column(Modifier.weight(1f)) {
             FText("Tracking on ${names.joinToString(" · ")}", style = Fluent.type.bodyStrong, color = c.textSecondary, maxLines = 1)
             down.firstOrNull()?.let { FText(it + " Changes are not saved until it answers.", style = Fluent.type.caption, color = c.caution, maxLines = 2) }
+                ?: if (unsaved) FText("Changed here, not saved yet", style = Fluent.type.caption, color = c.caution, maxLines = 1) else null
         }
         when {
             user is Resource.Loading -> ProgressRing(size = 22.dp, strokeWidth = 2.dp)
@@ -1076,7 +1097,11 @@ private fun TrackerCard(sync: SyncViewModel) {
                     FText("${status.watchedEpisodes ?: 0}${total?.let { " / $it" } ?: ""} ep", Modifier.padding(horizontal = 6.dp), maxLines = 1, softWrap = false)
                     IconButton(Icons.ChevronRightSmall, { sync.setEpisodesDelta(1) }, tooltip = "One episode more", size = 32.dp, iconSize = 12.dp)
                 }
-                Button("Save", { sync.publishUserData() }, kind = ButtonKind.Accent, enabled = down.size < names.size, height = 36.dp)
+                // the same width either way (the row does not jump): the white button only while there is something to send
+                Button(
+                    if (unsaved) "Save" else "Saved", { sync.publishUserData() }, Modifier.widthIn(min = 76.dp),
+                    kind = if (unsaved) ButtonKind.Accent else ButtonKind.Standard, enabled = unsaved && down.size < names.size, height = 36.dp,
+                )
             }
             else -> FText("Not found on these services", style = Fluent.type.caption, color = c.textTertiary)
         }

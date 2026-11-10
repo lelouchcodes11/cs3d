@@ -74,7 +74,9 @@ object WebCookies {
         }
     }
     private val loaded = AtomicBoolean(false)
-    private val saver = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "cookie-store").also { it.isDaemon = true } }
+    @Volatile
+    private var saverThread: Thread? = null
+    private val saver = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "cookie-store").also { it.isDaemon = true; saverThread = it } }
     private val saveQueued = AtomicBoolean(false)
 
     private val file: File get() = File(AndroidRuntime.dataDir, "web/cookies.bin")
@@ -133,8 +135,19 @@ object WebCookies {
 
     /** Persists on the same writer as delayed saves, so a delayed old write cannot undo a flush. */
     fun flush() {
+        // on the UI thread nothing is waited for: an extension's Cloudflare sheet flushes on it while the browser is still busy with the check page,
+        // and each flush froze the window for the whole 200 ms browser wait, for nothing (owner's log: three "browser=false" in 6 s). Reads do not
+        // depend on a flush (getCookie refreshes from the browser itself), so the refresh and the write happen on the writer thread instead.
+        if (java.awt.EventQueue.isDispatchThread()) {
+            saver.execute { flushNow() }
+            return
+        }
+        flushNow()
+    }
+
+    private fun flushNow() {
         val fresh = refreshFromBrowser()
-        val saved = try {
+        val saved = if (Thread.currentThread() === saverThread) saveNow() else try {
             saver.submit<Boolean> { saveNow() }.get(3, TimeUnit.SECONDS)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()

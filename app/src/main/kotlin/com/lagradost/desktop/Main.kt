@@ -102,7 +102,7 @@ fun main(args: Array<String>) {
                     c = c.cause
                 }
             }
-            java.io.File(dir, "crash.log").writeText(crashReport)
+            CrashLog.append(java.io.File(dir, "crash.log"), crashReport)
             val filesDir = java.io.File(dir, "files").also { it.mkdirs() }
             // "safe mode" (no extensions at the next start) only for a crash right after the start, which is when a bad
             // extension takes the app down; a stray exception in a background thread later must not empty the app

@@ -127,7 +127,17 @@ fun BoxScope.RevealedTitleBar() {
     androidx.compose.runtime.LaunchedEffect(Unit) {
         while (true) {
             WinChrome.pollReveal()
-            kotlinx.coroutines.delay(20)
+            // 50 times a second only while it matters: a maximized or fullscreen window that is in front, or shows the bar. Each look is half a dozen
+            // Windows calls and a wake-up of the UI thread, and it ran at that pace for every window all the time (a window in the background:
+            // 34 ms of CPU a second, most of it this). Behind other windows the bar still comes when the pointer rests on the top edge, up to
+            // 120 ms later; a window with no hidden bar only notices being maximized within a quarter second.
+            kotlinx.coroutines.delay(
+                when {
+                    !WinChrome.autoHides -> 250L
+                    WinChrome.revealed || com.lagradost.desktop.DesktopLifecycle.windowActive -> 20L
+                    else -> 120L
+                }
+            )
         }
     }
     if (!WinChrome.enabled || WinChrome.pip || !WinChrome.autoHides) return
