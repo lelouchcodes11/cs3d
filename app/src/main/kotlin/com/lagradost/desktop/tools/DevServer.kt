@@ -303,6 +303,11 @@ object DevServer {
     private fun handle(ex: HttpExchange) {
         val q = query(ex)
         when (ex.requestURI.path) {
+            "/focusevent" -> {
+                // dev: what the app does when its window loses or gains the focus, without taking the focus from the owner's windows: /focusevent?gained=0|1
+                onEdt { com.lagradost.desktop.DesktopLifecycle.windowFocus(q["gained"] != "0") }
+                ok(ex, "windowActive=${com.lagradost.desktop.DesktopLifecycle.windowActive}")
+            }
             "/winstate" -> {
                 // dev: what Windows thinks of the windows: /winstate ; /winstate?act=minimize|restore|front|back to change them first
                 val u = com.sun.jna.platform.win32.User32.INSTANCE

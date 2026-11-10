@@ -1,5 +1,7 @@
 package com.lagradost.desktop
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
@@ -48,8 +50,17 @@ object DesktopLifecycle {
         }
     }
 
+    /**
+     * False while the main window is not the active one (another app in front, or the window minimised): what only decorates the page
+     * (the Home banner turning its slides) stops then. Home kept redrawing the whole window 8 times a second for its banner's progress line,
+     * also minimised: 9-10 % of a core for nothing, measured.
+     */
+    var windowActive by androidx.compose.runtime.mutableStateOf(true)
+        private set
+
     /** The main window gained or lost the keyboard focus (called on the UI thread) */
     fun windowFocus(gained: Boolean) {
+        windowActive = gained
         val a: Activity = activity ?: return
         if (gained) com.lagradost.desktop.platform.PrefsBackup.maybeBackup("window focus")
         val app = AndroidRuntime.applicationContext as? Application ?: return

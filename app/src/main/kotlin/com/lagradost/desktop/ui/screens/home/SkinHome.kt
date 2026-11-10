@@ -90,8 +90,10 @@ internal fun SkinHero(spec: SkinSpec, all: List<LoadResponse>, height: Dp, width
     val source = rememberInteraction()
     val hovered by source.collectIsHoveredAsState()
     val progress = remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(index, hovered, items.size) {
-        if (items.size <= 1 || hovered) return@LaunchedEffect
+    // paused while the window is not the active one (see DesktopLifecycle.windowActive)
+    val active = com.lagradost.desktop.DesktopLifecycle.windowActive
+    LaunchedEffect(index, hovered, items.size, active) {
+        if (items.size <= 1 || hovered || !active) return@LaunchedEffect
         while (progress.floatValue < 1f) {
             kotlinx.coroutines.delay(HERO_TICK_MS.toLong())
             progress.floatValue = (progress.floatValue + HERO_TICK_MS / HERO_MS.toFloat()).coerceAtMost(1f)

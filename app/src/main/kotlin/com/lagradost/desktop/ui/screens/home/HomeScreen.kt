@@ -457,9 +457,11 @@ private fun HomeHero(all: List<LoadResponse>, height: Dp, compact: Boolean, widt
     // (a third of a core and the GPU for a thin line), and the pages are redrawn as a whole
     val progress = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    LaunchedEffect(index, hovered, items.size) {
+    // and while the window is not the active one (minimised, another app in front): it carries on where it stopped
+    val active = com.lagradost.desktop.DesktopLifecycle.windowActive
+    LaunchedEffect(index, hovered, items.size, active) {
         if (items.size <= 1) return@LaunchedEffect
-        if (hovered) return@LaunchedEffect
+        if (hovered || !active) return@LaunchedEffect
         while (progress.floatValue < 1f) {
             kotlinx.coroutines.delay(HERO_TICK_MS.toLong())
             progress.floatValue = (progress.floatValue + HERO_TICK_MS / HERO_MS.toFloat()).coerceAtMost(1f)
