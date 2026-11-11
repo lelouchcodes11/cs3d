@@ -40,6 +40,19 @@ class ImageQualityTest {
     }
 
     @Test
+    fun mirrorEpisodeStillsAskForTheSizeTheCardNeeds() {
+        val still = "https://imgcdn.kim/epimg/150/80114856.jpg"
+        // a 430 dp episode card on a 150 % screen: 645 px
+        assertEquals("https://imgcdn.kim/epimg/720/80114856.jpg", ImageQuality.betterUrl(still, 645))
+        assertEquals("https://imgcdn.kim/epimg/300/80114856.jpg", ImageQuality.betterUrl(still, 280))
+        assertEquals("https://imgcdn.kim/hsepimg/1280/123.jpg", ImageQuality.betterUrl("https://imgcdn.kim/hsepimg/150/123.jpg", 3000))
+        assertNull(ImageQuality.betterUrl("https://imgcdn.kim/epimg/1280/80114856.jpg", 3000))
+        assertNull(ImageQuality.betterUrl(still, 140))
+        // the posters of the same host have one size only
+        assertNull(ImageQuality.betterUrl("https://imgcdn.kim/nf/v/200/80114856.jpg", 645))
+    }
+
+    @Test
     fun shrinkingAveragesInsteadOfPickingOnePixel() {
         // a 1 px checkerboard has no detail that survives a 4 x reduction: every pixel of the result is grey. Nearest neighbour keeps black or white.
         val size = 400

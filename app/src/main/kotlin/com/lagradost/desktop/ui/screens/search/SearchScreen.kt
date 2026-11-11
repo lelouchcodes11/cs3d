@@ -207,7 +207,10 @@ fun SearchScreen(route: Route.Search) {
 
         val mergedList = if (merged) interleave(results.values.map { it.list }) else emptyList()
         if (merged && mergedList.isNotEmpty()) {
-            PosterGrid(mergedList, showType = true, header = {
+            // all extensions in one grid: each card says which extension it is from (the same title came five times, "ONE PIECE · Anime", with no way to tell them apart)
+            PosterGrid(mergedList, showType = true, subtitle = { card ->
+                listOfNotNull(com.lagradost.desktop.ui.fluent.typeLabel(card.type), card.apiName.takeIf { it.isNotBlank() }).joinToString("  ·  ").ifEmpty { null }
+            }, header = {
                 // the grid starts 12 dp lower than the list (TopBarHeight + 20 against + 8): lifted by that, the header and its "By extension / All results"
                 // switch stay where they were when the view is switched (the switch moved away from under the pointer)
                 item(span = { GridItemSpan(maxLineSpan) }) {

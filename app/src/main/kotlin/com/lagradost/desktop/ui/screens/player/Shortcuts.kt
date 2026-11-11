@@ -47,12 +47,26 @@ object Shortcuts {
         "F1" to "This list",
     )
 
+    /** Keys and gestures of the whole app (NativeKeys in NativeApp.kt, the mouse's back button in Main.kt, DropOpen) */
+    val everywhere: List<Pair<String, String>> = listOf(
+        "Ctrl + K  ·  Ctrl + E" to "Search (on Home: in the extension shown there)",
+        "Alt + ←  ·  mouse back button" to "Back",
+        "Esc" to "Close the dialog or menu that is open, leave full screen",
+        "F11" to "Full screen",
+        "Tab  ·  arrow keys" to "Move between buttons and posters; Enter opens",
+        "Right click" to "More actions on posters and episodes",
+        "Drop a file or a link" to "A video plays, subtitle files are added to the video that plays, a CloudStream link opens",
+        "Paste a link in search" to "A video link or magnet plays instead of being searched for",
+    )
+
     fun show() {
         Overlays.show(
-            Overlays.Dialog(title = "Keyboard shortcuts", close = "Close", width = 560.dp) {
+            Overlays.Dialog(title = "Keyboard shortcuts", close = "Close", width = 600.dp) {
                 val c = Fluent.colors
                 Column(Modifier.fillMaxWidth().heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for ((keys, what) in player) {
+                    for ((section, rows) in listOf("Player" to player, "Everywhere" to everywhere)) {
+                    FText(section, style = Fluent.type.bodyStrong, modifier = Modifier.padding(top = if (section == "Player") 0.dp else 12.dp))
+                    for ((keys, what) in rows) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.width(210.dp)) {
                                 Box(Modifier.background(c.control, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp)) {
@@ -61,6 +75,7 @@ object Shortcuts {
                             }
                             FText(what, color = c.textSecondary, style = Fluent.type.body)
                         }
+                    }
                     }
                 }
             },

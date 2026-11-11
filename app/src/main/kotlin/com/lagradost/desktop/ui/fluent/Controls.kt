@@ -396,7 +396,7 @@ fun Tooltip(text: String, side: Boolean = false, content: @Composable () -> Unit
         },
         delayMillis = 500,
         // side: beside the control, centred on it (the dock's icons: the tip under the pointer covered the next icon)
-        tooltipPlacement = if (side) TooltipPlacement.ComponentRect(anchor = Alignment.CenterEnd, alignment = Alignment.CenterEnd, offset = DpOffset(10.dp, 0.dp)) else TooltipPlacement.CursorPoint(offset = DpOffset(0.dp, 24.dp)),
+        tooltipPlacement = if (side) TooltipPlacement.ComponentRect(anchor = Alignment.CenterEnd, alignment = Alignment.CenterEnd, offset = DpOffset(10.dp, 0.dp)) else CursorFlip,
         content = content,
     )
 }
@@ -789,4 +789,31 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
 @Composable
 fun BoxScope.Fill(color: Color) {
     Box(Modifier.matchParentSize().background(color))
+}
+
+/**
+ * Under the pointer (as Compose places it: 24 dp below, to the right), or above it when there is no room below. Compose only pushed a tip that
+ * did not fit back inside the window: at the player's bottom bar it then lay over the buttons beside the one pointed at.
+ */
+private object CursorFlip : TooltipPlacement {
+    @Composable
+    override fun positionProvider(cursorPosition: Offset): androidx.compose.ui.window.PopupPositionProvider {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val below = with(density) { 24.dp.roundToPx() }
+        val above = with(density) { 10.dp.roundToPx() }
+        return remember(cursorPosition, below, above) {
+            object : androidx.compose.ui.window.PopupPositionProvider {
+                override fun calculatePosition(
+                    anchorBounds: androidx.compose.ui.unit.IntRect, windowSize: androidx.compose.ui.unit.IntSize,
+                    layoutDirection: androidx.compose.ui.unit.LayoutDirection, popupContentSize: androidx.compose.ui.unit.IntSize,
+                ): androidx.compose.ui.unit.IntOffset {
+                    val cx = anchorBounds.left + cursorPosition.x.roundToInt()
+                    val cy = anchorBounds.top + cursorPosition.y.roundToInt()
+                    val y = if (cy + below + popupContentSize.height <= windowSize.height) cy + below else cy - above - popupContentSize.height
+                    val x = cx.coerceAtMost(windowSize.width - popupContentSize.width).coerceAtLeast(0)
+                    return androidx.compose.ui.unit.IntOffset(x, y.coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)))
+                }
+            }
+        }
+    }
 }

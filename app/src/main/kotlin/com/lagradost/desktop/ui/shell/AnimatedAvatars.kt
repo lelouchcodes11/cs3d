@@ -238,17 +238,15 @@ private fun rememberClipTime(seconds: Float?, animated: Boolean, playing: Boolea
         val rnd = java.util.Random(seed * 7919L + System.nanoTime())
         if (!playing) delay(1200L + rnd.nextInt(4000))
         while (true) {
-            val start = withFrameNanos { it }
-            var last = 0f
+            // 30 pictures a second, each one frame of the window. It used to wait for every frame of the screen (withFrameNanos) and only change
+            // the picture every 30th of a second: the whole window was drawn at the full refresh rate (144 times a second on a 144 Hz screen) for
+            // the 3-4 s of each play, for a 40 dp picture. A delay asks for no frame; only the new picture does.
+            val start = System.nanoTime()
             while (true) {
-                val k = (withFrameNanos { it } - start) / 1e9f
+                val k = (System.nanoTime() - start) / 1e9f
                 if (!playing && k >= len) break
-                val frameTime = if (len > 0f) k % len else 0f
-                if (playing || k - last >= 1f / 30f) {
-                    time.floatValue = frameTime
-                    last = k
-                }
-                withFrameNanos { }
+                time.floatValue = if (len > 0f) k % len else 0f
+                delay(33)
             }
             time.floatValue = 0f
             if (!playing) delay(8_000L + rnd.nextInt(8_000))

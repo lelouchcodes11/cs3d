@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -419,7 +420,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
         value = runCatching { com.lagradost.desktop.tmdb.Tmdb.info(d.title, d.yearText.str()?.take(4)?.toIntOrNull(), isMovieTitle, d.syncData.values) }.getOrNull()
     }
     // the extension's own artwork wins; TMDB fills what it did not send
-    val shownData = remember(d, tmdb) { tmdb?.let { t -> d.copy(logoUrl = d.logoUrl ?: t.logo, backgroundPosterUrl = d.backgroundPosterUrl ?: d.posterBackgroundImage ?: t.backdrop, posterImage = d.posterImage ?: t.poster) } ?: d }
+    val shownData = remember(d, tmdb) { tmdb?.let { t -> d.copy(logoUrl = d.logoUrl ?: t.logo, backgroundPosterUrl = d.backgroundPosterUrl?.takeIf { it != d.posterImage } ?: t.backdrop ?: d.backgroundPosterUrl, posterImage = d.posterImage ?: t.poster) } ?: d }
     // Settings > Player > Show trailers also decides whether TMDB's trailer is offered
     val showTrailers = remember { PreferenceManager.getDefaultSharedPreferences(DesktopBootstrap.activity).getBoolean(DesktopBootstrap.activity.getString(R.string.show_trailers_key), true) }
     val tmdbTrailer = tmdb?.trailerKey?.takeIf { showTrailers }?.let { "https://www.youtube.com/watch?v=$it" }
@@ -655,18 +656,29 @@ private fun Header(
     filmLike: Boolean = false,
 ) {
     val c = Fluent.colors
-    val backdrop = d.backgroundPosterUrl ?: d.posterBackgroundImage
+    // a wide picture of the extension's or TMDB's; the tall poster stretched across a wide window was a blurred close-up of a face (Netflix films send
+    // no wide picture, or the poster itself as one): a wide window shows the poster sharp at the right instead, a narrow one keeps the poster as the background
+    val own = d.backgroundPosterUrl?.takeIf { it != d.posterImage } ?: (d.backgroundPosterUrl ?: d.posterBackgroundImage).takeIf { !wide }
+    // a wide picture that must be enlarged a lot to cover the artwork (a 600 px still, an AniList banner of 1900 x 400 under a 1000 px high hero) is soft and blocky: TMDB's, when there is one, replaces it
+    var ownSize by remember(own) { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    var place by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val tmdbWide = tmdb?.backdrop?.takeIf { it != own }
+    val enlarged = if (ownSize.width > 0 && ownSize.height > 0) maxOf(place.width.toFloat() / ownSize.width, place.height.toFloat() / ownSize.height) else 0f
+    val backdrop = if ((enlarged > SOFT_BACKDROP_SCALE || ownSize.height > ownSize.width) && tmdbWide != null) tmdbWide else own
     val poster = d.posterImage
     com.lagradost.desktop.ui.shell.AmbientArtwork(backdrop ?: poster, d.posterHeaders)
     Box(Modifier.fillMaxWidth().height(height)) {
         // the artwork is the page: it runs edge to edge and fades out into the page at the bottom
         Box(
-            Modifier.fillMaxSize().fadeIntoPage(),
+            Modifier.fillMaxSize().onSizeChanged { place = it }.fadeIntoPage(),
         ) {
             // the picture trails the page a little (parallax), under the fade at the bottom
             // colour at once (the poster, decoded tiny) until the wide picture has come: on a slow connection the top of the page was black for seconds
             com.lagradost.desktop.ui.components.SoftImage(poster, d.posterHeaders, Modifier.fillMaxSize(), alpha = 0.6f)
-            if (backdrop != null) RemoteImage(backdrop, d.posterHeaders, null, Modifier.fillMaxSize().graphicsLayer { translationY = scroll().coerceAtMost(size.height) * 0.3f }, ContentScale.Crop, alignment = Alignment.TopCenter)
+            if (backdrop != null) RemoteImage(
+                backdrop, d.posterHeaders, null, Modifier.fillMaxSize().graphicsLayer { translationY = scroll().coerceAtMost(size.height) * 0.3f }, ContentScale.Crop, alignment = Alignment.TopCenter,
+                onSize = { w, h -> if (backdrop == own) { ownSize = androidx.compose.ui.unit.IntSize(w, h) } }, inexact = backdrop == own,
+            )
             // no backdrop from the extension: the poster stands at the right, sharp, instead of only a blurred tint
             if (backdrop == null && poster != null && wide) {
                 Box(Modifier.fillMaxSize().padding(end = 96.dp, top = 84.dp, bottom = 120.dp), contentAlignment = Alignment.CenterEnd) {
@@ -894,6 +906,9 @@ private fun watchLabel(w: WatchType?): String =
 
 // -------------------------------------------------------------------------------------------
 
+/** Enlarged more than this to cover the artwork, an extension's wide picture is soft: TMDB's is shown instead when there is one */
+private const val SOFT_BACKDROP_SCALE = 1.8f
+
 /** One episode: a 16:9 still with its number, progress and a play disc on hover; title, length and synopsis under it */
 @Composable
 private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: String?, fallbackHeaders: Map<String, String>?, spoiler: Boolean = false, pack: Boolean = false) {
@@ -993,7 +1008,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                     }
                 }
                 if (progress > 0f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color(0x40FFFFFF))) {
-                    Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(c.accent))
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(Color.White))
                 }
             }
             Box(Modifier.height(10.dp))

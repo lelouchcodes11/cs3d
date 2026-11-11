@@ -63,7 +63,8 @@ fun ScheduleScreen() {
                     trailing = {
                         if (tab == NOTICES) {
                             if (UpdateNotices.checking) ProgressRing(size = 20.dp, strokeWidth = 2.dp)
-                            else Button("Check now", { UpdateNotices.checkNow() }, kind = ButtonKind.Standard, icon = Icons.Refresh, height = 34.dp)
+                            // with nothing listed the page itself offers Check now (it was there twice)
+                            else if (UpdateNotices.items.isNotEmpty()) Button("Check now", { UpdateNotices.checkNow() }, kind = ButtonKind.Standard, icon = Icons.Refresh, height = 34.dp)
                             if (UpdateNotices.unread > 0) Button("Mark all read", { UpdateNotices.markAllRead() }, kind = ButtonKind.Standard, icon = Icons.Check, height = 34.dp)
                         }
                     },
@@ -71,7 +72,7 @@ fun ScheduleScreen() {
             }
             item(key = "tabs") {
                 Row(Modifier.padding(bottom = 10.dp)) {
-                    PillTabs(listOf("Anime timetable", "Movies & series", "Notifications"), tab, { tab = it }, counts = listOf(null, null, UpdateNotices.unread))
+                    PillTabs(listOf("Anime timetable", "Movies & series", "Notifications"), tab, { tab = it }, counts = listOf(null, null, UpdateNotices.unread.takeIf { it > 0 }))
                 }
             }
             when (tab) {

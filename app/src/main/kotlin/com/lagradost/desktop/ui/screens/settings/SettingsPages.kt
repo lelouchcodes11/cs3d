@@ -226,7 +226,7 @@ internal fun aboutGroups(): List<SettingGroup> {
             block("Legal notice", null, "disclaimer copyright") { PreferenceCard(Preference.PreferenceItem.InfoPreference(title = stringResource(R.string.legal_notice_text))) }
         },
         group("Help") {
-            link("Keyboard shortcuts", "The keys of the player: play, seek, volume, full screen, subtitles and more (F1 in the player shows the same list)", "hotkeys keys") { com.lagradost.desktop.ui.screens.player.Shortcuts.show() }
+            link("Keyboard shortcuts", "The keys of the player (play, seek, volume, subtitles) and of the whole app (search, back, drop a file); F1 in the player shows them too", "hotkeys keys") { com.lagradost.desktop.ui.screens.player.Shortcuts.show() }
             link("Copy diagnostics", "Copies what a bug report needs. Passwords and tokens are left out.", "bug report support debug") {
                 com.lagradost.desktop.Diagnostics.copyToClipboard { n -> com.lagradost.desktop.ui.Toasts.show("Diagnostics copied ($n lines): paste them into your message", false) }
             }

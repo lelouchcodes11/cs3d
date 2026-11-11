@@ -113,7 +113,10 @@ object SettingsUpdatesScreen : SearchableSettings {
                     Preference.PreferenceItem.TextPreference(
                         title = stringResource(R.string.backup_path_title),
                         icon = painterResource(R.drawable.folder_24px),
-                        subtitle = visualBackupPath,
+                        // desktop: the default folder is named too (blank until a folder was chosen: nobody could see where backups go)
+                        subtitle = visualBackupPath?.takeIf { it.isNotBlank() } ?: remember {
+                            runCatching { CloudStreamApp.context?.let { com.lagradost.cloudstream3.utils.BackupUtils.getDefaultBackupDir(it)?.filePath() } }.getOrNull()
+                        },
                         onClick = {
                             // This is not a ListPreference because the old selection system is
                             // broken af. This needs to be refactored to QuickNovels download path

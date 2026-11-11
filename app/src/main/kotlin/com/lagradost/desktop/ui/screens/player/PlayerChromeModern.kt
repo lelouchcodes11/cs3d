@@ -180,8 +180,9 @@ internal fun ModernChrome(
                 GlassButton("Back (Esc)", Modifier.noWindowDrag("playerBack"), size = 42.dp, onClick = { Navigator.back() }) { Icon(Icons.Back, size = 19.dp, tint = Color.White) }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    if (s.title.isNotBlank()) FText(s.title, style = Fluent.type.subtitle.copy(fontSize = 21.sp, fontWeight = FontWeight.SemiBold, shadow = TextShade), color = Color.White, maxLines = 1)
-                    s.episodeLabel?.let { FText(it, style = Fluent.type.body.copy(shadow = TextShade), color = Color(0xE6FFFFFF), maxLines = 1) }
+                    // not while the loading screen is up: it shows the title and the episode in its middle (they were there twice)
+                    if (s.title.isNotBlank() && !loading) FText(s.title, style = Fluent.type.subtitle.copy(fontSize = 21.sp, fontWeight = FontWeight.SemiBold, shadow = TextShade), color = Color.White, maxLines = 1)
+                    s.episodeLabel?.takeIf { !loading }?.let { FText(it, style = Fluent.type.body.copy(shadow = TextShade), color = Color(0xE6FFFFFF), maxLines = 1) }
                     // what plays: the picture size as a small badge, the source beside it
                     // (a track that has no size yet is named by its bitrate line: far too long for a badge)
                     val badge = qualityLabel(s)?.takeIf { it.length <= 8 }

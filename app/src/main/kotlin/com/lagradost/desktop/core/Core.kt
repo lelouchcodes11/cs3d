@@ -184,8 +184,21 @@ object Navigator {
         }
     }
 
-    /** Selecting a nav pane item */
-    fun goTab(tab: Tab) = go(tab.route)
+    /**
+     * Selecting a nav pane item. The item of the section you are in takes you back to its first page, as a tab bar does (Home > title page,
+     * Home again: back on Home, not a second Home on top with the title page behind it, which Back then opened again); the pages left are let go.
+     */
+    fun goTab(tab: Tab) {
+        EventQueue.invokeLater {
+            val root = stack.indexOfLast { it.route == tab.route }
+            val inside = root >= 0 && root < stack.lastIndex && stack.last().route !is Route.Player &&
+                stack.subList(root + 1, stack.size).none { val t = it.route.tab(); t != null && t != tab }
+            if (inside) {
+                lastWasBack = true
+                while (stack.size > root + 1) stack.removeAt(stack.lastIndex).vms.clear()
+            } else go(tab.route)
+        }
+    }
 
     /** Drops the whole history and shows [route] */
     fun reset(route: Route) {
@@ -218,7 +231,11 @@ object Navigator {
     fun openDetails(card: SearchResponse, startAction: Int = 0, startValue: Int? = null) =
         go(Route.Details(card.url, card.apiName, card.name, card.posterUrl, startAction, startValue))
 
-    fun search(query: String?, only: String? = null) = go(Route.Search(query, only = only))
+    fun search(query: String?, only: String? = null) {
+        // a link pasted into a search box plays (a video link, a magnet) or opens (a CloudStream link) instead of being searched for as words
+        if (query != null && com.lagradost.desktop.ui.DropOpen.isLink(query) && com.lagradost.desktop.ui.DropOpen.openText(query)) return
+        go(Route.Search(query, only = only))
+    }
 }
 
 /**

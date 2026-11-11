@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lagradost.desktop.ui.fluent.watchedFraction
@@ -349,8 +350,9 @@ internal fun resumeSubtitle(card: SearchResponse): String? {
     val parts = ArrayList<String>()
     val ep = r.episode
     val season = r.season
-    // a film has episode 0 and no season
-    if (ep != null && (ep > 0 || season != null)) parts += if (season != null) "S$season · E$ep" else "E$ep"
+    // a film has episode 0 and no season; some extensions (Netflix, Prime Video mirrors) give a film one "episode 1": its type says it is a film
+    val film = r.type?.isMovieType() == true
+    if (!film && ep != null && (ep > 0 || season != null)) parts +=if (season != null) "S$season · E$ep" else "E$ep"
     resumeLeft(card)?.let { parts += it }
     return parts.joinToString(" · ").ifEmpty { typeLabel(r.type) }
 }
@@ -540,20 +542,22 @@ private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
 @Composable
 internal fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null, scroll: () -> Float = { 0f }, scrims: Boolean = true, fadeStart: Float = 0.6f) {
     val zoom: androidx.compose.runtime.State<Float>? = null
+    var place by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     Box(
-        Modifier.fillMaxSize().fadeIntoPage(fadeStart),
+        Modifier.fillMaxSize().onSizeChanged { place = it }.fadeIntoPage(fadeStart),
     ) {
-        // the extension's own picture, unless it is small (a 640 px still stretched over a 1920 px window is a smear) and TMDB has a wide one of the same title
+        // the extension's own picture, unless it must be enlarged a lot to cover the hero (a 640 px still over a 1920 px window, a 1900 x 400 banner) and TMDB has a wide one
         val own = item.backgroundPosterUrl
-        var ownWidth by remember(own) { mutableStateOf<Int?>(null) }
-        val smear = own != null && tmdbBackdrop != null && (ownWidth ?: Int.MAX_VALUE) < 1100
+        var ownSize by remember(own) { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+        val smear = own != null && tmdbBackdrop != null && ownSize.width > 0 && ownSize.height > 0 &&
+            (ownSize.height > ownSize.width || maxOf(place.width.toFloat() / ownSize.width, place.height.toFloat() / ownSize.height) > 1.8f)
         val backdrop = if (smear) tmdbBackdrop else (own ?: tmdbBackdrop)
-        val sizeSeen: ((Int, Int) -> Unit)? = if (backdrop == own) { w, _ -> ownWidth = w } else null
+        val sizeSeen: ((Int, Int) -> Unit)? = if (backdrop == own) { w, h -> ownSize = androidx.compose.ui.unit.IntSize(w, h) } else null
         // the picture trails the page a little (parallax): it is shifted down by a part of the scroll, under the fade at the bottom
         Box(Modifier.fillMaxSize().graphicsLayer { val s = zoom?.value ?: 1f; scaleX = s; scaleY = s; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.7f, 0.4f); translationY = scroll().coerceAtMost(size.height) * 0.3f }) {
             // colour at once, never a black page while the wide picture is on its way: the poster, decoded tiny
             com.lagradost.desktop.ui.components.SoftImage(item.posterUrl, item.posterHeaders, Modifier.fillMaxSize(), alpha = 0.55f)
-            if (backdrop != null) RemoteImage(backdrop, if (backdrop == own) item.posterHeaders else null, null, Modifier.fillMaxSize(), ContentScale.Crop, onSize = sizeSeen)
+            if (backdrop != null) RemoteImage(backdrop, if (backdrop == own) item.posterHeaders else null, null, Modifier.fillMaxSize(), ContentScale.Crop, onSize = sizeSeen, inexact = backdrop == own)
         }
         if (backdrop == null) {
             // sharp poster on the right when the provider has no backdrop

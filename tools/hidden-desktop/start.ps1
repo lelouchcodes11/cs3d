@@ -41,7 +41,7 @@ $opts = @("-Xmx3g", "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base
   "--add-opens=java.desktop/java.awt=ALL-UNNAMED", "--add-exports=java.desktop/sun.awt=ALL-UNNAMED", "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED",
   "-Xss4m", "-Dfile.encoding=UTF-8",
   # as the installed app starts (app/build.gradle.kts jpackage options): the extension sandbox needs the security manager allowed
-  "-Djava.security.manager=allow", "-Dsun.java2d.d3d=false", "-XX:+ExplicitGCInvokesConcurrent", "-XX:MaxHeapFreeRatio=30", "-XX:MinHeapFreeRatio=10", "-XX:G1PeriodicGCInterval=30000", "`"-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path)`"", "-Dcloudstream.devport=$Port", "-Dcloudstream.ipcport=$($Port + 44000)",
+  "-Djava.security.manager=allow", "-Dsun.java2d.d3d=false", "-XX:+UseShenandoahGC", "-XX:+ExplicitGCInvokesConcurrent", "`"-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path)`"", "-Dcloudstream.devport=$Port", "-Dcloudstream.ipcport=$($Port + 44000)",
   # no GitHub release checks (60 a hour per address), silent players, mpv-2.dll and WebView2Loader.dll from the project
   "-Dcloudstream.updateApi=http://127.0.0.1:1/", "-Dcloudstream.mute=true", "`"-Djna.library.path=$(& $fwd (Join-Path $root 'app\native\windows-x64'))`"",
   # where the installed app keeps its native files (WebView2 loader, mpv): without it a run outside the project folder falls back to JCEF pages

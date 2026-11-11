@@ -143,7 +143,12 @@ internal fun PreferenceCard(item: Preference.PreferenceItem<*, *>) {
         is Preference.PreferenceItem.ListPreference<*> -> {
             val value by item.preference.collectAsState()
             val keys = item.entries.keys.toList()
-            SettingsCard(item.title, if (value in item.entries) item.internalSubtitleProvider(value, item.entries)?.takeIf { it != item.entries[value] } else null, item.icon) {
+            // the drop-down shows the choice: a summary that repeats it (alone, or as its first line: "Disable" over the description) leaves it out
+            val chosen = item.entries[value]
+            val summary = if (value in item.entries) item.internalSubtitleProvider(value, item.entries)?.let { s ->
+                if (chosen == null) s else if (s == chosen) null else s.removePrefix("$chosen\n").takeIf { it.isNotBlank() }
+            } else null
+            SettingsCard(item.title, summary, item.icon) {
                 // by position: a null key ("Normal", "Automatic") is a real choice, which a nullable "selected" could not tell from "nothing"
                 ComboBox(
                     // an unset app language ("" or null, not one of the codes) is English: the box showed nothing
@@ -357,7 +362,9 @@ private fun BesideOrUnder(modifier: Modifier, text: @Composable () -> Unit, cont
         val gap = 16.dp.roundToPx()
         val loose = cs.copy(minWidth = 0, minHeight = 0)
         val controls = controlM.map { it.measure(loose) }
-        val cw = controls.maxOfOrNull { it.width } ?: 0
+        // several controls stand side by side (they were placed on top of each other: a slider's value was drawn on its track)
+        val between = 8.dp.roundToPx()
+        val cw = if (controls.isEmpty()) 0 else controls.sumOf { it.width } + between * (controls.size - 1)
         val ch = controls.maxOfOrNull { it.height } ?: 0
         val full = if (cs.hasBoundedWidth) cs.maxWidth else Int.MAX_VALUE
         val beside = cw == 0 || !cs.hasBoundedWidth || full - cw - gap >= minText.roundToPx()
@@ -369,7 +376,8 @@ private fun BesideOrUnder(modifier: Modifier, text: @Composable () -> Unit, cont
             val h = maxOf(th, ch).coerceAtLeast(cs.minHeight)
             layout(w, h) {
                 texts.forEach { it.placeRelative(0, (h - it.height) / 2) }
-                controls.forEach { it.placeRelative(w - it.width, (h - it.height) / 2) }
+                var x = w - cw
+                controls.forEach { it.placeRelative(x, (h - it.height) / 2); x += it.width + between }
             }
         } else {
             val texts = textM.map { it.measure(loose.copy(maxWidth = full)) }
@@ -378,7 +386,8 @@ private fun BesideOrUnder(modifier: Modifier, text: @Composable () -> Unit, cont
             val h = (th + space + ch).coerceAtLeast(cs.minHeight)
             layout(full, h) {
                 texts.forEach { it.placeRelative(0, 0) }
-                controls.forEach { it.placeRelative(full - it.width, th + space) }
+                var x = full - cw
+                controls.forEach { it.placeRelative(x, th + space); x += it.width + between }
             }
         }
     }

@@ -123,7 +123,6 @@ private sealed interface Row2 {
 private fun ExtensionPanel(names: List<String>, random: String, selected: String?, onPick: (String) -> Unit) {
     val c = Fluent.colors
     var query by remember { mutableStateOf("") }
-    var index by remember { mutableStateOf(0) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
@@ -143,14 +142,17 @@ private fun ExtensionPanel(names: List<String>, random: String, selected: String
         }
     }
     val items = remember(rows) { rows.filterIsInstance<Row2.Item>() }
-    val state = rememberLazyListState()
+    // it opens on the extension in use (it was Random at the top: the current one was out of sight and Enter switched Home to Random)
+    val selectedIndex = remember(items, selected) { items.indexOfFirst { it.name == selected }.coerceAtLeast(0) }
+    var index by remember { mutableStateOf(selectedIndex) }
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = (rows.indexOfFirst { it is Row2.Item && it.name == selected } - 3).coerceAtLeast(0))
     // the highlighted row follows the keys and stays on screen
     LaunchedEffect(index, rows) {
         val target = items.getOrNull(index) ?: return@LaunchedEffect
         val at = rows.indexOfFirst { it is Row2.Item && it.name == target.name }
         if (at >= 0) runCatching { state.animateScrollToItem((at - 3).coerceAtLeast(0)) }
     }
-    LaunchedEffect(q) { index = 0 }
+    LaunchedEffect(q) { index = if (q.isEmpty()) selectedIndex else 0 }
 
     FlyoutSurface(Modifier.width(380.dp)) {
         Column(Modifier.padding(8.dp)) {

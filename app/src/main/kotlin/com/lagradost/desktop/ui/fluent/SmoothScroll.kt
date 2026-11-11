@@ -151,7 +151,10 @@ private class WheelGlide(private val state: ScrollableState, private val scope: 
             last = now
             val part: Float
             if (direct) {
-                part = remaining
+                // A touchpad sends its steps every 8-16 ms, unevenly. Applied whole on the next frame they moved the page in a frame and not in the
+                // next on a 144 Hz screen (a frame every 6.9 ms): uneven jumps, felt as stutter (on 60 Hz nearly every frame gets one, so it looked
+                // fine). Each step is now spread over the next ~20 ms by time, not by frames: the same path at any refresh rate, 20 ms behind.
+                part = if (abs(remaining) < 1f) remaining else remaining * (1f - exp(-seconds / DIRECT_TAU))
                 velocity = 0f
             } else {
                 // A critically damped spring pulls the page toward where the wheel wants it: it speeds up gently, slows down gently and never
@@ -186,5 +189,7 @@ private class WheelGlide(private val state: ScrollableState, private val scope: 
         // how stiff the spring is: about 60 ms to half a notch and 170 ms to all of it (the old curve's 65 ms ease felt like a lag behind the wheel;
         // this one starts softer but keeps up with quick notches because the speed carries on)
         const val OMEGA = 28f
+        // how quickly a touchpad step is followed: 63 % of it in 20 ms, 95 % in 60 ms
+        const val DIRECT_TAU = 0.020f
     }
 }

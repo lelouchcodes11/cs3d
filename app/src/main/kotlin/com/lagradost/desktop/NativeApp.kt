@@ -86,6 +86,8 @@ fun ApplicationScope.NativeWindow() {
         remember { com.lagradost.desktop.platform.StartupProfile.mark("window content composing") }
         // the rest of the extensions load once the first frame is up (see PluginLoadGate)
         LaunchedEffect(Unit) { delay(700); com.lagradost.cloudstream3.plugins.PluginLoadGate.firstFrame.complete(Unit) }
+        // files and links dropped on the window (a video plays, subtitles are added, a CloudStream link opens): the drawing surface exists once the window shows
+        LaunchedEffect(window) { delay(1500); com.lagradost.desktop.ui.DropOpen.install(window) }
         if (com.lagradost.desktop.tools.FrameStats.enabled) LaunchedEffect(Unit) { com.lagradost.desktop.tools.FrameStats.run() }
         remember {
             window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
@@ -236,6 +238,7 @@ fun ApplicationScope.NativeWindow() {
                 if (!com.lagradost.desktop.ui.screens.player.NativeVideo.overlayActive) {
                     RevealedTitleBar()
                 }
+                com.lagradost.desktop.ui.DropHint()
                 com.lagradost.desktop.ui.fluent.DimmerLayer()
             }
         }

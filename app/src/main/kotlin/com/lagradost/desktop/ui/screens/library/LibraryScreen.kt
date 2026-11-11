@@ -192,19 +192,27 @@ fun LibraryScreen() {
                                 )
                                 Box(Modifier.height(16.dp))
                             }
-                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = "${if (kind == Kind.All) (if (allTitles.size == 1) "1 title" else "${allTitles.size} titles") else "${items.size} of ${allTitles.size} ${if (allTitles.size == 1) "title" else "titles"} · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = { Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart) })
-                            Box(Modifier.height(18.dp))
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)
+                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = "${if (kind == Kind.All) (if (allTitles.size == 1) "1 title" else "${allTitles.size} titles") else "${items.size} of ${allTitles.size} ${if (allTitles.size == 1) "title" else "titles"} · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    // an empty library has no row of controls: Refresh sits here
+                                    if (allTitles.isEmpty() && apis.size <= 1) IconButton(Icons.Refresh, { vm.reloadPages(true) }, tooltip = "Refresh", kind = ButtonKind.Standard)
+                                    Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart)
+                                }
+                            })
+                            if (allTitles.isNotEmpty() || apis.size > 1) Box(Modifier.height(18.dp))
+                            if (allTitles.isNotEmpty() || apis.size > 1) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // an empty library (no list has a title): no search, sort or filter for nothing; the list choice and Refresh stay
+                                val anything = allTitles.isNotEmpty()
+                                if (anything) TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)
                                 Box(Modifier.weight(0.01f))
-                                if (vm.sortingMethods.size > 1) ComboBox(
+                                if (anything && vm.sortingMethods.size > 1) ComboBox(
                                     vm.sortingMethods, vm.currentSortingMethod, { ctx.getString(it.stringRes) },
                                     { vm.sort(it, query.ifBlank { null }) }, icon = Icons.Sort, minWidth = 150.dp,
                                 )
                                 if (apis.size > 1) ComboBox(apis, apiName?.takeIf { it in apis } ?: apis.firstOrNull(), { it }, { vm.switchList(it) }, icon = Icons.Cloud, minWidth = 140.dp)
                                 // movies / TV shows / anime: one button with a menu (it is lit while a filter is on); the counts are those of the whole list
                                 var filterOpen by remember { mutableStateOf(false) }
-                                Box {
+                                if (anything) Box {
                                     IconButton(Icons.Filter, { filterOpen = true }, tooltip = "Show: ${kind.label}", kind = if (kind == Kind.All) ButtonKind.Standard else ButtonKind.Accent)
                                     if (filterOpen) com.lagradost.desktop.ui.fluent.MenuFlyout(
                                         Kind.entries.map { k -> MenuItem(k.label + "   " + allTitles.count { it.isOfKind(k) }, k.glyph, checked = k == kind) { kind = k; saveKind(k) } },
@@ -215,7 +223,7 @@ fun LibraryScreen() {
                             }
                             Box(Modifier.height(18.dp))
                             // the statuses (Watching, Completed ...)
-                            if (titles != null && titles.isNotEmpty()) {
+                            if (titles != null && titles.isNotEmpty() && allTitles.isNotEmpty()) {
                                 Box(Modifier.fillMaxWidth()) {
                                     com.lagradost.desktop.ui.fluent.UnderlineTabs(titles.map { it.title.asStringNull(ctx) ?: "" }, index, { vm.switchPage(it) }, counts = titles.map { it.items.ofKind(kind).size })
                                 }
@@ -226,7 +234,7 @@ fun LibraryScreen() {
                                     com.lagradost.desktop.ui.fluent.EmptyState(Icons.Library, when (kind) { Kind.Anime -> "No anime in this list"; Kind.Movies -> "No movies in this list"; else -> "No TV shows in this list" }, "The other titles of this list are under “All”.") {
                                         Button("Show all", { kind = Kind.All; saveKind(kind) }, kind = ButtonKind.Accent, height = 36.dp)
                                     }
-                                } else com.lagradost.desktop.ui.fluent.EmptyState(Icons.Library, "Nothing here yet", "Use “Add to library” on a title to collect it in this list.") {
+                                } else com.lagradost.desktop.ui.fluent.EmptyState(Icons.Library, "Nothing here yet", if (allTitles.isEmpty()) "Use “Add to library” on a title page, or sign in to AniList or MyAnimeList (Settings > Accounts and sync) to bring your lists here." else "Use “Add to library” on a title to collect it in this list.") {
                                     Button("Browse titles", { Navigator.goTab(Tab.Home) }, kind = ButtonKind.Accent, icon = Icons.Home, height = 36.dp)
                                 }
                             }

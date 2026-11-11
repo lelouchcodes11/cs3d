@@ -50,8 +50,8 @@ object EdtSampler {
                             if (own && seen.add(name)) inclusive[name] = (inclusive[name] ?: 0) + 1
                         }
                         // who asks for the leaf: the first six frames above it that are not the JDK's own plumbing
-                        if (trace.size > 1 && trace[0].methodName == "getStackAccessControlContext") {
-                            val chain = trace.drop(1).filter { !it.className.startsWith("java.security") }.take(7).joinToString(" < ") { it.className.substringAfterLast('.') + "." + it.methodName }
+                        if (trace.size > 1 && (trace[0].methodName == "getStackAccessControlContext" || trace[0].methodName == "getLocationOnScreen")) {
+                            val chain = trace[0].methodName.take(10) + ": " + trace.drop(1).filter { !it.className.startsWith("java.security") && !it.className.startsWith("sun.awt") }.take(9).joinToString(" < ") { it.className.substringAfterLast('.') + "." + it.methodName }
                             callers[chain] = (callers[chain] ?: 0) + 1
                         }
                         trace.firstOrNull()?.let { leaves[it.className.substringAfterLast('.') + "." + it.methodName] = (leaves[it.className.substringAfterLast('.') + "." + it.methodName] ?: 0) + 1 }
@@ -107,7 +107,7 @@ object EdtSampler {
             leaves.entries.sortedByDescending { it.value }.take(15).forEach { sb.append("  ").append(it.value).append("  ").append(it.key).append('\n') }
             if (callers.isNotEmpty()) {
                 sb.append("Who asks for getStackAccessControlContext:\n")
-                callers.entries.sortedByDescending { it.value }.take(6).forEach { sb.append("  ").append(it.value).append("  ").append(it.key).append('\n') }
+                callers.entries.sortedByDescending { it.value }.take(12).forEach { sb.append("  ").append(it.value).append("  ").append(it.key).append('\n') }
             }
             return sb.toString()
         }

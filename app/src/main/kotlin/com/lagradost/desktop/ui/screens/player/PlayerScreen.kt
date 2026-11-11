@@ -50,7 +50,6 @@ import com.lagradost.desktop.ui.fluent.Appearance
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
@@ -94,6 +93,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lagradost.cloudstream3.isMovieType
 import com.lagradost.cloudstream3.ui.player.CSPlayerLoading
 import com.lagradost.cloudstream3.ui.player.PlayerGeneratorViewModel
 import com.lagradost.cloudstream3.ui.result.SyncViewModel
@@ -1017,10 +1017,25 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVideoImage(imag
 @Composable
 private fun ScreenArt(s: PlayerSession, response: com.lagradost.cloudstream3.LoadResponse?, appear: Float) {
     val headers = response?.posterHeaders
-    Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear }) {
-        val still = s.episodePoster ?: response?.backgroundPosterUrl?.takeIf { it.isNotBlank() }
-        if (still != null) RemoteImage(still, headers, null, Modifier.fillMaxSize(), ContentScale.Crop, alpha = 0.6f)
-        else (response?.posterUrl)?.let { com.lagradost.desktop.ui.components.SoftImage(it, headers, Modifier.fillMaxSize(), alpha = 0.34f) }
+    // a still that must be enlarged a lot to cover the window (Netflix sends 150-200 px stills, and its tall poster as the backdrop) was a blocky close-up:
+    // TMDB's wide picture of the title is shown instead, or the still blurred like a poster; it stays unseen until its size is known
+    var place by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val tmdbWide by androidx.compose.runtime.produceState<String?>(null, response?.url) {
+        if (response != null && com.lagradost.desktop.tmdb.Tmdb.enabled) value = runCatching {
+            com.lagradost.desktop.tmdb.Tmdb.info(response.name, response.year, response.type?.isMovieType() == true, response.syncData.values)
+        }.getOrNull()?.backdrop
+    }
+    Box(Modifier.fillMaxSize().onSizeChanged { place = it }.graphicsLayer { alpha = appear }) {
+        val still = s.episodePoster ?: response?.backgroundPosterUrl?.takeIf { it.isNotBlank() && it != response.posterUrl }
+        var stillSize by remember(still) { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+        val known = stillSize.width > 0 && stillSize.height > 0
+        // a tall picture (a poster) is cropped to a close-up across a wide window whatever its size
+        val soft = known && (stillSize.height > stillSize.width || maxOf(place.width.toFloat() / stillSize.width, place.height.toFloat() / stillSize.height) > 1.8f)
+        if (still != null) RemoteImage(still, headers, null, Modifier.fillMaxSize(), ContentScale.Crop, alpha = if (known && !soft) 0.6f else 0f,
+            onSize = { w, h -> stillSize = androidx.compose.ui.unit.IntSize(w, h) }, inexact = true)
+        val wideArt = tmdbWide
+        if ((still == null || soft) && wideArt != null) RemoteImage(wideArt, null, null, Modifier.fillMaxSize(), ContentScale.Crop, alpha = 0.6f)
+        else if (still == null || soft) (if (soft) still else response?.posterUrl)?.let { com.lagradost.desktop.ui.components.SoftImage(it, headers, Modifier.fillMaxSize(), alpha = 0.34f) }
         Box(
             Modifier.fillMaxSize().drawBehind {
                 drawRect(Color(0x66000000))
@@ -1104,7 +1119,9 @@ private fun LoadingOverlay(s: PlayerSession) {
                 }
             }
             val autoPlaying = s.autoPlayAt > 0L && s.canSkipLoading && !s.startingSource && !s.waitingForMoreSources
-            if (s.linksFound > 0) FText(
+            // "Source 1 of 3" above already says how many there are: the count comes back when it has more to say (a countdown, still looking)
+            val countSaid = s.startingSource && s.sourcePosition != null && !autoPlaying && !s.loadingMore
+            if (s.linksFound > 0 && !countSaid) FText(
                 "${s.linksFound} source${if (s.linksFound == 1) "" else "s"} found" + when {
                     autoPlaying -> " · playing the best in $autoPlayIn s"
                     s.loadingMore -> " · still looking"
@@ -1621,7 +1638,10 @@ private fun EpisodesPanel(s: PlayerSession, onClose: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Box(Modifier.size(112.dp, 63.dp).clip(RoundedCornerShape(4.dp)).background(Color(0x22FFFFFF))) {
-                        RemoteImage(ep.poster, null, null, if (isCovered) Modifier.fillMaxSize().blur(16.dp) else Modifier.fillMaxSize(), ContentScale.Crop)
+                        // a still not reached yet: decoded tiny and stretched (looks blurred, costs nothing a frame), as on the title page; a blur filter was
+                        // an offscreen layer per covered episode, redrawn every frame while the list is open over the video
+                        if (isCovered) com.lagradost.desktop.ui.components.SoftImage(ep.poster, null, Modifier.fillMaxSize(), tiny = true)
+                        else RemoteImage(ep.poster, null, null, Modifier.fillMaxSize(), ContentScale.Crop)
                         if (isCovered) {
                             Box(Modifier.fillMaxSize().background(Color(0x66000000)))
                             Box(

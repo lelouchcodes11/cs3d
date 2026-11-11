@@ -32,6 +32,15 @@ object ExtensionIcons {
     fun start() {
         if (started) return
         started = true
+        // the first look is often made before the extensions are loaded (the Home bar's extension button showed a letter instead of the icon until
+        // the list was opened): when they are, the installed plugins are read again and whatever shows an icon draws again
+        com.lagradost.cloudstream3.MainActivity.afterPluginsLoadedEvent += { _: Boolean ->
+            scope.launch {
+                refreshInstalled()
+                version.intValue++
+                fetchMissing()
+            }
+        }
         scope.launch {
             runCatching {
                 if (file.isFile) JSONObject(file.readText()).let { j -> j.keys().forEach { k -> j.optString(k).takeIf { it.isNotBlank() }?.let { byUrl[k] = it } } }

@@ -187,7 +187,15 @@ private fun ExtensionsStep() {
         }
         if (repoList.isNotEmpty()) FText("Repositories: " + repoList.joinToString { it.name }, style = Fluent.type.caption, color = c.textSecondary)
         val items = list?.second.orEmpty()
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // before the first repository: what to put in the box (an empty list said only "No extensions yet")
+        if (repoList.isEmpty() && items.isEmpty()) Column(
+            Modifier.fillMaxWidth().background(c.card, RoundedCornerShape(FluentShapes.control)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            FText("Where extensions come from", style = Fluent.type.bodyStrong)
+            FText("A repository is a list of extensions published by its makers. Paste its address (a link that usually ends in .json) or the short code its page gives, then press Add repository.", style = Fluent.type.caption, color = c.textSecondary)
+            FText("A cloudstreamrepo:// link opened in your browser, or dropped on this window, adds it too. You can skip this and add repositories later in Settings > Extensions and sources.", style = Fluent.type.caption, color = c.textSecondary)
+        }
+        if (repoList.isNotEmpty() || items.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
             FText(if (items.isEmpty()) "No extensions yet" else "${items.count { it.isDownloaded }} of ${items.size} installed", Modifier.weight(1f), style = Fluent.type.bodyStrong)
             if (items.isNotEmpty()) Button("Install all", { repoList.forEach { PluginsViewModel.downloadAll(ctx, it, plugins) } }, icon = Icons.Download)
         }

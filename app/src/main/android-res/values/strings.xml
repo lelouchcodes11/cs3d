@@ -713,10 +713,10 @@
     <string name="unfavorite">Unfavorite</string>
     <!-- For Biometrics -->
     <string name="biometric_authentication_title">Unlock CloudStream</string>
-    <string name="biometric_setting">Lock with Biometrics</string>
+    <string name="biometric_setting">Lock with Windows Hello</string>
     <string name="password_pin_authentication_title">Password/PIN Authentication</string>
-    <string name="biometric_unsupported">Biometric authentication is not supported on this device</string>
-    <string name="biometric_setting_summary">Unlock the app with Fingerprint, Face ID, PIN, Pattern and Password.</string>
+    <string name="biometric_unsupported">Windows Hello is not set up on this PC (Settings > Accounts > Sign-in options)</string>
+    <string name="biometric_setting_summary">Unlock the app with your Windows PIN, fingerprint or face.</string>
     <string name="biometric_prompt_description">After a few failed attempts, the prompt will close. Simply restart the app to try again.</string>
     <string name="biometric_warning">Your CloudStream data has been backed up now. Although the possibility of this is very low, all devices can behave differently. In the rare case, that you get locked out from accessing the app, clear the app data completely and restore from a backup. We are very sorry for any inconvenience arising from this.</string>
     <string name="reset_btn">Reset</string>

@@ -113,7 +113,7 @@ private fun compute(): Totals {
     return Totals(
         allMs = maxOf(logged, legacy), loggedMs = logged, todayMs = perDay[today] ?: 0L, weekMs = inLast(7), monthMs = inLast(30),
         activeDays = perDay.count { it.value > 0 }, streak = streak, titles = perTitle.size,
-        byType = weighted { listOf(it.type) }, genres = weighted { it.genres }, studios = weighted { it.studios }, people = weighted { it.people },
+        byType = weighted { listOf(typeShown(it.type, plural = true)) }, genres = weighted { it.genres }, studios = weighted { it.studios }, people = weighted { it.people },
         providers = weighted { listOf(it.api) },
         audio = weighted { listOfNotNull(langName(it.audioLang)) }, subs = weighted { listOfNotNull(langName(it.subLang)) },
         top = perTitle.entries.sortedByDescending { it.value }.mapNotNull { e -> snap.titles[e.key]?.let { it to e.value } }.take(10),
@@ -251,7 +251,7 @@ private fun TitleRow(rank: Int?, t: WatchLog.Title, detail: String) {
         }
         Column(Modifier.weight(1f)) {
             FText(t.name, maxLines = 1)
-            FText(listOfNotNull(t.type.takeIf { it.isNotBlank() }, t.api.takeIf { it.isNotBlank() }).joinToString("  ·  "), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+            FText(listOfNotNull(typeShown(t.type, plural = false).takeIf { it.isNotBlank() }, t.api.takeIf { it.isNotBlank() }).joinToString("  ·  "), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
         }
         FText(detail, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1, softWrap = false)
     }
@@ -289,4 +289,10 @@ private fun Heatmap(perDay: Map<LocalDate, Long>, weekdays: LongArray) {
     if (best != null) {
         FText("You watch the most on ${DayOfWeek.of(best + 1).getDisplayName(TextStyle.FULL, Locale.getDefault())}s", style = Fluent.type.caption, color = c.textSecondary, modifier = Modifier.padding(top = 4.dp))
     }
+}
+
+/** The diary keeps the type as the engine names it ("TvSeries", "AnimeMovie"): shown as the app names it elsewhere ("TV series", "Anime movie") */
+private fun typeShown(raw: String, plural: Boolean): String {
+    val t = runCatching { com.lagradost.cloudstream3.TvType.valueOf(raw) }.getOrNull() ?: return raw
+    return (if (plural) com.lagradost.desktop.ui.fluent.tvTypeName(t) else com.lagradost.desktop.ui.fluent.typeLabel(t)) ?: raw
 }

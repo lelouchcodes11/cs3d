@@ -349,6 +349,8 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
         }
         // a picture of a whole number of pixels at 125 / 150 / 175 %: the 1 px edges of the glass pills and menus are not smeared by a stretch
         remember(window) { com.lagradost.desktop.platform.EvenPixels.install(window) }
+        // a subtitle file or a video dropped on the video (this window is over it)
+        LaunchedEffect(window) { delay(500); com.lagradost.desktop.ui.DropOpen.install(window) }
         DisposableEffect(Unit) {
             // Compose makes a dialog window modal, and a modal one DISABLES the window it belongs to: the app's window could not be brought
             // back from the taskbar, did not take the keys, and closing the modal dialog (leaving the page, above all from full screen) was
@@ -368,6 +370,7 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
             androidx.compose.foundation.layout.Box {
                 ScaledContent { content() }
                 // the video under this window is darkened with the rest of the app
+                com.lagradost.desktop.ui.DropHint()
                 com.lagradost.desktop.ui.fluent.DimmerLayer()
             }
         }

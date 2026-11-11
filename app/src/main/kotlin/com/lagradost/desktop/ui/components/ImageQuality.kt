@@ -94,6 +94,10 @@ internal object ImageQuality {
     private val tmdbSizes = intArrayOf(185, 342, 500, 780, 1280)
     private val metahub = Regex("""((?:images|live)\.metahub\.space/(?:poster|background|logo)/)(small|medium|large)(/)""")
     private val metahubSizes = listOf("small", "medium", "large")
+    // the episode stills of the Netflix / Hotstar mirrors (CNCVerse): the extensions ask for 150 px (a 150 x 84 picture blown up on a 430 px card);
+    // the same address serves 300, 480, 720 and 1280 px (checked 2026-11-11). A size that is missing falls back to the original (ImageUpgrade).
+    private val mirrorStill = Regex("""(imgcdn\.[a-z]+/(?:epimg|hsepimg)/)(\d+)(/)""")
+    private val mirrorStillSizes = intArrayOf(300, 480, 720, 1280)
 
     /**
      * The address of a larger version of a picture that has several, or null (the address is not one of those, the picture is large enough already, or
@@ -108,6 +112,12 @@ internal object ImageQuality {
             if (have * 10 >= need * 9) return null
             val pick = tmdbSizes.firstOrNull { it > have && it * 100 >= need * 95 }
             return url.replaceRange(m.groups[2]!!.range, if (pick != null) "w$pick" else "original")
+        }
+        mirrorStill.find(url)?.let { m ->
+            val have = m.groupValues[2].toIntOrNull() ?: return null
+            if (have * 10 >= need * 9) return null
+            val pick = mirrorStillSizes.firstOrNull { it > have && it * 100 >= need * 95 } ?: mirrorStillSizes.last()
+            return if (pick <= have) null else url.replaceRange(m.groups[2]!!.range, pick.toString())
         }
         metahub.find(url)?.let { m ->
             val rank = metahubSizes.indexOf(m.groupValues[2])

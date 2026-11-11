@@ -18,12 +18,13 @@ import com.lagradost.cloudstream3.utils.UiImage
 
 /** Image request with CloudStream's default user agent plus extension provided headers */
 @Composable
-fun rememberImageRequest(url: String?, headers: Map<String, String>?): ImageRequest? {
+fun rememberImageRequest(url: String?, headers: Map<String, String>?, inexact: Boolean = false): ImageRequest? {
     val context = coil3.compose.LocalPlatformContext.current
-    return remember(url, headers) {
+    return remember(url, headers, inexact) {
         if (url.isNullOrBlank()) return@remember null
         ImageRequest.Builder(context)
             .data(url)
+            .also { if (inexact) it.precision(coil3.size.Precision.INEXACT) }
             .crossfade(160)
             .httpHeaders(NetworkHeaders.Builder().also { builder ->
                 builder["User-Agent"] = USER_AGENT
@@ -46,11 +47,16 @@ fun RemoteImage(
     alignment: androidx.compose.ui.Alignment = androidx.compose.ui.Alignment.Center,
     /** told the picture's size in pixels once it is loaded (a layout that follows its shape) */
     onSize: ((width: Int, height: Int) -> Unit)? = null,
+    /** never enlarged while decoding: [onSize] then tells the picture's own size when it is smaller than its place (the draw still fills the place) */
+    inexact: Boolean = false,
+    /** told when the picture could not be had (an error answer, not an image) */
+    onError: (() -> Unit)? = null,
 ) {
-    val request = rememberImageRequest(url, headers) ?: return
+    val request = rememberImageRequest(url, headers, inexact) ?: return
     AsyncImage(
         model = request,
         onSuccess = onSize?.let { cb -> { state -> cb(state.result.image.width, state.result.image.height) } },
+        onError = onError?.let { cb -> { _ -> cb() } },
         alignment = alignment,
         contentDescription = contentDescription,
         modifier = modifier,

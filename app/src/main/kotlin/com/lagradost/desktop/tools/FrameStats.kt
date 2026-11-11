@@ -59,6 +59,6 @@ object FrameStats {
         list.sort()
         fun p(q: Double) = list[((list.size - 1) * q).toInt()] / 1e6
         fun over(ms: Int) = list.count { it > ms * 1_000_000L }
-        return "frames=${list.size} avg=%.1f ms p50=%.1f p95=%.1f p99=%.1f max=%.1f | >20 ms: ${over(20)} >33 ms: ${over(33)} >50 ms: ${over(50)} | stall: ${list.sumOf { maxOf(0L, it - 17_000_000L) } / 1_000_000} ms".format(list.average() / 1e6, p(0.5), p(0.95), p(0.99), list.last() / 1e6)
+        return "frames=${list.size} avg=%.1f ms p50=%.1f p95=%.1f p99=%.1f max=%.1f | >7 ms: ${over(7)} >20 ms: ${over(20)} >33 ms: ${over(33)} >50 ms: ${over(50)} | stall: ${list.sumOf { maxOf(0L, it - 17_000_000L) } / 1_000_000} ms".format(list.average() / 1e6, p(0.5), p(0.95), p(0.99), list.last() / 1e6)
     }
 }

@@ -814,13 +814,14 @@ compose.desktop {
             "-Xss4m",
             // Java2D's own Direct3D 9 pipeline is not needed (Skia draws the window) and starting it can make the whole screen flicker on an old graphics driver
             "-Dsun.java2d.d3d=false",
+            // Shenandoah: the heap is collected while the app runs, the UI thread is stopped for well under a millisecond. G1 with the tight heap it
+            // had (Min/MaxHeapFreeRatio 10/30, a collection every 30 s) ran a marking cycle every few seconds while browsing, each ending in a
+            // 5-21 ms stop: a dropped frame on a 144 Hz screen (6.9 ms a frame). Same browsing tour, two runs each (2026-11-11): G1 81-104 stops,
+            // 18 over 5 ms, longest 15-21 ms; Shenandoah 36 stops, longest 0.3 ms, about the same CPU, 100-150 MB less memory (private 681-698 MB
+            // against 826-841 after a minute idle). It returns unused heap to Windows by itself (after 5 idle minutes).
+            "-XX:+UseShenandoahGC",
             // a library that asks for a full collection (System.gc()) gets a concurrent one instead of a pause with every thread stopped
             "-XX:+ExplicitGCInvokesConcurrent",
-            // memory goes back to Windows: the heap shrinks after a collection when more than 30 % of it is free, and an idle app collects every
-            // 30 s (measured: 370 MB of heap kept after browsing became 200 MB; only about 130 MB of it is in use)
-            "-XX:MaxHeapFreeRatio=30",
-            "-XX:MinHeapFreeRatio=10",
-            "-XX:G1PeriodicGCInterval=30000",
             // start-up: the app's classes (about 12k) are loaded from a class-data-sharing archive that portableDist creates
             // (and that the JVM re-creates by itself at exit when the jars changed); the native splash shows at once
             "-XX:+AutoCreateSharedArchive",
@@ -1062,6 +1063,7 @@ tasks.register<JavaExec>("runDev") {
         "--add-exports=java.desktop/sun.awt=ALL-UNNAMED",
         "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED",
         "-Xss4m",
+        "-XX:+UseShenandoahGC",
         "-Dfile.encoding=UTF-8",
     )
     (project.findProperty("dataDir") as String?)?.let { jvmArgs("-Dcloudstream.data=$it") }

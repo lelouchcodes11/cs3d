@@ -54,6 +54,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lagradost.cloudstream3.isMovieType
 import com.lagradost.cloudstream3.SearchQuality
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
@@ -130,7 +131,19 @@ fun PosterImage(item: SearchResponse, modifier: Modifier = Modifier, scale: Cont
             Icon(Icons.Video, size = 24.dp, tint = c.textDisabled)
             if (item.name.isNotBlank()) FText(item.name, style = Fluent.type.caption, color = c.textTertiary, maxLines = 3, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
-        RemoteImage(item.posterUrl, item.posterHeaders, item.name, Modifier.fillMaxSize(), scale, onSize = { _, _ -> loaded = true })
+        // the extension's picture could not be had (a site that refuses pictures asked for without its cookies, as AnimePahe's in History, or a
+        // title saved without one): TMDB's poster of the same title instead, when its name matches
+        var failed by androidx.compose.runtime.remember(item.posterUrl) { androidx.compose.runtime.mutableStateOf(item.posterUrl.isNullOrBlank()) }
+        val stand by androidx.compose.runtime.produceState<String?>(null, failed, item.name) {
+            if (!failed || item.name.isBlank() || !com.lagradost.desktop.tmdb.Tmdb.enabled) return@produceState
+            val info = try {
+                com.lagradost.desktop.tmdb.Tmdb.info(item.name, null, item.type?.isMovieType() == true, emptyList())
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) { null }
+            value = info?.takeIf { com.lagradost.desktop.tmdb.Tmdb.sameTitle(item.name, it.title) }?.poster
+        }
+        val shown = if (failed) stand else item.posterUrl
+        if (shown != null) RemoteImage(shown, if (failed) null else item.posterHeaders, item.name, Modifier.fillMaxSize(), scale,
+            onSize = { _, _ -> loaded = true }, onError = { if (!failed) failed = true })
     }
 }
 

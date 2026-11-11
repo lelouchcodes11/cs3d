@@ -1188,6 +1188,13 @@ object DevServer {
                 }
                 ok(ex)
             }
+            "/drop" -> {
+                // dev: what a drop of files does (the drag itself can not be made here): /drop?file=C:/a.mp4|C:/b.srt ; /drop?text=<link>
+                val files = q["file"]?.split('|')?.map { java.io.File(it) }
+                var done = false
+                onEdt { done = if (files != null) com.lagradost.desktop.ui.DropOpen.openFiles(files) else com.lagradost.desktop.ui.DropOpen.openText(q["text"] ?: "") }
+                ok(ex, done.toString())
+            }
             "/torrents" -> {
                 // dev: the torrent picker of a title: /torrents?q=Overgeared&ep=6
                 onEdt { com.lagradost.desktop.ui.screens.details.TorrentPicker.show(q["q"] ?: "Overgeared", q["ep"]?.toIntOrNull(), q["poster"], null) }
