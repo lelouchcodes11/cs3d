@@ -169,8 +169,24 @@ object Navigator {
     /** Bumped on every navigation, for transitions that need direction */
     var lastWasBack by mutableStateOf(false)
 
+    /** True for the moment before a video page opens: the shell dims the page that is being left (see [go]) */
+    var enteringPlayer by mutableStateOf(false)
+        private set
+    const val ENTER_PLAYER_MS = 150
+    private var pendingEnter: (() -> Unit)? = null
+    private var playerOpenedAt = 0L
+
+    /** The video page that waits for the dim opens now (the dim is over, or something else was asked for in the meantime: that comes after it, in order) */
+    private fun flushEntering() {
+        val push = pendingEnter ?: return
+        pendingEnter = null
+        push()
+        enteringPlayer = false
+    }
+
     fun go(route: Route) {
         EventQueue.invokeLater {
+            flushEntering()
             val top = stack.last().route
             if (top == route && route !is Route.Search) return@invokeLater
             // a search page is reused: the new query replaces the old one
@@ -178,9 +194,22 @@ object Navigator {
                 val old = stack.removeAt(stack.lastIndex)
                 old.vms.clear()
             }
-            lastWasBack = false
-            stack.add(Entry(route))
-            while (stack.size > 40) stack.removeAt(0).vms.clear()
+            // Into a video: the page first dims to the player's dark page, then the video page (which has a window of its own that no fade reaches)
+            // takes over. It was a hard cut from a bright page to black.
+            val dimMs = if (route is Route.Player && top !is Route.Player) com.lagradost.desktop.ui.fluent.FluentMotion.ms(ENTER_PLAYER_MS) else 0
+            // a double click on Play (or on an episode) opened the video twice, one page on the other, and Back had to be pressed twice
+            if (route is Route.Player && top is Route.Player && System.currentTimeMillis() - playerOpenedAt < 700) return@invokeLater
+            val push = {
+                if (route is Route.Player) playerOpenedAt = System.currentTimeMillis()
+                lastWasBack = false
+                stack.add(Entry(route))
+                while (stack.size > 40) stack.removeAt(0).vms.clear()
+            }
+            if (dimMs <= 0) push() else {
+                enteringPlayer = true
+                pendingEnter = push
+                javax.swing.Timer(dimMs) { flushEntering() }.apply { isRepeats = false; start() }
+            }
         }
     }
 
@@ -190,6 +219,7 @@ object Navigator {
      */
     fun goTab(tab: Tab) {
         EventQueue.invokeLater {
+            flushEntering()
             val root = stack.indexOfLast { it.route == tab.route }
             val inside = root >= 0 && root < stack.lastIndex && stack.last().route !is Route.Player &&
                 stack.subList(root + 1, stack.size).none { val t = it.route.tab(); t != null && t != tab }
@@ -203,6 +233,7 @@ object Navigator {
     /** Drops the whole history and shows [route] */
     fun reset(route: Route) {
         EventQueue.invokeLater {
+            flushEntering()
             stack.forEach { it.vms.clear() }
             stack.clear()
             lastWasBack = false
@@ -213,9 +244,16 @@ object Navigator {
     fun back(): Boolean {
         // an Android dialog of an extension (its settings, a prompt) has the Back key first, as on Android
         if (com.lagradost.desktop.ui.DesktopUiHost.closeTopAndroidDialog()) return true
+        // Back in the moment a video page is about to open: it does not open
+        if (pendingEnter != null) {
+            pendingEnter = null
+            enteringPlayer = false
+            return true
+        }
         if (stack.size <= 1) return false
         val pop = {
             EventQueue.invokeLater {
+                flushEntering()
                 if (stack.size > 1) {
                     lastWasBack = true
                     stack.removeAt(stack.lastIndex).vms.clear()

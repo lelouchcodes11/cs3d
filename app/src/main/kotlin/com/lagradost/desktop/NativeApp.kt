@@ -1,5 +1,7 @@
 package com.lagradost.desktop
 
+import androidx.compose.foundation.background
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -224,6 +226,15 @@ fun ApplicationScope.NativeWindow() {
                             }
                             // a profile with a PIN that nobody unlocked yet: its pages stay hidden (under the PIN pad and the profile picker)
                             com.lagradost.desktop.ui.shell.LockCover()
+                            // the page dims for a moment before a video page takes its place (see Navigator.go)
+                            run {
+                                val entering = com.lagradost.desktop.core.Navigator.enteringPlayer
+                                val dim by androidx.compose.animation.core.animateFloatAsState(
+                                    if (entering) 1f else 0f,
+                                    if (entering) androidx.compose.animation.core.tween(com.lagradost.desktop.ui.fluent.FluentMotion.ms(com.lagradost.desktop.core.Navigator.ENTER_PLAYER_MS).coerceAtLeast(1), easing = androidx.compose.animation.core.LinearOutSlowInEasing) else androidx.compose.animation.core.snap(),
+                                )
+                                if (dim > 0f) Box(Modifier.fillMaxSize().background((if (com.lagradost.desktop.ui.fluent.Fluent.colors.dark) com.lagradost.desktop.ui.fluent.Fluent.colors.bg else androidx.compose.ui.graphics.Color(0xFF0E0F13)).copy(alpha = dim)))
+                            }
                             // the native video player draws these in its controls window (this layer is behind the video then)
                             if (!com.lagradost.desktop.ui.screens.player.NativeVideo.overlayActive) {
                                 com.lagradost.desktop.ui.FluentRequestDialogs()

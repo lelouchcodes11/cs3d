@@ -285,7 +285,7 @@ fun SearchScreen(route: Route.Search) {
                         FText("${pending.size - 3} more extension${if (pending.size - 3 == 1) "" else "s"} still searching…", Modifier.padding(horizontal = gutter), color = Fluent.colors.textTertiary)
                     }
                 } else if (!loading && results.isEmpty()) {
-                    item(key = "none") { NoResults(query) }
+                    item(key = "none") { NoResults(query) { run() } }
                 }
             }
         }
@@ -446,8 +446,11 @@ private fun SkeletonRow(name: String, cardWidth: androidx.compose.ui.unit.Dp) {
 }
 
 @Composable
-private fun NoResults(query: String) {
-    com.lagradost.desktop.ui.fluent.EmptyState(Icons.Search, "No results for “$query”", "Check the spelling, pick more extensions, or try fewer filters.")
+private fun NoResults(query: String, again: () -> Unit = {}) {
+    // every extension failed because there is no internet: "check the spelling" sent people looking in the wrong place
+    com.lagradost.desktop.net.Online.Watch(again)
+    if (com.lagradost.desktop.net.Online.offline) com.lagradost.desktop.ui.fluent.EmptyState(Icons.Search, com.lagradost.desktop.net.Online.TITLE, "Search needs the internet. Check the network; the search runs again by itself when the connection is back.")
+    else com.lagradost.desktop.ui.fluent.EmptyState(Icons.Search, "No results for “$query”", "Check the spelling, pick more extensions, or try fewer filters.")
 }
 
 private val landingWidth = 680.dp

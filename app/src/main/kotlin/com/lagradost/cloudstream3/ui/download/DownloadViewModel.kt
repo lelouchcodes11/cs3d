@@ -416,10 +416,15 @@ class DownloadViewModel : ViewModel() {
 
     private fun updateStorageStats(visual: List<VisualDownloadCached.Header>) {
         try {
-            val stat = StatFs(Environment.getExternalStorageDirectory().path)
+            // desktop: the drive the downloads are saved on (the folder chosen in Settings can be on another drive than the user's own folder)
+            val saved = runCatching {
+                with(com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement) { CloudStreamApp.context?.getBasePath()?.first?.filePath() }
+            }.getOrNull()?.let { java.io.File(it) }?.let { f -> generateSequence(f) { it.parentFile }.firstOrNull { it.exists() } }
+            val stat = StatFs(saved?.path ?: Environment.getExternalStorageDirectory().path)
             val localBytesAvailable = stat.availableBytes
             val localTotalBytes = stat.blockSizeLong * stat.blockCountLong
-            val localDownloadedBytes = visual.sumOf { it.totalBytes }
+            // desktop: what is on the disk, not what the files will be when they are complete (a film at 7 % counted as all of its 18 GB)
+            val localDownloadedBytes = visual.sumOf { it.currentBytes }
             val localUsedBytes = localTotalBytes - localBytesAvailable
             _usedBytes.postValue(localUsedBytes)
             _availableBytes.postValue(localBytesAvailable)

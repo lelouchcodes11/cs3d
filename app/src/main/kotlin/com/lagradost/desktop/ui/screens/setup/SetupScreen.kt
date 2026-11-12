@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import com.lagradost.desktop.ui.fluent.TouchLazyColumn as LazyColumn
+import com.lagradost.desktop.ui.fluent.scrollIndicator
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -141,7 +142,7 @@ private fun WelcomeStep() {
         val langs = appLanguages.filter { filter.isBlank() || it.first.contains(filter, true) || it.second.contains(filter, true) }
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         LaunchedEffect(Unit) { langs.indexOfFirst { it.second == selected }.takeIf { it > 2 }?.let { listState.scrollToItem(it - 2) } }
-        LazyColumn(Modifier.weight(1f, fill = true).heightIn(max = 380.dp), state = listState, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        LazyColumn(Modifier.weight(1f, fill = true).heightIn(max = 380.dp).scrollIndicator(listState, Fluent.colors.text.copy(alpha = 0.3f)), state = listState, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(langs, key = { it.second }) { (name, tag) ->
                 val source = rememberInteraction()
                 val hovered by source.collectIsHoveredAsState()
@@ -199,7 +200,8 @@ private fun ExtensionsStep() {
             FText(if (items.isEmpty()) "No extensions yet" else "${items.count { it.isDownloaded }} of ${items.size} installed", Modifier.weight(1f), style = Fluent.type.bodyStrong)
             if (items.isNotEmpty()) Button("Install all", { repoList.forEach { PluginsViewModel.downloadAll(ctx, it, plugins) } }, icon = Icons.Download)
         }
-        LazyColumn(Modifier.weight(1f, fill = true).heightIn(max = 340.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        val pluginState = androidx.compose.foundation.lazy.rememberLazyListState()
+        LazyColumn(Modifier.weight(1f, fill = true).heightIn(max = 340.dp).scrollIndicator(pluginState, Fluent.colors.text.copy(alpha = 0.3f)), state = pluginState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(items, key = { it.pluginWrapper.plugin.url }) { item ->
                 val p = item.pluginWrapper.plugin
                 Row(
@@ -270,11 +272,13 @@ private fun ContentStep() {
         Row(Modifier.weight(1f, fill = true), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Column(Modifier.weight(1f)) {
                 FText("Media types", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 6.dp))
-                LazyColumn { items(types, key = { it.name }) { t -> CheckBox(t in chosenTypes, { on -> if (on) chosenTypes.add(t) else chosenTypes.remove(t); save() }, Modifier.fillMaxWidth().padding(vertical = 5.dp), label = com.lagradost.desktop.ui.fluent.tvTypeName(t)) } }
+                val typeState = androidx.compose.foundation.lazy.rememberLazyListState()
+                LazyColumn(Modifier.scrollIndicator(typeState, Fluent.colors.text.copy(alpha = 0.3f)), state = typeState) { items(types, key = { it.name }) { t -> CheckBox(t in chosenTypes, { on -> if (on) chosenTypes.add(t) else chosenTypes.remove(t); save() }, Modifier.fillMaxWidth().padding(vertical = 5.dp), label = com.lagradost.desktop.ui.fluent.tvTypeName(t)) } }
             }
             Column(Modifier.weight(1f)) {
                 FText("Provider languages", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 6.dp))
-                LazyColumn { items(languages, key = { it.first }) { (tag, name) -> CheckBox(tag in chosenLangs, { on -> if (on) chosenLangs.add(tag) else chosenLangs.remove(tag); save() }, Modifier.fillMaxWidth().padding(vertical = 5.dp), label = name) } }
+                val langState = androidx.compose.foundation.lazy.rememberLazyListState()
+                LazyColumn(Modifier.scrollIndicator(langState, Fluent.colors.text.copy(alpha = 0.3f)), state = langState) { items(languages, key = { it.first }) { (tag, name) -> CheckBox(tag in chosenLangs, { on -> if (on) chosenLangs.add(tag) else chosenLangs.remove(tag); save() }, Modifier.fillMaxWidth().padding(vertical = 5.dp), label = name) } }
             }
         }
     }

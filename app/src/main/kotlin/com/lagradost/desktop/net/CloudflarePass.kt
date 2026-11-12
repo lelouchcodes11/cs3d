@@ -7,7 +7,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okio.buffer
 import com.fasterxml.jackson.databind.JsonNode
 import com.lagradost.cloudstream3.mapper
 
@@ -73,7 +74,8 @@ class CloudflarePass private constructor(private val evenWithoutCookies: Boolean
             val headers = okhttp3.Headers.Builder().also { b -> reply.get("headers")?.forEach { p -> runCatching { b.addUnsafeNonAscii(p.get(0).asText(), p.get(1).asText()) } } }.build()
             val bytes = java.util.Base64.getDecoder().decode(reply.get("body")?.asText().orEmpty())
             return Response.Builder().request(request).protocol(okhttp3.Protocol.HTTP_1_1).code(code).message(reply.get("message")?.asText().orEmpty())
-                .headers(headers).body(bytes.toResponseBody(headers["Content-Type"]?.toMediaTypeOrNull())).build()
+                // read through a buffered source, as a body from the network is: the extensions' HTTP helper looks for one and printed an error line for every answer made here
+                .headers(headers).body((okio.Buffer().write(bytes) as okio.Source).buffer().asResponseBody(headers["Content-Type"]?.toMediaTypeOrNull(), bytes.size.toLong())).build()
         }
 
         /**

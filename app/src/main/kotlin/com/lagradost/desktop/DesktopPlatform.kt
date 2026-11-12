@@ -84,7 +84,9 @@ object DesktopPlatform {
     }
 
     /** The user's Downloads folder (Windows known folder, XDG_DOWNLOAD_DIR, ~/Downloads) */
-    fun downloadsDir(): File = userFolder("Downloads", "{374DE290-123F-4565-9164-39C4925E467B}", "XDG_DOWNLOAD_DIR")
+    // -Dcloudstream.downloads=<folder>: a test copy never writes into the real Downloads folder (tools/hidden-desktop sets it)
+    fun downloadsDir(): File = System.getProperty("cloudstream.downloads")?.takeIf { it.isNotBlank() }?.let { File(it) }
+        ?: userFolder("Downloads", "{374DE290-123F-4565-9164-39C4925E467B}", "XDG_DOWNLOAD_DIR")
 
     fun videosDir(): File = userFolder("Videos", "My Video", "XDG_VIDEOS_DIR", macName = "Movies")
 

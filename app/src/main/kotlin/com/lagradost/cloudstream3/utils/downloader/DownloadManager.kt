@@ -1459,6 +1459,7 @@ object VideoDownloadManager {
             return@withContext DOWNLOAD_SUCCESS
         } catch (t: Throwable) {
             logError(t)
+            lastFailureReason = t.message
             metadata.type = DownloadType.IsFailed
             return@withContext metadata.failedStatus()
         } finally {
@@ -1466,6 +1467,10 @@ object VideoDownloadManager {
             metadata.close()
         }
     }
+
+    /** desktop: why the last stream download gave up (read once by the clean-up of the failed download, for the message) */
+    @Volatile
+    private var lastFailureReason: String? = null
 
     private fun getDisplayName(name: String, extension: String): String {
         return "$name.$extension"
@@ -1718,6 +1723,25 @@ object VideoDownloadManager {
                 }
             }
 
+            // desktop: a download that failed before a single byte came leaves no empty file behind, and says why it failed (it ended without a word)
+            if (status == DownloadType.IsFailed && !isCancelled) {
+                safe {
+                    val file = context.getKey<DownloadedFileInfo>(KEY_DOWNLOAD_INFO, id.toString())?.toFile(context)
+                    if (file != null && file.exists() == true && file.length() == 0L) file.delete()
+                }
+                safe {
+                    val reason = lastFailureReason
+                    lastFailureReason = null
+                    val what = downloadQueueWrapper.downloadItem?.let { item -> item.resultName + (if (item.isMovie) "" else " E${item.episode.episode}") } ?: "The download"
+                    val why = when {
+                        reason?.contains("no video with audio", ignoreCase = true) == true ->
+                            "this source sends picture and sound as separate streams, which can not be saved yet"
+                        else -> "no source could be saved"
+                    }
+                    com.lagradost.desktop.ui.Toasts.show("$what was not downloaded: $why. Try Download > Choose a source…", true)
+                }
+            }
+
             downloadStatusEvent.invoke(Pair(id, status))
             downloadStatus[id] = status
             downloadEvent.invoke(Pair(id, DownloadActionType.Stop))
@@ -1733,7 +1757,9 @@ object VideoDownloadManager {
                 field = value
 
                 // Clean up cancelled work, but only once
-                if (value && !oldField) {
+                // desktop: not for a download that has just failed. Its own clean-up sends "stop", the queue answers by cancelling the instance, and that
+                // second clean-up relabelled the failure as "stopped": the button went back to plain Download and nothing said that it had failed.
+                if (value && !oldField && !isFailed) {
                     cleanup(DownloadType.IsStopped)
                 }
             }

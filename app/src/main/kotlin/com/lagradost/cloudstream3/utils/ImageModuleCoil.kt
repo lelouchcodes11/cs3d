@@ -62,7 +62,13 @@ object ImageLoader {
             or image hosting services causes unauthorized exceptions **/
             .components {
                 // desktop: pictures of a site whose Cloudflare check the browser passed carry that pass (see net/CloudflarePass.kt)
-                add(OkHttpNetworkFetcherFactory(callFactory = { buildDefaultClient(context).newBuilder().addInterceptor(com.lagradost.desktop.net.CloudflarePass.pictures).build() }))
+                // desktop: pictures have a request line of their own, wider per site than the usual 5 at a time: nearly every picture of a title page
+                // (cast, posters, gallery, episode stills) comes from image.tmdb.org, so 5 at a time left most of a page grey for seconds
+                add(OkHttpNetworkFetcherFactory(callFactory = {
+                    buildDefaultClient(context).newBuilder()
+                        .dispatcher(okhttp3.Dispatcher().apply { maxRequests = 64; maxRequestsPerHost = Integer.getInteger("cloudstream.imagehost", 16) })
+                        .addInterceptor(com.lagradost.desktop.net.CloudflarePass.pictures).build()
+                }))
                 // desktop: no BitmapFactoryDecoder/bitmapConfig (Android-only); resource ids need a fetcher on the JVM
                 add(coil3.ResourceIntFetcher.Factory(context))
                 add(WrappedImageFallback)

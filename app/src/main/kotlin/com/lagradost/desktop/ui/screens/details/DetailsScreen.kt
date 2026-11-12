@@ -275,9 +275,15 @@ private fun FailurePage(route: Route.Details, message: String, retry: () -> Unit
             Box(Modifier.size(56.dp).background(c.card, CircleShape).hairBorder(c.stroke, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(Icons.Warning, size = 26.dp, tint = c.caution)
             }
-            FText("Could not load “${route.name}”", style = Fluent.type.titleLarge.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            // no internet at all: said as such, and the page loads again by itself when the connection is back
+            com.lagradost.desktop.net.Online.Watch(retry)
+            val offline = com.lagradost.desktop.net.Online.offline
+            FText(if (offline) com.lagradost.desktop.net.Online.TITLE else "Could not load “${route.name}”", style = Fluent.type.titleLarge.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             // the extension's raw exception text ("Unrecognized token ... JsonParser.java 2675") was the whole message: plain words, the original in small print
-            val problem = remember(message) { com.lagradost.desktop.ui.components.ProblemText.of(message) }
+            val problem = remember(message, offline) {
+                if (offline) com.lagradost.desktop.ui.components.ProblemText.Problem(com.lagradost.desktop.net.Online.TEXT, null)
+                else com.lagradost.desktop.ui.components.ProblemText.of(message)
+            }
             FText(problem.text, color = c.textSecondary, maxLines = 4, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.widthIn(max = 560.dp))
             problem.detail?.let { FText(it, style = Fluent.type.caption, color = c.textTertiary, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.widthIn(max = 520.dp)) }
             Box(Modifier.height(4.dp))
@@ -310,6 +316,11 @@ private fun LinkLoadingCard(links: Int, subs: Int, skip: () -> Unit, cancel: () 
 }
 
 // -------------------------------------------------------------------------------------------
+
+/** dev only: a tab to open (see DevServer /details) */
+internal object DetailsDev {
+    var tab by androidx.compose.runtime.mutableStateOf<String?>(null)
+}
 
 private enum class DetailsTab(val label: String) { Episodes("Episodes"), Related("Related"), Recommended("Recommended"), More("More like this"), Cast("Cast & crew"), Gallery("Gallery"), Reviews("Reviews"), About("Details") }
 
@@ -468,6 +479,8 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
             if (tmdb != null) add(DetailsTab.About)
         }
         var tab by remember(route.url) { mutableStateOf<DetailsTab?>(null) }
+        // dev: /details?...&tab=Cast picks a tab (and scrolls down to it)
+        LaunchedEffect(DetailsDev.tab, tabs) { DetailsDev.tab?.let { n -> tabs.firstOrNull { it.name.equals(n, true) }?.let { tab = it; DetailsDev.tab = null; listState.scrollToItem(1) } } }
         val shown = tab?.takeIf { it in tabs } ?: tabs.firstOrNull()
         // episode cards per row from the room there is
         val columns = ((maxWidth - gutter * 2 + 18.dp) / (250.dp + 18.dp)).toInt().coerceIn(1, 6)

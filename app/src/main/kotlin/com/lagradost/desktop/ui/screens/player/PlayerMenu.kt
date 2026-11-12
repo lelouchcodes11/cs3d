@@ -48,6 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import com.lagradost.desktop.ui.fluent.scrollIndicator
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
@@ -271,7 +273,7 @@ private fun SourcesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
             Box(Modifier.weight(1f))
             MenuChip("Last used first", lastFirst) { lastFirst = !lastFirst; com.lagradost.desktop.net.LastSource.enabled = lastFirst }
         }
-        LazyColumn(Modifier.fillMaxWidth(), state = state) {
+        LazyColumn(Modifier.fillMaxWidth().scrollIndicator(state), state = state) {
             itemsIndexed(sources) { _, src ->
                 val detail = listOfNotNull(
                     src.quality.takeIf { it.isNotBlank() },
@@ -406,7 +408,8 @@ private fun UpscalingPage() {
 @Composable
 private fun ScreenTextPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     ScreenText.version // a new choice: draw again
-    LazyColumn(Modifier.fillMaxWidth()) {
+    val listState = rememberLazyListState()
+    LazyColumn(Modifier.fillMaxWidth().scrollIndicator(listState), state = listState) {
         item { ActionRow(Icons.Language, if (ScreenText.state is ScreenText.State.Idle) "Translate this picture now" else "Put the translation away") { onPage(null); s.toggleScreenText() } }
         item { Note("Translates writing in the picture (signs, titles, game text) and shows it over the video. Press T. Playing or seeking hides it.") }
         item { SectionLabel("The writing is in") }
@@ -451,7 +454,7 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     fun pick(sub: SubtitleData?) { pickState = sub; s.selectSubtitle(sub) }
     // the options come first: with a long list of files they were far below it and had to be scrolled to
     val state = rememberLazyListState()
-    LazyColumn(Modifier.fillMaxWidth(), state = state) {
+    LazyColumn(Modifier.fillMaxWidth().scrollIndicator(state), state = state) {
         item { NavRow(Icons.Clock, "Delay and size", if (s.subtitleDelayMs != 0L) "${s.subtitleDelayMs} ms" else null) { onPage(MenuPage.SubtitleTiming) } }
         item { NavRow(Icons.Subtitles, "Second subtitle", s.secondarySubtitle()?.originalName?.trim() ?: "Off") { onPage(MenuPage.SecondSubtitle) } }
         item { ActionRow(Icons.Font, "Style…") { onPage(null); openSubtitleStyleDialog(s) } }
@@ -482,7 +485,7 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
 @Composable
 private fun SubtitleTimingPage(s: PlayerSession) {
     val size = com.lagradost.cloudstream3.ui.subtitles.SubtitlesFragment.subtitleStyleState.value.fixedTextSize ?: com.lagradost.cloudstream3.ui.subtitles.DEFAULT_SUBTITLE_SIZE
-    Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.verticalScrollIfNeeded().padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column {
             FText("Delay", color = MenuColors.text)
             FText("Later: the text comes after the voice", style = Fluent.type.caption, color = MenuColors.tertiary)
@@ -527,7 +530,7 @@ private fun SubtitleTimingPage(s: PlayerSession) {
 @Composable
 private fun ChoicePage(labels: List<String>, selected: Int, details: List<String?>? = null, onPick: (Int) -> Unit) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = (selected - 2).coerceAtLeast(0))
-    LazyColumn(Modifier.fillMaxWidth(), state = state) {
+    LazyColumn(Modifier.fillMaxWidth().scrollIndicator(state), state = state) {
         itemsIndexed(labels) { i, label -> CheckRow(label, i == selected, detail = details?.getOrNull(i)) { onPick(i) } }
     }
 }
@@ -711,7 +714,12 @@ private fun Divider() {
 
 /** The root page scrolls when the window is too low for it */
 @Composable
-private fun Modifier.verticalScrollIfNeeded(): Modifier = this.verticalScroll(androidx.compose.foundation.rememberScrollState())
+private fun Modifier.verticalScrollIfNeeded(): Modifier {
+    val state = androidx.compose.foundation.rememberScrollState()
+    return this.scrollIndicator(state).verticalScroll(state)
+}
+
+
 
 // ---- labels --------------------------------------------------------------------------------------
 
@@ -739,7 +747,8 @@ private fun SecondSubtitlePage(s: PlayerSession) {
     val current = s.secondarySubtitle()
     val main = s.currentSubtitle()
     val list = s.subtitles().filter { it != main }
-    LazyColumn(Modifier.fillMaxWidth()) {
+    val listState = rememberLazyListState()
+    LazyColumn(Modifier.fillMaxWidth().scrollIndicator(listState), state = listState) {
         item { CheckRow("Off", current == null) { if (current != null) s.selectSecondarySubtitle(null) } }
         itemsIndexed(list, key = { i, _ -> "s:$i" }) { _, sub ->
             val name = sub.originalName.trim() + (sub.nameSuffix.trim().takeIf { it.isNotBlank() && it != "0" }?.let { " $it" } ?: "")

@@ -274,7 +274,13 @@ fun HomeScreen() {
                         item(key = "empty") {
                             // extensions that are not loaded because the sandbox cannot start: say that, not "install an extension"
                             val held = com.lagradost.desktop.isolate.Isolation.blockedNames()
-                            if (held.isNotEmpty()) com.lagradost.desktop.ui.fluent.NoticeBar(
+                            // no internet at all: say that, not "pick another source" (Home loads again by itself when it is back)
+                            com.lagradost.desktop.net.Online.Watch { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true, fromUI = false) }
+                            if (com.lagradost.desktop.net.Online.offline) com.lagradost.desktop.ui.fluent.NoticeBar(
+                                com.lagradost.desktop.net.Online.TITLE + ". " + com.lagradost.desktop.net.Online.TEXT,
+                                Modifier.padding(horizontal = gutter).padding(bottom = 22.dp),
+                                action = "Try again", onAction = { vm.loadAndCancel(DataStoreHelper.currentHomePage, forceReload = true, fromUI = false) },
+                            ) else if (held.isNotEmpty()) com.lagradost.desktop.ui.fluent.NoticeBar(
                                 com.lagradost.desktop.i18n.Tr.f("{0} extensions are not loaded because the sandbox could not start: {1}", held.size, com.lagradost.desktop.isolate.IsolatedHost.startFailure() ?: "?"),
                                 Modifier.padding(horizontal = gutter).padding(bottom = 22.dp),
                                 action = "Open Settings", onAction = { Navigator.goTab(com.lagradost.desktop.core.Tab.Settings) },

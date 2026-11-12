@@ -208,6 +208,7 @@ fun AppShell() {
     // Arabic (and the other right-to-left languages): the screens are laid out from the right; the title bar above stays as Windows draws it
     androidx.compose.runtime.CompositionLocalProvider(
         androidx.compose.ui.platform.LocalLayoutDirection provides if (com.lagradost.desktop.i18n.Tr.rtl) androidx.compose.ui.unit.LayoutDirection.Rtl else androidx.compose.ui.unit.LayoutDirection.Ltr,
+        LocalPageStates provides rememberSaveableStateHolder(),
     ) {
     Box(Modifier.fillMaxSize().background(c.bg)) {
         ScreenWarmup()
@@ -371,9 +372,14 @@ private fun SideRail(modifier: Modifier, end: Boolean) {
     )
 }
 
+/** What the pages in the history remember while another page is shown (where a list stands, what is open) */
+private val LocalPageStates = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.runtime.saveable.SaveableStateHolder?> { null }
+
 @Composable
 private fun PageHost() {
-    val holder = rememberSaveableStateHolder()
+    // kept by the shell, not here: the video page is shown by another copy of this host (it owns the whole window), and with a holder of its own
+    // every page forgot where it stood once a video had played (Home back at its top, a series back above its episodes)
+    val holder = LocalPageStates.current ?: rememberSaveableStateHolder()
     val entry = Navigator.current
     AnimatedContent(
         targetState = entry,

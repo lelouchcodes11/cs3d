@@ -620,13 +620,37 @@ internal fun SkipPill(label: String, progress: Float?, onClick: () -> Unit, modi
 
 /** The logo of a title: the extension's own, else TMDB's (looked up in the background); null while there is none (the name is shown instead) */
 @Composable
-internal fun rememberTitleLogo(response: com.lagradost.cloudstream3.LoadResponse?): String? {
-    val logo by produceState<String?>(response?.logoUrl, response?.url) {
-        value = response?.logoUrl
-        if (value == null && response != null && com.lagradost.desktop.tmdb.Tmdb.enabled) {
-            value = runCatching {
-                com.lagradost.desktop.tmdb.Tmdb.info(response.name, response.year, response.type?.isMovieType() == true, response.syncData.values)
-            }.getOrNull()?.logo
+internal fun rememberTitleLogo(response: com.lagradost.cloudstream3.LoadResponse?): String? = rememberTitleLogoState(response).url
+
+/** A title's logo and whether the question is settled ([answered] false: TMDB is still being asked, the logo may yet come) */
+internal class TitleLogo(val url: String?, val answered: Boolean)
+
+/** What TMDB answered for a title page's address ("" for no logo): the loading screen is built twice (the window, then the controls window) and the pause screen asks again */
+private val titleLogoAnswers = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+private fun knownTitleLogo(response: com.lagradost.cloudstream3.LoadResponse?): TitleLogo {
+    if (response == null) return TitleLogo(null, true)
+    response.logoUrl?.let { return TitleLogo(it, true) }
+    if (!com.lagradost.desktop.tmdb.Tmdb.enabled) return TitleLogo(null, true)
+    val known = titleLogoAnswers[response.url] ?: return TitleLogo(null, false)
+    return TitleLogo(known.ifEmpty { null }, true)
+}
+
+@Composable
+internal fun rememberTitleLogoState(response: com.lagradost.cloudstream3.LoadResponse?): TitleLogo {
+    val logo by produceState(knownTitleLogo(response), response?.logoUrl, response?.url) {
+        value = knownTitleLogo(response)
+        if (!value.answered && response != null) {
+            val found = try {
+                com.lagradost.desktop.tmdb.Tmdb.info(response.name, response.year, response.type?.isMovieType() == true, response.syncData.values)?.logo
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                null
+            }
+            if (titleLogoAnswers.size > 300) titleLogoAnswers.clear()
+            titleLogoAnswers[response.url] = found ?: ""
+            value = TitleLogo(found, true)
         }
     }
     return logo

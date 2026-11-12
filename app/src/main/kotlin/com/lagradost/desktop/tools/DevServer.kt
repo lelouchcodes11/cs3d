@@ -105,6 +105,8 @@ object DevServer {
         return (host as? androidx.navigation.fragment.NavHostFragment)?.navController
     }
 
+    @Volatile private var boundsLog = StringBuffer()
+
     private fun ok(ex: HttpExchange, text: String = "ok") = respond(ex, 200, "text/plain; charset=utf-8", text.toByteArray())
 
     private fun window(): Frame = DesktopUiHost.window ?: error("no window")
@@ -488,7 +490,8 @@ object DevServer {
             "/details" -> {
                 // dev: opens a title page: /details?url=<address>&api=<provider name>&name=<title> (a library item of AniList has api=AniList)
                 val nav = com.lagradost.desktop.core.Navigator
-                nav.go(com.lagradost.desktop.core.Route.Details(q["url"]!!, q["api"] ?: "", q["name"] ?: "", null, 0, null))
+                q["tab"]?.let { com.lagradost.desktop.ui.screens.details.DetailsDev.tab = it }
+                nav.go(com.lagradost.desktop.core.Route.Details(q["url"]!!, q["api"] ?: "", q["name"] ?: "", null, q["action"]?.toIntOrNull() ?: 0, null))
                 ok(ex)
             }
             "/click" -> {
@@ -1065,6 +1068,71 @@ object DevServer {
                     }
                 }
                 ok(ex, "result=$result after ${System.currentTimeMillis() - started} ms")
+            }
+            "/offline" -> {
+                // dev: pretend the internet is gone (/offline?on=1: every web request of the app goes to a port nobody answers) or back (on=0)
+                val on = q["on"] == "1"
+                for (p in listOf("http", "https")) {
+                    if (on) { System.setProperty("$p.proxyHost", "127.0.0.1"); System.setProperty("$p.proxyPort", "9") }
+                    else { System.clearProperty("$p.proxyHost"); System.clearProperty("$p.proxyPort") }
+                }
+                System.setProperty("http.nonProxyHosts", "localhost|127.0.0.1")
+                ok(ex, "offline=$on")
+            }
+            "/download" -> {
+                // dev: downloads as the buttons do. On a title page: /download?start=1 (the film, or the &ep=<n>th episode shown, default the first).
+                // /download = what the downloader says of every download; /download?act=Pause|Resume|Stop&id=<id> ; /download?delete=<id>
+                val dm = com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager
+                val ctx = com.lagradost.desktop.DesktopBootstrap.activity
+                if (q["start"] != null) {
+                    val vm = com.lagradost.desktop.core.Navigator.current.vms.get<com.lagradost.cloudstream3.ui.result.ResultViewModel2>()
+                    val film = (vm.movie.value as? com.lagradost.cloudstream3.mvvm.Resource.Success)?.value?.second
+                    val ep = film ?: (vm.episodes.value as? com.lagradost.cloudstream3.mvvm.Resource.Success)?.value?.getOrNull(q["ep"]?.toIntOrNull() ?: 0) ?: return ok(ex, "nothing to download on this page")
+                    onEdt { vm.handleAction(com.lagradost.cloudstream3.ui.result.EpisodeClickEvent(com.lagradost.cloudstream3.ui.result.ACTION_DOWNLOAD_EPISODE, ep)) }
+                    return ok(ex, "started id=${ep.id} ${ep.name} (${ep.headerName})")
+                }
+                q["act"]?.let { a -> dm.downloadEvent.invoke(q["id"]!!.toInt() to com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.DownloadActionType.valueOf(a)); return ok(ex, "$a sent") }
+                q["delete"]?.let { id ->
+                    com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.cancelDownload(id.toInt())
+                    dm.deleteFilesAndUpdateSettings(ctx, setOf(id.toInt()), kotlinx.coroutines.MainScope())
+                    return ok(ex, "delete asked")
+                }
+                // /download?play=<id>: the saved file is played as a click on its row does
+                q["play"]?.let { id ->
+                    val saved = with(com.lagradost.cloudstream3.utils.DataStore) {
+                        ctx.getKeys(com.lagradost.cloudstream3.utils.DOWNLOAD_EPISODE_CACHE).mapNotNull { k -> ctx.getKey<com.lagradost.cloudstream3.utils.downloader.DownloadObjects.DownloadEpisodeCached>(k) }.firstOrNull { it.id == id.toInt() }
+                    } ?: return ok(ex, "no saved episode $id")
+                    onEdt { com.lagradost.cloudstream3.ui.download.DownloadButtonSetup.handleDownloadClick(com.lagradost.cloudstream3.ui.download.DownloadClickEvent(com.lagradost.cloudstream3.ui.download.DOWNLOAD_ACTION_PLAY_FILE, saved)) }
+                    return ok(ex, "playing ${saved.name} E${saved.episode}")
+                }
+                val sb = StringBuilder()
+                // where a download started now would be saved
+                with(com.lagradost.cloudstream3.utils.downloader.DownloadFileManagement) { sb.append("folder: ${runCatching { ctx.getBasePath().let { it.first?.filePath() + " (setting: " + it.second + ")" } }.getOrElse { it.toString() }}\n") }
+                for ((id, type) in dm.downloadStatus.toMap()) {
+                    val info = runCatching { dm.getDownloadFileInfo(ctx, id) }.getOrNull()
+                    sb.append("$id $type file=${info?.fileLength} of ${info?.totalBytes} ${info?.path}\n")
+                }
+                ok(ex, sb.toString().ifEmpty { "no downloads this run" })
+            }
+            "/boundslog" -> {
+                // dev: every change of place, size or visibility of the app's windows and of the video's own window, sampled every 2 ms for &ms= (default 3000):
+                // /boundslog?ms=4000 starts it (answers at once), then e.g. /playurl?url=..., then /boundslog?get=1 ; what moves when a video starts
+                if (q["get"] != null) return ok(ex, boundsLog.toString())
+                val ms = q["ms"]?.toLongOrNull() ?: 3000L
+                val out = StringBuffer().also { boundsLog = it }
+                val last = HashMap<String, String>()
+                val started = System.nanoTime()
+                Thread {
+                while ((System.nanoTime() - started) / 1_000_000 < ms) {
+                    val now = LinkedHashMap<String, String>()
+                    for (w in java.awt.Window.getWindows()) if (w.isDisplayable) now["${w.javaClass.simpleName}@${Integer.toHexString(System.identityHashCode(w))}"] = "${w.x},${w.y} ${w.width}x${w.height} ${if (w.isVisible) "shown" else "hidden"}"
+                    com.lagradost.desktop.ui.screens.player.NativeVideo.canvas?.let { c -> now["video"] = "${c.x},${c.y} ${c.width}x${c.height} ${if (c.isVisible) "shown" else "hidden"} parent=${c.parent?.let { p -> "${p.x},${p.y} ${p.width}x${p.height} ${if (p.isVisible) "shown" else "hidden"}" }}" }
+                    for ((k, v) in now) if (last[k] != v) { out.append((System.nanoTime() - started) / 1_000_000).append(" ms  ").append(k).append("  ").append(v).append('\n'); last[k] = v }
+                    for (k in last.keys.toList()) if (k !in now) { out.append((System.nanoTime() - started) / 1_000_000).append(" ms  ").append(k).append("  gone\n"); last.remove(k) }
+                    Thread.sleep(2)
+                }
+                }.start()
+                ok(ex, "sampling for $ms ms")
             }
             "/clonesite" -> {
                 // dev: Settings > General > Clone site without the dialog: /clonesite?api=Kickassanime&name=Kick2&url=https://example.org (then /apisearch?name=Kick2&q=...)

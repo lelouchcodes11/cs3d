@@ -1046,13 +1046,42 @@ private fun ScreenArt(s: PlayerSession, response: com.lagradost.cloudstream3.Loa
     }
 }
 
+/**
+ * Two blocks one under the other, the first ending at a fixed height of the room (56 %), the second starting under it: neither moves when the other
+ * grows or shrinks. In a room too low for that they are stacked in the middle as a column would.
+ */
+@Composable
+private fun SteadySplit(modifier: Modifier, content: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(content, modifier) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val upper = measurables[0].measure(loose)
+        val lower = measurables[1].measure(loose)
+        val gap = 12.dp.roundToPx()
+        val width = maxOf(upper.width, lower.width).coerceIn(constraints.minWidth, constraints.maxWidth)
+        val both = upper.height + gap + lower.height
+        val height = if (constraints.hasBoundedHeight) constraints.maxHeight else both
+        layout(width, height) {
+            val split = (height * 0.56f).toInt()
+            // room for the longest lower part there is (five rows and the buttons) is not asked for: what is there has to fit
+            val steady = upper.height <= split && split + gap + lower.height <= height
+            val top = if (steady) split - upper.height else ((height - both) / 2).coerceAtLeast(0)
+            upper.place((width - upper.width) / 2, top)
+            lower.place((width - lower.width) / 2, top + upper.height + gap)
+        }
+    }
+}
+
 @Composable
 private fun LoadingOverlay(s: PlayerSession) {
     var listOpen by remember { mutableStateOf(false) }
     // what the title looks like: the extension's own artwork, TMDB's logo when it sent none (the same lookup the pause screen does)
     val response = remember(s.title, s.episodeVersion) { s.titleResponse }
     val headers = response?.posterHeaders
-    val logo = rememberTitleLogo(response)
+    val logoState = rememberTitleLogoState(response)
+    val logo = logoState.url
+    // the name in letters while the logo is asked for: only when the answer takes long
+    var nameShown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(900); nameShown = true }
     val facts = remember(response) {
         listOfNotNull(
             response?.year?.toString(), response?.contentRating?.takeIf { it.isNotBlank() },
@@ -1078,18 +1107,26 @@ private fun LoadingOverlay(s: PlayerSession) {
         ScreenArt(s, response, appear.value)
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.widthIn(max = 640.dp).padding(horizontal = 32.dp)
+        // The title and the line keep their place whatever comes and goes under them (the source's name, the count, the countdown, the buttons): in one
+        // centred column every row that appeared or left moved the whole screen up or down by half its height, several times while a video
+        // started, which read as the screen shaking. The upper part ends at a fixed height of the screen; the rest hangs under it.
+        SteadySplit(
+            Modifier.widthIn(max = 640.dp).padding(horizontal = 32.dp)
                 .graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 18.dp.toPx() },
         ) {
-            com.lagradost.desktop.ui.fluent.TitleMark(logo, headers, s.title, 104.dp, 440.dp, centered = true) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            // the logo's room is kept from the start (the name in letters is lower than the logo that replaces it), and the name is not put up
+            // for the moment the logo is still being asked for: name, then logo, then the same again in the controls window was a flicker of its own
+            com.lagradost.desktop.ui.fluent.TitleMark(logo, headers, s.title, 104.dp, 440.dp, Modifier.heightIn(min = 104.dp), centered = true) {
+                if (logoState.answered || nameShown)
                 FText(s.title, style = Fluent.type.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Black, fontSize = 40.sp, lineHeight = 46.sp, shadow = androidx.compose.ui.graphics.Shadow(Color(0x99000000), Offset(0f, 2f), 16f)), color = Color.White, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
             s.episodeLabel?.let { FText(it, style = Fluent.type.bodyStrong.copy(fontSize = 17.sp), color = Color.White, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
             if (facts.isNotBlank()) FText(facts, style = Fluent.type.bodyStrong.copy(fontSize = 13.sp), color = Color(0xCCFFFFFF), maxLines = 1)
             Box(Modifier.height(8.dp))
             ProgressBar(null, Modifier.width(360.dp), height = 3.dp)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             FText(s.loadingText ?: lastText[0], color = Color(0xCCFFFFFF), maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             // a torrent: who it is downloaded from and how far the first part is
             s.torrent?.let { t ->
@@ -1140,6 +1177,7 @@ private fun LoadingOverlay(s: PlayerSession) {
                 if (s.linksFound > 0) Button(if (listOpen) "Hide sources" else "Show sources", { listOpen = !listOpen; if (listOpen) s.holdAutoPlay() }, icon = Icons.Link)
                 Button("Cancel", { Navigator.back() })
             }
+        }
         }
         }
         if (listOpen) SourcesPanel(s, { listOpen = false }, Modifier.padding(end = 28.dp))

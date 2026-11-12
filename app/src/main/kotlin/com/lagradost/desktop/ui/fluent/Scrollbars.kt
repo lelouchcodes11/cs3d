@@ -1,5 +1,9 @@
 package com.lagradost.desktop.ui.fluent
 
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
@@ -76,3 +80,47 @@ fun BoxScope.FluentScrollbar(state: LazyGridState, top: Dp = 0.dp) = FadingScrol
 
 @Composable
 fun BoxScope.FluentScrollbar(state: ScrollState, top: Dp = 0.dp) = FadingScrollbar(rememberScrollbarAdapter(state), state, top) { state.value.toLong() }
+
+/**
+ * Where a list stands and that there is more of it: a slim bar at the edge, only when the list is longer than the menu. Drawn over the
+ * list (no room is taken from the rows), at the left edge in a right-to-left language. Unlike [FluentScrollbar] it does not fade away: it says that
+ * there is more below (a short list in a dialog or a menu that is cut off mid-row).
+ * [color]: white on the dark player, the theme's text colour elsewhere.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.scrollThumb(start: Float, shown: Float, color: Color) {
+    if (shown >= 0.999f) return
+    val pad = 6.dp.toPx()
+    val track = size.height - 2 * pad
+    if (track <= 0f) return
+    val height = (track * shown).coerceAtLeast(22.dp.toPx()).coerceAtMost(track)
+    val y = pad + (track - height) * (start / (1f - shown)).coerceIn(0f, 1f)
+    val w = 3.dp.toPx()
+    val x = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) 3.dp.toPx() else size.width - w - 3.dp.toPx()
+    drawRoundRect(color, androidx.compose.ui.geometry.Offset(x, y), androidx.compose.ui.geometry.Size(w, height), androidx.compose.ui.geometry.CornerRadius(w / 2))
+}
+
+fun Modifier.scrollIndicator(state: androidx.compose.foundation.ScrollState, color: Color = Color.White.copy(alpha = 0.34f)): Modifier = drawWithContent {
+    drawContent()
+    val max = state.maxValue
+    if (max > 0 && max != Int.MAX_VALUE) {
+        val total = size.height + max
+        scrollThumb(state.value / total, size.height / total, color)
+    }
+}
+
+fun Modifier.scrollIndicator(state: androidx.compose.foundation.lazy.LazyListState, color: Color = Color.White.copy(alpha = 0.34f)): Modifier = drawWithContent {
+    drawContent()
+    val info = state.layoutInfo
+    val rows = info.visibleItemsInfo
+    val count = info.totalItemsCount
+    if (rows.isNotEmpty() && count > 0) {
+        // in rows, by the average height of the ones on screen (the rows of a menu are nearly alike)
+        val average = rows.sumOf { it.size }.toFloat() / rows.size
+        if (average > 0f) {
+            val total = average * count + info.beforeContentPadding + info.afterContentPadding
+            val view = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+            val before = rows.first().index * average - rows.first().offset
+            if (total > view + 1f) scrollThumb(before / total, view / total, color)
+        }
+    }
+}

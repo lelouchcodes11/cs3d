@@ -43,7 +43,7 @@ $opts = @("-Xmx3g", "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base
   # as the installed app starts (app/build.gradle.kts jpackage options): the extension sandbox needs the security manager allowed
   "-Djava.security.manager=allow", "-Dsun.java2d.d3d=false", "-XX:+UseShenandoahGC", "-XX:SoftMaxHeapSize=768m", "-XX:+ExplicitGCInvokesConcurrent", "`"-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path)`"", "-Dcloudstream.devport=$Port", "-Dcloudstream.ipcport=$($Port + 44000)",
   # no GitHub release checks (60 a hour per address), silent players, mpv-2.dll and WebView2Loader.dll from the project
-  "-Dcloudstream.updateApi=http://127.0.0.1:1/", "-Dcloudstream.mute=true", "`"-Djna.library.path=$(& $fwd (Join-Path $root 'app\native\windows-x64'))`"",
+  "-Dcloudstream.updateApi=http://127.0.0.1:1/", "-Dcloudstream.mute=true", "`"-Dcloudstream.downloads=$(& $fwd (Join-Path (Resolve-Path $Data).Path 'test-downloads'))`"", "`"-Djna.library.path=$(& $fwd (Join-Path $root 'app\native\windows-x64'))`"",
   # where the installed app keeps its native files (WebView2 loader, mpv): without it a run outside the project folder falls back to JCEF pages
   "`"-Dcompose.application.resources.dir=$(& $fwd (Join-Path $root 'app\native\windows-x64'))`"")
 if ($Extra) { $opts += $Extra.Split(" ", [StringSplitOptions]::RemoveEmptyEntries) }
@@ -51,7 +51,7 @@ $argfile = Join-Path $work "args-$Port.txt"
 [IO.File]::WriteAllLines($argfile, $opts + @("-cp", "`"$(& $fwd $cp)`"", "com.lagradost.desktop.MainKt"))
 # -Exe <CloudStream.exe of a packaged COPY>: that app is started instead of the development build (its own runtime and options, as people get it)
 if ($Exe) {
-  $env:JAVA_TOOL_OPTIONS = "-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path) -Dcloudstream.devport=$Port -Dcloudstream.ipcport=$($Port + 44000) -Dcloudstream.updateApi=http://127.0.0.1:1/ -Dcloudstream.mute=true $Extra"
+  $env:JAVA_TOOL_OPTIONS = "-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path) -Dcloudstream.devport=$Port -Dcloudstream.ipcport=$($Port + 44000) -Dcloudstream.updateApi=http://127.0.0.1:1/ -Dcloudstream.mute=true -Dcloudstream.downloads=$(& $fwd (Join-Path (Resolve-Path $Data).Path 'test-downloads')) $Extra"
 }
 $java = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME "bin\java.exe" } else { "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot\bin\java.exe" }
 $si = New-Object HiddenDesk+SI; $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si); $si.desk = $desktop

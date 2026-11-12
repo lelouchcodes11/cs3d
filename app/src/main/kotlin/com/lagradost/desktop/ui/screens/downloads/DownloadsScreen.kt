@@ -225,7 +225,9 @@ private fun DownloadRow(item: VisualDownloadCached, onOpenFolder: (VisualDownloa
                     ProgressBar(f ?: 0f, Modifier.width(300.dp), color = if (live.paused) c.textTertiary else c.accent)
                     val bytes = if (live.total > 0) "${size(live.done)} of ${size(live.total)}  ·  " else ""
                     FText(
-                        (if (live.paused) "Paused" else if (f == null) "Starting…" else "Downloading") + (f?.let { "  ·  $bytes${(it * 100).toInt()}%" } ?: "") +
+                        // before the first byte the downloader asks every source and takes the best one, which can take a minute: said so (it read "Starting…" all that time)
+                        (if (live.paused) "Paused" else if (f == null) "Finding the best source…" else "Downloading") + (f?.let { "  ·  $bytes${(it * 100).toInt()}%" } ?: "") +
+                            (if (!live.paused && f != null && live.speed > 1024f) "  ·  ${size(live.speed.toLong())}/s" + (if (live.total > live.done) "  ·  " + timeLeft(live.total - live.done, live.speed) else "") else "") +
                             (if (running.size > 1) "  ·  ${running.size} episodes" else ""),
                         style = Fluent.type.caption, color = if (live.paused) c.textSecondary else c.accentText, maxLines = 1,
                     )
@@ -254,7 +256,17 @@ private fun DownloadRow(item: VisualDownloadCached, onOpenFolder: (VisualDownloa
 // ---- what the downloads are doing, live -----------------------------------------------------------------------------------------------
 
 /** What a row's episodes are doing: [running] are the ids that download or wait (paused or not), [failed] how many failed */
-private class Live(val running: List<Int>, val paused: Boolean, val fraction: Float?, val done: Long, val total: Long, val failed: Int)
+private class Live(val running: List<Int>, val paused: Boolean, val fraction: Float?, val done: Long, val total: Long, val failed: Int, val speed: Float = 0f)
+
+/** "12 min left", "1 h 5 min left": how long [bytes] take at [speed] bytes a second */
+private fun timeLeft(bytes: Long, speed: Float): String {
+    val s = (bytes / speed).toLong()
+    return when {
+        s < 60 -> "under a minute left"
+        s < 3600 -> "${(s + 30) / 60} min left"
+        else -> "${s / 3600} h ${s % 3600 / 60} min left"
+    }
+}
 
 private val NoLive = Live(emptyList(), false, null, 0L, 0L, 0)
 
@@ -294,10 +306,29 @@ private fun rememberEpisodes(item: VisualDownloadCached): List<DownloadObjects.D
 private fun rememberLive(episodes: List<DownloadObjects.DownloadEpisodeCached>): Live {
     val ids = episodes.map { it.id }
     val states = remember(ids) { mutableStateMapOf<Int, Ev>().also { m -> for (id in ids) m[id] = evOf(id) } }
+    // how fast each one comes in: measured over a second or more of the downloader's own progress reports, smoothed
+    val rates = remember(ids) { mutableStateMapOf<Int, Float>() }
+    val samples = remember(ids) { java.util.concurrent.ConcurrentHashMap<Int, Pair<Long, Long>>() }
     DisposableEffect(ids) {
-        val status: (Pair<Int, VideoDownloadManager.DownloadType>) -> Unit = { (id, type) -> if (id in ids) states[id] = evOf(id, type, states[id]) }
+        val status: (Pair<Int, VideoDownloadManager.DownloadType>) -> Unit = { (id, type) ->
+            if (id in ids) {
+                states[id] = evOf(id, type, states[id])
+                // paused, ended or failed: the speed it had says nothing any more
+                if (type != VideoDownloadManager.DownloadType.IsDownloading) { rates.remove(id); samples.remove(id) }
+            }
+        }
         val progress: (Triple<Int, Long, Long>) -> Unit = { (id, done, total) ->
             if (id in ids && total > 0) states[id]?.let { states[id] = it.copy(fraction = (done.toFloat() / total).coerceIn(0f, 1f), done = done, total = total) }
+            if (id in ids) {
+                val now = System.nanoTime()
+                val last = samples[id]
+                if (last == null || done < last.second) samples[id] = now to done
+                else if (now - last.first >= 1_000_000_000L) {
+                    val bps = (done - last.second) * 1e9f / (now - last.first)
+                    rates[id] = rates[id]?.let { it * 0.6f + bps * 0.4f } ?: bps
+                    samples[id] = now to done
+                }
+            }
         }
         VideoDownloadManager.downloadStatusEvent += status
         VideoDownloadManager.downloadProgressEvent += progress
@@ -314,6 +345,7 @@ private fun rememberLive(episodes: List<DownloadObjects.DownloadEpisodeCached>):
         running.map { it.id }, running.isNotEmpty() && running.all { it.paused },
         if (fractions.isEmpty()) null else fractions.average().toFloat(),
         running.sumOf { it.done }, running.sumOf { it.total }, all.count { it.failed },
+        running.filter { !it.paused }.sumOf { (rates[it.id] ?: 0f).toDouble() }.toFloat(),
     )
 }
 

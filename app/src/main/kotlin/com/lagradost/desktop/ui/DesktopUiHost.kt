@@ -27,6 +27,8 @@ object Toasts {
     private var ids = 0L
 
     fun show(text: String, long: Boolean) {
+        // in the log too: what the app told the user is the first thing to know when something is reported
+        android.util.Log.i("Toast", text.take(300))
         EventQueue.invokeLater {
             // Like Android, a new toast replaces the one showing
             current.clear()
