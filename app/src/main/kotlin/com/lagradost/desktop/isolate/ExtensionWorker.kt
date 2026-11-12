@@ -4,6 +4,7 @@ import android.util.Log
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.lagradost.cloudstream3.APIHolder
+import kotlin.reflect.full.createInstance
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SubtitleFile
@@ -102,8 +103,35 @@ object ExtensionWorker {
     private fun provider(path: String, name: String): MainAPI =
         APIHolder.allProviders.toList().firstOrNull { it.name == name && it.sourcePlugin == path } ?: error("no provider $name in $path")
 
+    private val cloneLock = Any()
+
+    /**
+     * A call for a cloned site (Settings > General > Clone site: an extension's provider under another address). The copy is made here, from the
+     * extension's own class, the first time it is called for (and again after the extension was loaded anew): the app only knows what it is a copy of.
+     */
+    private fun ensureClone(b: JsonNode) {
+        val parentName = b.get("cloneOf")?.asText() ?: return
+        val path = b.get("path")?.asText() ?: return
+        val name = b.get("api")?.asText() ?: return
+        synchronized(cloneLock) {
+            val all = APIHolder.allProviders.toList()
+            if (all.any { it.name == name && it.sourcePlugin == path }) return
+            val parent = all.firstOrNull { it.name == parentName && it.sourcePlugin == path } ?: return
+            val copy = parent::class.createInstance().apply {
+                this.name = name
+                b.get("cloneLang")?.asText()?.takeIf { it.isNotBlank() }?.let { lang = it }
+                mainUrl = b.get("cloneUrl").asText().trimEnd('/')
+                canBeOverridden = false
+                sourcePlugin = path
+            }
+            APIHolder.allProviders.add(copy)
+            System.err.println("worker: cloned site $name (${copy.mainUrl}) of $parentName")
+        }
+    }
+
     private suspend fun handle(req: RpcPeer.Incoming): JsonNode? {
         val b = req.body
+        if (b.has("cloneOf")) ensureClone(b)
         return when (req.op) {
             "ping" -> mapper.createObjectNode().put("pid", ProcessHandle.current().pid())
             // how much of its memory the program uses (the app shows it in the log when something is slow)
@@ -222,7 +250,7 @@ object ExtensionWorker {
         val array = mapper.createArrayNode()
         for (p in providers) {
             array.add(
-                mapper.createObjectNode().put("name", p.name).put("mainUrl", p.mainUrl).put("lang", p.lang).put("hasMainPage", p.hasMainPage)
+                mapper.createObjectNode().put("name", p.name).put("mainUrl", p.mainUrl).put("lang", p.lang).put("hasMainPage", p.hasMainPage).put("className", p::class.simpleName)
                     .put("hasQuickSearch", p.hasQuickSearch).put("usesWebView", p.usesWebView).put("instantLinkLoading", p.instantLinkLoading)
                     .put("hasChromecastSupport", p.hasChromecastSupport).put("hasDownloadSupport", p.hasDownloadSupport)
                     .put("vpn", p.vpnStatus.name).put("providerType", p.providerType.name).put("hasInterceptor", overridesInterceptor(p))

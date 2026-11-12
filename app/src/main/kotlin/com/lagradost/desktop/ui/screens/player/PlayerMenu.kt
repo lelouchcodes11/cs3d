@@ -444,6 +444,7 @@ private fun originLabel(sub: SubtitleData): String = when (sub.origin) {
 @Composable
 private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     var pickState by remember { mutableStateOf(s.currentSubtitle()) }
+    LaunchedEffect(Unit) { s.subtitleMenuOpened() }
     var groupOpen by remember { mutableStateOf(pickState?.originalName) }
     remember(s.listsVersion) { 0 } // subtitles that arrive while the menu is open: read again
     val groups = s.subtitles().groupBy { it.originalName }.entries.map { (name, list) -> name to list.sortedBy { it.nameSuffix.toIntOrNull() ?: 0 } }

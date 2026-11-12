@@ -1035,6 +1035,13 @@ class PlayerSession(
     private var durationTimer: kotlinx.coroutines.Job? = null
 
     /** Looks at the online subtitles that arrived, a few at a time, those of the wanted language first; the list and the automatic choice use what is found */
+    private val otherSubtitlesWanted = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+    /** The Subtitles menu is open: the files of the other languages are looked at as well now (the working ones first in the list, the dead ones left out) */
+    fun subtitleMenuOpened() {
+        otherSubtitlesWanted.complete(Unit)
+    }
+
     private fun checkNewSubtitles() {
         val lang = preferredSubLang?.takeIf { it.isNotEmpty() }
         val pending = vm.state.subtitles.toList().filter { it.origin == SubtitleOrigin.URL && !subtitleChecks.containsKey(it.getId()) }
@@ -1048,7 +1055,12 @@ class PlayerSession(
             scope.launch(Dispatchers.IO) {
                 try {
                     // the files of other languages (hundreds from some extensions) only use the line when the wanted language is done
-                    if (!wantedLanguage) while (wantedUnchecked.get() > 0 && !released) kotlinx.coroutines.delay(300)
+                    // and only once the viewer has opened the Subtitles menu: looking at all of them for every video was hundreds of downloads behind
+                    // the playing video for a list nobody opened (owner's log: 429 files in two minutes, the sites answering "Too Many Requests")
+                    if (!wantedLanguage) {
+                        otherSubtitlesWanted.await()
+                        while (wantedUnchecked.get() > 0 && !released) kotlinx.coroutines.delay(300)
+                    }
                     if (released) return@launch
                     subtitleGate.withPermit {
                         val check = runCatching { player.checkSubtitle(sub) }.getOrNull() ?: return@withPermit

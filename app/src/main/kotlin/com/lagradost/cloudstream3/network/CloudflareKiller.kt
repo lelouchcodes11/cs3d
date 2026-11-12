@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.mvvm.debugWarning
 import com.lagradost.cloudstream3.mvvm.safe
 import com.lagradost.nicehttp.Requests.Companion.await
 import com.lagradost.nicehttp.cookies
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.Headers
 import okhttp3.Interceptor
@@ -133,15 +134,44 @@ class CloudflareKiller : Interceptor {
             )
             // the bar with a Cancel button shows while the page works (see CloudflareGate)
             val solve = com.lagradost.desktop.runtime.web.CloudflareGate.beginSolve(request.url.host) { resolver.cancel() }
+            // desktop: the page's own requests are seen on the browser's thread, where the browser's cookies can not be waited for, so the check
+            // there never saw the pass: a passed check was waited on for the whole time limit and the site then counted as failed (measured: a
+            // check passed after 6 s, given up at 25 s). The cookies are looked at from here instead, and a pass is tried on the request itself
+            // before it is believed (a check page hands out a cookie before it is through: such a one is not taken, the page works on).
+            var passed: Response? = null
+            val watcher = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                var tried: String? = null
+                while (true) {
+                    kotlinx.coroutines.delay(400)
+                    if (!trySolveWithSavedCookies(request)) continue
+                    val cookies = savedCookies[request.url.host] ?: continue
+                    val clearance = cookies["cf_clearance"]
+                    if (clearance == tried) { savedCookies.remove(request.url.host); continue }
+                    tried = clearance
+                    val answer = runCatching { proceed(request, cookies) }.getOrNull()
+                    if (answer != null && !(answer.header("Server") in CLOUDFLARE_SERVERS && answer.code in ERROR_CODES)) {
+                        passed = answer
+                        resolver.cancel()
+                        return@launch
+                    }
+                    answer?.close()
+                    savedCookies.remove(request.url.host)
+                }
+            }
             try {
                 resolver.resolveUsingWebView(
                     url
                 ) {
-                    trySolveWithSavedCookies(request)
+                    false
                 }
             } finally {
+                watcher.cancel()
                 com.lagradost.desktop.runtime.web.CloudflareGate.endSolve(solve)
             }
+            watcher.join()
+            passed?.let { return it }
+            // the last look, with the page gone
+            if (savedCookies[request.url.host] == null) trySolveWithSavedCookies(request)
         }
 
         val cookies = savedCookies[request.url.host] ?: run {

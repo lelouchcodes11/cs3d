@@ -73,8 +73,13 @@ private fun homeSettled(): Boolean = runCatching {
 
 @Composable
 fun StartupReveal(content: @Composable () -> Unit) {
+    // The app is the same composition under the loader and after it. Called from two places as it was, everything was thrown away and built a second
+    // time the moment the loader had gone (every page, at every start), and a video opened during the loader (a link or a file the app was started
+    // with) was torn down in the middle: its controls window stayed, and after Back the window was empty for good.
+    val latest by androidx.compose.runtime.rememberUpdatedState(content)
+    val app = remember { androidx.compose.runtime.movableContentOf { latest() } }
     if (Startup.revealed.isCompleted) {
-        content()
+        app()
         return
     }
     val c = Fluent.colors
@@ -156,7 +161,7 @@ fun StartupReveal(content: @Composable () -> Unit) {
         // The app is not drawn while the loader is up (only from the moment the start has settled, under the opaque loader, for its first draw); when the reveal begins it is drawn as it is (no alpha, no scale: a whole-window layer that
         // fades in and grows a little was two off-screen passes per frame and soft text, which a weak graphics chip showed as stutter and flicker)
         // and the loader, a plain colour with the logo, fades away over it
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (drawApp || leave.value > 0f) 1f else 0f }) { content() }
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (drawApp || leave.value > 0f) 1f else 0f }) { app() }
         if (!gone) {
             Box(
                 Modifier.fillMaxSize().graphicsLayer { alpha = 1f - leave.value; compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha }.background(c.bg),

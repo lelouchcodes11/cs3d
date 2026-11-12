@@ -133,6 +133,13 @@ private fun activeProviders(types: List<TvType>, selectedApis: Set<String>): Set
         .ifEmpty { notFiltered }.map { it.first }.toSet()
 }
 
+/** What the search page that last ran a search keeps for its return (the results themselves stay in the view model): which page it was and where its list stood */
+private object SearchPageMemory {
+    var nonce = 0L
+    var listState = androidx.compose.foundation.lazy.LazyListState()
+    var seen = HashSet<String>()
+}
+
 @Composable
 fun SearchScreen(route: Route.Search) {
     val c = Fluent.colors
@@ -153,6 +160,12 @@ fun SearchScreen(route: Route.Search) {
     LaunchedEffect(route.nonce) {
         ShellState.searchText = query
         vm.updateHistory()
+        // coming back to this page (Back from a title that was opened from it) shows the results it already has: the search is not made again
+        if (SearchPageMemory.nonce == route.nonce && query.isNotEmpty()) {
+            android.util.Log.i("SearchScreen", "back on the results of \"$query\": not searched again")
+            return@LaunchedEffect
+        }
+        SearchPageMemory.nonce = route.nonce
         if (query.isNotEmpty()) run() else vm.clearSearch()
     }
 
@@ -181,8 +194,10 @@ fun SearchScreen(route: Route.Search) {
         DesktopBootstrap.activityOrNull()?.let { runCatching { it.filterProviderByPreferredMedia().flatMap { api -> api.supportedTypes }.distinct().filter { t -> t != TvType.Torrent }.sorted() }.getOrNull() }.orEmpty()
     }
     // rows that were already shown do not fade in again when they scroll back into view
-    val seen = remember(route.nonce) { HashSet<String>() }
-    val listState = remember(route.nonce) { androidx.compose.foundation.lazy.LazyListState() }
+    // both are kept while the page is in the history, so Back from a title lands where the list was left
+    val kept = SearchPageMemory.nonce == route.nonce
+    val seen = remember(route.nonce) { if (kept) SearchPageMemory.seen else HashSet<String>().also { SearchPageMemory.seen = it } }
+    val listState = remember(route.nonce) { if (kept) SearchPageMemory.listState else androidx.compose.foundation.lazy.LazyListState().also { SearchPageMemory.listState = it } }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val cardWidth = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width * (if (maxWidth >= 1008.dp) 1.05f else 0.92f)

@@ -197,7 +197,14 @@ object DesktopBootstrap {
                         appGetKey<Array<com.lagradost.cloudstream3.ui.settings.SettingsGeneral.CustomSite>>(com.lagradost.cloudstream3.utils.USER_PROVIDER_API)?.let { list ->
                             list.forEach { custom ->
                                 if (allProviders.any { it.name == custom.name && it.mainUrl == custom.url.trimEnd('/') }) return@forEach
-                                allProviders.firstOrNull { it::class.simpleName == custom.parentClassName }?.let {
+                                // an extension in the sandbox: its provider here is a stand-in, the copy is made of the real one, in the sandbox
+                                val remote = allProviders.firstOrNull { it is com.lagradost.desktop.isolate.RemoteMainAPI && !it.isClone && it.className == custom.parentClassName } as? com.lagradost.desktop.isolate.RemoteMainAPI
+                                if (remote != null) {
+                                    allProviders.add(remote.cloned(custom.name, custom.url, custom.lang))
+                                    Log.i(TAG, "cloned site ${custom.name} (${custom.url}) of ${custom.parentClassName}, in the sandbox")
+                                    return@forEach
+                                }
+                                allProviders.firstOrNull { it !is com.lagradost.desktop.isolate.RemoteMainAPI && it::class.simpleName == custom.parentClassName }?.let {
                                     allProviders.add(
                                         it::class.createInstance().apply {
                                             name = custom.name

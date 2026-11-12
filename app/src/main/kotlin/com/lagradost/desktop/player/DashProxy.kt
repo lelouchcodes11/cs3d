@@ -53,6 +53,10 @@ object DashProxy {
      * What the player gets as the manifest: hex segment numbers are told as decimal ones, and [Entry.hexWidth] remembers to turn the
      * numbers it asks for back into hex when the segment is fetched from the server.
      */
+    private val PERIOD = Regex("""<(\w+:)?Period\b""")
+
+    private fun hasPeriod(manifest: ByteArray): Boolean = PERIOD.containsMatchIn(String(manifest, Charsets.ISO_8859_1))
+
     private fun normalize(entry: Entry, bytes: ByteArray): ByteArray {
         val text = String(bytes, Charsets.UTF_8)
         val m = HEX_NUMBER.find(text) ?: return bytes
@@ -213,6 +217,7 @@ object DashProxy {
 
         /** How many different segments each stream has been sent: the first one may be asked twice (the player reads it to learn the stream, then opens
          *  it again to play; refusing that killed the start of some live channels, "Error when loading first fragment") */
+        @Volatile var emptyListLogAt = 0L
         val sentCount = ConcurrentHashMap<String, Int>()
         /** Streams whose first segment was already sent a second time (once only: more would be the loop the refusal is for) */
         val firstRepeated: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -610,7 +615,19 @@ object DashProxy {
                             Log.i(TAG, "live manifest: repeated segments are refused")
                         }
                         if (entry.live) learn(entry, bytes, r.header("Date"))
-                        val toPlayer = if (entry.live) startInsideWindow(entry, capQuality(entry, bytes)) else bytes
+                        var toPlayer = if (entry.live) startInsideWindow(entry, capQuality(entry, bytes)) else bytes
+                        // a live list without its content (owner's log: the player refused 40 of them in a minute, "missing Period node", while the
+                        // channel stood still): said once a minute with where the content was lost, and the list as the site sent it goes out
+                        // when it was the app's own trimming that lost it
+                        if (entry.live && !hasPeriod(toPlayer)) {
+                            val fromSite = hasPeriod(bytes)
+                            val now = System.currentTimeMillis()
+                            if (now - entry.emptyListLogAt > 60_000) {
+                                entry.emptyListLogAt = now
+                                Log.w(TAG, "live manifest without a Period (${bytes.size} bytes from the site, ${toPlayer.size} to the player): ${if (fromSite) "lost in the app's trimming, sent as the site gave it" else "the site sent it so"}")
+                            }
+                            if (fromSite) toPlayer = bytes
+                        }
                         if (trace) Log.i(TAG, "TRACE manifest answered ${bytes.size} bytes, sent ${toPlayer.size}")
                         ex.responseHeaders.add("Content-Type", r.header("Content-Type") ?: "application/dash+xml")
                         ex.sendResponseHeaders(200, toPlayer.size.toLong())

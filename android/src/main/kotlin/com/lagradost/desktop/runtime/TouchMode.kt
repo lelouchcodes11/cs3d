@@ -15,12 +15,4 @@ object TouchMode {
     /** TV layout: never in touch mode, focus always drives the UI */
     @Volatile
     var forceKeyboard = false
-
-    fun onPointerInput() {
-        if (!forceKeyboard && !inTouchMode) inTouchMode = true
-    }
-
-    fun onKeyNavigation() {
-        if (inTouchMode) inTouchMode = false
-    }
 }

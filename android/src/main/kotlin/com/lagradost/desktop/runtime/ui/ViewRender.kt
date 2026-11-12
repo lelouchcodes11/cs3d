@@ -145,41 +145,6 @@ object LayoutReporter {
 /** Window position (px) of every hosted root view (View.getLocationInWindow, DevServer /find) */
 object HostPositions {
     val positions = java.util.Collections.synchronizedMap(java.util.WeakHashMap<View, androidx.compose.ui.geometry.Offset>())
-
-    /** Right-click at window px: long-press the view under the pointer, or the row that owns it. */
-    fun longPressAt(x: Float, y: Float): Boolean {
-        val hits = ArrayList<View>()
-        for ((root, origin) in positions.entries.toList()) {
-            collect(root, origin.x, origin.y, x, y, hits)
-        }
-        // Smallest view is the one actually under the pointer. A full-window ComposeView sits
-        // above the Android tree and would otherwise hide every row.
-        val ordered = hits.sortedBy { it.getWidth().toLong() * it.getHeight() }
-        for (start in ordered) {
-            var target: View? = start
-            while (target != null) {
-                if (target.isLongClickable() && target.isEnabled() && target.isShown()) {
-                    return target.performLongClick()
-                }
-                target = target.getParent() as? View
-            }
-        }
-        return false
-    }
-
-    private fun collect(v: View, left: Float, top: Float, x: Float, y: Float, out: MutableList<View>) {
-        if (v.getVisibility() != View.VISIBLE) return
-        if (x < left || y < top || x >= left + v.getWidth() || y >= top + v.getHeight()) return
-        out.add(v)
-        if (v is ViewGroup) {
-            val sx = v.getScrollX()
-            val sy = v.getScrollY()
-            for (i in 0 until v.getChildCount()) {
-                val c = v.getChildAt(i) ?: continue
-                collect(c, left + c.getLeft() - sx, top + c.getTop() - sy, x, y, out)
-            }
-        }
-    }
 }
 
 // ------------------------------------------------------------------------------------------------

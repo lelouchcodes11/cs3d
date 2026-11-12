@@ -2,12 +2,12 @@
 # the person using the PC, yet they draw (Direct3D), play video and answer the dev server like a normal window. Real mouse and keyboard can not
 # reach it; drive it with the dev server (/nav, /playurl, /screenshot?sk=1, /videostats, /quit).
 #
-#   tools/hidden-desktop/start.ps1 -Port 8771 -Data <data folder> [-Jar <android.jar copy>] [-Extra "-Dx=y -Dz=w"]
+#   tools/hidden-desktop/start.ps1 -Port 8771 -Data <data folder> [-Jar <android.jar copy>] [-Extra "-Dx=y -Dz=w"] [-Exe <packaged copy>CloudStream.exe]
 #
 # Prints the process id. Needs a built classpath: run classpath.ps1 once after building (it writes build/hidden-desktop/classpath.txt).
 # -Jar swaps android/build/libs/android.jar for another copy: two builds can then run at once for a fair A/B (see threads.ps1).
 # Never point -Data at real user data: copy it, and remove sign-ins and sync addresses first.
-param([int]$Port = 8771, [Parameter(Mandatory = $true)][string]$Data, [string]$Jar = "", [string]$Extra = "")
+param([int]$Port = 8771, [Parameter(Mandatory = $true)][string]$Data, [string]$Jar = "", [string]$Extra = "", [string]$Exe = "")
 $ErrorActionPreference = "Stop"
 $desktop = "cs3d-hidden"
 $root = (Resolve-Path "$PSScriptRoot\..\..").Path
@@ -41,7 +41,7 @@ $opts = @("-Xmx3g", "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base
   "--add-opens=java.desktop/java.awt=ALL-UNNAMED", "--add-exports=java.desktop/sun.awt=ALL-UNNAMED", "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED",
   "-Xss4m", "-Dfile.encoding=UTF-8",
   # as the installed app starts (app/build.gradle.kts jpackage options): the extension sandbox needs the security manager allowed
-  "-Djava.security.manager=allow", "-Dsun.java2d.d3d=false", "-XX:+UseShenandoahGC", "-XX:+ExplicitGCInvokesConcurrent", "`"-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path)`"", "-Dcloudstream.devport=$Port", "-Dcloudstream.ipcport=$($Port + 44000)",
+  "-Djava.security.manager=allow", "-Dsun.java2d.d3d=false", "-XX:+UseShenandoahGC", "-XX:SoftMaxHeapSize=768m", "-XX:+ExplicitGCInvokesConcurrent", "`"-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path)`"", "-Dcloudstream.devport=$Port", "-Dcloudstream.ipcport=$($Port + 44000)",
   # no GitHub release checks (60 a hour per address), silent players, mpv-2.dll and WebView2Loader.dll from the project
   "-Dcloudstream.updateApi=http://127.0.0.1:1/", "-Dcloudstream.mute=true", "`"-Djna.library.path=$(& $fwd (Join-Path $root 'app\native\windows-x64'))`"",
   # where the installed app keeps its native files (WebView2 loader, mpv): without it a run outside the project folder falls back to JCEF pages
@@ -49,10 +49,15 @@ $opts = @("-Xmx3g", "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base
 if ($Extra) { $opts += $Extra.Split(" ", [StringSplitOptions]::RemoveEmptyEntries) }
 $argfile = Join-Path $work "args-$Port.txt"
 [IO.File]::WriteAllLines($argfile, $opts + @("-cp", "`"$(& $fwd $cp)`"", "com.lagradost.desktop.MainKt"))
+# -Exe <CloudStream.exe of a packaged COPY>: that app is started instead of the development build (its own runtime and options, as people get it)
+if ($Exe) {
+  $env:JAVA_TOOL_OPTIONS = "-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path) -Dcloudstream.devport=$Port -Dcloudstream.ipcport=$($Port + 44000) -Dcloudstream.updateApi=http://127.0.0.1:1/ -Dcloudstream.mute=true $Extra"
+}
 $java = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME "bin\java.exe" } else { "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot\bin\java.exe" }
 $si = New-Object HiddenDesk+SI; $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si); $si.desk = $desktop
 $pi = New-Object HiddenDesk+PI
-$cmd = New-Object System.Text.StringBuilder "`"$java`" @`"$argfile`""
+$cmd = New-Object System.Text.StringBuilder $(if ($Exe) { "`"$Exe`"" } else { "`"$java`" @`"$argfile`"" })
+if ($Exe) { $java = $Exe }
 # CREATE_NO_WINDOW (no console); the working folder is the work folder, so stray files never land in the project
 if (-not [HiddenDesk]::CreateProcessW($java, $cmd, [IntPtr]::Zero, [IntPtr]::Zero, $false, 0x08000000, [IntPtr]::Zero, $work, [ref]$si, [ref]$pi)) {
   throw "CreateProcess failed $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"

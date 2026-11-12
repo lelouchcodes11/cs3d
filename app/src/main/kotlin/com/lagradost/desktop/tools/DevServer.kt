@@ -1066,6 +1066,18 @@ object DevServer {
                 }
                 ok(ex, "result=$result after ${System.currentTimeMillis() - started} ms")
             }
+            "/clonesite" -> {
+                // dev: Settings > General > Clone site without the dialog: /clonesite?api=Kickassanime&name=Kick2&url=https://example.org (then /apisearch?name=Kick2&q=...)
+                val api = com.lagradost.cloudstream3.APIHolder.allProviders.firstOrNull { it.name.equals(q["api"], true) } ?: return ok(ex, "no provider")
+                val parent = (api as? com.lagradost.desktop.isolate.RemoteMainAPI)?.className ?: api::class.simpleName ?: return ok(ex, "no class name")
+                val site = com.lagradost.cloudstream3.ui.settings.SettingsGeneral.CustomSite(parent, q["name"]!!, q["url"] ?: api.mainUrl, api.lang)
+                val key = com.lagradost.cloudstream3.utils.USER_PROVIDER_API
+                val now = com.lagradost.cloudstream3.CloudStreamApp.getKey<Array<com.lagradost.cloudstream3.ui.settings.SettingsGeneral.CustomSite>>(key)?.toMutableList() ?: mutableListOf()
+                now.add(site)
+                com.lagradost.cloudstream3.CloudStreamApp.setKey(key, now.toTypedArray())
+                com.lagradost.cloudstream3.MainActivity.afterPluginsLoadedEvent.invoke(false)
+                ok(ex, "saved a copy of $parent (${if (api is com.lagradost.desktop.isolate.RemoteMainAPI) "in the sandbox" else "in the app"}) as ${site.name} ${site.url}")
+            }
             "/apisearch" -> {
                 // dev: one provider's search by name, with the error if it throws: /apisearch?name=Zinkmovies%20Monster&q=leo
                 val api = com.lagradost.cloudstream3.APIHolder.allProviders.firstOrNull { it.name.equals(q["name"], true) } ?: return ok(ex, "no provider")

@@ -213,7 +213,8 @@ class SettingsGeneral : BasePreferenceFragmentCompat() {
                     val url = binding.siteUrlInput.text?.toString()
                     val lang = binding.siteLangInput.text?.toString()
                     val realLang = if (lang.isNullOrBlank()) provider.lang else lang
-                    val simpleName = provider::class.simpleName
+                    // desktop: an extension in the sandbox is a stand-in here; the name of its real class is what the copy is made of
+                    val simpleName = (provider as? com.lagradost.desktop.isolate.RemoteMainAPI)?.className ?: provider::class.simpleName
                     if (url.isNullOrBlank() || name.isNullOrBlank() || simpleName == null) {
                         showToast(R.string.error_invalid_data, Toast.LENGTH_SHORT)
                         return@setOnClickListener

@@ -1,7 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.1.1
 
+- **Back to your search results, without searching again.** Opening a title from the results and coming back started the whole search over (every extension asked again, the list rebuilt). The results are now kept while the page is in your history, and the list is where you left it.
+- **Cloudflare checks pass in seconds instead of timing out.** The hidden page passed a site's check after about 6 seconds, but the app did not notice: it waited the full 25 seconds, gave up and left the site alone for 10 minutes. It now sees the pass as it happens and tries it on the real request before believing it. Measured on two protected sites: 26 s before, 6 to 9 s now, and no more "left alone" after a check that was in fact passed.
+- **No more empty window after a video opened at start.** A video opened while the app was still starting (a link or a file the app was started with) and then closed left the window empty until the app was restarted. The cause: when the start-up screen went away, every page was thrown away and built a second time, at every start. The app is now built once.
+- **A playing video no longer downloads every subtitle file.** To put the working subtitles first, the app fetched all of them behind the video, in every language: 429 files in two minutes for one film, with sites answering "Too Many Requests". Now only the files of your subtitle language are looked at when the video starts; the others when you open the Subtitles menu.
+- **Clone site works with the sandbox on.** Settings > General > Clone site (an extension's site under another address, for a site that moved or is blocked) saved the copy but it never appeared when the extension ran in the sandbox, which is the default. The copy is now made inside the sandbox and comes back at every start.
+- **One more Android piece for extensions:** the ready-made link and address patterns (`android.util.Patterns`); an extension that uses them failed to load.
+- **Less memory.** Unused memory could pile up to about 2.7 GB before it was cleaned (measured 70 seconds after a video that failed to load, with under 100 MB really in use). It is now cleaned much earlier: 605 MB at most in the same test.
 - **The Home banner changes slides every 15 seconds** (was 9). Each change redraws the whole window for about a second, which was most of what an open, idle Home cost. Measured: about 10 % of a processor core before, 7.7 % now.
 - **Less battery use with Home open in the background.** The Home banner's progress line redrew the whole window 8 times a second, even with another app in front or the window minimised (9-10 % of a processor core for nothing). It now pauses while the window isn't active and carries on where it stopped when you come back: 1.6 % in the background, 4 % minimised.
 - **Settings read well in a half-screen window.** A drop-down kept its full width beside its description, which became a column of one or two words per line. Now a control that doesn't fit beside the text goes under it; switches stay beside it.

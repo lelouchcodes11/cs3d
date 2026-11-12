@@ -30,6 +30,10 @@ class RemoteMainAPI(private val meta: Meta) : MainAPI() {
         val path: String, val name: String, val mainUrl: String, val lang: String, val types: Set<TvType>, val hasMainPage: Boolean, val hasQuickSearch: Boolean,
         val usesWebView: Boolean, val instantLinkLoading: Boolean, val chromecast: Boolean, val download: Boolean, val vpn: VPNStatus, val providerType: ProviderType,
         val syncNames: Set<SyncIdName>, val mainPage: List<MainPageData>, val hasInterceptor: Boolean = false,
+        /** The simple name of the provider's class in the extension (what a cloned site names as its parent) */
+        val className: String? = null,
+        /** A cloned site: the name of the provider it is a copy of (the copy is made in the sandbox, see ExtensionWorker.ensureClone) */
+        val cloneOf: String? = null,
     ) {
         companion object {
             private inline fun <reified E : Enum<E>> enumOf(node: JsonNode?, default: E): E = enumValues<E>().firstOrNull { it.name == node?.asText() } ?: default
@@ -43,6 +47,7 @@ class RemoteMainAPI(private val meta: Meta) : MainAPI() {
                 n.get("syncNames").mapNotNull { s -> SyncIdName.values().firstOrNull { it.name == s.asText() } }.toSet(),
                 n.get("mainPage").map { MainPageData(it.get("name").asText(), it.get("data").asText(), it.get("horizontal").asBoolean()) },
                 n.get("hasInterceptor")?.asBoolean() == true,
+                n.get("className")?.takeIf { !it.isNull }?.asText(),
             )
         }
     }
@@ -52,7 +57,19 @@ class RemoteMainAPI(private val meta: Meta) : MainAPI() {
         mainUrl = meta.mainUrl
         lang = meta.lang
         sourcePlugin = meta.path
+        if (meta.cloneOf != null) canBeOverridden = false
     }
+
+    val className: String? get() = meta.className
+    val isClone: Boolean get() = meta.cloneOf != null
+
+    /** This provider under another name and address (Settings > General > Clone site) */
+    fun cloned(name: String, url: String, lang: String): RemoteMainAPI = RemoteMainAPI(
+        Meta(
+            meta.path, name, url.trimEnd('/'), lang, meta.types, meta.hasMainPage, meta.hasQuickSearch, meta.usesWebView, meta.instantLinkLoading, meta.chromecast,
+            meta.download, meta.vpn, meta.providerType, meta.syncNames, meta.mainPage, meta.hasInterceptor, meta.className, cloneOf = meta.name,
+        ),
+    )
 
     override val supportedTypes: Set<TvType> = meta.types
     override val hasMainPage: Boolean = meta.hasMainPage
@@ -92,7 +109,7 @@ class RemoteMainAPI(private val meta: Meta) : MainAPI() {
     }
 
     private fun body(vararg pairs: Pair<String, Any?>) =
-        mapper.createObjectNode().put("path", meta.path).put("api", meta.name).also { n -> pairs.forEach { (k, v) -> n.set<JsonNode>(k, mapper.valueToTree(v)) } }
+        mapper.createObjectNode().put("path", meta.path).put("api", meta.name).also { n -> if (meta.cloneOf != null) n.put("cloneOf", meta.cloneOf).put("cloneUrl", meta.mainUrl).put("cloneLang", meta.lang) }.also { n -> pairs.forEach { (k, v) -> n.set<JsonNode>(k, mapper.valueToTree(v)) } }
 
     private fun items(node: JsonNode?): List<SearchResponse> =
         node?.mapNotNull { IsolationSerde.read(it, SearchResponse::class.java) }.orEmpty()

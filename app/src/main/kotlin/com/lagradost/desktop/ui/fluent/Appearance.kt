@@ -118,8 +118,6 @@ enum class Upscaler(val label: String, val detail: String, val scaler: String, v
     Anime4kC("Anime4K · Mode C", "Low resolution or noisy anime (480p, old DVD rips): removes the noise while enlarging.", "spline36", 2),
     Anime4kAHq("Anime4K · Mode A, high quality", "Mode A with the largest networks. Needs a strong graphics card; it drops frames on a weak one.", "spline36", 3),
     ;
-
-    val isAnime4k: Boolean get() = name.startsWith("Anime4k")
 }
 
 /**

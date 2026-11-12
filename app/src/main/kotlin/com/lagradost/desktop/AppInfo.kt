@@ -10,8 +10,6 @@ object AppInfo {
     const val REPO = "lelouchcodes11/cs3d"
     const val REPO_URL = "https://github.com/$REPO"
     const val RELEASES_URL = "$REPO_URL/releases"
-    const val LATEST_RELEASE_URL = "$RELEASES_URL/latest"
-    const val ISSUES_URL = "$REPO_URL/issues"
 
     /** News, new versions, help and feedback */
 

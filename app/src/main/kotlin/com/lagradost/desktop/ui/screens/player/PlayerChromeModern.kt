@@ -118,7 +118,6 @@ internal val ExpoOut: Easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
 internal fun <T> glide(ms: Int): FiniteAnimationSpec<T> = if (Appearance.motion == Motion.Off) snap() else tween(FluentMotion.ms(ms), easing = ExpoOut)
 
 internal val GlassFill = Color(0xB80F1013)
-internal val GlassBorder = Color(0x29FFFFFF)
 private val HoverFill = Color(0x2EFFFFFF)
 private val Ink = Color(0xFF111114)
 

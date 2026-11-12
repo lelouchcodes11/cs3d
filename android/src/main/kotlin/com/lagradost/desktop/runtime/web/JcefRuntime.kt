@@ -107,11 +107,6 @@ object JcefRuntime {
         return initFuture.get(timeoutMs, TimeUnit.MILLISECONDS)
     }
 
-    fun whenReady(block: (CefApp) -> Unit) {
-        startAsync()
-        initFuture.thenAccept(block)
-    }
-
     /** Chromium's helper processes (jcef_helper.exe: gpu, renderer, network) that run from [dir] */
     private fun helperProcesses(dir: File): List<ProcessHandle> {
         val prefix = dir.absoluteFile.path.lowercase()
@@ -415,9 +410,5 @@ object JcefRuntime {
             )
         }
         return ok
-    }
-
-    fun flushCookies() {
-        cookieManager()?.flushStore(null)
     }
 }

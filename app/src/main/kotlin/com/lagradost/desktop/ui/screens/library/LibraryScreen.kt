@@ -141,7 +141,6 @@ fun LibraryScreen() {
     val apis = vm.availableApiNames
     // how many titles of each kind the whole list has (the switch shows them; one without any anime hides the switch's Anime count as 0)
     val allTitles = titles?.flatMap { it.items }.orEmpty()
-    val animeCount = allTitles.count { it.isAnimeTitle() }
 
     Box(Modifier.fillMaxSize()) {
         when {
