@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Live channels no longer play the same minute over and over.** Channels with ad breaks (WILLOW, FANCODE, PREMIER SPORTS and other channels from the same source) split their live list into several parts at every ad marker. The player read only the first part: it played that piece (often under a minute), ran out, and the channel was opened again on the same piece. The parts are now joined into one before the player sees them, so playback carries on through the breaks. Measured on WILLOW during a match: it used to restart at the same 60 seconds every minute; now it plays on, staying about 30 s behind live.
+- **No more freeze when the player asks for the same piece again.** A rule from an earlier fix (against a 2-second sound loop) refused a live piece the player asked for twice; a player that kept asking froze for about 40 seconds until the channel was reopened. After three refusals in a row the piece is now sent.
+
 ## 1.1.1
 
 - **Experimental Linux build** (`CloudStream-1.1.1-linux-x64.tar.gz`). The same app: Home, search, title pages, extensions, the player (through your system's libmpv; without it the app says what to install instead of opening a broken video page). It looks like the Windows app: the app's own title bar (drag, double-click to maximize, minimize/maximize/close, resizable edges) instead of the system frame, Selawik (Microsoft's open stand-in for Segoe UI) for text and an open outlined icon font (Windows' own fonts may not be shipped). The window draws with OpenGL or, if that fails, the processor, and the About page says "CloudStream for Linux". Not there yet on Linux: the extension sandbox (extensions run in the app), the built-in browser page for Cloudflare checks, tray notifications, media keys and in-app updates.

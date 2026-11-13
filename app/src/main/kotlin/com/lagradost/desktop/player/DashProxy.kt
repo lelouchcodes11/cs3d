@@ -58,8 +58,14 @@ object DashProxy {
     private fun hasPeriod(manifest: ByteArray): Boolean = PERIOD.containsMatchIn(String(manifest, Charsets.ISO_8859_1))
 
     private fun normalize(entry: Entry, bytes: ByteArray): ByteArray {
-        val text = String(bytes, Charsets.UTF_8)
-        val m = HEX_NUMBER.find(text) ?: return bytes
+        val raw = String(bytes, Charsets.UTF_8)
+        // a live manifest split by ad markers into several Periods: ffmpeg reads only the first one (the same piece played again and again)
+        val text = DashPeriods.merge(raw)
+        if (text !== raw && !entry.periodsMerged) {
+            entry.periodsMerged = true
+            Log.i(TAG, "live manifest: ${Regex("<Period\\b").findAll(raw).count()} periods (ad markers) given to the player as one")
+        }
+        val m = HEX_NUMBER.find(text) ?: return if (text === raw) bytes else text.toByteArray(Charsets.UTF_8)
         entry.hexWidth = m.groupValues[1].toInt()
         entry.hexUpper = m.groupValues[2] == "X"
         val decimal = HEX_NUMBER.replace(text) { "\$Number%0${it.groupValues[1]}d\$" }
@@ -279,6 +285,13 @@ object DashProxy {
         /** The segments the newest manifest lists (live manifests with segment templates) */
         @Volatile
         var timeline: DashTimeline? = null
+
+        /** per stream: the live segment refused as a repeat and how many times in a row (see the handler: the fourth ask is answered) */
+        val refusedInARow = ConcurrentHashMap<String, Pair<String, Int>>()
+
+        /** the manifest came in several Periods that were given to the player as one (logged once) */
+        @Volatile
+        var periodsMerged = false
 
         /** server clock minus this PC's clock (the manifest response's Date), for templates whose segments follow the clock */
         @Volatile
@@ -557,10 +570,20 @@ object DashProxy {
         // reading it again on purpose (WILLOW, 30 s behind the edge: 26 refusals in 4 minutes, each one a piece of sound skipped): it is answered.
         val wellBehindEdge = matched != null && matched.first.following(matched.second, 3, entry.serverNow()).size >= 3
         if (key != null && !wellBehindEdge && entry.last[key] == rest && ((entry.sentCount[key] ?: 0) >= 2 || !entry.firstRepeated.add(key))) {
-            if (trace || entry.repeats++ % 25 == 0) Log.i(TAG, "live segment asked for again, refused (${entry.repeats}): ${rest.takeLast(60)}")
-            Thread.sleep(250)
-            ex.sendResponseHeaders(404, -1)
-            return
+            // A player that asks for the same segment a fourth time in a row is stuck on it, not looping: WILLOW (2026-11-13) was refused ten times in
+            // four seconds, then stood still for 40 s until the channel was opened again. It gets the segment then: at worst two seconds of sound once more.
+            val inARow = entry.refusedInARow[key]?.takeIf { it.first == rest }?.second?.plus(1) ?: 1
+            entry.refusedInARow[key] = rest to inARow
+            if (inARow <= 3) {
+                if (trace || entry.repeats++ % 25 == 0) Log.i(TAG, "live segment asked for again, refused (${entry.repeats}): ${rest.takeLast(60)}")
+                Thread.sleep(250)
+                ex.sendResponseHeaders(404, -1)
+                return
+            }
+            entry.refusedInARow.remove(key)
+            Log.i(TAG, "live segment asked for $inARow times in a row: answered (the player is stuck on it): ${rest.takeLast(60)}")
+        } else if (key != null) {
+            entry.refusedInARow.remove(key)
         }
         // the next segments of this stream are fetched while this one is answered; one that was fetched ahead is answered from memory
         // only for a stream the player has read from before: it opens the first segment of every quality (and of every language) and plays one of them,
