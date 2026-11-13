@@ -148,6 +148,8 @@ object Isolation {
         if (!enabledSetting()) { inApp[path] = "sandbox off"; return false }
         if (PluginSandbox.isTrusted(data.internalName)) { inApp[path] = "trusted"; return false }
         if (data.internalName.lowercase() in WORKS_ON_APP_DATA) { inApp[path] = "syncs the app's library"; return false }
+        // the sandbox is made of Windows parts (AppContainer); on Linux and macOS extensions run in the app, watched by the Java guard of PluginSandbox
+        if (!com.lagradost.desktop.DesktopPlatform.isWindows) { inApp[path] = "the sandbox needs Windows"; return false }
         if (!AppContainerLauncher.available) return cannotSandbox(path, data.internalName, "Windows cannot start it on this PC")
         // found earlier to need the app's own browser: in the app only when the user allows extensions there; else the sandbox is tried again
         if (data.internalName.lowercase() in moved() && fallbackAllowed()) { inApp[path] = "its browser page could not be made"; return false }

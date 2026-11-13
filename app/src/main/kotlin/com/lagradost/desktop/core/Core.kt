@@ -199,6 +199,11 @@ object Navigator {
             val dimMs = if (route is Route.Player && top !is Route.Player) com.lagradost.desktop.ui.fluent.FluentMotion.ms(ENTER_PLAYER_MS) else 0
             // a double click on Play (or on an episode) opened the video twice, one page on the other, and Back had to be pressed twice
             if (route is Route.Player && top is Route.Player && System.currentTimeMillis() - playerOpenedAt < 700) return@invokeLater
+            // Linux and macOS play with the system's libmpv: without it the video page could not even be built (the window broke and stayed dark)
+            if (route is Route.Player && !com.lagradost.desktop.DesktopPlatform.isWindows && com.lagradost.desktop.player.Mpv.unavailableReason != null) {
+                com.lagradost.desktop.ui.Toasts.show("Videos need libmpv, which is not installed. Install it (Debian/Ubuntu: sudo apt install libmpv2, Fedora: mpv-libs, Arch: mpv) and start the app again.", true)
+                return@invokeLater
+            }
             val push = {
                 if (route is Route.Player) playerOpenedAt = System.currentTimeMillis()
                 lastWasBack = false

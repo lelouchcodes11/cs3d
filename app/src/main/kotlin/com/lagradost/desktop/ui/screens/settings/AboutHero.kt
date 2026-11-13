@@ -49,7 +49,7 @@ internal fun AboutHero() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             brandLogo?.let { Image(it, "CloudStream", Modifier.size(68.dp)) }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FText("CloudStream for Windows", style = Fluent.type.title.copy(fontSize = 26.sp, lineHeight = 32.sp), maxLines = 2)
+                FText(AppInfo.productName, style = Fluent.type.title.copy(fontSize = 26.sp, lineHeight = 32.sp), maxLines = 2)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Badge(Tr.f("Version {0}", AppInfo.version), accent = true)
                     if (AppInfo.isPreRelease) Badge(Tr.t("pre-release"))

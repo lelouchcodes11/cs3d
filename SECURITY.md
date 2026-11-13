@@ -98,5 +98,5 @@ Updates are installed only when GitHub's SHA-256 for the file matches the downlo
 ## 6. Reporting a Vulnerability
 
 If you discover a security vulnerability in CloudStream for Windows:
-- Please report it via [GitHub Issues](../../issues) or contact the maintainer on [Discord](https://discord.gg/u82JU5JDM) / [Telegram](https://t.me/cs3d_official).
+- Please report it via [GitHub Issues](../../issues) or contact the maintainer on [Discord](https://discord.gg/9XJQx8eYSG) / [Telegram](https://t.me/cs3d_official).
 - Include the affected version, steps to reproduce, and any relevant logs (`Settings → About → Copy diagnostics`).

@@ -841,7 +841,9 @@ compose.desktop {
             packageVersion = desktopVersion
             description = "CloudStream for desktop"
             vendor = "CloudStream Desktop"
-            modules("java.sql", "java.naming", "jdk.unsupported", "jdk.crypto.ec", "jdk.crypto.mscapi", "java.management", "jdk.management", "java.net.http", "jdk.accessibility", "jdk.httpserver", "jdk.localedata", "jdk.charsets")
+            modules("java.sql", "java.naming", "jdk.unsupported", "jdk.crypto.ec", "java.management", "jdk.management", "java.net.http", "jdk.accessibility", "jdk.httpserver", "jdk.localedata", "jdk.charsets")
+            // Windows certificate store (TrustStore reads it); the module exists only in a Windows JDK
+            if (System.getProperty("os.name").lowercase().contains("win")) modules("jdk.crypto.mscapi")
             windows {
                 iconFile.set(project.file("src/main/icons/icon.ico"))
                 menuGroup = "CloudStream"
@@ -982,6 +984,26 @@ tasks.register<Zip>("portableZip") {
     dependsOn("portableDist")
     from(rootProject.layout.projectDirectory.dir("dist/CloudStream-Portable")) { exclude("data", "data/**") }
     archiveFileName.set("CloudStream-$desktopVersion-windows-x64-portable.zip")
+    destinationDirectory.set(rootProject.layout.projectDirectory.dir("dist/release"))
+}
+
+// Experimental Linux build (run on Linux): ./gradlew :app:linuxTar -> dist/release/CloudStream-<version>-linux-x64.tar.gz
+// The app folder of createDistributable (bin/CloudStream starts it) with the start-up picture; video needs the system's libmpv (package libmpv2).
+tasks.register<Tar>("linuxTar") {
+    group = "distribution"
+    description = "Experimental Linux app folder as a tar.gz in dist/release"
+    dependsOn("createDistributable")
+    onlyIf { !System.getProperty("os.name").lowercase().contains("win") }
+    compression = Compression.GZIP
+    // Gradle 9 makes archives reproducible with every file 644: the launcher, the Java runtime and its helpers must stay executable
+    useFileSystemPermissions()
+    into("CloudStream") {
+        from(layout.buildDirectory.dir("compose/binaries/main/app/CloudStream"))
+        from("src/main/splash") { into("lib/app") }
+        from(rootProject.layout.projectDirectory.file("tools/linux/README-LINUX.txt"))
+        from(rootProject.layout.projectDirectory.file("tools/linux/install-desktop-entry.sh")) { filePermissions { unix("755") } }
+    }
+    archiveFileName.set("CloudStream-$desktopVersion-linux-x64.tar.gz")
     destinationDirectory.set(rootProject.layout.projectDirectory.dir("dist/release"))
 }
 

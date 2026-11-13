@@ -65,7 +65,9 @@ object Graphics {
     private const val TAG = "Graphics"
     private const val PREF_KEY = "desktop_gfx_renderer"
     private const val HEALTHY_AFTER_MS = 20_000L
-    private val chain = listOf("DIRECT3D", "OPENGL", "SOFTWARE_FAST")
+    // Direct3D exists only on Windows (skiko refuses it elsewhere and the window is never made): Linux starts with OpenGL
+    private val windows = System.getProperty("os.name").orEmpty().lowercase().contains("win")
+    private val chain = if (windows) listOf("DIRECT3D", "OPENGL", "SOFTWARE_FAST") else listOf("OPENGL", "SOFTWARE_FAST")
 
     /** What the renderer is in this run, and why (for the diagnostics) */
     @Volatile
@@ -73,7 +75,7 @@ object Graphics {
         private set
 
     @Volatile
-    var api: String = "DIRECT3D"
+    var api: String = chain[0]
         private set
 
     /** The automatic choice stepped down from Direct3D (the app did not start properly with the faster renderers) */
@@ -141,7 +143,7 @@ object Graphics {
             }
             if (explicitProperty) { api = System.getProperty("skiko.renderApi"); note = "$api (set on the command line)"; return }
             val choice = choice()
-            if (choice != RenderChoice.Auto) {
+            if (choice != RenderChoice.Auto && (windows || choice != RenderChoice.Direct3D)) {
                 api = choice.api!!
                 System.setProperty("skiko.renderApi", api)
                 note = "$api (your choice)"

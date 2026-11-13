@@ -66,20 +66,20 @@ interface Mpv : Library {
             return dir
         }
 
+        /** Why libmpv can not be loaded, or null when it can. Linux has no libmpv of the app's own: the system's is used, which may be missing */
+        val unavailableReason: String? by lazy { runCatching { INSTANCE; null }.getOrElse { it.message?.lineSequence()?.firstOrNull() ?: it.toString() } }
+
         val INSTANCE: Mpv by lazy {
             runCatching { nativesDir() }.getOrNull()?.let { dir ->
                 val current = System.getProperty("jna.library.path") ?: ""
                 System.setProperty("jna.library.path", if (current.isEmpty()) dir.absolutePath else "${dir.absolutePath};$current")
             }
-            try {
-                Native.load("mpv-2", Mpv::class.java)
-            } catch (t: Throwable) {
-                try {
-                    Native.load("libmpv-2", Mpv::class.java)
-                } catch (t2: Throwable) {
-                    Native.load("mpv", Mpv::class.java)
-                }
-            }
+            // Windows: mpv-2.dll next to the app. Linux: the system's libmpv (package libmpv2, or libmpv1 on older systems); the plain
+            // libmpv.so link only exists when the development package is installed, so the versioned names are tried too
+            val names = listOf("mpv-2", "libmpv-2", "mpv", "libmpv.so.2", "libmpv.so.1", "libmpv.2.dylib")
+            var last: Throwable? = null
+            names.firstNotNullOfOrNull { name -> runCatching { Native.load(name, Mpv::class.java) }.onFailure { last = it }.getOrNull() }
+                ?: throw (last ?: UnsatisfiedLinkError("libmpv not found"))
         }
     }
 

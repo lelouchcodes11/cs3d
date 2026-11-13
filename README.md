@@ -42,6 +42,9 @@ Get the latest version from **[Releases](../../releases/latest)** (Windows 10 or
 
 - **Setup** (`…-setup.exe`, recommended): installs without admin rights and updates itself.
 - **MSI** (`….msi`): a standard Windows installer.
+- **Portable** (`…-portable.zip`): unzip anywhere; everything stays in its folder.
+
+**Linux (experimental):** `…-linux-x64.tar.gz`. Unpack it, install your system's libmpv (`sudo apt install libmpv2` on Debian/Ubuntu, `mpv-libs` on Fedora, `mpv` on Arch) and run `CloudStream/bin/CloudStream`. Extensions run without the Windows sandbox and there is no built-in browser page (Cloudflare checks) yet; see `README-LINUX.txt` inside.
 
 Windows SmartScreen may warn on first run because the installer is not signed: click **More info → Run anyway**.
 
@@ -96,6 +99,7 @@ Needs **JDK 21** and **[Git LFS](https://git-lfs.com)** (run `git lfs install` b
 ```powershell
 .\gradlew.bat :app:runDev          # run the app
 .\gradlew.bat :app:portableDist    # build a portable copy in dist/
+./gradlew :app:linuxTar            # on Linux: the experimental Linux build in dist/release/
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).

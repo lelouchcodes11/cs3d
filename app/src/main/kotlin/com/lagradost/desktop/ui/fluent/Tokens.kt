@@ -178,9 +178,20 @@ object FluentFonts {
         }.getOrDefault(text)
     }
 
+    private val segoeIconsFile: File? by lazy { file("SegoeIcons.ttf") ?: file("segmdl2.ttf") }
+
+    /** The icons are Segoe's (Windows). Elsewhere (Linux) they come from Material Icons in the app's resources, see [Icons.portable] */
+    val segoeIcons: Boolean get() = segoeIconsFile != null
+
     val icons: FontFamily by lazy {
-        val f = file("SegoeIcons.ttf") ?: file("segmdl2.ttf")
-        if (f == null) FontFamily.Default else FontFamily(Font(f))
+        segoeIconsFile?.let { return@lazy FontFamily(Font(it)) }
+        // Material Icons (Apache License 2.0, fonts/MaterialIcons-LICENSE.txt): Segoe Fluent Icons may not be shipped with the app
+        runCatching {
+            FontFamily(androidx.compose.ui.text.platform.Font(
+                identity = "MaterialIcons-Regular",
+                data = FluentFonts::class.java.classLoader.getResourceAsStream("fonts/MaterialIcons-Regular.ttf")!!.use { it.readBytes() },
+            ))
+        }.getOrDefault(FontFamily.Default)
     }
 }
 

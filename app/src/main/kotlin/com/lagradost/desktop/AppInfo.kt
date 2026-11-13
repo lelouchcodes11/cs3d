@@ -16,6 +16,13 @@ object AppInfo {
     /** The community server: chat, help, ideas */
     const val DISCORD_URL = "https://discord.gg/9XJQx8eYSG"
 
+    /** The product name with its system: "CloudStream for Windows", or "for Linux" on the experimental Linux build */
+    val productName: String = when {
+        DesktopPlatform.isWindows -> "CloudStream for Windows"
+        DesktopPlatform.isMac -> "CloudStream for macOS"
+        else -> "CloudStream for Linux"
+    }
+
     /** Donations from India (UPI and cards) */
     const val DONATE_URL = "https://razorpay.me/@lelouch11"
 

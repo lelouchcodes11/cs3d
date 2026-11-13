@@ -31,7 +31,7 @@ object Diagnostics {
     fun build(): String {
         val sb = StringBuilder()
         fun line(label: String, value: String?) { sb.append(label).append(": ").append(value?.takeIf { it.isNotBlank() } ?: "unknown").append('\n') }
-        line("CloudStream for Windows", "${AppInfo.version}${if (AppInfo.isPreRelease) " (pre-release)" else ""}, engine ${com.lagradost.cloudstream3.BuildConfig.VERSION_NAME}")
+        line(AppInfo.productName, "${AppInfo.version}${if (AppInfo.isPreRelease) " (pre-release)" else ""}, engine ${com.lagradost.cloudstream3.BuildConfig.VERSION_NAME}")
         line("Windows", System.getProperty("os.name") + " " + System.getProperty("os.version") + " " + System.getProperty("os.arch"))
         line("Java", System.getProperty("java.vendor") + " " + System.getProperty("java.version"))
         runCatching {

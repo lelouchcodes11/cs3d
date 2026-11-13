@@ -88,6 +88,8 @@ object WinMedia {
     /** Starts the message loop thread that owns the hot keys and the keyboard hook (they are made while a [handler] is set) */
     fun startMediaKeys() {
         if (started) return
+        // the keys are caught with Windows hot keys; other systems have none of this (user32)
+        if (!com.lagradost.desktop.DesktopPlatform.isWindows) return
         started = true
         val thread = Thread({
             val user = User32.INSTANCE

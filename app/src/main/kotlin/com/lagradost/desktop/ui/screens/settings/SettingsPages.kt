@@ -220,7 +220,7 @@ internal fun aboutGroups(): List<SettingGroup> {
     return listOf(
         group("") {
             // the name, the version and the places to go, as one card with buttons (the rows of Discord, support and the source code were four plain lines)
-            block("CloudStream for Windows", "Version ${AppInfo.version}", "version build github source code releases bug report license discord chat community support donate razorpay upi india buy me a coffee international") { AboutHero() }
+            block(AppInfo.productName, "Version ${AppInfo.version}", "version build github source code releases bug report license discord chat community support donate razorpay upi india buy me a coffee international") { AboutHero() }
             link("The CloudStream project", "This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.", "upstream credits") { DesktopPlatform.openExternalBrowser("https://github.com/recloudstream/cloudstream") }
             link("Animated profile pictures", "Drawn characters and creatures that blink and float, plus short scene clips.", "avatar character anime credits") { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }
             block("Legal notice", null, "disclaimer copyright") { PreferenceCard(Preference.PreferenceItem.InfoPreference(title = stringResource(R.string.legal_notice_text))) }
