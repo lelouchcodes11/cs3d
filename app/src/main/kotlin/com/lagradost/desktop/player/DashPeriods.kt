@@ -9,7 +9,7 @@ package com.lagradost.desktop.player
  * 2026-11-13: "willow links are playing the same part again and again").
  *
  * The markers only split the timeline: every Period has the same segment templates, and the numbers and times go on from one to the next. Then the
- * timelines of the later Periods are appended to the first one's and the first one's length is dropped. Anything else is left as the site sent it.
+ * timelines of the later Periods are appended to the first one's and the first one's length is dropped. Periods that do not join so are served as the newest one alone.
  */
 object DashPeriods {
     private val DYNAMIC = Regex("""<MPD\b[^>]*\btype\s*=\s*["']dynamic["']""")
@@ -44,19 +44,22 @@ object DashPeriods {
         return out.takeIf { it.isNotEmpty() }
     }
 
-    /** [xml] with its Periods made one when they only split one timeline (see the class notes); otherwise [xml] itself */
+    /** [xml] (a live manifest) with ONE Period: all of them joined when they only split one timeline, else the newest one (see the class notes) */
     fun merge(xml: String): String {
         if (!DYNAMIC.containsMatchIn(xml.take(4096))) return xml
         val periods = PERIOD.findAll(xml).toList()
         if (periods.size < 2) return xml
-        val all = periods.map { templates(it.value) ?: return xml }
+        // Periods that are not one timeline (other segment names, a gap in the numbers, a real ad from elsewhere): the player gets the newest one, the
+        // one that is live now. Not as good as joining (what was listed before it is out of reach), but never stuck on an old piece.
+        fun newestOnly() = xml.substring(0, periods.first().range.first) + periods.last().value + xml.substring(periods.last().range.last + 1)
+        val all = periods.map { templates(it.value) ?: return newestOnly() }
         val first = all.first()
         for (i in 1 until all.size) {
             val prev = all[i - 1]
             val next = all[i]
-            if (next.map { it.media } != first.map { it.media }) return xml
+            if (next.map { it.media } != first.map { it.media }) return newestOnly()
             // the numbers go on from one Period to the next, for every stream
-            for (k in next.indices) if (next[k].startNumber != prev[k].startNumber + prev[k].count) return xml
+            for (k in next.indices) if (next[k].startNumber != prev[k].startNumber + prev[k].count) return newestOnly()
         }
         // the first Period, each timeline holding the segments of every Period, with no length of its own (it ended at the first marker)
         var k = 0

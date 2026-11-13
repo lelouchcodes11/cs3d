@@ -45,12 +45,15 @@ class DashPeriodsTest {
     }
 
     @Test
-    fun aGapInTheNumbersLeavesTheManifestAlone() {
+    fun periodsThatDoNotJoinGiveTheNewestOne() {
         val gap = mpd(
             period(1, "PT0S", "PT10S", 100, """<S t="0" d="50" r="1"/>"""),
             period(2, "PT10S", null, 105, """<S t="100" d="50"/>"""),
         )
-        assertSame(gap, DashPeriods.merge(gap))
+        val out = DashPeriods.merge(gap)
+        assertEquals(1, Regex("<Period\\b").findAll(out).count())
+        assertTrue(out.contains("""<Period start="PT10S" id="2">"""))
+        assertFalse(out.contains("""id="1""""))
     }
 
     @Test
