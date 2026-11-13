@@ -164,8 +164,25 @@ object FluentFonts {
             file("segoeuib.ttf")?.let { Font(it, FontWeight.Bold) },
             file("segoeuii.ttf")?.let { Font(it, FontWeight.Normal, FontStyle.Italic) },
         )
-        if (fonts.isEmpty()) FontFamily.Default else FontFamily(fonts)
+        if (fonts.isNotEmpty()) FontFamily(fonts) else selawik() ?: FontFamily.Default
     }
+
+    /** One of the app's own font files (resources/fonts) */
+    private fun bundled(name: String, weight: FontWeight) = androidx.compose.ui.text.platform.Font(
+        identity = name, weight = weight,
+        data = FluentFonts::class.java.classLoader.getResourceAsStream("fonts/$name")!!.use { it.readBytes() },
+    )
+
+    /**
+     * Without Windows' Segoe UI (Linux): Selawik, Microsoft's open font made to stand in for Segoe UI (SIL Open Font License, fonts/Selawik-OFL.txt).
+     * It has Latin letters; other scripts come from the system's fonts as before.
+     */
+    private fun selawik(): FontFamily? = runCatching {
+        FontFamily(
+            bundled("selawkl.ttf", FontWeight.Light), bundled("selawksl.ttf", FontWeight(350)), bundled("selawk.ttf", FontWeight.Normal),
+            bundled("selawksb.ttf", FontWeight.SemiBold), bundled("selawkb.ttf", FontWeight.Bold),
+        )
+    }.getOrNull()
 
     /** Manrope SemiBold and Bold from the app's resources (SIL Open Font License, fonts/Manrope-OFL.txt); the Segoe UI family when they are not found */
     val heading: FontFamily by lazy {
@@ -185,13 +202,9 @@ object FluentFonts {
 
     val icons: FontFamily by lazy {
         segoeIconsFile?.let { return@lazy FontFamily(Font(it)) }
-        // Material Icons (Apache License 2.0, fonts/MaterialIcons-LICENSE.txt): Segoe Fluent Icons may not be shipped with the app
-        runCatching {
-            FontFamily(androidx.compose.ui.text.platform.Font(
-                identity = "MaterialIcons-Regular",
-                data = FluentFonts::class.java.classLoader.getResourceAsStream("fonts/MaterialIcons-Regular.ttf")!!.use { it.readBytes() },
-            ))
-        }.getOrDefault(FontFamily.Default)
+        // Material Icons Outlined (Apache License 2.0, fonts/MaterialIcons-LICENSE.txt), thin outlines like Fluent's: Segoe Fluent Icons may not be
+        // shipped with the app
+        runCatching { FontFamily(bundled("MaterialIconsOutlined-Regular.otf", FontWeight.Normal)) }.getOrDefault(FontFamily.Default)
     }
 }
 

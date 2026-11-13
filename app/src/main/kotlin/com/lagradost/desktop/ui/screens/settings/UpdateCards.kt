@@ -54,14 +54,14 @@ private fun installLabel(kind: UpdateCheck.InstallKind) = when (kind) {
     UpdateCheck.InstallKind.Setup -> "Installed with the setup program"
     UpdateCheck.InstallKind.Msi -> "Installed with the MSI package"
     UpdateCheck.InstallKind.Portable -> "Portable copy"
-    UpdateCheck.InstallKind.Other -> "Development run"
+    UpdateCheck.InstallKind.Other -> if (com.lagradost.desktop.DesktopPlatform.isWindows) "Development run" else "Linux build (experimental)"
 }
 
 private fun installAbout(kind: UpdateCheck.InstallKind) = when (kind) {
     UpdateCheck.InstallKind.Setup -> "Downloads the update and restarts the app. Your data stays."
     UpdateCheck.InstallKind.Msi -> "Update now downloads the new MSI package, checks it and installs it. Your settings, accounts and extensions stay."
     UpdateCheck.InstallKind.Portable -> "Downloads the update and replaces the program files. Your data stays."
-    UpdateCheck.InstallKind.Other -> "This is not an installed copy, so the app cannot replace itself: a new version is downloaded from the release page."
+    UpdateCheck.InstallKind.Other -> if (com.lagradost.desktop.DesktopPlatform.isWindows) "This is not an installed copy, so the app cannot replace itself: a new version is downloaded from the release page." else "The Linux build does not update itself yet: download the new version from the release page and unpack it over this one (your data stays)."
 }
 
 @Composable

@@ -30,6 +30,40 @@ import java.util.concurrent.ConcurrentHashMap
  * exclusive full screen mode.
  */
 object WinChrome {
+    /**
+     * Linux (and macOS): no window procedure to hook, so the main window is made without the system's frame (see NativeApp) and the app's own
+     * title bar does the frame's work: the bar drags the window ([Caption.kt]), its buttons minimize, maximize and close ([portableCommand]), and
+     * thin edges resize it (PortableChrome.kt). The system frame looked nothing like the app (WSLg's is a grey X11 bar); `-Dcloudstream.titlebar=native` keeps it.
+     */
+    val portable: Boolean = !System.getProperty("os.name").orEmpty().lowercase().contains("win") && System.getProperty("cloudstream.titlebar") != "native"
+
+    private val portableFullscreen: Boolean get() = portable && com.lagradost.desktop.ui.DesktopUiHost.windowState?.placement == androidx.compose.ui.window.WindowPlacement.Fullscreen
+
+    /** The main window, when [portable] */
+    var portableFrame: java.awt.Frame? = null
+        private set
+
+    private fun installPortable(window: Window): Boolean {
+        val frame = window as? java.awt.Frame ?: return false
+        portableFrame = frame
+        fun read(state: Int) { maximized = (state and java.awt.Frame.MAXIMIZED_BOTH) == java.awt.Frame.MAXIMIZED_BOTH }
+        read(frame.extendedState)
+        frame.addWindowStateListener { read(it.newState) }
+        enabled = true
+        return true
+    }
+
+    private fun portableCommand(frame: java.awt.Frame, id: Int) {
+        when (id) {
+            1 -> frame.extendedState = frame.extendedState or java.awt.Frame.ICONIFIED
+            2 -> when {
+                fullscreen -> com.lagradost.desktop.runtime.AndroidRuntime.host.setFullscreen(false)
+                maximized -> frame.extendedState = java.awt.Frame.NORMAL
+                else -> frame.extendedState = java.awt.Frame.MAXIMIZED_BOTH
+            }
+            else -> frame.dispatchEvent(java.awt.event.WindowEvent(frame, java.awt.event.WindowEvent.WINDOW_CLOSING))
+        }
+    }
     /** The subclass is installed: pages must leave room for the caption buttons */
     var enabled by mutableStateOf(false)
         private set
@@ -91,10 +125,11 @@ object WinChrome {
     var keepBar by mutableStateOf(false)
 
     /** The caption bar hides itself in full screen and, unless Settings > Look says otherwise, while the window is maximized (not in pip) */
-    val autoHides: Boolean get() = enabled && (fullscreen || (maximized && com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar && !com.lagradost.desktop.ui.fluent.InputMode.touchUi)) && !pip && !keepBar
+    // (Linux: the bar is never hidden in a maximized window: there is no pointer watch at the top edge to bring it back)
+    val autoHides: Boolean get() = enabled && !portable && (fullscreen || (maximized && com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar && !com.lagradost.desktop.ui.fluent.InputMode.touchUi)) && !pip && !keepBar
 
     /** The title bar is a row of its own above the app (a window that is not full screen; a maximized one only when it is set to keep it) */
-    val windowedBar: Boolean get() = enabled && !fullscreen && !pip && (!maximized || keepBar || !com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar || com.lagradost.desktop.ui.fluent.InputMode.touchUi)
+    val windowedBar: Boolean get() = enabled && !fullscreen && !pip && !portableFullscreen && (portable || !maximized || keepBar || !com.lagradost.desktop.ui.fluent.Appearance.hideTitleBar || com.lagradost.desktop.ui.fluent.InputMode.touchUi)
 
     /** Dev: a pretend pointer position (window px) used instead of the real pointer by [pollReveal] */
     @Volatile
@@ -268,6 +303,7 @@ object WinChrome {
     fun install(window: Window): Boolean {
         if (enabled) return true
         if (System.getProperty("cloudstream.titlebar") == "native") return false
+        if (portable) return installPortable(window)
         val api = user ?: return false
         return runCatching {
             val hwnd = hwndOf(window)
@@ -350,6 +386,7 @@ object WinChrome {
     }
 
     fun performCaptionCommand(id: Int) {
+        portableFrame?.let { f -> portableCommand(f, id); return }
         val api = user ?: return
         val hwnd = topHwnd ?: return
         val command = when (id) {
@@ -863,6 +900,7 @@ object WinChrome {
     val moving: Boolean get() = moveArmed
 
     fun windowMoveBegin() {
+        if (portable) return // the bar moves the window itself there (Caption.kt)
         val api = user ?: return
         android.util.Log.i("WinChrome", "title bar pressed: pip=$pip fullscreen=$fullscreen armed=$moveArmed")
         if (pip || fullscreen || topHwnd == null || moveArmed) return

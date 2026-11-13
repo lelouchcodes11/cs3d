@@ -7,6 +7,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxWidth
 import com.lagradost.desktop.ui.shell.ExternalTitleBar
 import com.lagradost.desktop.ui.shell.RevealedTitleBar
+import com.lagradost.desktop.ui.shell.PortableResizeEdges
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -77,6 +78,8 @@ fun ApplicationScope.NativeWindow() {
         },
         state = state,
         title = com.lagradost.desktop.ui.shell.ShellState.windowTitle,
+        // Linux: no system frame, the app's own title bar instead (WinChrome.portable)
+        undecorated = com.lagradost.desktop.platform.WinChrome.portable,
         icon = painterResource(R.mipmap.ic_launcher),
         onPreviewKeyEvent = NativeKeys::onPreviewKey,
         onKeyEvent = NativeKeys::onKey,
@@ -251,6 +254,8 @@ fun ApplicationScope.NativeWindow() {
                 }
                 com.lagradost.desktop.ui.DropHint()
                 com.lagradost.desktop.ui.fluent.DimmerLayer()
+                // Linux: the edges of the frameless window resize it
+                PortableResizeEdges()
             }
         }
     }

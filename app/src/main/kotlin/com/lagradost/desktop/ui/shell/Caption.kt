@@ -71,10 +71,37 @@ private fun Modifier.moveWindowByPress(): Modifier = this.pointerInput(Unit) {
                     WinChrome.performCaptionCommand(2)
                 } else {
                     lastPress = now
-                    WinChrome.windowMoveBegin()
+                    val frame = WinChrome.portableFrame
+                    if (frame == null) WinChrome.windowMoveBegin() else dragPortable(frame)
                 }
             }
         }
+    }
+}
+
+/**
+ * Linux: the window follows the pointer until the button is let go (screen positions, so the moving window does not shift the numbers). Dragging a
+ * maximized window first restores it under the pointer, as a Windows title bar does.
+ */
+private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.dragPortable(frame: java.awt.Frame) {
+    val start = java.awt.MouseInfo.getPointerInfo()?.location ?: return
+    var origin = frame.location
+    var restored = !WinChrome.maximized
+    while (true) {
+        val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Main)
+        if (!e.buttons.isPrimaryPressed) break
+        val p = java.awt.MouseInfo.getPointerInfo()?.location ?: continue
+        val dx = p.x - start.x
+        val dy = p.y - start.y
+        if (!restored) {
+            if (dx * dx + dy * dy < 64) continue
+            // keep the pointer at the same share of the bar's width after the window shrinks back
+            val share = (start.x - frame.x).toDouble() / frame.width.coerceAtLeast(1)
+            frame.extendedState = java.awt.Frame.NORMAL
+            origin = java.awt.Point(start.x - (frame.width * share).toInt(), start.y - 12)
+            restored = true
+        }
+        frame.setLocation(origin.x + dx, origin.y + dy)
     }
 }
 
