@@ -264,9 +264,12 @@ fun ApplicationScope.NativeWindow() {
 /** Window wide shortcuts of the native UI */
 object NativeKeys {
     fun onPreviewKey(e: KeyEvent): Boolean {
+        // a shortcut being recorded (Settings > Keyboard shortcuts) takes every key, also the ones the app uses
+        com.lagradost.desktop.ui.screens.player.KeyRecorder.listener?.let { return it(e) }
         com.lagradost.desktop.ui.fluent.InputMode.lastInputAt = System.currentTimeMillis()
-        // Space is held to play at 2x: the player needs to see it let go
-        if (e.type == KeyEventType.KeyUp && e.key == Key.Spacebar) return playerKey(e)
+        // keys held to play at 2x, and Ctrl tapped alone: the player needs to see them let go
+        if (e.type == KeyEventType.KeyUp) { val r = playerKey(e); com.lagradost.desktop.ui.screens.player.PlayerKeys.observe(e); return r }
+        com.lagradost.desktop.ui.screens.player.PlayerKeys.observe(e)
         if (e.type != KeyEventType.KeyDown) return false
         when (e.key) {
             Key.Tab, Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight -> InputMode.keyboard = true
@@ -279,7 +282,8 @@ object NativeKeys {
                 if (host.isFullscreen()) { host.setFullscreen(false); true } else false
             } || playerKey(e)
             e.isAltPressed && e.key == Key.DirectionLeft -> Navigator.back()
-            e.isCtrlPressed && (e.key == Key.K || e.key == Key.E) -> {
+            // Ctrl+F too, as in a browser (not on the video page, where F is full screen)
+            e.isCtrlPressed && (e.key == Key.K || e.key == Key.E || (e.key == Key.F && Navigator.current.route !is com.lagradost.desktop.core.Route.Player)) -> {
                 // the floating bar look has no search box in its bar: on Home the one of the extension shown there opens
                 if (Navigator.current.route is com.lagradost.desktop.core.Route.Home && (com.lagradost.desktop.ui.fluent.Appearance.navPosition == com.lagradost.desktop.ui.fluent.NavPosition.Floating || com.lagradost.desktop.ui.fluent.Skins.spec != null)) ShellState.homeSearchOpen = true
                 runCatching { ShellState.searchFocus.requestFocus() }
@@ -335,7 +339,7 @@ object NativeKeys {
     private fun focusedRect(): androidx.compose.ui.geometry.Rect? = focused?.takeIf { it.isAttached }?.let { it.boundsInWindow() }
 
     /** The player's shortcuts work for the whole window, whatever has the focus (nothing while a dialog is open) */
-    private fun playerKey(e: KeyEvent): Boolean = !e.isAltPressed && com.lagradost.desktop.ui.screens.player.PlayerKeys.handler?.invoke(e) == true
+    private fun playerKey(e: KeyEvent): Boolean = com.lagradost.desktop.ui.screens.player.PlayerKeys.handler?.invoke(e) == true
 }
 
 /** Deep links (`cloudstreamapp://`, `cloudstreamrepo://`, `cloudstreamsearch://`, `https://cs.repo/`, `csshare:`) */

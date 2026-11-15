@@ -138,7 +138,7 @@ object ControlsGuard {
         // the choice was the user's, and it does not work on this PC: it is not tried again on the next video or the next start
         com.lagradost.desktop.ui.fluent.Appearance.nativePlayer = false
         com.lagradost.desktop.ui.fluent.Appearance.save()
-        com.lagradost.desktop.ui.Toasts.show("The GPU player's controls could not be shown on this PC. Using the standard player (Settings > Player > Video).", true)
+        com.lagradost.desktop.ui.Toasts.show("The GPU player's controls could not be shown on this PC. Using the standard player (Settings > Player > Advanced player settings).", true)
         PlayerSession.active?.restartPlayback()
     }
 

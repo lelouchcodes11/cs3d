@@ -80,7 +80,8 @@ fun showAccountPicker(forStartup: Boolean = false) {
                     }
                     if (!adding) {
                         item {
-                            AddProfileTile(onClick = { adding = true })
+                            // a new profile would be a way out of a kids profile: a grown-up's PIN first
+                            AddProfileTile(onClick = { com.lagradost.desktop.core.Kids.guard { adding = true } })
                         }
                     }
                 }

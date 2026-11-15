@@ -49,7 +49,7 @@ fun CloudflareSolveBar() {
     }
     val route = com.lagradost.desktop.core.Navigator.current.route
     val quietHere = route is com.lagradost.desktop.core.Route.Player || route is com.lagradost.desktop.core.Route.Setup
-    val waiting = if (quietHere) emptyList() else solves.toList().filter { now - it.startedAt > 10_000 }
+    val waiting = if (quietHere || com.lagradost.desktop.net.CheckWindow.showing) emptyList() else solves.toList().filter { now - it.startedAt > 10_000 }
     // the text stays while the chip fades away
     val hosts = remember { arrayOf("") }
     if (waiting.isNotEmpty()) hosts[0] = waiting.map { it.host.removePrefix("www.") }.distinct().joinToString(", ")

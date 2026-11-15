@@ -158,12 +158,20 @@ object RepositoryManager {
         } else null
     }
 
+    /**
+     * desktop: repositories that did not answer with a list the last time they were read in this run ("gone": the address says not found, "broken":
+     * an answer that is not a repository, "unreachable": no answer). The Extensions page marks them, so a dead one is easy to find and remove (a
+     * list of 42 had 6 dead ones, asked again at every start).
+     */
+    val problems = androidx.compose.runtime.mutableStateMapOf<String, String>()
+
     suspend fun parseRepository(url: String): Repository? {
+        var status: String? = "unreachable"
         return safeAsync {
             // Take manifestVersion and such into account later
-            app.get(convertRawGitUrl(url), cacheTime = 5, cacheUnit = TimeUnit.MINUTES)
-                .parsedSafe<Repository>()
-        }
+            val r = app.get(convertRawGitUrl(url), cacheTime = 5, cacheUnit = TimeUnit.MINUTES)
+            r.parsedSafe<Repository>().also { status = if (it != null) null else if (r.code in 400..499) "gone" else "broken" }
+        }.also { runCatching { if (status == null) problems.remove(url) else problems[url] = status!! } }
     }
 
     private suspend fun parsePlugins(pluginUrls: String): List<SitePlugin> {

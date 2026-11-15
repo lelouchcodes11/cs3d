@@ -37,6 +37,42 @@ object ExternalPlayerHints {
         }
     }
 
+    /** Energy Media Player is not installed: it is a Microsoft Store app, so the Store page opens */
+    fun energyMissing() {
+        EventQueue.invokeLater {
+            Overlays.message(
+                "Energy Media Player was not found",
+                "Energy Media Player is a free app from the Microsoft Store. Install it and try again, or choose another player.",
+                primary = "Open the Store",
+                onPrimary = { DesktopPlatform.openExternalBrowser(ExternalPlayers.ENERGY_STORE) },
+            )
+        }
+    }
+
+    /**
+     * The source needs headers (a referer, cookies) that Energy can not send, so the app's own server sends them; Windows keeps Store apps away from
+     * servers on the same PC until they are allowed once (an admin prompt). [retry] opens the video again after that.
+     */
+    fun energyNeedsLoopback(retry: (() -> Unit)? = null) {
+        EventQueue.invokeLater {
+            Overlays.message(
+                "Allow Energy to play this source",
+                "This source only plays with extra information the app adds to each request. Energy gets it through the app, and Windows keeps Store apps from talking to other apps on this PC until you allow it once. Windows will ask for permission (admin). Sources without this need play in Energy straight away.",
+                primary = "Allow Energy",
+                onPrimary = {
+                    Thread {
+                        if (!ExternalPlayers.allowEnergyLoopback()) return@Thread
+                        // the admin prompt is answered in its own window: wait for the change to show up, then open the video again
+                        repeat(60) {
+                            Thread.sleep(1000)
+                            if (ExternalPlayers.energyLoopbackAllowed()) { retry?.let { EventQueue.invokeLater(it) }; return@Thread }
+                        }
+                    }.apply { isDaemon = true }.start()
+                },
+            )
+        }
+    }
+
     /** A file chooser for mpv.exe (or mpvnet.exe); the choice is kept. Returns whether one was chosen. */
     fun chooseMpv(): Boolean {
         val dialog = java.awt.FileDialog(DesktopUiHost.window, "Choose mpv.exe", java.awt.FileDialog.LOAD)

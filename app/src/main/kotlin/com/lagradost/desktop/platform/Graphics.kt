@@ -19,6 +19,7 @@ enum class PerformanceMode(val label: String, val detail: String) {
     Auto("Automatic", "Light on a PC with little memory or few processor cores, the full look on any other."),
     Light("Light", "Fewer and shorter animations, no moving profile pictures or hover zoom, no seek preview, and a video that stops blending frames. Smaller picture and texture caches."),
     Full("Full", "Everything on, whatever the PC."),
+    Smooth("High performance", "The full look, and more of this PC for it: bigger picture and texture caches, more memory before it is tidied up, rows got ready further ahead, and a higher priority for the app. For a PC with plenty of memory."),
 }
 
 /** Is this PC a weak one? Memory and processor cores are what decides whether the full look runs smoothly */
@@ -47,7 +48,7 @@ object LowEnd {
     fun active(mode: PerformanceMode): Boolean = when (mode) {
         PerformanceMode.Auto -> detected
         PerformanceMode.Light -> true
-        PerformanceMode.Full -> false
+        PerformanceMode.Full, PerformanceMode.Smooth -> false
     }
 }
 

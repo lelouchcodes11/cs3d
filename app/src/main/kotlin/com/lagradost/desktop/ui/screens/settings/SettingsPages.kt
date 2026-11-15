@@ -49,10 +49,12 @@ internal fun sourcesGroups(): List<SettingGroup> {
     val up = Upstream(SettingsUpdatesScreen.getPreferences())
     return listOf(
         group("Manage") {
-            link("Extensions", "Repositories and installed extensions: add, remove, update and see where each one runs", "repository repositories plugins install add remove") {
+            link("Extensions", "Repositories and installed extensions: add, remove, update and see where each one runs", "repository repositories plugins install add remove", icon = painterResource(R.drawable.extension_24px)) {
                 com.lagradost.desktop.core.Navigator.goTab(com.lagradost.desktop.core.Tab.Extensions)
             }
-            link("Stremio add-ons and torrents", "Add-ons as sources, their subtitles, and torrent streaming", "stremio torrserver torrent magnet addon") { SettingsNav.page = "stremio" }
+            link("Stremio add-ons, TV playlists and torrents", "Add-ons and IPTV playlists as sources, their subtitles, and torrent streaming", "stremio torrserver torrent magnet addon iptv m3u xtream playlist live tv channels", icon = painterResource(R.drawable.ic_baseline_tv_24)) { SettingsNav.page = "stremio" }
+            // a copy of an extension under another address (a mirror of its site): it belongs with the extensions, not the network settings
+            pref(general.title(stringResource(R.string.add_site_pref)), "domain mirror bypass blocked site clone copy")
         },
         group("Languages and order") {
             pref(general.key("provider_lang_key"), "extension languages providers")
@@ -74,7 +76,6 @@ internal fun securityGroups(): List<SettingGroup> {
     val up = Upstream(SettingsGeneralScreen.getPreferences())
     return listOf(
         group("Network") {
-            pref(up.title(stringResource(R.string.add_site_pref)), "domain mirror bypass blocked site")
             pref(up.key("dns_key"), "doh resolver blocked")
             pref(publicDnsPreference(), "dns filter 1.1.1.2 unknown host blocked sink 0.0.0.0 anikoto megaplay movieblast")
             pref(up.key("jsdelivr_proxy_key"), "cdn github blocked")
@@ -98,12 +99,6 @@ internal fun playerGroups(): List<SettingGroup> {
             pref(up.title(stringResource(R.string.source_priority)), "quality order profile")
             smoothSourcesItem()
         },
-        group("Video") { videoItems() },
-        group("Audio") {
-            pref(audioDecoderPreference(), "hardware software passthrough spdif sound")
-            pref(stableVolumePreference(), "stable volume loudness normalize level equal music dialogue speech night")
-            pref(dynamicRangePreference(), "compressor loudness night volume")
-        },
         group("Subtitles") {
             link(stringResource(R.string.player_subtitles_settings), stringResource(R.string.player_subtitles_settings_des), "captions font size colour outline shadow background") { SettingsNav.page = "subtitles" }
             pref(subtitleEncodingPreference(), "charset utf-8 language characters")
@@ -111,6 +106,24 @@ internal fun playerGroups(): List<SettingGroup> {
             card("Auto subtitle sync (experimental)", "Matches subtitle files to the voices in every video (not live streams)", "automatic subtitle sync timing delay offset match voices align") {
                 com.lagradost.desktop.ui.fluent.ToggleSwitch(com.lagradost.desktop.ui.screens.player.SubtitleSync.automatic, { com.lagradost.desktop.ui.screens.player.SubtitleSync.automatic = it })
             }
+        },
+        // the technical rows: one step away (Nuvio-style), still found by the search
+        group("More") {
+            link("Advanced player settings", "Video decoding and upscaling, audio output and sound, the player controls and the cache", "advanced technical") { SettingsNav.page = "playeradvanced" }
+        },
+    )
+}
+
+/** Settings > Player > Advanced player settings: video, audio, controls and cache */
+@Composable
+internal fun playerAdvancedGroups(): List<SettingGroup> {
+    val up = Upstream(SettingsPlayerScreen.getPreferences())
+    return listOf(
+        group("Video") { videoItems() },
+        group("Audio") {
+            pref(audioDecoderPreference(), "hardware software passthrough spdif sound")
+            pref(stableVolumePreference(), "stable volume loudness normalize level equal music dialogue speech night")
+            pref(dynamicRangePreference(), "compressor loudness night volume")
         },
         group("Controls") { controlItems() },
         group("Cache") { pref(up.title(stringResource(R.string.video_buffer_clear_settings)), "clear storage space delete temporary") },
@@ -184,6 +197,16 @@ internal fun accountGroups(): List<SettingGroup> {
     }
 }
 
+/** Settings > Advanced: one place for the pages most people never need (Nuvio-style); their rows are found by the search as before */
+@Composable
+internal fun advancedGroups(): List<SettingGroup> = listOf(
+    group("") {
+        link("Network and security", "DNS and blocked sites, Cloudflare checks and the sandbox that keeps extensions in check", "advanced") { SettingsNav.page = "security" }
+        link("Keyboard shortcuts", "Change the keys of the player, and see the keys of the whole app", "advanced") { SettingsNav.page = "shortcuts" }
+        link("Backup and reset", "Save and restore your data, set up again or start over", "advanced") { SettingsNav.page = "backup" }
+    },
+)
+
 /** Settings > Updates: this version and the newest release (the cards are in UpdateCards) */
 @Composable
 internal fun updateGroups(): List<SettingGroup> = listOf(
@@ -220,13 +243,15 @@ internal fun aboutGroups(): List<SettingGroup> {
     return listOf(
         group("") {
             // the name, the version and the places to go, as one card with buttons (the rows of Discord, support and the source code were four plain lines)
-            block(AppInfo.productName, "Version ${AppInfo.version}", "version build github source code releases bug report license discord chat community support donate razorpay upi india buy me a coffee international") { AboutHero() }
+            block(AppInfo.productName, "Version ${AppInfo.version}", "version build github source code releases bug report license discord telegram news channel chat community support donate razorpay upi india buy me a coffee international") { AboutHero() }
+            // the Updates page lives here now (it was a page of its own in the list)
+            link("Updates", "Check for a new version, choose Stable or Beta, see what's new", "update upgrade new version release channel beta stable") { SettingsNav.page = "updates" }
             link("The CloudStream project", "This app is built on the engine of CloudStream, an open source (GPL-3.0) video app for Android.", "upstream credits") { DesktopPlatform.openExternalBrowser("https://github.com/recloudstream/cloudstream") }
             link("Animated profile pictures", "Drawn characters and creatures that blink and float, plus short scene clips.", "avatar character anime credits") { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }
             block("Legal notice", null, "disclaimer copyright") { PreferenceCard(Preference.PreferenceItem.InfoPreference(title = stringResource(R.string.legal_notice_text))) }
         },
         group("Help") {
-            link("Keyboard shortcuts", "The keys of the player (play, seek, volume, subtitles) and of the whole app (search, back, drop a file); F1 in the player shows them too", "hotkeys keys") { com.lagradost.desktop.ui.screens.player.Shortcuts.show() }
+            link("Keyboard shortcuts", "See and change the keys of the player, and the keys of the whole app; F1 in the player shows them too", "hotkeys keys customise change") { SettingsNav.page = "shortcuts" }
             link("Copy diagnostics", "Copies what a bug report needs. Passwords and tokens are left out.", "bug report support debug") {
                 com.lagradost.desktop.Diagnostics.copyToClipboard { n -> com.lagradost.desktop.ui.Toasts.show("Diagnostics copied ($n lines): paste them into your message", false) }
             }
@@ -371,4 +396,32 @@ internal fun accountWords(title: String): String {
         "animeskip" in t -> "skip intro opening ending"
         else -> ""
     }
+}
+
+/**
+ * Settings > Keyboard shortcuts: every shortcut of the player in its group, each with its keys to change (the same rows as the player's own
+ * shortcuts window), then the keys that are always the same and the keys of the whole app.
+ */
+@Composable
+internal fun shortcutGroups(): List<SettingGroup> {
+    val keymap = com.lagradost.desktop.ui.screens.player.PlayerKeymap
+    keymap.version.intValue
+    val actions = com.lagradost.desktop.ui.screens.player.PlayerAction.entries
+    val groups = com.lagradost.desktop.ui.screens.player.KeyGroup.entries.map { g ->
+        group(g.title) {
+            if (g.ordinal == 0) action {
+                com.lagradost.desktop.ui.fluent.Button("Reset all", { com.lagradost.desktop.ui.screens.player.Shortcuts.stopRecording(); keymap.resetAll() }, icon = com.lagradost.desktop.ui.fluent.Icons.Refresh, height = 30.dp, enabled = !keymap.allDefault)
+            }
+            for (a in actions.filter { it.group == g }) {
+                card(a.label, a.about, com.lagradost.desktop.ui.screens.player.Shortcuts.keywords(a)) { com.lagradost.desktop.ui.screens.player.KeyBindings(a) }
+            }
+        }
+    }
+    val fixed = group("Always the same in the player") {
+        for ((keys, what) in com.lagradost.desktop.ui.screens.player.Shortcuts.fixed) card(what, keys, "shortcut key keyboard $keys")
+    }
+    val everywhere = group("Everywhere in the app") {
+        for ((keys, what) in com.lagradost.desktop.ui.screens.player.Shortcuts.everywhere) card(what, keys, "shortcut key keyboard $keys")
+    }
+    return groups + fixed + everywhere
 }

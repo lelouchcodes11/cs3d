@@ -46,7 +46,7 @@ object ImageLoader {
             .memoryCache {
                 // desktop: the decoded pictures are Skia bitmaps in native memory, which the Java heap size says nothing about: 10 % of a 3.5 GB maximum heap
                 // let them take 350 MB on a PC that often has less than 2 GB free. 160 MB holds some 150 posters and the banners of the page in view.
-                MemoryCache.Builder().maxSizeBytes(160L * 1024 * 1024)
+                MemoryCache.Builder().maxSizeBytes((if (com.lagradost.desktop.platform.HighPerformance.lightAtStart) 64L else if (com.lagradost.desktop.platform.HighPerformance.atStart) 512L else 160L) * 1024 * 1024)
                     .strongReferencesEnabled(false)
                     .build()
             }
@@ -55,7 +55,7 @@ object ImageLoader {
                     .directory(context.cacheDir.resolve("cs3_image_cache").toOkioPath())
                     // desktop: a fixed size (the percentage of the disk, capped at 250 MB, made it the largest folder of the data). 400 MB keeps the posters of
                     // many visits: on a slow connection a picture that is on the disk is the difference between a page that is there and one that fills in
-                    .maxSizeBytes(400L * 1024 * 1024)
+                    .maxSizeBytes((if (com.lagradost.desktop.platform.HighPerformance.atStart) 1536L else 400L) * 1024 * 1024)
                     .build()
             }
             /** Pass interceptors with care, unnecessary passing tokens to servers
@@ -66,12 +66,14 @@ object ImageLoader {
                 // (cast, posters, gallery, episode stills) comes from image.tmdb.org, so 5 at a time left most of a page grey for seconds
                 add(OkHttpNetworkFetcherFactory(callFactory = {
                     buildDefaultClient(context).newBuilder()
-                        .dispatcher(okhttp3.Dispatcher().apply { maxRequests = 64; maxRequestsPerHost = Integer.getInteger("cloudstream.imagehost", 16) })
+                        .dispatcher(okhttp3.Dispatcher().apply { maxRequests = 64; maxRequestsPerHost = Integer.getInteger("cloudstream.imagehost", if (com.lagradost.desktop.platform.HighPerformance.atStart) 32 else 16) })
                         .addInterceptor(com.lagradost.desktop.net.CloudflarePass.pictures).build()
                 }))
                 // desktop: no BitmapFactoryDecoder/bitmapConfig (Android-only); resource ids need a fetcher on the JVM
                 add(coil3.ResourceIntFetcher.Factory(context))
                 add(WrappedImageFallback)
+                // desktop: a picture that failed for good is not fetched again on every redraw (see FailedPictures)
+                add(com.lagradost.desktop.ui.components.FailedPictures)
                 // desktop: sharp pictures (filtered shrinking, the larger size of an address that has one)
                 add(com.lagradost.desktop.ui.components.ImageQuality.upgrade)
                 add(com.lagradost.desktop.ui.components.ImageQuality.decoder)
@@ -91,6 +93,8 @@ object ImageLoader {
             eventListener(object : EventListener() {
                 override fun onError(request: ImageRequest, result: ErrorResult) {
                     super.onError(request, result)
+                    // desktop: a picture already known to be broken, and a card with no picture address, are not news
+                    if (result.throwable is com.lagradost.desktop.ui.components.FailedPictures.KnownBroken || request.data == null || request.data == coil3.request.NullRequestData) return
                     Log.e(TAG, "Image load error: ${result.throwable.message ?: result.throwable}")
                     Log.e(TAG, "  URL: ${request.data}")
                     Log.e(TAG, "  allowHardware: ${request.allowHardware}")

@@ -106,7 +106,8 @@ internal class TimetableState(val first: LocalDate, val zone: ZoneId) {
     var refresh by mutableStateOf(0)
     var loaded by mutableStateOf<Result<List<AiringSchedule.Airing>>?>(null)
     var nowMs by mutableLongStateOf(System.currentTimeMillis())
-    var showAired by mutableStateOf(false)
+    /** The episodes that aired earlier today: shown or folded by the user; null = folded while more are to come today, shown when none are (late at night the page was empty) */
+    var showAired by mutableStateOf<Boolean?>(null)
 
     /** The filter in use: the viewer's choice, else the library's titles when any of them airs this week, else everything */
     internal fun activeShow(): Show = show ?: if (loaded?.getOrNull().orEmpty().any { it.inList }) Show.Mine else Show.All
@@ -267,8 +268,9 @@ private fun LazyListScope.timeline(t: TimetableState, list: List<AiringSchedule.
     val coming = if (today) list.filter { it.airingAt > nowSec } else list
     val perRow = ((width - TimeColumn - RailColumn + 12.dp) / (CardMin + 12.dp)).toInt().coerceAtLeast(1)
     if (aired.isNotEmpty()) {
-        item(key = "fold") { AiredFold(aired.size, t.showAired) { t.showAired = !t.showAired } }
-        if (t.showAired) slots(aired).forEach { (time, items) -> item(key = "aired-$time") { Slot(time, items, true, nowSec, perRow, last = false) } }
+        val open = t.showAired ?: (today && coming.isEmpty())
+        item(key = "fold") { AiredFold(aired.size, open) { t.showAired = !open } }
+        if (open) slots(aired).forEach { (time, items) -> item(key = "aired-$time") { Slot(time, items, true, nowSec, perRow, last = false) } }
     }
     if (today) item(key = "now") { NowLine(t.nowMs) }
     val rest = slots(coming)

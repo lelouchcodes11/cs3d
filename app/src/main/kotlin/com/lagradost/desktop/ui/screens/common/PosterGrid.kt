@@ -118,7 +118,7 @@ fun SectionPage(route: Route.Section) {
         items, onEnd = if (route.more != null) loadMore else null,
         header = {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                com.lagradost.desktop.ui.fluent.PageHeader(route.title, Modifier.padding(bottom = 8.dp), subtitle = "${items.size}${if (hasMore) "+" else ""} titles")
+                com.lagradost.desktop.ui.fluent.PageHeader(route.title, Modifier.padding(bottom = 8.dp), subtitle = if (items.size == 1 && !hasMore) "1 title" else "${items.size}${if (hasMore) "+" else ""} titles")
             }
         },
         footer = {

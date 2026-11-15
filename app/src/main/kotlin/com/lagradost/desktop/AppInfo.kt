@@ -12,6 +12,7 @@ object AppInfo {
     const val RELEASES_URL = "$REPO_URL/releases"
 
     /** News, new versions, help and feedback */
+    const val TELEGRAM_URL = "https://t.me/cs3d_official"
 
     /** The community server: chat, help, ideas */
     const val DISCORD_URL = "https://discord.gg/9XJQx8eYSG"

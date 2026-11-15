@@ -53,12 +53,9 @@ fun ScheduleScreen() {
                 PageHeader(
                     "Schedule", icon = Icons.Calendar, tint = androidx.compose.ui.graphics.Color(0xFFFF6B9A),
                     subtitle = when (tab) {
-                        TIMETABLE -> "Anime airing, day by day, in your time"
-                        SOON -> "Films in cinemas and on streaming, new series and anime, in the next three months"
-                        else -> {
-                            val n = UpdateNotices.unread
-                            if (UpdateNotices.items.isEmpty()) "New episodes of the titles you follow show up here" else if (n > 0) "$n new" else "You are up to date"
-                        }
+                        // only what is news: the tabs say what each list is
+                        TIMETABLE, SOON -> null
+                        else -> UpdateNotices.unread.takeIf { it > 0 }?.let { "$it new" }
                     },
                     trailing = {
                         if (tab == NOTICES) {

@@ -24,14 +24,14 @@ import com.lagradost.desktop.ui.fluent.Overlays
 import kotlinx.coroutines.delay
 
 /**
- * Once every four days, a few seconds after the app is up, a small window asks for a star on GitHub or a donation. Never on the very first day
- * and never over the player or the setup. There is no way to switch it off: it comes again four days later, whatever was clicked before.
+ * Once every two days, a few seconds after the app is up, a small window asks for a star on GitHub or a donation. Never on the very first day
+ * and never over the player or the setup. There is no way to switch it off: it comes again two days later, whatever was clicked before.
  */
 object SupportPrompt {
     private const val NEXT_KEY = "desktop_support_next_at"
     private const val FIRST_KEY = "desktop_first_run_at"
     private const val DAY = 24 * 3_600_000L
-    private const val GAP = 4 * DAY
+    private const val GAP = 2 * DAY
 
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
 
@@ -44,7 +44,7 @@ object SupportPrompt {
         now >= p.getLong(NEXT_KEY, 0L)
     }.getOrDefault(false)
 
-    /** The next window is four days away, whatever the person does with this one */
+    /** The next window is two days away, whatever the person does with this one */
     private fun postpone() { runCatching { prefs().edit().putLong(NEXT_KEY, System.currentTimeMillis() + GAP).apply() } }
 
     private var activeDialog: Overlays.Dialog? = null
@@ -87,11 +87,14 @@ object SupportPrompt {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 FText("It is free, has no ads and is made in spare time. A star on GitHub helps other people find it, and a donation keeps it growing. Thank you!", color = Fluent.colors.textSecondary)
-                // the two ways to donate side by side (outside India the Razorpay page does not take the card: Buy Me a Coffee does), then Discord;
-                // the footer keeps one main action and "Later" (three buttons of the same weight there read as a form)
+                // the two ways to donate side by side (outside India the Razorpay page does not take the card: Buy Me a Coffee does), then the two community
+                // places on a row of their own; the footer keeps one main action and "Later" (three buttons of the same weight there read as a form)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button("Donate (India)", { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) }, icon = Icons.Favorite, height = 34.dp)
                     Button("Buy Me a Coffee", { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_INTL_URL) }, icon = Icons.Favorite, height = 34.dp)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button("Telegram channel", { DesktopPlatform.openExternalBrowser(AppInfo.TELEGRAM_URL) }, icon = Icons.Link, height = 34.dp)
                     Button("Discord server", { DesktopPlatform.openExternalBrowser(AppInfo.DISCORD_URL) }, icon = Icons.Link, height = 34.dp)
                 }
             }

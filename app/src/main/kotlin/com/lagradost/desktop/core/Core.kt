@@ -185,6 +185,12 @@ object Navigator {
     }
 
     fun go(route: Route) {
+        // a kids profile opens Settings and Extensions only with a grown-up's PIN
+        if (Kids.needsGuard(route) && Kids.active) return Kids.guard { goNow(route) }
+        goNow(route)
+    }
+
+    private fun goNow(route: Route) {
         EventQueue.invokeLater {
             flushEntering()
             val top = stack.last().route

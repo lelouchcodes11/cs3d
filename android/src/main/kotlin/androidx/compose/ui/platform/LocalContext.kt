@@ -1,3 +1,5 @@
+@file:JvmName("AndroidCompositionLocals_androidKt")
+
 package androidx.compose.ui.platform
 
 import android.content.Context

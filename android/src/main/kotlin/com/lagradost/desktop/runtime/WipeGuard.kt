@@ -88,12 +88,12 @@ object WipeGuard {
     }
 
     /** Logs what happened (with who asked, to find the caller) and tells the app, at most every 10 s for a file */
-    internal fun report(file: String, kept: Int, total: Int) {
+    internal fun report(file: String, kept: Int, total: Int, keys: List<String> = emptyList()) {
         val now = System.currentTimeMillis()
         val quiet = synchronized(lastReport) { (lastReport[file] ?: 0L).let { now - it < 10_000L }.also { if (!it) lastReport[file] = now } }
         if (quiet) return
         val who = Throwable().stackTrace.asSequence().map { it.toString() }.filter { "SharedPreferencesImpl" !in it && "WipeGuard" !in it }.take(14).joinToString("\n    at ")
-        Log.w(TAG, "kept $kept of the $total keys of $file that were about to be deleted; asked from:\n    at $who")
+        Log.w(TAG, "kept $kept of the $total keys of $file that were about to be deleted (${keys.take(6).joinToString()}${if (keys.size > 6) ", ..." else ""}); asked from:\n    at $who")
         runCatching { onBlocked?.invoke(file, kept, total) }
     }
 }

@@ -239,7 +239,7 @@ object PluginSandbox {
         if (duplicate) return
         Log.w(TAG, "${if (blocked) "refused" else "would refuse"}: $plugin tried to $what  [${whereAmI()}]")
         if (blocked && told.add(plugin)) {
-            runCatching { com.lagradost.desktop.ui.Toasts.show("$plugin was stopped from trying to $what. See Settings > Network and security.", true) }
+            runCatching { com.lagradost.desktop.ui.Toasts.show("$plugin was stopped from trying to $what. See Settings > Advanced > Network and security.", true) }
         }
     }
 

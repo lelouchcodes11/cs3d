@@ -215,6 +215,8 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
 
     override fun currentUrl(): String? = lastUrl
 
+    override fun pageBackground(argb: Int) = setPageBackground(argb)
+
     override fun load(url: String, headers: Map<String, String>, postData: ByteArray?) {
         if (destroyed) return
         if (debug) Log.i(TAG, "$id load $url (state $state)")

@@ -9,6 +9,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
@@ -243,11 +245,51 @@ object Tmdb {
         return a == b || a.contains(b) || b.contains(a)
     }
 
+    // ------------------------------------------------------------------ the entry chosen by hand ("Wrong match?")
+
+    private val matchPrefs get() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
+    private fun matchKey(title: String, isMovie: Boolean) = "tmdb_match/" + (if (isMovie) "m/" else "t/") + cleanTitle(title).lowercase().filter { it.isLetterOrDigit() }
+
+    /** Changes with every choice: a title page reads it to look again */
+    var matchVersion by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+
+    /** (is a film, TMDB id) chosen for this title; id 0 = "no match"; null = found automatically */
+    fun chosenMatch(title: String, isMovie: Boolean): Pair<Boolean, Int>? {
+        val v = matchPrefs.getString(matchKey(title, isMovie), null) ?: return null
+        if (v == "none") return isMovie to 0
+        return (v.substringBefore(':') == "movie") to (v.substringAfter(':').toIntOrNull() ?: return null)
+    }
+
+    /** [card] null with [none] = do not use TMDB for this title; both null/false = back to automatic */
+    fun chooseMatch(title: String, isMovie: Boolean, card: TmdbCard?, none: Boolean = false) {
+        val key = matchKey(title, isMovie)
+        matchPrefs.edit().apply {
+            when {
+                card != null -> putString(key, (if (card.isMovie) "movie:" else "tv:") + card.tmdbId)
+                none -> putString(key, "none")
+                else -> remove(key)
+            }
+        }.apply()
+        matchVersion++
+    }
+
+    /** Films and series for the "Wrong match?" search, best first ("Title 2019" narrows by year) */
+    suspend fun searchCandidates(query: String): List<TmdbCard> {
+        val y = Regex("""\b(19|20)\d{2}\s*$""").find(query.trim())?.value?.trim()
+        val q = if (y != null) query.trim().removeSuffix(y).trim() else query.trim()
+        if (q.isBlank()) return emptyList()
+        val all = cards(json("/search/multi", "query" to q)?.optJSONArray("results"), null)
+        return if (y != null) all.sortedBy { if (it.year == y.toInt()) 0 else 1 } else all
+    }
+
     /**
      * What TMDB knows about a title an extension showed. The ids the extension gave (IMDb, TMDB) are used first, then a search by
      * name and year; null when nothing fits.
      */
     suspend fun info(title: String, year: Int?, isMovie: Boolean, hints: Collection<String>): TmdbInfo? {
+        // the viewer said which entry it is ("Wrong match?" on the title page), or that none is
+        chosenMatch(title, isMovie)?.let { (m, chosen) -> return if (chosen > 0) load(chosen, m) else null }
         val joined = hints.joinToString(" ")
         var id = tmdbRegex.find(joined)?.groupValues?.get(1)?.toIntOrNull()
         var movie = isMovie

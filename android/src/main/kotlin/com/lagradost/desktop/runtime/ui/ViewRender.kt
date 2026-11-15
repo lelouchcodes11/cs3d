@@ -263,7 +263,8 @@ fun ViewNode(view: View, modifier: Modifier = Modifier) {
 @Composable
 private fun ComposeViewNode(view: androidx.compose.ui.platform.ComposeView, modifier: Modifier) {
     val version = view.contentVersion
-    Box(modifier) {
+    // the content is measured at its own height when the view leaves the height to it (see ComposeView.wrapsHeight): the view then takes that height
+    Layout(content = {
         key(version) {
             val ctx = view.getContext()
             val backDispatcherOwner = ctx as? androidx.activity.OnBackPressedDispatcherOwner
@@ -274,6 +275,12 @@ private fun ComposeViewNode(view: androidx.compose.ui.platform.ComposeView, modi
                 view.getContent()?.invoke()
             }
         }
+    }, modifier = modifier) { measurables, constraints ->
+        val wraps = view.wrapsHeight
+        val inner = if (wraps) Constraints(constraints.minWidth, constraints.maxWidth, 0, max(1, view.heightLimit)) else constraints
+        val placeables = measurables.map { it.measure(inner) }
+        if (wraps) view.reportContentHeight(placeables.maxOfOrNull { it.height } ?: 0)
+        layout(constraints.maxWidth, constraints.maxHeight) { placeables.forEach { it.place(0, 0) } }
     }
 }
 

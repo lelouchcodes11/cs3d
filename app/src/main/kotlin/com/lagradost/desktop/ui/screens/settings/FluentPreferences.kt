@@ -161,7 +161,12 @@ internal fun PreferenceCard(item: Preference.PreferenceItem<*, *>) {
         }
         is Preference.PreferenceItem.MultiSelectListPreference<*> -> {
             val values by item.preference.collectAsState()
-            SettingsCard(item.title, item.internalSubtitleProvider(values, item.entries), item.icon, onClick = {
+            // everything chosen: "All" (the kinds of title listed all fifteen of them in a line that ran over two rows)
+            val all = item.entries.size > 3 && values.size >= item.entries.size && item.entries.keys.all { it in values }
+            val missing = item.entries.filterKeys { it !in values }.values.toList()
+            // nearly everything chosen: "All except X, Y" (a list of thirteen names said less)
+            val summary = if (all) "All" else if (item.entries.size > 6 && missing.isNotEmpty() && missing.size <= 3) "All except " + missing.joinToString(", ") else item.internalSubtitleProvider(values, item.entries)
+            SettingsCard(item.title, summary, item.icon, onClick = {
                 val keys = item.entries.keys.toList()
                 val working = mutableStateListOf<Any?>().apply { addAll(values) }
                 Overlays.show(

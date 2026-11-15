@@ -431,7 +431,7 @@ object IsolatedHost {
         require(intercept.length <= 600 && additional.size <= 12 && additional.all { it.length <= 600 }) { "patterns too long" }
         // the page of a Cloudflare check (the pattern the extension's CloudflareKiller uses) is not waited for as long as another page: see CloudflareGate.UNATTENDED_MS
         val cloudflareSolve = intercept == ".^"
-        val timeout = (b.get("timeout")?.asLong() ?: WebViewResolver.DEFAULT_TIMEOUT).coerceIn(1_000L, 90_000L).let { if (cloudflareSolve) minOf(it, com.lagradost.desktop.runtime.web.CloudflareGate.UNATTENDED_MS) else it }
+        val timeout = (b.get("timeout")?.asLong() ?: WebViewResolver.DEFAULT_TIMEOUT).coerceIn(1_000L, 90_000L).let { if (cloudflareSolve) com.lagradost.desktop.net.CheckWindow.ATTENDED_MS + 30_000 else it }
         val headers = b.get("headers")?.fields()?.asSequence()?.associate { it.key to it.value.asText() }.orEmpty()
         val resolver = WebViewResolver(
             Regex(intercept), additional.map { Regex(it) }, b.get("userAgent")?.asText()?.takeIf { it.isNotBlank() }, true,
@@ -467,7 +467,11 @@ object IsolatedHost {
                         if (now != null && now != clearanceBefore) { Log.i(TAG, "the clearance of $host came: the check is over"); resolver.cancel(); break }
                     }
                 }
-                val (final, _) = try { resolver.resolveUsingWebView(request) { r -> req.emit("request", requestNode(r)); false } } finally { watcher?.cancel() }
+                // a check that does not pass by itself is shown to the user (a box to tick); one nobody can see ends at the unattended limit (see CheckWindow)
+                val window = if (!cloudflareSolve) null else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    com.lagradost.desktop.net.CheckWindow.supervise(url, host, userAgent = b.get("userAgent")?.asText()?.takeIf { it.isNotBlank() }, stop = { resolver.cancel() })
+                }
+                val (final, _) = try { resolver.resolveUsingWebView(request) { r -> req.emit("request", requestNode(r)); false } } finally { watcher?.cancel(); window?.cancel() }
                 val cookies = WebCookies.all().filter { c -> val d = c.domain.trimStart('.').lowercase(); host == d || host.endsWith(".$d") }
                 if (cloudflareSolve) {
                     // no clearance at all (a clearance that was already there and is still good gives none that is new, and is no failure)

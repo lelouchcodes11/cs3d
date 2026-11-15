@@ -34,7 +34,7 @@ import com.lagradost.desktop.ui.fluent.lightShadow
 import com.lagradost.desktop.ui.shell.brandLogo
 
 /**
- * The top of Settings > About: the app's mark, its name and version, and the places to go (the project, news, chat, support) as buttons instead of
+ * The top of Settings > About: the app's mark, its name and version, and the places to go (the project, chat, news on Telegram, support) as buttons instead of
  * four plain rows of a list.
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -60,6 +60,7 @@ internal fun AboutHero() {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Button("GitHub", { DesktopPlatform.openExternalBrowser(AppInfo.REPO_URL) }, icon = Icons.Link, height = 36.dp)
             Button("Discord", { DesktopPlatform.openExternalBrowser(AppInfo.DISCORD_URL) }, icon = Icons.Link, height = 36.dp)
+            Button("Telegram", { DesktopPlatform.openExternalBrowser(AppInfo.TELEGRAM_URL) }, icon = Icons.Link, height = 36.dp)
             Button("Support (India)", { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_URL) }, kind = ButtonKind.Accent, icon = Icons.Favorite, height = 36.dp)
             Button("Support (international)", { DesktopPlatform.openExternalBrowser(AppInfo.DONATE_INTL_URL) }, icon = Icons.Favorite, height = 36.dp)
         }

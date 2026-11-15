@@ -147,7 +147,7 @@
     <string name="player_size_settings">Player resize button</string>
     <string name="player_size_settings_des">Remove the black borders</string>
     <string name="player_subtitles_settings">Subtitles</string>
-    <string name="player_subtitles_settings_des">Player subtitles settings</string>
+    <string name="player_subtitles_settings_des">Font, size, colour and position</string>
     <string name="chromecast_subtitles_settings">Chromecast Subtitles</string>
     <string name="chromecast_subtitles_settings_des">Chromecast subtitles settings</string>
     <string name="eigengraumode_settings">Playback speed</string>
@@ -327,7 +327,7 @@
     <string name="video_lock">Lock</string>
     <string name="video_aspect_ratio_resize">Resize</string>
     <string name="video_source">Source</string>
-    <string name="video_skip_op">Skip OP</string>
+    <string name="video_skip_op">Skip intros and credits</string>
     <string name="dont_show_again">Don\'t show again</string>
     <string name="skip_update">Skip this Update</string>
     <string name="update">Update</string>
@@ -349,7 +349,7 @@
     <string name="dns_pref_summary">Useful for bypassing ISP blocks</string>
     <string name="jsdelivr_proxy">GitHub Proxy</string>
     <string name="jsdelivr_enabled">Could not reach GitHub. Turning on jsDelivr proxy…</string>
-    <string name="jsdelivr_proxy_summary">Bypass blocking of raw github URLs using jsDelivr. May cause updates to be delayed by few days.</string>
+    <string name="jsdelivr_proxy_summary">Gets extension lists through jsDelivr when GitHub is blocked. Updates may arrive a few days later.</string>
     <string name="add_site_pref">Clone site</string>
     <string name="remove_site_pref">Remove site</string>
     <string name="add_site_summary">Add a clone of an existing site, with a different URL</string>
@@ -506,9 +506,9 @@
     <string name="add_repository">Add repository</string>
     <string name="repository_name_hint">Repository name (Optional)</string>
     <string name="repository_url_hint">Repository URL or Shortcode</string>
-    <string name="plugin_loaded">Plugin Loaded</string>
-    <string name="plugin_downloaded">Plugin Downloaded</string>
-    <string name="plugin_deleted">Plugin Deleted</string>
+    <string name="plugin_loaded">Extension installed</string>
+    <string name="plugin_downloaded">Extension downloaded</string>
+    <string name="plugin_deleted">Extension removed</string>
     <string name="plugin_load_fail" formatted="true">Could not load %s</string>
     <string name="is_adult">18+</string>
     <string name="batch_download_start_format" formatted="true">Started downloading %1$d %2$s…</string>
@@ -584,7 +584,7 @@
     <string name="skip_type_intro">Intro</string>
     <string name="clear_history">Clear history</string>
     <string name="history">History</string>
-    <string name="enable_skip_op_from_database_des">Show skip popups for opening/ending</string>
+    <string name="enable_skip_op_from_database_des">Shows a Skip button at the opening and the ending of episodes</string>
     <string name="clipboard_too_large">Too much text. Unable to save to clipboard.</string>
     <string name="clipboard_permission_error">Error accessing Clipboard, Please try again.</string>
     <string name="clipboard_unknown_error">Error copying, Please copy logcat and contact app support.</string>

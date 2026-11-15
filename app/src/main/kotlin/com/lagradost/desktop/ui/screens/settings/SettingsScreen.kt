@@ -64,28 +64,48 @@ private enum class Section(val title: String) {
     System("System"),
 }
 
-private enum class Page(val id: String, val title: String, val glyph: String, val tint: Long, val about: String, val section: Section? = null, val hidden: Boolean = false) {
+/**
+ * A page of Settings. [hidden]: a page of its own kind (no rows to search). [folded]: not in the list on the left nor on the overview (a short list,
+ * Nuvio-style), reached from its [home] page, and found by the search like every other page.
+ */
+private enum class Page(val id: String, val title: String, val glyph: String, val tint: Long, val about: String, val section: Section? = null, val hidden: Boolean = false, val folded: Boolean = false) {
     /** The page Settings opens on: what is worth a look right now, the settings people change most, and a card for every page */
     Overview("overview", "Overview", Icons.Home, 0xFF8B95A7, "What needs a look, the settings you change most, and every page"),
 
     General("general", "General", Icons.Settings, 0xFF6E7BF2, "App language, downloads, the window and performance", Section.App),
-    Appearance("ui", "Appearance", Icons.Personalize, 0xFFD6409F, "Themes, layout and what the pages show", Section.App),
-    Colors("colors", "Colors", Icons.Theme, 0xFFAF52DE, "Colour palettes, the accent colour and the colour of buttons", Section.App),
-    Player("player", "Player", Icons.Play, 0xFFE5484D, "Playback, video, audio, subtitles and controls", Section.App),
+    Appearance("ui", "Appearance", Icons.Personalize, 0xFFD6409F, "Themes, colours, layout and what the pages show", Section.App),
+    Colors("colors", "Colors", Icons.Theme, 0xFFAF52DE, "Colour palettes, the accent colour and the colour of buttons", Section.App, folded = true),
+    Player("player", "Player", Icons.Play, 0xFFE5484D, "Playback, sources, subtitles, video and audio", Section.App),
+    PlayerAdvanced("playeradvanced", "Advanced player settings", Icons.Video, 0xFFE5484D, "Video decoding and upscaling, audio output and sound, the controls and the cache", Section.App, folded = true),
 
     Sources("sources", "Extensions and sources", Icons.Extensions, 0xFF8E4EC6, "Extension languages and order, extension updates, Stremio add-ons and torrents", Section.Content),
     Accounts("account", "Accounts and sync", Icons.Person, 0xFFF76B15, "Sign in to your services, keep your lists up to date, lock the app", Section.Content),
 
-    Security("security", "Network and security", Icons.Lock, 0xFF2F9E8F, "DNS and blocked sites, Cloudflare checks and the sandbox that keeps extensions in check", Section.System),
-    Updates("updates", "Updates", Icons.Update, 0xFF30A46C, "This version and the newest release", Section.System),
-    Backup("backup", "Backup and reset", Icons.Backup, 0xFF3E8FD0, "Save and restore your data, set up again or start over", Section.System),
-    About("about", "About", Icons.Info, 0xFF00A2C7, "Version, help and links", Section.System),
+    Advanced("advanced", "Advanced", Icons.Code, 0xFF8B95A7, "Network and security, keyboard shortcuts, backup and reset", Section.System),
+    Security("security", "Network and security", Icons.Lock, 0xFF2F9E8F, "DNS and blocked sites, Cloudflare checks and the sandbox that keeps extensions in check", Section.System, folded = true),
+    Shortcuts("shortcuts", "Keyboard shortcuts", Icons.Help, 0xFF5B6CFF, "Change the keys of the player, and see the keys of the whole app", Section.System, folded = true),
+    Backup("backup", "Backup and reset", Icons.Backup, 0xFF3E8FD0, "Save and restore your data, set up again or start over", Section.System, folded = true),
+    About("about", "About", Icons.Info, 0xFF00A2C7, "Version, updates, help and links", Section.System),
+    Updates("updates", "Updates", Icons.Update, 0xFF30A46C, "This version and the newest release", Section.System, folded = true),
 
     /** Reached from Extensions and sources; no entry of its own in the list */
-    Stremio("stremio", "Stremio and torrents", Icons.Link, 0xFF8E4EC6, "Add-ons, their sources and subtitles, torrent streaming", hidden = true),
+    Stremio("stremio", "Stremio, TV playlists and torrents", Icons.Link, 0xFF8E4EC6, "Add-ons and IPTV playlists as sources, torrent streaming", hidden = true),
     /** Reached from Player; no entry of its own in the list */
     Subtitles("subtitles", "Subtitles", Icons.Subtitles, 0xFFFFB224, "How subtitles look", hidden = true),
 }
+
+/** Where a page that is not in the list is reached from: that page stays lit in the list, and the back button goes to it */
+private fun Page.home(): Page = when (this) {
+    Page.Colors -> Page.Appearance
+    Page.PlayerAdvanced, Page.Subtitles -> Page.Player
+    Page.Stremio -> Page.Sources
+    Page.Security, Page.Shortcuts, Page.Backup -> Page.Advanced
+    Page.Updates -> Page.About
+    else -> this
+}
+
+/** In the list on the left and on the overview */
+private val Page.listed get() = !hidden && !folded
 
 /** Lets a preference row (built by upstream code) ask the settings screen to open a page */
 object SettingsNav {
@@ -105,6 +125,9 @@ object SettingsNav {
 private fun groupsOf(page: Page): List<SettingGroup> = when (page) {
     Page.General -> generalGroups()
     Page.Player -> playerGroups()
+    Page.PlayerAdvanced -> playerAdvancedGroups()
+    Page.Advanced -> advancedGroups()
+    Page.Shortcuts -> shortcutGroups()
     Page.Appearance -> appearanceGroups()
     Page.Colors -> colorGroups()
     Page.Sources -> sourcesGroups()
@@ -147,12 +170,12 @@ fun SettingsScreen(route: Route.Settings, entryId: Long? = null) {
                 // a long list scrolls inside its own column: a short window must still reach About
                 Column(Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                     fun row(p: Page) = @Composable {
-                        CategoryRow(p.title, p.glyph, Color(p.tint), selected = query.isBlank() && (p == page || (page == Page.Subtitles && p == Page.Player) || (page == Page.Stremio && p == Page.Sources))) { show(p) }
+                        CategoryRow(p.title, p.glyph, Color(p.tint), selected = query.isBlank() && p == page.home()) { show(p) }
                     }
                     row(Page.Overview)()
                     for (section in Section.entries) {
                         SectionCaption(section.title)
-                        Page.entries.filter { it.section == section && !it.hidden }.forEach { row(it)() }
+                        Page.entries.filter { it.section == section && it.listed }.forEach { row(it)() }
                     }
                 }
             }
@@ -186,10 +209,12 @@ fun SettingsScreen(route: Route.Settings, entryId: Long? = null) {
 
 @Composable
 private fun PageContent(page: Page) {
-    if (page == Page.Subtitles) Button("Player", { SettingsNav.page = "player" }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, icon = Icons.ChevronLeft, modifier = Modifier.padding(bottom = 4.dp))
-    if (page == Page.Stremio) Button("Extensions and sources", { SettingsNav.page = "sources" }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, icon = Icons.ChevronLeft, modifier = Modifier.padding(bottom = 4.dp))
+    // a page reached from another one: the way back to it over the title
+    page.home().takeIf { it != page }?.let { home ->
+        Button(home.title, { SettingsNav.page = home.id }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle, icon = Icons.ChevronLeft, modifier = Modifier.padding(bottom = 4.dp))
+    }
     // a large title and its line, like every page (the coloured square stays where the page is listed, and in front of its rows)
-    Box(Modifier.padding(bottom = 22.dp, top = 4.dp)) { com.lagradost.desktop.ui.fluent.PageHeader(if (page == Page.Overview) "Settings" else page.title, subtitle = page.about) }
+    Box(Modifier.padding(bottom = 22.dp, top = 4.dp)) { com.lagradost.desktop.ui.fluent.PageHeader(if (page == Page.Overview) "Settings" else page.title) }
     androidx.compose.runtime.CompositionLocalProvider(LocalSettingsTint provides if (page == Page.Overview) Color.Unspecified else Color(page.tint)) {
         when (page) {
             Page.Overview -> OverviewPage()
@@ -239,7 +264,7 @@ private fun SectionCaption(title: String) {
 @Composable
 private fun quickItems(): List<SettingItem> {
     val wanted = listOf("App mode", "Animations", "Zoom on hover", "Poster size", "Hide spoilers in episode lists", "Autoplay next episode", "Smooth motion")
-    val all = listOf(Page.Appearance, Page.Player).flatMap { groupsOf(it) }.flatMap { it.items }.filter { it.row }
+    val all = listOf(Page.Appearance, Page.Player, Page.PlayerAdvanced).flatMap { groupsOf(it) }.flatMap { it.items }.filter { it.row }
     return wanted.mapNotNull { title -> all.firstOrNull { it.title == title } }
 }
 
@@ -257,7 +282,7 @@ private fun OverviewPage() {
         FText(section.title, style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val columns = if (maxWidth >= 620.dp) 2 else 1
-            val tiles = Page.entries.filter { it.section == section && !it.hidden }
+            val tiles = Page.entries.filter { it.section == section && it.listed }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 tiles.chunked(columns).forEach { rowTiles ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

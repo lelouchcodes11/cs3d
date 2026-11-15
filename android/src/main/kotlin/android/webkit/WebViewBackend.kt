@@ -34,6 +34,9 @@ internal interface WebViewBackend {
     fun destroy()
     fun currentUrl(): String?
 
+    /** The colour shown where the page draws nothing (WebView.setBackgroundColor; opaque colours only) */
+    fun pageBackground(argb: Int) {}
+
     companion object {
         fun create(view: WebView): WebViewBackend {
             // the extension sandbox: the page lives in the app

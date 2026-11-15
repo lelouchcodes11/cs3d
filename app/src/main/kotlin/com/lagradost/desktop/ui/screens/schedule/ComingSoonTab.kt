@@ -181,10 +181,10 @@ private fun Shelves(shown: List<ComingSoon.Item>, today: LocalDate, cardWidth: D
         Triple("New series", "First episodes in the coming weeks", shown.filter { it.kind == ComingSoon.Kind.Series }),
         Triple("Anime", "Seasons and films that start soon", shown.filter { it.kind == ComingSoon.Kind.Anime }),
     )
-    groups.forEach { (title, subtitle, list) ->
+    groups.forEach { (title, _, list) ->
         if (list.isEmpty()) return@forEach
         Column {
-            RichSectionHeader(title, subtitle = "$subtitle  ·  ${list.size}")
+            RichSectionHeader(title, subtitle = com.lagradost.desktop.ui.counted(list.size, "title"))
             Box(Modifier.height(12.dp))
             Shelf(list, cardWidth, gutter = 0.dp, spacing = 14.dp, key = { it.key }) { item ->
                 PosterCard(

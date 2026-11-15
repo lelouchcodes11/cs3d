@@ -55,7 +55,7 @@ object StremioAddons {
 
     private fun prefs() = androidx.preference.PreferenceManager.getDefaultSharedPreferences(AndroidRuntime.context)
 
-    fun enabled(): List<StremioAddon> = addons.filter { it.enabled && it.manifest != null }
+    fun enabled(): List<StremioAddon> = load().let { addons }.filter { it.enabled && it.manifest != null }
     fun streamAddons(): List<StremioAddon> = enabled().filter { it.manifest!!.providesStreams }
     fun subtitleAddons(): List<StremioAddon> = enabled().filter { it.manifest!!.providesSubtitles }
     fun metaAddons(): List<StremioAddon> = enabled().filter { it.manifest!!.providesMeta }
@@ -67,19 +67,24 @@ object StremioAddons {
         if (loaded) return
         synchronized(this) {
             if (loaded) return
-            loaded = true
             runCatching {
                 val p = prefs()
                 val text = p.getString(PREF, null)
                 // Stremio is off until the viewer turns it on: the first start lists Cinemeta, switched off
                 val array = if (text == null) JSONArray().put(JSONObject().put("url", CINEMETA).put("enabled", false)) else JSONArray(text)
+                // read into a list of its own and put in at once: this runs in the background at start (the saved manifests are large: reading them
+                // on the window's thread froze the start for a second), while pages may already look at the list
+                val read = ArrayList<StremioAddon>()
                 for (i in 0 until array.length()) {
                     val o = array.getJSONObject(i)
                     val url = o.optString("url").takeIf { it.isNotBlank() } ?: continue
                     val manifest = o.optString("manifest").takeIf { it.isNotBlank() }?.let { runCatching { StremioManifest.parse(it) }.getOrNull() }
-                    addons.add(StremioAddon(url, manifest, o.optBoolean("enabled", true)))
+                    read.add(StremioAddon(url, manifest, o.optBoolean("enabled", true)))
                 }
+                addons.addAll(read)
             }.onFailure { Log.w(TAG, "add-ons not read: ${it.message}") }
+            // only now: a caller on another thread waits on the lock above instead of seeing an empty list
+            loaded = true
         }
     }
 
@@ -180,8 +185,8 @@ object StremioAddons {
 
     /** Start-up: the saved list, the providers of it, then the manifests are read again in the background (once a day) */
     fun start() {
-        load()
         ioSafe {
+            load()
             syncProviders()
             val last = prefs().getLong(PREF + "_checked", 0L)
             if (System.currentTimeMillis() - last > 24 * 3_600_000L || addons.any { it.manifest == null }) {

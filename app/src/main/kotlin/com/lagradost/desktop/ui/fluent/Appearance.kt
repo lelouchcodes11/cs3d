@@ -100,7 +100,17 @@ object AudioFilters {
      */
     const val STABLE = "lavfi=[dynaudnorm=f=400:g=21:p=0.9:m=10:s=5:n=1]"
 
-    fun chain(stable: Boolean, range: DynamicRange): String = listOf(if (stable) STABLE else "", range.filter).filter { it.isNotEmpty() }.joinToString(",")
+    fun chain(stable: Boolean, range: DynamicRange, eq: Equalizer = Equalizer.Off): String =
+        listOf(eq.filter, if (stable) STABLE else "", range.filter).filter { it.isNotEmpty() }.joinToString(",")
+}
+
+/** A few equalizer presets (ffmpeg's bass / treble / equalizer filters), kept gentle so nothing clips; Off leaves the sound untouched */
+enum class Equalizer(val label: String, val detail: String, val filter: String) {
+    Off("Off", "The sound as it is.", ""),
+    Bass("Bass boost", "More low end, for small speakers and laptops.", "lavfi=[bass=g=6:f=110:w=0.6]"),
+    Voice("Clear voices", "Speech stands out from music and effects.", "lavfi=[equalizer=f=250:t=q:w=1:g=-3,equalizer=f=2800:t=q:w=1.2:g=4]"),
+    Treble("Treble boost", "Crisper highs, for dull headphones.", "lavfi=[treble=g=5:f=6000]"),
+    Loudness("Loudness", "Lows and highs up a little, for listening quietly.", "lavfi=[bass=g=4:f=100,treble=g=3:f=8000]"),
 }
 
 /**
@@ -148,6 +158,9 @@ object Appearance {
     /** The light look is in force: shorter animations, no hover zoom or moving profile pictures, no seek preview, no frame blending in the video, smaller caches */
     val light: Boolean get() = com.lagradost.desktop.platform.LowEnd.active(performance)
     val hoverZoomOn: Boolean get() = hoverZoom && !light
+
+    /** High performance: more memory and processor for the smoothest window (see platform/HighPerformance) */
+    val highPerformance: Boolean get() = performance == PerformanceMode.Smooth
     val profilesMove: Boolean get() = animatedProfiles && !light
     val seekPreviewsOn: Boolean get() = seekPreviews && !light
     val smoothMotionOn: Boolean get() = smoothMotion && !light
@@ -212,8 +225,11 @@ object Appearance {
     val stableVolumeState = mutableStateOf(false)
     var stableVolume by stableVolumeState
 
-    /** mpv's `af` value for the two sound settings */
-    val audioFilter: String get() = AudioFilters.chain(stableVolume, dynamicRange)
+    /** The equalizer preset (see [Equalizer]); applies to the playing video at once */
+    var equalizer by mutableStateOf(Equalizer.Off)
+
+    /** mpv's `af` value for the sound settings */
+    val audioFilter: String get() = AudioFilters.chain(stableVolume, dynamicRange, equalizer)
 
     /** Video: blends the frames around each screen refresh so 24 or 25 fps film does not judder on a 60 Hz screen */
     var smoothMotion by mutableStateOf(true)
@@ -284,6 +300,9 @@ object Appearance {
     /** Whether the light look applies, read straight from the preferences: the start-up sizes the caches with it before [load] has run */
     fun lightFromPrefs(): Boolean = runCatching { com.lagradost.desktop.platform.LowEnd.active(enumOf(prefs().getString(PREFIX + "performance", null), PerformanceMode.Auto)) }.getOrDefault(false)
 
+    /** Whether High performance is chosen, read straight from the preferences (the start-up sizes the caches with it before [load] has run) */
+    fun highPerformanceFromPrefs(): Boolean = runCatching { enumOf(prefs().getString(PREFIX + "performance", null), PerformanceMode.Auto) == PerformanceMode.Smooth }.getOrDefault(false)
+
     fun load() {
         runCatching {
             val p = prefs()
@@ -319,6 +338,7 @@ object Appearance {
             audioDecoder = enumOf(p.getString(PREFIX + "audio_decoder", null), AudioDecoder.Software)
             videoDecoder = enumOf(p.getString(PREFIX + "video_decoder", null), VideoDecoder.Auto)
             dynamicRange = enumOf(p.getString(PREFIX + "dynamic_range", null), DynamicRange.Off)
+            equalizer = enumOf(p.getString(PREFIX + "equalizer", null), Equalizer.Off)
             stableVolume = p.getBoolean(PREFIX + "stable_volume", false)
             dockAutoHide = p.getBoolean(PREFIX + "dock_auto_hide", false)
             subtitleUniversal = p.getBoolean(PREFIX + "sub_universal", false)
@@ -384,6 +404,7 @@ object Appearance {
                 .putString(PREFIX + "audio_decoder", audioDecoder.name)
                 .putString(PREFIX + "video_decoder", videoDecoder.name)
                 .putString(PREFIX + "dynamic_range", dynamicRange.name)
+                .putString(PREFIX + "equalizer", equalizer.name)
                 .putBoolean(PREFIX + "dock_auto_hide", dockAutoHide)
                 .putBoolean(PREFIX + "sub_universal", subtitleUniversal)
                 .putBoolean(PREFIX + "tmdb", tmdbEnabled)

@@ -104,6 +104,9 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
     /** The plugin class that asked for this window (found on the call stack of the first show(), which may be another thread's) */
     private var mCaller: Class<*>? = null
 
+    /** True for the app's own Cloudflare check window: not refused or counted like an extension's page in a dialog */
+    open val appCheckWindow: Boolean get() = false
+
     open fun show() {
         if (mCaller == null && !isFragmentDialog) mCaller = com.lagradost.desktop.runtime.web.CloudflareGate.callingPluginClass()
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -112,13 +115,17 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
         }
         if (mShowing) return
         dispatchOnCreate(null)
-        // a window of an extension that is not the one in use and that nobody asked for (a donation popup): not shown
-        if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseIdlePopup(mCaller ?: javaClass)) return
-        // Settings > General > Cloudflare solvers: off, a page in a dialog (an extension's challenge window) is not shown
-        if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseBrowserDialog(mWindow.getDecorView(), javaClass) { cancel() }) return
+        // a window the app itself puts up for a check the user is waiting on (the app's CheckWindow): its own rules decided already
+        if (!appCheckWindow) {
+            // a window of an extension that is not the one in use and that nobody asked for (a donation popup): not shown
+            if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseIdlePopup(mCaller ?: javaClass)) return
+            // Settings > General > Cloudflare solvers: off, a page in a dialog (an extension's challenge window) is not shown
+            if (!isFragmentDialog && com.lagradost.desktop.runtime.web.CloudflareGate.refuseBrowserDialog(mWindow.getDecorView(), javaClass) { cancel() }) return
+        }
         onStart()
         mLifecycle.currentState = Lifecycle.State.RESUMED
         mShowing = true
+        showing.remove(this); showing.add(this)
         AndroidRuntime.host.showDialog(this)
         mOnShowListener?.onShow(this)
     }
@@ -126,6 +133,7 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
     open fun hide() {
         if (mShowing) {
             mShowing = false
+            showing.remove(this)
             AndroidRuntime.host.dismissDialog(this)
         }
     }
@@ -137,6 +145,7 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
         }
         if (!mShowing) return
         mShowing = false
+        showing.remove(this)
         AndroidRuntime.host.dismissDialog(this)
         onStop()
         mLifecycle.currentState = Lifecycle.State.CREATED
@@ -192,9 +201,24 @@ open class Dialog : DialogInterface, Window.Callback, LifecycleOwner {
     open fun openOptionsMenu() {}
     open fun setVolumeControlStream(streamType: Int) {}
 
+    /**
+     * As Android's ComponentDialog: Back goes to the callbacks of the dialog first (an extension's Compose BackHandler steps back between its own
+     * screens), then cancels the dialog
+     */
+    val onBackPressedDispatcher: androidx.activity.OnBackPressedDispatcher = androidx.activity.OnBackPressedDispatcher { if (mCancelable) cancel() }
+
     /** Called by the host when the user presses back/escape */
     open fun onBackPressed() {
-        if (mCancelable) cancel()
+        onBackPressedDispatcher.onBackPressed()
+    }
+
+    companion object {
+        /** The dialogs that are up, the newest last */
+        private val showing = java.util.concurrent.CopyOnWriteArrayList<Dialog>()
+
+        /** The Back callbacks of the newest dialog that is up (androidx.activity.compose.BackHandler registers there), or null */
+        @JvmStatic
+        fun backDispatcherInUse(): androidx.activity.OnBackPressedDispatcher? = showing.lastOrNull()?.onBackPressedDispatcher
     }
 
     /** Called by the host when the user clicks outside the dialog */

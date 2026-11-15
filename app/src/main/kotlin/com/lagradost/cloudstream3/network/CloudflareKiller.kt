@@ -129,8 +129,8 @@ class CloudflareKiller : Interceptor {
                 useOkhttp = false,
                 // Match every url for the requestCallBack
                 additionalUrls = listOf(Regex(".")),
-                // desktop: a check nobody sees is not waited for as long as a minute (see CloudflareGate.UNATTENDED_MS)
-                timeout = com.lagradost.desktop.runtime.web.CloudflareGate.UNATTENDED_MS,
+                // desktop: a check nobody sees ends at CloudflareGate.UNATTENDED_MS, one shown to the user in a window may take minutes (CheckWindow ends it)
+                timeout = com.lagradost.desktop.net.CheckWindow.ATTENDED_MS + 60_000,
             )
             // the bar with a Cancel button shows while the page works (see CloudflareGate)
             val solve = com.lagradost.desktop.runtime.web.CloudflareGate.beginSolve(request.url.host) { resolver.cancel() }
@@ -158,6 +158,11 @@ class CloudflareKiller : Interceptor {
                     savedCookies.remove(request.url.host)
                 }
             }
+            // desktop: a check that does not pass by itself is shown to the user (a box to tick), and ended when nobody can see it. In the sandbox the
+            // page is the app's, and so is this (IsolatedHost.webview)
+            val window = if (WebViewResolver.remote != null) null else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                com.lagradost.desktop.net.CheckWindow.supervise(url, request.url.host, null, stop = { resolver.cancel() })
+            }
             try {
                 resolver.resolveUsingWebView(
                     url
@@ -166,6 +171,7 @@ class CloudflareKiller : Interceptor {
                 }
             } finally {
                 watcher.cancel()
+                window?.cancel()
                 com.lagradost.desktop.runtime.web.CloudflareGate.endSolve(solve)
             }
             watcher.join()

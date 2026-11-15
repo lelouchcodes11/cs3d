@@ -257,6 +257,9 @@ object DesktopBootstrap {
         if (!worker) {
             MainActivity.afterPluginsLoadedEvent += { ioSafe { com.lagradost.desktop.stremio.StremioAddons.syncProviders() } }
             com.lagradost.desktop.stremio.StremioAddons.start()
+            // TV playlists (IPTV) the same way
+            MainActivity.afterPluginsLoadedEvent += { ioSafe { com.lagradost.desktop.iptv.IptvPlaylists.syncProviders() } }
+            com.lagradost.desktop.iptv.IptvPlaylists.start()
         }
         if (activityLifecycle) act.performCreate(null as Bundle?)
         act.updateTv()

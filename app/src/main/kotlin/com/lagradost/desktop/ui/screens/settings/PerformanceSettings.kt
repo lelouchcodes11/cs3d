@@ -25,10 +25,16 @@ fun GroupBuilder.performanceItems() {
     val state = if (Appearance.light) "The light look is in use now." else "The full look is in use now."
     card(
         "Low-end PC mode",
-        "For an old or small PC: shorter animations, no hover zoom or moving profile pictures, no seek preview, no frame blending in the video, smaller picture and texture caches.\n${LowEnd.describe()}\n$state",
-        "slow lag laggy old weak low end potato ram memory cpu animations reduce light performance",
+        "For an old or small PC: shorter animations, no hover zoom or moving profile pictures, no seek preview, no frame blending in the video, smaller picture and texture caches.\n" +
+            "High performance does the opposite for a strong PC: more memory and processor for the smoothest window. Its bigger caches apply after a restart.\n${LowEnd.describe()}\n$state",
+        "slow lag laggy old weak low end potato ram memory cpu animations reduce light performance high performance super smooth smoothness fast speed high end gaming fps stutter",
     ) {
-        ComboBox(PerformanceMode.entries.toList(), Appearance.performance, { it.label }, { Appearance.performance = it; changed() }, minWidth = 230.dp)
+        ComboBox(PerformanceMode.entries.toList(), Appearance.performance, { it.label }, {
+            val was = Appearance.highPerformance
+            Appearance.performance = it
+            changed()
+            if (was != Appearance.highPerformance) com.lagradost.desktop.platform.HighPerformance.apply(Appearance.highPerformance)
+        }, minWidth = 230.dp)
     }
     card(
         "Graphics renderer",

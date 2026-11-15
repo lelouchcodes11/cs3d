@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.3
+
+- **Extension settings open again (AnimePahe, AniVortex and others built the same way).** Their settings screens crashed when opened; once that was fixed they opened 0 pixels high. They now open at their full size, their inner pages work, and Esc steps back one page before it closes the window. Every Android piece used by 132 cached extensions was checked against the app, and three more missing ones were added.
+- **"Bypass Cloudflare" in an extension's settings works.** AnimePahe's button did nothing: its check window was held back until AnimePahe was the Home source, and then it waited behind the settings window it was opened from. A check window you open yourself now comes up at once, above the settings. Measured: AnimePahe's check passed in 11 seconds and the window closed itself.
+- **No more white check window.** The window for a Cloudflare check that needs you came up as soon as the page had a title, before it had drawn anything, and could stay white. It now opens only once the check page has loaded, and a page that is still drawing shows the window's own colour with a loading ring instead of white.
+- **Energy Media Player as an external player**, beside VLC and mpv (in the player's Open in row and the episode menu).
+- **Keyboard shortcuts you can change.** Settings > Shortcuts and the player's Keyboard shortcuts page list every shortcut in groups; click one and press any combination. A combination already in use is refused and says which action has it. New: press Ctrl on its own for 2x speed, again for 1x.
+- **A simpler layout.** The player menu shows the six things used most, the rest under More settings; title pages have fewer buttons and tabs; Settings has seven pages plus Advanced. Nothing was removed.
+- **Wide posters show whole on title pages.** Live events and channels with a wide picture were cut to a tall card; the card now takes the picture's own shape.
+- **Home says what to do when no source is picked.** It said "Install one in Extensions" even with extensions installed; it now asks you to pick a source at the top right.
+- **Telegram channel** (t.me/cs3d_official) in Settings > About and the support window, which now comes every two days.
+- **Cloudflare checks that need a click get a window.** A check the hidden page could not pass by itself was given up after 25 seconds; now its page opens in a window where you can click it, one at a time, with Skip all when a search in all extensions brings several.
+- **High performance mode** (Settings > General > Performance): more memory for pictures and smoother scrolling on PCs that have it to spare.
+- **Translate subtitles into your language.** Player > Subtitles > Translate…: the subtitle on screen (SRT, WebVTT or ASS, online or from a file) is put into one of 18 languages and shown in its place, every line at its own time; an ASS line keeps its style and position. Translations are kept, so watching again is instant. Subtitles inside the video file can't be translated.
+- **"Wrong details? Choose the right title…"** in a title page's ⋯ menu. When the cast, story or pictures belong to another film (a remake, a namesake), search TMDB and pick the right one, or choose no match. The choice is kept and used everywhere the title shows.
+- **Equalizer.** Player > Sound (the old Dynamic range page): Bass boost, Clear voices, Treble boost or Loudness, beside the compressor.
+- **TV playlists (IPTV) without an extension.** Settings > Extensions and sources > Stremio add-ons, TV playlists and torrents: paste an M3U playlist address, pick a playlist file, or paste your IPTV service's Xtream link. The playlist becomes a source: its groups are rows on Home, search finds channels, a channel's page shows what is on now and next from the playlist's TV guide, and channels play with the headers and ClearKey keys the playlist gives.
+- **Kids profiles.** Edit profile > Kids profile: the profile uses only the sources you tick (never adult ones). Settings, Extensions and adding a profile ask for a grown-up's PIN, so lock your own profile with one.
+- **Rows from other sources on Home.** Customise Home > Also show rows from: the first rows of up to three other sources come under your Home source's rows. They load after its own rows, so Home is not slower to appear.
+
 ## 1.1.2
 
 - **Live channels no longer play the same minute over and over.** Channels with ad breaks (WILLOW, FANCODE, PREMIER SPORTS and other channels from the same source) split their live list into several parts at every ad marker. The player read only the first part: it played that piece (often under a minute), ran out, and the channel was opened again on the same piece. The parts are now joined into one before the player sees them, so playback carries on through the breaks. A channel whose parts do not join up is given its newest part, the one that is live. Measured on WILLOW during a match: it used to restart at the same 60 seconds every minute; now it plays on, staying about 30 s behind live.

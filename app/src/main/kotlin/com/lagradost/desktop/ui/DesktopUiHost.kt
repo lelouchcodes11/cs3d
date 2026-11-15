@@ -224,9 +224,10 @@ class DesktopUiHost : UiHost {
             // desktop: the native UI shows simple Android dialogs (message, buttons, plain lists) as Fluent dialogs
             if (com.lagradost.desktop.core.NativeUi.active && FluentAlerts.show(dialog)) return@invokeLater
             if (androidDialogs.contains(dialog) || waiting.contains(dialog)) return@invokeLater
-            // a page in a dialog (a Cloudflare check) is a window of its own that is drawn above everything: it may not share the screen with another
-            // dialog (the donation popup of an extension under it showed through it as a smear), the second one waits for the first
-            if (androidDialogs.isNotEmpty() && (holdsPage(dialog) || androidDialogs.any { holdsPage(it) })) waiting.addLast(dialog) else androidDialogs.add(dialog)
+            // a page in a dialog (a Cloudflare check) is a window of its own that is drawn above everything: a dialog that comes while one is up waits for it
+            // (the donation popup of an extension showed through it as a smear), and so does a second page. A page may open above a plain dialog: an
+            // extension's own settings, where its "Bypass Cloudflare" button was clicked, waited under its own window and nothing happened
+            if (androidDialogs.any { holdsPage(it) }) waiting.addLast(dialog) else androidDialogs.add(dialog)
         }
     }
 
@@ -237,7 +238,8 @@ class DesktopUiHost : UiHost {
             waiting.remove(dialog)
             androidDialogs.remove(dialog)
             FluentAlerts.dismiss(dialog)
-            if (androidDialogs.isEmpty()) waiting.removeFirstOrNull()?.let { if (it.isShowing()) androidDialogs.add(it) }
+            // the waiting ones come up in order as long as no page is up (a page among them stops the rest again)
+            while (waiting.isNotEmpty() && androidDialogs.none { holdsPage(it) }) waiting.removeFirst().let { if (it.isShowing()) androidDialogs.add(it) }
         }
     }
 

@@ -137,7 +137,7 @@ fun StatsScreen() {
         ) {
             item(key = "head") {
                 PageHeader(
-                    "Stats", icon = Icons.Chart, tint = androidx.compose.ui.graphics.Color(0xFFFFA24C), subtitle = "What you watched, in this app",
+                    "Stats", icon = Icons.Chart, tint = androidx.compose.ui.graphics.Color(0xFFFFA24C),
                     trailing = {
                         if (data != null && data.loggedMs > 0) Button("Reset", {
                             Overlays.message("Reset the stats?", "The diary of what you watched (this page) is cleared. Your library, history and tracker lists stay.", primary = "Reset", onPrimary = { WatchLog.reset(); version++ })

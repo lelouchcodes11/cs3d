@@ -349,6 +349,12 @@ open class WebView : AbsoluteLayout {
         if (w != getMeasuredWidth() || h != getMeasuredHeight()) setMeasuredDimension(w, h)
     }
 
+    /** As on Android: also the colour of the page where it draws nothing (WebView2's own is white); only opaque colours reach the page */
+    override fun setBackgroundColor(color: Int) {
+        super.setBackgroundColor(color)
+        if (constructed) engine.pageBackground(color)
+    }
+
     override fun setVisibility(visibility: Int) {
         super.setVisibility(visibility)
         // also called by View(context, attrs) before the engine exists

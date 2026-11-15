@@ -133,7 +133,7 @@ fun DownloadsScreen() {
         Column(Modifier.padding(start = 36.dp, end = 36.dp, top = 20.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (folder != null) IconButton(Icons.Back, { folder = null; vm.clearChildren() }, tooltip = "All downloads", kind = ButtonKind.Standard, size = 40.dp)
-                com.lagradost.desktop.ui.fluent.PageHeader(folder?.data?.name ?: "Downloads", Modifier.weight(1f), icon = Icons.Download, tint = androidx.compose.ui.graphics.Color(0xFF3FBF7F), subtitle = if (folder != null) "Episodes" else if ((downloaded ?: 0L) <= 0L && (free ?: 0L) > 0L) "Titles saved on this PC  ·  ${size(free ?: 0L)} free" else "Titles saved on this PC") {
+                com.lagradost.desktop.ui.fluent.PageHeader(folder?.data?.name ?: "Downloads", Modifier.weight(1f), icon = Icons.Download, tint = androidx.compose.ui.graphics.Color(0xFF3FBF7F), subtitle = if (folder != null) null else if ((downloaded ?: 0L) <= 0L && (free ?: 0L) > 0L) "${size(free ?: 0L)} free" else null) {
                     IconButton(Icons.Refresh, { vm.updateHeaderList(ctx) }, tooltip = "Refresh", kind = ButtonKind.Standard, size = 36.dp)
                 }
             }

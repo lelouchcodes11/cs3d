@@ -208,11 +208,19 @@ object PluginManager {
      * @return how many were taken back
      */
     suspend fun adoptDownloadedPlugins(context: Context, repositoryUrl: String, plugins: List<SitePlugin>): Int {
-        val known = getPluginsOnline().map { it.filePath }.toSet()
+        val listed = getPluginsOnline()
+        val known = listed.map { it.filePath }.toSet()
         var n = 0
         for (p in plugins) {
             val file = getPluginPath(context, p.internalName, repositoryUrl)
             if (!file.exists() || file.absolutePath in known) continue
+            // the same extension is installed from another repository: this file is a leftover copy that is never loaded (one name, one copy). Taking it
+            // back made a loop on every start with a sync extension (taken back, removed by the sync, kept by WipeGuard, its warning shown): it goes instead
+            if (listed.any { it.internalName == p.internalName && File(it.filePath).exists() }) {
+                Log.i(TAG, "${p.internalName} of $repositoryUrl is a leftover copy of an extension installed from another repository: its file is removed")
+                runCatching { file.delete() }
+                continue
+            }
             Log.i(TAG, "${p.internalName} is on the disk but not in the list of installed extensions: taken back")
             if (loadPlugin(context, file, PluginData(p.internalName, p.url, true, file.absolutePath, PLUGIN_VERSION_NOT_SET))) n++
         }

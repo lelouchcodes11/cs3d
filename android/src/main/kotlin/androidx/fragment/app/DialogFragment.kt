@@ -18,6 +18,19 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
         const val STYLE_NO_TITLE = 1
         const val STYLE_NO_FRAME = 2
         const val STYLE_NO_INPUT = 3
+
+        /** The extensions' dialog windows that are up (to tell a Cloudflare window the user asked for from its extension's settings) */
+        private val shown = java.util.concurrent.CopyOnWriteArrayList<DialogFragment>()
+    }
+
+    /**
+     * The user asked for this Cloudflare window: another window of the same extension is up (its settings, where "Bypass Cloudflare" was clicked).
+     * Such a window is shown at once, whatever extension is in use and however recently the last one closed (AnimePahe's button did nothing:
+     * its window was held until AnimePahe became the extension in use)
+     */
+    private fun askedFromItsSettings(): Boolean {
+        val loader = javaClass.classLoader ?: return false
+        return shown.any { it !== this && it.javaClass.classLoader === loader && it.mDialog?.isShowing() == true }
     }
 
     private var mStyle = STYLE_NORMAL
@@ -147,7 +160,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
         if (d != null && !mDismissed) {
             // an extension's window that is not the one in use (added to the fragment manager directly, not through show()): never put on the screen
             val gate = com.lagradost.desktop.runtime.web.CloudflareGate
-            val refuse = if (isChallengeDialog()) !gate.solversOn || !gate.inUseOwner(javaClass) else gate.refuseIdlePopup(javaClass)
+            val refuse = if (isChallengeDialog()) !gate.solversOn || (!gate.inUseOwner(javaClass) && !askedFromItsSettings()) else gate.refuseIdlePopup(javaClass)
             if (refuse) {
                 // a Cloudflare window of an extension the user is not using yet is held until they do (see skipRepeatedChallenge), not dropped
                 if (isChallengeDialog() && gate.solversOn) {
@@ -173,6 +186,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
                 return
             }
             d.show()
+            shown.remove(this); shown.add(this)
             if (isChallengeDialog()) com.lagradost.desktop.runtime.web.CaptchaQuiet.markShown(javaClass.simpleName)
             if (isChallengeDialog()) watchChallenge()
         }
@@ -184,6 +198,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
     }
 
     internal override fun performDestroyView() {
+        shown.remove(this)
         val d = mDialog
         if (d != null) {
             mDismissed = true
@@ -217,7 +232,7 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
             // asked for before the user is using that extension (AnimePahe checks its site while it loads): held until it is in use, then shown. Dropping it at once made
             // the extension believe the user had dismissed it and refuse to ask again for a while, so the window never came when the user did switch to it
             val gate = com.lagradost.desktop.runtime.web.CloudflareGate
-            if (gate.solversOn && !gate.inUseOwner(javaClass)) {
+            if (gate.solversOn && !gate.inUseOwner(javaClass) && !askedFromItsSettings()) {
                 val held = gate.holdUntilInUse(javaClass, HOLD_MS) { inUse ->
                     when {
                         mDismissed -> {} // the extension gave the window up itself meanwhile
@@ -242,10 +257,11 @@ open class DialogFragment : Fragment, DialogInterface.OnCancelListener, DialogIn
             })
             return true
         }
-        val off = !com.lagradost.desktop.runtime.web.CloudflareGate.solversOn || !com.lagradost.desktop.runtime.web.CloudflareGate.inUseOwner(javaClass)
+        val asked = askedFromItsSettings()
+        val off = !com.lagradost.desktop.runtime.web.CloudflareGate.solversOn || !asked && !com.lagradost.desktop.runtime.web.CloudflareGate.inUseOwner(javaClass)
         // and once an hour at most, also across restarts (CaptchaQuiet): opening the app again soon does not bring the same check window back
-        val quiet = Challenges.open == 0 && com.lagradost.desktop.runtime.web.CaptchaQuiet.recentlyShown(javaClass.simpleName)
-        if (off || quiet || Challenges.open == 0 && System.currentTimeMillis() - Challenges.endedAt < Challenges.QUIET_MS) {
+        val quiet = !asked && Challenges.open == 0 && com.lagradost.desktop.runtime.web.CaptchaQuiet.recentlyShown(javaClass.simpleName)
+        if (off || quiet || !asked && Challenges.open == 0 && System.currentTimeMillis() - Challenges.endedAt < Challenges.QUIET_MS) {
             Log.i("DialogFragment", "${javaClass.simpleName}: " + if (off) "the Cloudflare solvers are off or this is not the extension in use, not shown" else "asked again so soon after the last one, not shown")
             mDismissed = true
             onDismiss(object : DialogInterface {

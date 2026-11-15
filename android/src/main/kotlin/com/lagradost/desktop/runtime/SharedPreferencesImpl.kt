@@ -436,6 +436,8 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
             ensureLoaded()
             val changed = ArrayList<String?>()
             var kept = 0
+            // which keys were kept (named in the log: "1 of your saved items" alone did not say what a sync extension went after)
+            val keptKeys = ArrayList<String>()
             var total = 0
             lock.write {
                 synchronized(this) {
@@ -470,7 +472,7 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
                         clear = false
                     }
                     for (k in removed) {
-                        if (k in keep) { if (map.containsKey(k)) kept++; continue }
+                        if (k in keep) { if (map.containsKey(k)) { kept++; keptKeys += k }; continue }
                         if (map.containsKey(k)) {
                             map.remove(k)
                             changed.add(k)
@@ -481,7 +483,7 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
                     for ((k, v) in modified) {
                         // Like Android, putting null removes the key
                         if (v == null) {
-                            if (k in keep) { kept++; continue }
+                            if (k in keep) { kept++; keptKeys += k; continue }
                             if (map.containsKey(k)) {
                                 map.remove(k)
                                 changed.add(k)
@@ -503,13 +505,14 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
                             pendingPut[k] = v
                             pendingDel.remove(k)
                             kept++
+                            keptKeys += k
                         }
                     }
                     modified.clear()
                     removed.clear()
                 }
             }
-            if (kept > 0) WipeGuard.report(file.nameWithoutExtension, kept, total.coerceAtLeast(kept))
+            if (kept > 0) WipeGuard.report(file.nameWithoutExtension, kept, total.coerceAtLeast(kept), keptKeys)
             return changed
         }
 

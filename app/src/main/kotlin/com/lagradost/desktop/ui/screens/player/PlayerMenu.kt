@@ -79,10 +79,20 @@ import com.lagradost.desktop.ui.fluent.rememberInteraction
 
 enum class MenuPage(val title: String) {
     Root(""), Sources("Source"), Quality("Quality"), Audio("Audio"), Tracks("Video & Audio"), Subtitles("Subtitles"), SecondSubtitle("Second subtitle"), SubtitleTiming("Subtitle delay and size"),
-    Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"), Compressor("Dynamic range"),
+    Speed("Playback speed"), Picture("Picture size"), Decoder("Audio output"), Compressor("Sound"),
     Upscaling("Upscaling"), Skip("Skip intro & credits"), ScreenText("Translate on-screen text"), Dimmer("Dimmer"), Sleep("Sleep timer"),
-    AudioDelay("Audio delay"), VideoDecoder("Hardware decoding"),
+    AudioDelay("Audio delay"), VideoDecoder("Hardware decoding"), TranslateSubtitle("Translate subtitles"), More("More settings"),
 }
+
+/** The page the header's back arrow goes to: the rarely used settings live under More, the subtitle extras under Subtitles */
+private fun MenuPage.parent(): MenuPage = when (this) {
+    MenuPage.Dimmer, MenuPage.AudioDelay, MenuPage.Skip, MenuPage.ScreenText, MenuPage.Compressor,
+    MenuPage.VideoDecoder, MenuPage.Decoder, MenuPage.Upscaling -> MenuPage.More
+    MenuPage.SubtitleTiming, MenuPage.SecondSubtitle, MenuPage.TranslateSubtitle -> MenuPage.Subtitles
+    else -> MenuPage.Root
+}
+
+private fun MenuPage.depth(): Int = if (this == MenuPage.Root) 0 else 1 + parent().depth()
 
 /** Every panel and bubble over the video (menu, episodes, volume and seek bubbles, subtitle pill): one surface */
 internal val PlayerSurface = Color(0xF21A1A1C)
@@ -124,15 +134,15 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
         AnimatedContent(
             page,
             transitionSpec = {
-                // into a page from the right, back to the root from the left
-                val forward = targetState != MenuPage.Root
+                // into a page from the right, back out of it from the left
+                val forward = targetState.depth() > initialState.depth()
                 (slideInHorizontally(tween(180)) { w -> if (forward) w / 5 else -w / 5 } + fadeIn(tween(180))) togetherWith
                     (slideOutHorizontally(tween(120)) { w -> if (forward) -w / 5 else w / 5 } + fadeOut(tween(100))) using
                     SizeTransform(clip = true) { _, _ -> tween(180) }
             },
         ) { p ->
             Column(Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(vertical = 6.dp)) {
-                if (p != MenuPage.Root) PageHeader(p.title, { onPage(MenuPage.Root) }) {
+                if (p != MenuPage.Root) PageHeader(p.title, { onPage(p.parent()) }) {
                     if (p == MenuPage.Sources) {
                         // looks for the sources again from scratch (the ones found are thrown away and the video starts again from where it was)
                         HeaderAction("Reload") { onPage(null); s.reloadSources() }
@@ -159,6 +169,8 @@ internal fun PlayerMenu(s: PlayerSession, page: MenuPage, onPage: (MenuPage?) ->
                     MenuPage.Upscaling -> UpscalingPage()
                     MenuPage.Skip -> SkipPage()
                     MenuPage.ScreenText -> ScreenTextPage(s, onPage)
+                    MenuPage.TranslateSubtitle -> TranslateSubtitlePage(s, onPage)
+                    MenuPage.More -> MorePage(s, onPage)
                 }
             }
         }
@@ -172,9 +184,8 @@ private fun speedLabel(v: Float) = if (v == 1f) "Normal" else "${v.toString().re
 
 @Composable
 private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
-    Column {
-    // the settings scroll when the window is low; the two lines under them stay where they are, so they are never lost below the fold
-    Column(Modifier.weight(1f, fill = false).verticalScrollIfNeeded()) {
+    // what people change while watching; everything else is one step away under More settings (Nuvio-style: few rows, nothing lost)
+    Column(Modifier.verticalScrollIfNeeded()) {
         // the three things a viewer changes most, in the order of the buttons under the picture
         NavRow(Icons.Video, "Video & Audio", listOfNotNull(qualityLabel(s), s.currentAudio()?.let { a -> audioLabel(a, s.audioTracks().indexOfFirst { it.id == a.id }.coerceAtLeast(0)).substringBefore(" • ") }).joinToString(" · ").ifBlank { null }) { onPage(MenuPage.Tracks) }
         NavRow(Icons.Subtitles, "Subtitles", s.currentSubtitle()?.originalName?.trim() ?: "Off") { onPage(MenuPage.Subtitles) }
@@ -182,8 +193,19 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         Divider()
         NavRow(Icons.Speed, "Playback speed", speedLabel(s.speed)) { onPage(MenuPage.Speed) }
         NavRow(Icons.Aspect, "Picture size", s.resize.label) { onPage(MenuPage.Picture) }
-        NavRow(Icons.Theme, "Dimmer", dimLabel(Appearance.dimmer)) { onPage(MenuPage.Dimmer) }
         NavRow(Icons.Clock, "Sleep timer", SleepTimer.label()) { onPage(MenuPage.Sleep) }
+        Divider()
+        NavRow(Icons.More, "More settings", null) { onPage(MenuPage.More) }
+    }
+}
+
+/** The settings that are rarely changed during a video, the keyboard shortcuts and the other players */
+@Composable
+private fun MorePage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
+    Column {
+    // the settings scroll when the window is low; the two lines under them stay where they are, so they are never lost below the fold
+    Column(Modifier.weight(1f, fill = false).verticalScrollIfNeeded()) {
+        NavRow(Icons.Theme, "Dimmer", dimLabel(Appearance.dimmer)) { onPage(MenuPage.Dimmer) }
         NavRow(Icons.Video, "Hardware decoding", Appearance.videoDecoder.label.substringBefore(" (")) { onPage(MenuPage.VideoDecoder) }
         NavRow(Icons.Volume, "Audio output", Appearance.audioDecoder.label.substringBefore(" (")) { onPage(MenuPage.Decoder) }
         NavRow(Icons.Clock, "Audio delay", if (s.audioDelayMs != 0L) "${if (s.audioDelayMs > 0) "+" else ""}${s.audioDelayMs} ms" else "Off") { onPage(MenuPage.AudioDelay) }
@@ -192,18 +214,19 @@ private fun RootPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
             Appearance.save()
             ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyDynamicRange() }
         }
-        NavRow(Icons.Volume, "Dynamic range", Appearance.dynamicRange.label) { onPage(MenuPage.Compressor) }
+        NavRow(Icons.Volume, "Sound", listOfNotNull(Appearance.equalizer.takeIf { it.name != "Off" }?.label, Appearance.dynamicRange.takeIf { it.name != "Off" }?.label).joinToString(" · ").ifEmpty { "Off" }) { onPage(MenuPage.Compressor) }
         NavRow(Icons.Anime, "Upscaling", Appearance.upscaler.label.substringBefore(" (").substringBefore(", ")) { onPage(MenuPage.Upscaling) }
         NavRow(Icons.Skip, "Skip intro & credits", if (Appearance.autoSkipStamps) (if (Appearance.autoSkipDelay5s) "Auto (5s)" else "Auto") else "Manual") { onPage(MenuPage.Skip) }
         NavRow(Icons.Language, "Translate on-screen text", ScreenText.version.let { ScreenText.fromName().substringBefore(" (") + " → " + ScreenText.toName().substringBefore(" (") }) { onPage(MenuPage.ScreenText) }
     }
         Divider()
         ActionRow(Icons.Help, "Keyboard shortcuts") { onPage(null); Shortcuts.show() }
-        // the other players are rarely needed: three chips in one line instead of three rows (the page is taller than a small window as it is)
+        // the other players are rarely needed: chips in one line (Energy only when installed) instead of three rows (the page is taller than a small window as it is)
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 2.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FText("Open in", Modifier.weight(1f), style = Fluent.type.caption, color = MenuColors.tertiary, maxLines = 1, softWrap = false)
             MenuChip("VLC", false) { onPage(null); s.openExternal(com.lagradost.desktop.player.ExternalPlayers.Target.Vlc) }
             MenuChip("mpv", false) { onPage(null); s.openExternal(com.lagradost.desktop.player.ExternalPlayers.Target.Mpv) }
+            if (remember { com.lagradost.desktop.player.ExternalPlayers.energyInstalled() }) MenuChip("Energy", false) { onPage(null); s.openExternal(com.lagradost.desktop.player.ExternalPlayers.Target.Energy) }
             MenuChip("Browser", false) { onPage(null); s.openExternal(com.lagradost.desktop.player.ExternalPlayers.Target.Browser) }
         }
     }
@@ -369,7 +392,20 @@ private fun DecoderPage() {
 @Composable
 private fun CompressorPage() {
     var pick by remember { mutableStateOf(Appearance.dynamicRange) }
+    var eq by remember { mutableStateOf(Appearance.equalizer) }
     Column(Modifier.verticalScrollIfNeeded()) {
+        SectionLabel("Equalizer")
+        com.lagradost.desktop.ui.fluent.Equalizer.entries.forEach { e ->
+            CheckRow(e.label, e == eq, detail = e.detail) {
+                if (e != eq) {
+                    eq = e
+                    Appearance.equalizer = e
+                    Appearance.save()
+                    ioTask { com.lagradost.desktop.player.MpvPlayer.active?.applyDynamicRange() }
+                }
+            }
+        }
+        SectionLabel("Dynamic range")
         com.lagradost.desktop.ui.fluent.DynamicRange.entries.forEach { d ->
             CheckRow(d.label, d == pick, detail = if (d == com.lagradost.desktop.ui.fluent.DynamicRange.Off) d.detail else d.detail + "  ${d.thresholdDb} dB, +${d.makeupDb} dB") {
                 if (d != pick) {
@@ -419,6 +455,25 @@ private fun ScreenTextPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     }
 }
 
+/** The subtitle that shows now, into the language picked here (the last one picked comes first) */
+@Composable
+private fun TranslateSubtitlePage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
+    val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context)
+    val last = prefs.getString("subtitle_translate_to", null)
+    val langs = ScreenText.targets.sortedBy { if (it.second == last) 0 else 1 }
+    val listState = rememberLazyListState()
+    LazyColumn(Modifier.fillMaxWidth().scrollIndicator(listState), state = listState) {
+        item { Note(s.currentSubtitle()?.let { "Translates \"${it.originalName.trim().lineSequence().first()}\" and shows it instead. Every line keeps its timing." } ?: "Choose a subtitle first, then translate it.") }
+        items(langs) { (name, code) ->
+            CheckRow(name, code == last) {
+                prefs.edit().putString("subtitle_translate_to", code).apply()
+                onPage(null)
+                s.translateSubtitle(code, name)
+            }
+        }
+    }
+}
+
 @Composable
 private fun SkipPage() {
     var autoSkip by remember { mutableStateOf(Appearance.autoSkipStamps) }
@@ -462,6 +517,7 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         item { ActionRow(Icons.Folder, "Add a subtitle file…") { onPage(null); s.pickSubtitleFile() } }
         item { ActionRow(Icons.Search, "Search online…") { onPage(null); openSubtitleSearch(s) } }
         item { ActionRow(Icons.Download, "Add the first online result") { onPage(null); s.addFirstOnlineSubtitle() } }
+        item { NavRow(Icons.Language, "Translate…", null) { onPage(MenuPage.TranslateSubtitle) } }
         item { Divider() }
         item { CheckRow("Off", pickState == null) { if (pickState != null) { groupOpen = null; pick(null) } } }
         for ((name, list) in groups) {

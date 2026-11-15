@@ -195,7 +195,7 @@ private fun CheckFrame(dialog: com.lagradost.desktop.isolate.CheckDialog, appear
         contentAlignment = Alignment.Center,
     ) {
         val cardW = min(maxWidth - 48.dp, 760.dp)
-        val pageH = min(maxHeight - 240.dp, 500.dp).coerceAtLeast(220.dp)
+        val pageH = min(maxHeight - 190.dp, 640.dp).coerceAtLeast(220.dp)
         val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.overlay)
         androidx.compose.foundation.layout.Column(
             Modifier.width(cardW).alpha(appear).clip(shape).background(c.flyout, shape).padding(20.dp),
@@ -203,29 +203,38 @@ private fun CheckFrame(dialog: com.lagradost.desktop.isolate.CheckDialog, appear
         ) {
             androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.size(44.dp).background(c.control, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                    com.lagradost.desktop.ui.fluent.Icon(com.lagradost.desktop.ui.fluent.Icons.Lock, size = 20.dp, tint = c.text)
+                    androidx.compose.animation.Crossfade(dialog.passed, label = "check-icon") { through ->
+                        com.lagradost.desktop.ui.fluent.Icon(if (through) com.lagradost.desktop.ui.fluent.Icons.Accept else com.lagradost.desktop.ui.fluent.Icons.Lock, size = 20.dp, tint = c.text)
+                    }
                 }
-                androidx.compose.foundation.layout.Column(Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(3.dp)) {
-                    com.lagradost.desktop.ui.fluent.FText(
-                        dialog.extension?.let { com.lagradost.desktop.i18n.Tr.f("{0} needs you to pass a check", it) } ?: "An extension needs you to pass a check",
-                        style = type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 2,
-                    )
-                    com.lagradost.desktop.ui.fluent.FText(
-                        "The site checks that a person is watching. Tick the box if one shows: this window closes by itself once the check is passed.",
-                        style = type.caption, color = c.textSecondary, maxLines = 3,
-                    )
-                }
+                com.lagradost.desktop.ui.fluent.FText(
+                    dialog.extension?.let { com.lagradost.desktop.i18n.Tr.f("{0} needs you to pass a check", it) } ?: "An extension needs you to pass a check",
+                    style = type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 2, modifier = Modifier.weight(1f),
+                )
             }
             // the page (a window of its own under the app's drawing: nothing is drawn over it)
-            Box(Modifier.fillMaxWidth().height(pageH).clip(RoundedCornerShape(10.dp)).background(Color.White), propagateMinConstraints = true) {
-                AndroidViewHost(decor)
+            // under it the page's own colour (WebView.setBackgroundColor in net/CheckWindow) and a ring: a page that is (re)loading is never a white box
+            Box(Modifier.fillMaxWidth().height(pageH).clip(RoundedCornerShape(10.dp)).background(Color(com.lagradost.desktop.net.CheckWindow.pageColor())), contentAlignment = Alignment.Center) {
+                com.lagradost.desktop.ui.fluent.ProgressRing(size = 28.dp, strokeWidth = 3.dp)
+                Box(Modifier.matchParentSize(), propagateMinConstraints = true) { AndroidViewHost(decor) }
             }
             androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                com.lagradost.desktop.ui.fluent.ProgressRing(size = 14.dp, strokeWidth = 2.dp)
+                if (dialog.passed) com.lagradost.desktop.ui.fluent.Icon(com.lagradost.desktop.ui.fluent.Icons.Accept, size = 14.dp, tint = c.text)
+                else com.lagradost.desktop.ui.fluent.ProgressRing(size = 14.dp, strokeWidth = 2.dp)
                 Box(Modifier.width(10.dp))
-                com.lagradost.desktop.ui.fluent.FText(if (site.isNotBlank()) com.lagradost.desktop.i18n.Tr.f("Waiting for {0}", site) else "Waiting for the check", style = type.caption, color = c.textTertiary, maxLines = 1, modifier = Modifier.weight(1f))
+                val status = when {
+                    dialog.passed -> com.lagradost.desktop.i18n.Tr.t("Done")
+                    site.isNotBlank() -> com.lagradost.desktop.i18n.Tr.f("Waiting for {0}", site)
+                    else -> com.lagradost.desktop.i18n.Tr.t("Waiting for the check")
+                } + if (dialog.more > 0 && !dialog.passed) "  ·  +${dialog.more}" else ""
+                com.lagradost.desktop.ui.fluent.FText(status, style = type.caption, color = if (dialog.passed) c.text else c.textTertiary, maxLines = 1, modifier = Modifier.weight(1f))
                 // a page that sits on a blank or endless "Just a moment..." (seen on the owner's PC): loaded again on a click
                 com.lagradost.desktop.ui.fluent.Button("Reload page", { dialog.reload() }, icon = com.lagradost.desktop.ui.fluent.Icons.Refresh)
+                // more checks wait behind this one (a search in all extensions): all of them can go at once
+                if (dialog.more > 0) {
+                    Box(Modifier.width(8.dp))
+                    com.lagradost.desktop.ui.fluent.Button("Skip all", { com.lagradost.desktop.net.CheckWindow.skipAll() })
+                }
                 Box(Modifier.width(8.dp))
                 com.lagradost.desktop.ui.fluent.Button("Cancel", { dialog.cancel() })
             }

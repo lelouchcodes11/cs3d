@@ -201,6 +201,42 @@ internal const val HOLD_BOOST_MS = 350L
 object PlayerKeys {
     @Volatile
     var handler: ((KeyEvent) -> Boolean)? = null
+
+    // Ctrl, Shift or Alt pressed alone and let go: [observe] sees every key of the window (also the ones the app takes first, as Ctrl + K), so a
+    // modifier that was part of a combination, or held for long, is not taken for a tap
+    private var lone: KeyCombo? = null
+    private var loneAt = 0L
+    private var spoiled = false
+
+    fun observe(e: KeyEvent) {
+        val mod = KeyCombo.modifierOf(e.key)
+        when (e.type) {
+            KeyEventType.KeyDown -> when {
+                // another key: a modifier that is down was part of a combination (a plain key with none down changes nothing)
+                mod == null -> { if (lone != null || e.isCtrlPressed || e.isShiftPressed || e.isAltPressed) spoiled = true; lone = null }
+                // a held modifier repeats: only its first press arms it, and a second modifier spoils it
+                lone == null && !spoiled -> {
+                    // no other modifier is down (the event may or may not count the pressed one itself)
+                    val others = listOf(e.isCtrlPressed && !mod.ctrl, e.isShiftPressed && !mod.shift, e.isAltPressed && !mod.alt).count { it }
+                    if (others == 0) { lone = mod; loneAt = System.currentTimeMillis() } else spoiled = true
+                }
+                lone != null && lone != mod -> { lone = null; spoiled = true }
+            }
+            KeyEventType.KeyUp -> if (mod != null && !e.isCtrlPressed && !e.isShiftPressed && !e.isAltPressed) {
+                // the last modifier is up: the next press starts over (the tap itself is taken by [takeLoneModifier] before this)
+                spoiled = false
+                lone = null
+            }
+        }
+    }
+
+    /** On the release of a modifier: the modifier alone when it was pressed and let go within 1 s with nothing else in between */
+    fun takeLoneModifier(e: KeyEvent): KeyCombo? {
+        val l = lone ?: return null
+        if (KeyCombo.modifierOf(e.key) != l || spoiled || System.currentTimeMillis() - loneAt > 1000) return null
+        lone = null
+        return l
+    }
 }
 
 /** Dev: keeps the controls up (/player?hold=1) so that they can be looked at */
@@ -390,9 +426,11 @@ private fun PlayerContent(s: PlayerSession) {
         return true
     }
 
-    // Space: a tap pauses or plays when it is let go; held for 0.35 s it plays at 2x for as long as it is down (and letting go then does not pause)
+    // The play / pause key (Space, K, or any key without Ctrl, Shift or Alt chosen for it): a tap pauses or plays when it is let go; held for 0.35 s it
+    // plays at 2x for as long as it is down (and letting go then does not pause)
     val spaceDown = remember { BooleanArray(2) } // [0] is down, [1] the hold started the 2x
     val spaceAt = remember { LongArray(1) }
+    val tapKey = remember { LongArray(1) } // the key that is down
     val spaceTimer = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
     val keyScope = androidx.compose.runtime.rememberCoroutineScope()
     DisposableEffect(Unit) { onDispose { spaceTimer[0]?.cancel(); s.endBoost() } }
@@ -401,10 +439,11 @@ private fun PlayerContent(s: PlayerSession) {
             KeyEventType.KeyDown -> {
                 // a key held down repeats: only the first press counts (a press whose release never came, because the focus moved, is over after 1.5 s)
                 val now = System.currentTimeMillis()
-                val repeat = spaceDown[0] && now - spaceAt[0] < 1500
+                val repeat = spaceDown[0] && tapKey[0] == e.key.keyCode && now - spaceAt[0] < 1500
                 spaceAt[0] = now
                 if (repeat) return true
                 if (spaceDown[1]) s.endBoost()
+                tapKey[0] = e.key.keyCode
                 spaceDown[0] = true
                 spaceDown[1] = false
                 spaceTimer[0]?.cancel()
@@ -434,50 +473,71 @@ private fun PlayerContent(s: PlayerSession) {
         return true
     }
 
-    fun onKey(e: KeyEvent): Boolean {
-        if (e.key == Key.Spacebar && !e.isAltPressed && !e.isCtrlPressed && com.lagradost.desktop.ui.fluent.Overlays.dialogs.isEmpty()) return onSpace(e)
-        if (e.type != KeyEventType.KeyDown) return false
-        // a dialog (subtitle style, search) has the keys while it is open
-        if (com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty()) return false
-        // the menu: Esc closes it (the other shortcuts keep working while it is open)
-        if (menuPage != null && e.key == Key.Escape) { menuPage = null; return true }
-        val big = e.isShiftPressed
-        when (e.key) {
-            Key.K -> {
-                // what the press does decides the mark (it said "Playing" for a press that paused a video that was buffering)
+    /** What a shortcut does ([PlayerKeymap] says which keys); false when it means nothing right now (End on a video that is not live) */
+    fun runAction(a: PlayerAction): Boolean {
+        when (a) {
+            PlayerAction.PlayPause -> {
                 val resumes = s.togglePlay()
                 s.showHud(if (resumes) Icons.Play else Icons.Pause, if (resumes) "Playing" else "Paused")
             }
-            Key.DirectionLeft -> if (e.isCtrlPressed) s.prevEpisode() else if (seekKeyReady()) s.seekBy(if (big) -30_000 else -10_000)
-            Key.DirectionRight -> if (e.isCtrlPressed) s.nextEpisode() else if (seekKeyReady()) s.seekBy(if (big) 30_000 else 10_000)
-            Key.J -> if (seekKeyReady()) s.seekBy(-10_000)
-            Key.L -> if (seekKeyReady()) s.seekBy(10_000)
-            Key.DirectionUp -> s.stepVolume(1)
-            Key.DirectionDown -> s.stepVolume(-1)
-            Key.M -> s.toggleMute()
-            // the fail-safe of the controls: they show and stay until C is pressed again (works when nothing else brings them up)
-            Key.C -> {
-                if (e.isCtrlPressed || e.isAltPressed) return false
+            PlayerAction.Speed2x -> s.changeSpeed(if (s.speed == 2f) 1f else 2f)
+            PlayerAction.Slower -> s.changeSpeed((s.speed - 0.25f).coerceAtLeast(0.25f))
+            PlayerAction.Faster -> s.changeSpeed((s.speed + 0.25f).coerceAtMost(3f))
+            PlayerAction.NormalSpeed -> s.changeSpeed(1f)
+            PlayerAction.SeekBack -> if (seekKeyReady()) s.seekBy(-10_000)
+            PlayerAction.SeekForward -> if (seekKeyReady()) s.seekBy(10_000)
+            PlayerAction.SeekBackLong -> if (seekKeyReady()) s.seekBy(-30_000)
+            PlayerAction.SeekForwardLong -> if (seekKeyReady()) s.seekBy(30_000)
+            PlayerAction.ToStart -> if (s.liveWindowKnown) s.seekToFraction(0f) else s.seekTo(0)
+            PlayerAction.GoLive -> if (s.live) s.goLive() else return false
+            PlayerAction.NextEpisode -> s.nextEpisode()
+            PlayerAction.PrevEpisode -> s.prevEpisode()
+            PlayerAction.EpisodeList -> showEpisodes = !showEpisodes
+            PlayerAction.VolumeUp -> s.stepVolume(1)
+            PlayerAction.VolumeDown -> s.stepVolume(-1)
+            PlayerAction.Mute -> s.toggleMute()
+            PlayerAction.NextAudio -> s.cycleAudio()
+            PlayerAction.NextSubtitle -> s.cycleSubtitle()
+            PlayerAction.PictureSize -> s.cycleResize()
+            PlayerAction.Translate -> s.toggleScreenText()
+            PlayerAction.Fullscreen -> toggleFullscreen()
+            PlayerAction.Pip -> s.togglePip()
+            // the fail-safe of the controls: they show and stay until the key is pressed again (works when nothing else brings them up)
+            PlayerAction.PinControls -> {
                 pinned = !pinned
                 lastActivity = System.currentTimeMillis()
                 visible = true
-                s.showHud(Icons.Eye, if (pinned) "Controls stay on screen (C to let them hide)" else "Controls hide as usual")
+                s.showHud(Icons.Eye, if (pinned) "Controls stay on screen (press again to let them hide)" else "Controls hide as usual")
             }
-            Key.F, Key.F11 -> toggleFullscreen()
-            Key.I -> s.togglePip()
-            Key.Escape -> if (pip) s.setPip(false) else if (fullscreen) toggleFullscreen() else if (showEpisodes) showEpisodes = false else Navigator.back()
-            Key.N -> s.nextEpisode()
-            Key.P -> s.prevEpisode()
-            Key.S -> s.cycleSubtitle()
-            Key.A -> s.cycleAudio()
-            Key.Z -> s.cycleResize()
-            Key.T -> s.toggleScreenText()
-            Key.E -> showEpisodes = !showEpisodes
-            Key.F1 -> Shortcuts.show()
-            Key.Comma -> s.changeSpeed((s.speed - 0.25f).coerceAtLeast(0.25f))
-            Key.Period -> s.changeSpeed((s.speed + 0.25f).coerceAtMost(3f))
-            Key.MoveHome -> if (s.liveWindowKnown) s.seekToFraction(0f) else s.seekTo(0)
-            Key.MoveEnd -> if (s.live) s.goLive() else return false
+            PlayerAction.ShowShortcuts -> Shortcuts.show()
+        }
+        return true
+    }
+
+    fun onKey(e: KeyEvent): Boolean {
+        // a dialog (subtitle style, search, the shortcuts list) has the keys while it is open
+        if (com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty()) return false
+        // Ctrl (or Shift, Alt) pressed and let go on its own (PlayerKeys.loneModifier says whether another key came in between)
+        if (KeyCombo.isModifier(e.key)) {
+            if (e.type == KeyEventType.KeyUp) PlayerKeys.takeLoneModifier(e)?.let { lone -> PlayerKeymap.actionFor(lone)?.let { return runAction(it) } }
+            return false
+        }
+        if (e.type == KeyEventType.KeyUp) return if (spaceDown[0] && tapKey[0] == e.key.keyCode) onSpace(e) else false
+        if (e.type != KeyEventType.KeyDown) return false
+        val bare = !e.isCtrlPressed && !e.isShiftPressed && !e.isAltPressed
+        // the menu: Esc closes it (the other shortcuts keep working while it is open)
+        if (menuPage != null && e.key == Key.Escape) { menuPage = null; return true }
+        if (e.key == Key.Escape) {
+            if (pip) s.setPip(false) else if (fullscreen) toggleFullscreen() else if (showEpisodes) showEpisodes = false else Navigator.back()
+            return true
+        }
+        val combo = KeyCombo.of(e) ?: return false
+        val action = PlayerKeymap.actionFor(combo)
+        if (action == PlayerAction.PlayPause && bare) return onSpace(e)
+        if (action != null) return runAction(action)
+        if (!bare) return false
+        when (e.key) {
+            Key.F11 -> toggleFullscreen()
             Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine, Key.Zero -> {
                 val digit = when (e.key) {
                     Key.Zero -> 0; Key.One -> 1; Key.Two -> 2; Key.Three -> 3; Key.Four -> 4

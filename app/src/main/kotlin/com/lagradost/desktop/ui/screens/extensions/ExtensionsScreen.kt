@@ -138,7 +138,7 @@ fun ExtensionsScreen() {
                 com.lagradost.desktop.ui.fluent.PillButton("Add repository", Icons.Add, primary = true, onClick = { addRepositoryDialog(ext) }, height = 42.dp)
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                com.lagradost.desktop.ui.fluent.PageHeader("Extensions", Modifier.weight(1f), icon = Icons.Extensions, tint = androidx.compose.ui.graphics.Color(0xFFB07CFF), subtitle = "Add a repository, then install the providers you want")
+                com.lagradost.desktop.ui.fluent.PageHeader("Extensions", Modifier.weight(1f), icon = Icons.Extensions, tint = androidx.compose.ui.graphics.Color(0xFFB07CFF))
                 stats?.let { s ->
                     if (!compact) {
                         StatTile(Icons.Download, (installedCount ?: s.downloaded).toString(), "installed")
@@ -199,7 +199,7 @@ fun ExtensionsScreen() {
                         val heading = @Composable { m: Modifier ->
                             Column(m) {
                                 FText(if (sel == INSTALLED) "Installed extensions" else repo?.name ?: "Extensions", style = Fluent.type.subtitle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), maxLines = 1)
-                                FText(repo?.url ?: (list?.second?.size ?: 0).let { n -> val all = installedCount ?: n; if (sel == INSTALLED && query.isBlank() && all > n) "$n of $all shown: your language or type filter hides the others" else "$n extensions" }, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
+                                if (repo != null || (list?.second?.size ?: 0) > 0 || (installedCount ?: 0) > 0) FText(repo?.url ?: (list?.second?.size ?: 0).let { n -> val all = installedCount ?: n; if (sel == INSTALLED && query.isBlank() && all > n) "$n of $all shown: your language or type filter hides the others" else com.lagradost.desktop.i18n.Tr.f("{0} extensions", n).let { if (n == 1 && it == "1 extensions") "1 extension" else it } }, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
                             }
                         }
                         val filterBox = @Composable { m: Modifier ->
@@ -320,7 +320,13 @@ private fun RepoRow(
             Column(Modifier.weight(1f)) {
                 FText(name, style = Fluent.type.bodyStrong, maxLines = 2)
                 // an address stays on one line; a sentence ("Everything downloaded or loaded locally") may take three in the narrow list
-                FText(url, style = Fluent.type.caption, color = c.textTertiary, maxLines = if (url.startsWith("http")) 1 else 3)
+                // a repository whose address is dead says so instead of its address (its extensions keep working until they are removed)
+                val problem = repo?.let { com.lagradost.cloudstream3.plugins.RepositoryManager.problems[it.url] }
+                if (problem != null) FText(
+                    when (problem) { "gone" -> "Not found"; "broken" -> "Not a repository"; else -> "Not answering" },
+                    style = Fluent.type.caption, color = c.caution, maxLines = 1,
+                )
+                else FText(url, style = Fluent.type.caption, color = c.textTertiary, maxLines = if (url.startsWith("http")) 1 else 3)
             }
             if (repo != null && hovered) IconButton(Icons.Delete, { confirmRemove(repo) }, tooltip = "Remove repository", size = 28.dp, iconSize = 14.dp)
         }
@@ -369,7 +375,8 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
             iconUrl?.let { RemoteImage(it, null, null, Modifier.size(46.dp).then(if (c.dark) Modifier else Modifier.background(androidx.compose.ui.graphics.Color(0xFF2C2C2E))), ContentScale.Crop) }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            FText(p.name, style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)
+            // a local extension is named after its file (Multi.cs3): the name without the file ending
+            FText(p.name.replace(Regex("""(\.-?\d+)?\.(cs3|jar)$""", RegexOption.IGNORE_CASE), ""), style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)
             FText("v${p.version}" + (p.authors.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "  ·  by $it" } ?: ""), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
             val line = listOf(about.ifBlank { counts }, runs).filter { it.isNotBlank() }.joinToString("  ·  ")
             if (line.isNotBlank()) FText(line, style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 2.dp))
@@ -441,12 +448,12 @@ private fun addRepositoryDialog(ext: ExtensionsViewModel) {
             onPrimary = {
                 val input = url.trim()
                 if (input.isEmpty()) {
-                    Toasts.show("Enter a repository URL or short code", false)
+                    Toasts.show("Enter a repository address or short code", false)
                     return@Dialog
                 }
                 ioTask {
                     val parsed = RepositoryManager.parseRepoUrl(input)
-                    if (parsed.isNullOrBlank()) { Toasts.show("That does not look like a repository URL", true); return@ioTask }
+                    if (parsed.isNullOrBlank()) { Toasts.show("That does not look like a repository address", true); return@ioTask }
                     val repository = RepositoryManager.parseRepository(parsed)
                     if (repository == null) { Toasts.show("No repository was found at that address", true); return@ioTask }
                     val data = RepositoryData(repository.iconUrl, name.trim().ifBlank { repository.name }, parsed)
@@ -454,7 +461,7 @@ private fun addRepositoryDialog(ext: ExtensionsViewModel) {
                     ext.loadStats()
                     ext.loadRepositories()
                     val found = RepositoryManager.getRepoPlugins(data)
-                    Toasts.show(if (found.isNullOrEmpty()) "Repository added, but it lists no extensions" else "Added “${data.name}” with ${found.size} extensions", false)
+                    Toasts.show(if (found.isNullOrEmpty()) "Repository added, but it lists no extensions" else "Added “${data.name}” with ${com.lagradost.desktop.ui.counted(found.size, "extension")}", false)
                 }
             },
         ) {

@@ -60,6 +60,7 @@ object Diagnostics {
         line("Player controls", com.lagradost.desktop.ui.screens.player.ControlsGuard.summary())
         line("Window renderer", com.lagradost.desktop.platform.Graphics.note)
         line("Look", (if (com.lagradost.desktop.ui.fluent.Appearance.light) "light" else "full") + " (low-end PC mode: ${com.lagradost.desktop.ui.fluent.Appearance.performance.label}; ${com.lagradost.desktop.platform.LowEnd.describe()})")
+        line("High performance", com.lagradost.desktop.platform.HighPerformance.note)
         line("Extension sandbox", com.lagradost.desktop.sandbox.PluginSandbox.summary())
         line("Wheel", com.lagradost.desktop.ui.fluent.WheelLog.text())
         val player = MpvPlayer.active

@@ -247,7 +247,8 @@ class SearchViewModel : ViewModel() {
 
             refreshRepos()
             val chosen = repos.filter { a ->
-                (ignoreSettings || (providersActive.isEmpty() || providersActive.contains(a.name))) && (!isQuickSearch || a.hasQuickSearch)
+                (ignoreSettings || (providersActive.isEmpty() || providersActive.contains(a.name))) && (!isQuickSearch || a.hasQuickSearch) &&
+                    com.lagradost.desktop.core.Kids.allows(a.api)
             }
             // desktop: every extension that answers is published at once, the ones still searching stay listed as pending
             val pending = LinkedHashSet(chosen.map { it.name })

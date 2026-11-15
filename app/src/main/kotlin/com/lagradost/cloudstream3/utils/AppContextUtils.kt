@@ -377,7 +377,7 @@ object AppContextUtils {
         val hashSet = HashSet<String>()
         val activeLangs = getApiProviderLangSettings()
         val hasUniversal = activeLangs.contains(AllLanguagesName)
-        hashSet.addAll(apis.filter { hasUniversal || activeLangs.contains(it.lang) }
+        hashSet.addAll(apis.filter { (hasUniversal || activeLangs.contains(it.lang)) && com.lagradost.desktop.core.Kids.allows(it) }
             .map { it.name })
         return hashSet
     }
@@ -471,7 +471,7 @@ object AppContextUtils {
         val hasUniversal = langs.contains(AllLanguagesName)
         // desktop: no torrents (providers that only have torrents are not listed)
         val allApis =
-            apis.filter { api -> (hasUniversal || langs.contains(api.lang)) && (api.hasMainPage || !hasHomePageIsRequired) && api.supportedTypes.any { it != TvType.Torrent } }
+            apis.filter { api -> (hasUniversal || langs.contains(api.lang)) && (api.hasMainPage || !hasHomePageIsRequired) && api.supportedTypes.any { it != TvType.Torrent } && com.lagradost.desktop.core.Kids.allows(api) }
         return if (currentPrefMedia.isEmpty()) {
             allApis
         } else {

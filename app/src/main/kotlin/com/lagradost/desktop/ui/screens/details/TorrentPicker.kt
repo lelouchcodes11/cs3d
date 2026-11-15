@@ -169,7 +169,7 @@ object TorrentPicker {
             // ---------------------------------------------------------------- the releases
             Column(Modifier.weight(1f).fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FText(if (loading && answer == null) "Searching…" else "${shown.size} results", style = Fluent.type.bodyStrong, maxLines = 1)
+                    FText(if (loading && answer == null) "Searching…" else com.lagradost.desktop.ui.counted(shown.size, "result"), style = Fluent.type.bodyStrong, maxLines = 1)
                     if (loading) ProgressRing(size = 16.dp, strokeWidth = 2.dp)
                     Box(Modifier.weight(1f))
                     Sort.entries.forEach { s -> Chip(s.label, sort == s, { sort = s }) }

@@ -53,7 +53,7 @@ object Isolation {
         val now = System.currentTimeMillis()
         if (now - lastAnnounced > 120_000) {
             lastAnnounced = now
-            runCatching { com.lagradost.desktop.ui.Toasts.show(com.lagradost.desktop.i18n.Tr.f("Extensions are not loaded: the sandbox could not start ({0}). Settings > Network and security > Sandbox for extensions.", why.take(140)), true) }
+            runCatching { com.lagradost.desktop.ui.Toasts.show(com.lagradost.desktop.i18n.Tr.f("Extensions are not loaded: the sandbox could not start ({0}). Settings > Advanced > Network and security > Sandbox for extensions.", why.take(140)), true) }
         }
         throw Blocked("$name is not loaded: the sandbox cannot start ($why)")
     }

@@ -38,14 +38,9 @@ internal fun MoreLikeThis(
     val perRow = ((room + 16.dp) / (minWidth + 16.dp)).toInt().coerceAtLeast(2)
     // the posters share the width of the page: no ragged space at the right of the grid
     val w = ((room - 16.dp * (perRow - 1)) / perRow).coerceAtLeast(minWidth * 0.8f)
-    val c = Fluent.colors
     Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         Column(Modifier.reveal("more-head/$title")) {
             RichSectionHeader(if (title.isBlank()) "More like this" else "More like $title")
-            FText(
-                "${cards.size} titles that people who watch this also watch, in the order of how close they are. Opening one looks for it in your extensions.",
-                style = Fluent.type.caption, color = c.textTertiary, modifier = Modifier.padding(top = 2.dp),
-            )
         }
         cards.chunked(perRow).forEachIndexed { r, row ->
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {

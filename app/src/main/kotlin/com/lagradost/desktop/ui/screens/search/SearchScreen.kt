@@ -207,6 +207,11 @@ fun SearchScreen(route: Route.Search) {
         }
         // every extension shows up as soon as it answers; the ones without results are left out
         val results = current.orEmpty().filterValues { it.list.isNotEmpty() }.let { all ->
+            // an extension with a title that matches what was typed comes before one whose answer has none (some answer any search with their
+            // newest titles: "interstellar" put a row of one unrelated drama on top, the film itself further down); the rest keep their order
+            val words = searchWords(query)
+            if (words.isEmpty()) all else all.entries.sortedBy { e -> if (e.value.list.any { r -> matches(r.name, words) }) 0 else 1 }.associate { it.key to it.value }
+        }.let { all ->
             // the extension chosen on Home comes first when it has something (the others keep the order they answered in)
             val first = com.lagradost.desktop.ui.shell.selectedHomeProvider()?.takeIf { route.only == null && it in all }
             if (first == null) all else all.entries.sortedBy { if (it.key == first) 0 else 1 }.associate { it.key to it.value }
@@ -327,7 +332,7 @@ private fun ResultsHeader(
             only != null -> "Searching $only"
             loading && total > 0 -> "Searched $searched of $total extensions"
             loading -> "Searching…"
-            else -> "Results from your extensions"
+            else -> null
         }
         com.lagradost.desktop.ui.fluent.PageHeader("“$query”", subtitle = subtitle) {
             if (only == null) {
@@ -590,4 +595,15 @@ private fun HistoryChip(item: SearchHistoryItem, onOpen: () -> Unit, onRemove: (
         FText(item.searchText, Modifier.widthIn(max = 220.dp), maxLines = 1, softWrap = false)
         Box(Modifier.size(28.dp)) { IconButton(Icons.Close, onRemove, size = 28.dp, iconSize = 9.dp, tooltip = "Remove") }
     }
+}
+
+/** The words of a search, as titles are compared: lower case, letters and digits only (accents kept) */
+private fun searchWords(text: String): List<String> =
+    text.lowercase().split(Regex("""[^\p{L}\p{N}]+""")).filter { it.isNotBlank() }
+
+/** A title that has every word of the search in it */
+private fun matches(title: String?, words: List<String>): Boolean {
+    if (title.isNullOrBlank()) return false
+    val t = searchWords(title).joinToString(" ")
+    return words.all { it in t }
 }

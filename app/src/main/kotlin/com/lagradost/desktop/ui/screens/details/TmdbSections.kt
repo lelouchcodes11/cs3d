@@ -141,7 +141,7 @@ fun TmdbStrip(info: TmdbInfo, pageWidth: Dp) {
             info.certification?.takeIf { it.isNotBlank() }?.let { add("Age rating" to it) }
             info.country?.let { add("Origin country" to it) }
             info.language?.let { add("Original language" to it) }
-            if (!info.isMovie && info.seasons != null) add("Seasons" to (info.seasons.toString() + info.episodes?.let { " · $it episodes" }.orEmpty()))
+            if (!info.isMovie && info.seasons != null) add("Seasons" to (info.seasons.toString() + info.episodes?.let { " · " + com.lagradost.desktop.ui.counted(it, "episode") }.orEmpty()))
             info.rating?.let { r -> add("TMDB rating" to ("★ " + "%.1f".format(r) + (if (info.votes > 0) "  ·  ${compactCount(info.votes)} votes" else ""))) }
             info.budget?.let { add("Budget" to moneyText(it)) }
             info.revenue?.let { add("Revenue" to moneyText(it)) }
@@ -191,7 +191,7 @@ fun TmdbStrip(info: TmdbInfo, pageWidth: Dp) {
             }
         }
         if (info.providers.isNotEmpty()) {
-            SectionLabel("Streaming in ${Tmdb.region}")
+            SectionLabel("Streaming in ${java.util.Locale("", Tmdb.region).getDisplayCountry(java.util.Locale.ENGLISH).ifBlank { Tmdb.region }}")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 info.providers.forEach { p ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -285,7 +285,8 @@ private fun ReviewCard(r: TmdbReview) {
     var open by remember { mutableStateOf(false) }
     val source = rememberInteraction()
     val shape = RoundedCornerShape(FluentShapes.card)
-    val text = org.jsoup.parser.Parser.unescapeEntities(r.text, false).replace(Regex("[*_#>]+"), "")
+    // the review is Markdown: its marks, its "---" rules and its runs of empty lines are not shown as text
+    val text = org.jsoup.parser.Parser.unescapeEntities(r.text, false).replace(Regex("[*_#>]+"), "").lines().filterNot { it.trim().matches(Regex("[-=~]{3,}")) }.joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim()
     Column(
         Modifier.fillMaxWidth().clip(shape).background(c.card).hairBorder(c.stroke, shape)
             .fluentClickable(source, true, shape, Role.Button) { open = !open }.padding(20.dp),

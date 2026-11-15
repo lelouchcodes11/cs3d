@@ -108,6 +108,8 @@ open class Paint {
 
     open fun isAntiAlias(): Boolean = (flags and ANTI_ALIAS_FLAG) != 0
     open fun setAntiAlias(aa: Boolean) = setFlags(if (aa) flags or ANTI_ALIAS_FLAG else flags and ANTI_ALIAS_FLAG.inv())
+    open fun isSubpixelText(): Boolean = (flags and SUBPIXEL_TEXT_FLAG) != 0
+    open fun setSubpixelText(subpixelText: Boolean) = setFlags(if (subpixelText) flags or SUBPIXEL_TEXT_FLAG else flags and SUBPIXEL_TEXT_FLAG.inv())
     open fun isDither(): Boolean = (flags and DITHER_FLAG) != 0
     open fun setDither(dither: Boolean) = setFlags(if (dither) flags or DITHER_FLAG else flags and DITHER_FLAG.inv())
     open fun isFilterBitmap(): Boolean = (flags and FILTER_BITMAP_FLAG) != 0

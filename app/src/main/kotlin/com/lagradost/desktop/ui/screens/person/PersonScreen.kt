@@ -91,7 +91,7 @@ fun PersonScreen(route: Route.Person) {
                         }
                     }
                     if (info.credits.isNotEmpty()) {
-                        item(key = "credits-title") { RichSectionHeader("Filmography", Modifier.padding(horizontal = gutter), subtitle = "${info.credits.size} titles, newest first") }
+                        item(key = "credits-title") { RichSectionHeader("Filmography", Modifier.padding(horizontal = gutter), subtitle = com.lagradost.desktop.ui.counted(info.credits.size, "title") + ", newest first") }
                         val rows = info.credits.chunked(perRow)
                         items(rows.size, key = { "credits-$it" }) { i ->
                             Row(Modifier.padding(horizontal = gutter).padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {

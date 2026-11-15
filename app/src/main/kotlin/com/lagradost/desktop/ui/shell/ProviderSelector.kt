@@ -222,7 +222,8 @@ fun selectedHomeProvider(): String? {
     val vm = appVm<HomeViewModel>()
     val apiName by vm.apiName.observeAsState()
     val name = apiName ?: DataStoreHelper.currentHomePage
-    return name?.takeIf { it != APIRepository.randomApi.name }
+    // "None" (no extension chosen yet) is no extension: a search limited to it found nothing, and the box said "Search in None…"
+    return name?.takeIf { it != APIRepository.randomApi.name && it != APIRepository.noneApi.name && !it.equals("NONE", true) && it.isNotBlank() }
 }
 
 /** The icon of the extension of a provider (a letter tile while it has none) */

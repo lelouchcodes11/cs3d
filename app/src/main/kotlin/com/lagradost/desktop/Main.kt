@@ -148,12 +148,15 @@ fun main(args: Array<String>) {
     // poster of a screen (measured: about 100 MB less memory after browsing a few pages), 32 MB on a weak PC.
     com.lagradost.desktop.platform.Graphics.applyAtStart(renderApiOnCommandLine, com.lagradost.desktop.platform.Graphics.choiceFromArgs(args))
     val lightPc = com.lagradost.desktop.ui.fluent.Appearance.lightFromPrefs()
-    System.setProperty("skiko.gpu.resourceCacheLimit", System.getProperty("skiko.gpu.resourceCacheLimit") ?: if (lightPc) "33554432" else "67108864")
+    // High performance (Settings > General > Performance): more of this PC for a smooth window, see HighPerformance
+    val highPc = !lightPc && com.lagradost.desktop.ui.fluent.Appearance.highPerformanceFromPrefs()
+    System.setProperty("skiko.gpu.resourceCacheLimit", System.getProperty("skiko.gpu.resourceCacheLimit") ?: if (lightPc) "33554432" else if (highPc) "268435456" else "67108864")
+    if (highPc) com.lagradost.desktop.platform.HighPerformance.apply(true)
     // Coil keeps the decoded pictures up to a quarter of the JVM's largest heap (a gigabyte on a 16 GB PC) and the heap grows to hold them; on a PC with little
     // free memory that is paging, which looks like the window hanging. 160 MB holds the pictures of several screens (64 MB on a weak PC).
     runCatching {
         coil3.SingletonImageLoader.setSafe { context ->
-            coil3.ImageLoader.Builder(context).memoryCache { coil3.memory.MemoryCache.Builder().maxSizeBytes((if (lightPc) 64L else 160L) * 1024 * 1024).build() }
+            coil3.ImageLoader.Builder(context).memoryCache { coil3.memory.MemoryCache.Builder().maxSizeBytes((if (lightPc) 64L else if (highPc) 512L else 160L) * 1024 * 1024).build() }
                 .components { add(com.lagradost.desktop.ui.components.ImageQuality.upgrade); add(com.lagradost.desktop.ui.components.ImageQuality.decoder) }.build()
         }
     }

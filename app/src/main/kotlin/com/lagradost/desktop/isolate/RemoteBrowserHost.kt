@@ -1,6 +1,8 @@
 package com.lagradost.desktop.isolate
 
 import android.os.Handler
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
@@ -478,4 +480,19 @@ object RemoteBrowserHost {
  * The window of a Cloudflare (or other "are you human") check that an extension in the sandbox needs passed: only its page is the content; the app draws the
  * rest around it (see AndroidDialogHost). [extension] is the name shown, [url] the page's address (its site is shown under the page).
  */
-class CheckDialog(context: android.content.Context, val extension: String?, val url: () -> String?, val reload: () -> Unit = {}) : android.app.Dialog(context)
+class CheckDialog(
+    context: android.content.Context,
+    val extension: String?,
+    val url: () -> String?,
+    val reload: () -> Unit = {},
+    /** The app's own window for a hidden Cloudflare solve (see net/CheckWindow): its rules are decided there */
+    private val ownWindow: Boolean = false,
+) : android.app.Dialog(context) {
+    override val appCheckWindow: Boolean get() = ownWindow
+
+    /** Other checks waiting for this window (a search in all extensions): shown as a count, with Skip all */
+    var more by androidx.compose.runtime.mutableIntStateOf(0)
+
+    /** The page got through: a moment of "Done" before the window goes */
+    var passed by androidx.compose.runtime.mutableStateOf(false)
+}

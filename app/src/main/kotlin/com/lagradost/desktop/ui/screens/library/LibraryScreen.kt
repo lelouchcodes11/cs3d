@@ -169,7 +169,7 @@ fun LibraryScreen() {
                     (card as? SyncAPI.LibraryItem)?.let { li ->
                         val done = li.episodesCompleted ?: 0
                         val total = li.episodesTotal ?: 0
-                        if (total > 0) "$done / $total episodes" else if (done > 0) "$done episodes" else null
+                        if (total > 0) "$done / $total episodes" else if (done > 0) com.lagradost.desktop.ui.counted(done, "episode") else null
                     }
                 },
                 menu = { card ->
@@ -191,7 +191,7 @@ fun LibraryScreen() {
                                 )
                                 Box(Modifier.height(16.dp))
                             }
-                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = "${if (kind == Kind.All) (if (allTitles.size == 1) "1 title" else "${allTitles.size} titles") else "${items.size} of ${allTitles.size} ${if (allTitles.size == 1) "title" else "titles"} · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = {
+                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = if (allTitles.isEmpty()) null else "${if (kind == Kind.All) (if (allTitles.size == 1) "1 title" else "${allTitles.size} titles") else "${items.size} of ${allTitles.size} ${if (allTitles.size == 1) "title" else "titles"} · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     // an empty library has no row of controls: Refresh sits here
                                     if (allTitles.isEmpty() && apis.size <= 1) IconButton(Icons.Refresh, { vm.reloadPages(true) }, tooltip = "Refresh", kind = ButtonKind.Standard)

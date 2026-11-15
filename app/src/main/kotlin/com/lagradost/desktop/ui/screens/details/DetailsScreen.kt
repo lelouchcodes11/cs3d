@@ -322,7 +322,8 @@ internal object DetailsDev {
     var tab by androidx.compose.runtime.mutableStateOf<String?>(null)
 }
 
-private enum class DetailsTab(val label: String) { Episodes("Episodes"), Related("Related"), Recommended("Recommended"), More("More like this"), Cast("Cast & crew"), Gallery("Gallery"), Reviews("Reviews"), About("Details") }
+// five tabs at most: AniList's recommendations are a part of "More like this", the pictures and reviews are parts of "Details"
+private enum class DetailsTab(val label: String) { Episodes("Episodes"), Related("Related"), More("More like this"), Cast("Cast & crew"), About("Details") }
 
 /**
  * A related title from AniList or TMDB belongs to no extension. Opening one searches the extension this page came from (the sources the
@@ -427,7 +428,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
     val trailers by vm.trailers.observeAsState()
     // TMDB: artwork, cast with photos, reviews, collection and where it streams, found by the ids the extension gave or by name and year
     val isMovieTitle = movie != null
-    val tmdb by androidx.compose.runtime.produceState<com.lagradost.desktop.tmdb.TmdbInfo?>(null, route.url, isMovieTitle) {
+    val tmdb by androidx.compose.runtime.produceState<com.lagradost.desktop.tmdb.TmdbInfo?>(null, route.url, isMovieTitle, com.lagradost.desktop.tmdb.Tmdb.matchVersion) {
         value = runCatching { com.lagradost.desktop.tmdb.Tmdb.info(d.title, d.yearText.str()?.take(4)?.toIntOrNull(), isMovieTitle, d.syncData.values) }.getOrNull()
     }
     // the extension's own artwork wins; TMDB fills what it did not send
@@ -471,11 +472,8 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
         val tabs = buildList {
             if (!isMovie) add(DetailsTab.Episodes)
             if (related.isNotEmpty()) add(DetailsTab.Related)
-            if (anilistRecs.isNotEmpty()) add(DetailsTab.Recommended)
-            if (recs.isNotEmpty()) add(DetailsTab.More)
+            if (anilistRecs.isNotEmpty() || recs.isNotEmpty()) add(DetailsTab.More)
             if (cast.isNotEmpty() || tmdbCast.isNotEmpty() || d.actorsText.str() != null) add(DetailsTab.Cast)
-            if ((tmdb?.backdrops?.size ?: 0) > 1) add(DetailsTab.Gallery)
-            if (tmdb?.reviews?.isNotEmpty() == true) add(DetailsTab.Reviews)
             if (tmdb != null) add(DetailsTab.About)
         }
         var tab by remember(route.url) { mutableStateOf<DetailsTab?>(null) }
@@ -514,7 +512,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                                 }
                             } else {
                                 ComboBox(seasonList.map { it.second }, seasonList.getOrNull(seasonIdx ?: 0)?.second, { s -> seasonList.firstOrNull { it.second == s }?.first.str() ?: "Season $s" }, { vm.changeSeason(it) }, minWidth = 190.dp, height = 36.dp)
-                                FText("${seasonList.size} seasons", style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+                                FText(com.lagradost.desktop.ui.counted(seasonList.size, "season"), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
                             }
                         }
                     }
@@ -567,7 +565,6 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                                 item(key = "pack-head") {
                                     Column(Modifier.padding(horizontal = gutter).padding(top = 6.dp, bottom = 14.dp)) {
                                         FText("Season packs", style = Fluent.type.bodyStrong)
-                                        FText("The whole season as one download (an archive), not single episodes. Open one to see its links.", style = Fluent.type.caption, color = c.textTertiary)
                                     }
                                 }
                                 val packRows = packs.chunked(columns)
@@ -585,7 +582,6 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                     val w = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width
                     val perRow = ((pageWidth - gutter * 2 + 16.dp) / (w + 16.dp)).toInt().coerceAtLeast(2)
                     Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        FText("Prequels, sequels and other titles of this story, from AniList. Opening one searches ${route.apiName}; right-click it to search all extensions.", style = Fluent.type.caption, color = c.textTertiary)
                         related.chunked(perRow).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 row.forEachIndexed { i, r -> Box(Modifier.reveal("related/" + r.card.url, i * 45)) { PosterCard(r.card, { openRelated(r.card, route.apiName) }, w, subtitle = r.detail, menu = relatedMenu(r.card, route.apiName)) } }
@@ -593,13 +589,14 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                         }
                     }
                 }
-                DetailsTab.Recommended -> item(key = "anilist-recs") {
+                DetailsTab.More -> {
+                if (anilistRecs.isNotEmpty()) item(key = "anilist-recs") {
                     val w = com.lagradost.desktop.ui.fluent.Appearance.posterSize.width
                     val perRow = ((pageWidth - gutter * 2 + 16.dp) / (w + 16.dp)).toInt().coerceAtLeast(2)
                     var added by remember { mutableStateOf(setOf<Int>()) }
                     val scope = androidx.compose.runtime.rememberCoroutineScope()
-                    Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                        FText("What people who liked this also liked, from AniList. Opening one searches ${route.apiName}.", style = Fluent.type.caption, color = c.textTertiary)
+                    Column(Modifier.padding(horizontal = gutter).padding(bottom = if (recs.isNotEmpty()) 36.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                        com.lagradost.desktop.ui.fluent.RichSectionHeader("Recommended on AniList")
                         anilistRecs.chunked(perRow).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
                                 row.forEach { r ->
@@ -623,12 +620,27 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                         }
                     }
                 }
-                DetailsTab.More -> item(key = "recs") {
+                if (recs.isNotEmpty()) item(key = "recs") {
                     MoreLikeThis(d.title, recs, pageWidth, gutter, { openRelated(it, route.apiName) }, { relatedMenu(it, route.apiName) })
                 }
-                DetailsTab.Gallery -> tmdb?.let { t -> item(key = "gallery") { TmdbGallery(t, pageWidth) } }
-                DetailsTab.About -> tmdb?.let { t -> item(key = "about") { TmdbStrip(t, pageWidth) } }
-                DetailsTab.Reviews -> tmdb?.let { t -> item(key = "reviews") { TmdbReviews(t.reviews, pageWidth) } }
+                }
+                DetailsTab.About -> tmdb?.let { t ->
+                    item(key = "about") { TmdbStrip(t, pageWidth) }
+                    // the pictures and the reviews: sections of Details (they were tabs of their own)
+                    if (t.backdrops.size > 1) item(key = "gallery") {
+                        Column {
+                            // the same heading as the parts of Details above it ("Directed by", "Streaming in")
+                            FText("Pictures", Modifier.padding(horizontal = gutter).padding(bottom = 14.dp), style = Fluent.type.bodyStrong.copy(fontSize = 17.sp))
+                            TmdbGallery(t, pageWidth)
+                        }
+                    }
+                    if (t.reviews.isNotEmpty()) item(key = "reviews") {
+                        Column {
+                            FText("Reviews", Modifier.padding(horizontal = gutter).padding(top = 34.dp, bottom = 14.dp), style = Fluent.type.bodyStrong.copy(fontSize = 17.sp))
+                            TmdbReviews(t.reviews, pageWidth)
+                        }
+                    }
+                }
                 DetailsTab.Cast -> item(key = "cast") {
                     Column(Modifier.padding(horizontal = gutter)) {
                         // the seasons TMDB has credits for: the numbers the title page lists (Specials is 0), or 1..n of TMDB's own count
@@ -694,8 +706,14 @@ private fun Header(
             )
             // no backdrop from the extension: the poster stands at the right, sharp, instead of only a blurred tint
             if (backdrop == null && poster != null && wide) {
+                // the card takes the picture's own shape: a wide poster (live events, channels) was cut to a tall 2:3 card
+                var posterRatio by remember(poster) { mutableStateOf(2f / 3f) }
                 Box(Modifier.fillMaxSize().padding(end = 96.dp, top = 84.dp, bottom = 120.dp), contentAlignment = Alignment.CenterEnd) {
-                    RemoteImage(poster, d.posterHeaders, d.title, Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(RoundedCornerShape(FluentShapes.card)), ContentScale.Crop)
+                    val shape = if (posterRatio > 1f) Modifier.fillMaxWidth(0.42f).aspectRatio(posterRatio) else Modifier.fillMaxHeight().aspectRatio(posterRatio)
+                    RemoteImage(
+                        poster, d.posterHeaders, d.title, shape.clip(RoundedCornerShape(FluentShapes.card)), ContentScale.Crop,
+                        onSize = { w, h -> if (w > 0 && h > 0) posterRatio = (w.toFloat() / h).coerceIn(0.5f, 2.4f) },
+                    )
                 }
             }
             Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Fluent.colors.artScrim.copy(alpha = 0.94f), 0.45f to Fluent.colors.artScrim.copy(alpha = 0.55f), 0.8f to Fluent.colors.artScrim.copy(alpha = 0.1f), 1f to Color.Transparent)))
@@ -747,7 +765,7 @@ private fun Header(
             var expanded by remember { mutableStateOf(false) }
             val plot = stripHtml(d.plotText.str().orEmpty())
             if (plot.isNotBlank()) {
-                FText(plot, style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xD9FFFFFF), maxLines = if (expanded) 40 else 3, modifier = Modifier.widthIn(max = 780.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(4.dp), Role.Button) { expanded = !expanded })
+                FText(plot, style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xD9FFFFFF), maxLines = if (expanded) 40 else 3, modifier = Modifier.widthIn(max = 620.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(4.dp), Role.Button) { expanded = !expanded })
             }
             d.vpnText.str()?.let { FText(it, style = Fluent.type.caption, color = c.caution) }
             Box(Modifier.height(4.dp))
@@ -849,14 +867,7 @@ private fun ActionRow(
                 )
             }
         }
-        // new-episode notifications: one tap, no longer only in the ⋯ menu
-        subscribed?.let { sub ->
-            com.lagradost.desktop.ui.fluent.GlassCircleButton(
-                if (sub) Icons.Notification else Icons.Bell, if (sub) "Notifications on: you are told about new episodes" else "Get notified about new episodes",
-                { vm.toggleSubscriptionStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "You will be told about new episodes" else "Notifications turned off", false) } },
-                active = sub, size = 50.dp,
-            )
-        }
+        // new-episode notifications: in the ⋯ menu (fewer buttons beside Play; the menu says whether they are on)
         // download: one tap for the film or the episode Play opens (it was only in the ⋯ menu of an episode); its state and progress show on the button
         playEpisode?.let { ep -> HeaderDownloadButton(vm, ep, if (ep.tvType.isMovieType()) "this film" else "E${ep.episode}") }
         if (hasTrailer && trailerUrls.isNotEmpty()) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { playTrailer(trailerUrls) }, size = 50.dp)
@@ -875,13 +886,16 @@ private fun ActionRow(
                             })
                         }
                         subscribed?.let { sub ->
-                            add(MenuItem(if (sub) "Unsubscribe from new episodes" else "Get notified about new episodes", Icons.Notification, checked = sub) {
-                                vm.toggleSubscriptionStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "You will be told about new episodes" else "Subscription removed", false) }
+                            add(MenuItem("Notify me about new episodes", if (sub) Icons.Notification else Icons.Bell, checked = sub) {
+                                vm.toggleSubscriptionStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "You will be told about new episodes" else "Notifications turned off", false) }
                             })
                         }
                         if (url.startsWith("http")) add(MenuItem("Open in browser", Icons.OpenInNewWindow) { DesktopPlatform.openExternalBrowser(url) })
                         add(MenuItem("Copy link", Icons.Copy) { java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(url), null); Toasts.show("Link copied", false) })
                         add(MenuItem("Search for “${d.title}”", Icons.Search) { Navigator.search(d.title) })
+                        if (com.lagradost.desktop.tmdb.Tmdb.enabled) add(MenuItem("Wrong details? Choose the right title…", Icons.Edit) {
+                            showMatchDialog(d.title, d.yearText.str()?.take(4)?.toIntOrNull(), vm.movie.value != null)
+                        })
                         links.forEach { (name, link) -> add(MenuItem("Open on $name", Icons.OpenInNewWindow) { DesktopPlatform.openExternalBrowser(link) }) }
                     },
                     onDismiss = { moreOpen = false },

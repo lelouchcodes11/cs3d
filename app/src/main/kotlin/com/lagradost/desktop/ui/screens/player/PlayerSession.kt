@@ -1550,6 +1550,31 @@ class PlayerSession(
         }
     }
 
+    /** The subtitle that shows now, put into another language ([to]: a Google Translate code) and shown in its place as a track of its own */
+    fun translateSubtitle(to: String, toName: String) {
+        val sub = currentSubtitle()
+        scope.launch(Dispatchers.IO) {
+            if (sub == null) { postSubtitleStatus(SubtitleLoadState.Failed, "Choose a subtitle first, then translate it"); return@launch }
+            if (sub.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO) { postSubtitleStatus(SubtitleLoadState.Failed, "Subtitles inside the video can't be translated. Choose an online one or a file"); return@launch }
+            postSubtitleStatus(SubtitleLoadState.Loading, "Translating subtitles into $toName…")
+            val url = sub.url.trim()
+            val raw = runCatching {
+                if (url.startsWith("file:")) java.io.File(java.net.URI(url)).readBytes()
+                else com.lagradost.cloudstream3.app.get(url, headers = sub.headers, timeout = 20).okhttpResponse.body.bytes()
+            }.getOrNull()
+            val result = if (raw == null) null else com.lagradost.desktop.player.SubtitleTranslate.translate(raw, url, to)
+            val file = result?.file
+            if (file == null) {
+                postSubtitleStatus(SubtitleLoadState.Failed, result?.error ?: "Couldn't download this subtitle to translate it")
+                return@launch
+            }
+            val name = sub.originalName.trim().lineSequence().first().ifBlank { "Subtitles" } + " → " + toName
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                addAndSelectSubtitles(SubtitleData(name, "", file.toURI().toString(), SubtitleOrigin.DOWNLOADED_FILE, file.name.toSubtitleMimeType(), emptyMap(), to))
+            }
+        }
+    }
+
     fun setAudioDelay(ms: Long) {
         audioDelayMs = ms
         com.lagradost.desktop.player.MpvPlayer.active?.setMpvProperty("audio-delay", "%.3f".format(java.util.Locale.ROOT, ms / 1000.0))
@@ -1715,7 +1740,7 @@ class PlayerSession(
 
     // ------------------------------------------------------------------ transport
 
-    /** Hands the playing link to VLC, mpv or the browser; the picture here stops (the other player starts where it was) */
+    /** Hands the playing link to VLC, mpv, Energy Media Player or the browser; the picture here stops (the other player starts where it was) */
     fun openExternal(target: com.lagradost.desktop.player.ExternalPlayers.Target) {
         val link = (if (playingTorrent) resolvedTorrent else null) ?: selectedLink?.first
         if (link == null) { Toasts.show("This source can not be handed to another player", false); return }
@@ -1728,11 +1753,14 @@ class PlayerSession(
             val outcome = when (target) {
                 com.lagradost.desktop.player.ExternalPlayers.Target.Vlc -> players.openInVlc(link, name, subs, at)
                 com.lagradost.desktop.player.ExternalPlayers.Target.Mpv -> players.openInMpv(link, name, subs, at)
+                com.lagradost.desktop.player.ExternalPlayers.Target.Energy -> players.openInEnergy(link, name)
                 com.lagradost.desktop.player.ExternalPlayers.Target.Browser -> players.openInBrowser(link)
             }
             if (!outcome.ok) {
                 if (target == com.lagradost.desktop.player.ExternalPlayers.Target.Vlc && players.vlcPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.vlcMissing()
                 else if (target == com.lagradost.desktop.player.ExternalPlayers.Target.Mpv && players.mpvPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.mpvMissing()
+                else if (target == com.lagradost.desktop.player.ExternalPlayers.Target.Energy && !players.energyInstalled()) com.lagradost.desktop.ui.ExternalPlayerHints.energyMissing()
+                else if (target == com.lagradost.desktop.player.ExternalPlayers.Target.Energy && outcome.message == players.ENERGY_LOOPBACK) com.lagradost.desktop.ui.ExternalPlayerHints.energyNeedsLoopback { openExternal(target) }
                 else Toasts.show(outcome.message ?: "Could not open the other player", true)
             }
         }

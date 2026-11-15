@@ -117,6 +117,7 @@ object DevServer {
     private fun scale(): Double = window().graphicsConfiguration.defaultTransform.scaleX
 
     private fun onEdt(block: () -> Unit) = EventQueue.invokeAndWait(block)
+    private fun <T> onEdtResult(block: () -> T): T { var r: Result<T>? = null; EventQueue.invokeAndWait { r = runCatching(block) }; return r!!.getOrThrow() }
 
     // ---------------------------------------------------------------------------------------------
     // Capture: PrintWindow renders the window even when other windows cover it
@@ -1209,6 +1210,29 @@ object DevServer {
                 val outcome = com.lagradost.desktop.player.ExternalPlayers.openInMpv(link, "CloudStream test", emptyList(), q["at"]?.toDouble(), exe, q["x"]?.split('|').orEmpty())
                 ok(ex, "ok=${outcome.ok} ${outcome.message ?: ""} mpv=$exe")
             }
+            "/keymap" -> {
+                // dev: the player's shortcuts and speed: /keymap (list), /keymap?add=<action id>&combo=<C S A:keyCode> (says why it was refused), /keymap?remove=..&combo=.., /keymap?reset=all|<action id>
+                val km = com.lagradost.desktop.ui.screens.player.PlayerKeymap
+                val byId = { id: String -> com.lagradost.desktop.ui.screens.player.PlayerAction.entries.first { it.id == id } }
+                val combo = q["combo"]?.let { com.lagradost.desktop.ui.screens.player.KeyCombo.decode(it) }
+                val result = when {
+                    q["add"] != null -> "add: " + (onEdtResult { km.add(byId(q["add"]!!), combo!!) } ?: "added")
+                    q["remove"] != null -> { onEdtResult { km.remove(byId(q["remove"]!!), combo!!) }; "removed" }
+                    q["reset"] == "all" -> { onEdtResult { km.resetAll() }; "reset all" }
+                    q["reset"] != null -> { onEdtResult { km.reset(byId(q["reset"]!!)) }; "reset" }
+                    else -> ""
+                }
+                val list = com.lagradost.desktop.ui.screens.player.PlayerAction.entries.joinToString("\n") { a -> "${a.id} [${a.group.title}]: " + km.keysOf(a).joinToString(", ") { it.label + " (" + it.encode() + ")" } + if (km.isDefault(a)) "" else "  *changed" }
+                val speed = com.lagradost.desktop.ui.screens.player.PlayerSession.active?.let { "speed=${it.speed} boosting=${it.boosting}" } ?: "no player"
+                ok(ex, "$result\n$speed\n$list")
+            }
+            "/energytest" -> {
+                // dev: hand a link to Energy Media Player the way its action does: /energytest?url=https://...mp4&ref=https://site/ (ref: goes through the header server)
+                val ref = q["ref"]
+                val link = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.utils.newExtractorLink("test", "test", q["url"]!!) { if (ref != null) this.referer = ref } }
+                val outcome = com.lagradost.desktop.player.ExternalPlayers.openInEnergy(link, q["title"] ?: "CloudStream test")
+                ok(ex, "ok=${outcome.ok} ${outcome.message ?: ""} installed=${com.lagradost.desktop.player.ExternalPlayers.energyInstalled()} needsHeaders=${com.lagradost.desktop.player.ExternalPlayers.needsHeaders(link)}")
+            }
             "/vlctest" -> {
                 // dev: hand a link to VLC the way the VLC action does: /vlctest?url=https://...mp4 (VLC opens; it quits itself after 4 s)
                 val link = kotlinx.coroutines.runBlocking { com.lagradost.cloudstream3.utils.newExtractorLink("test", "test", q["url"]!!) {} }
@@ -1405,6 +1429,26 @@ object DevServer {
                 var showing = false
                 onEdt { showing = shown?.isShowing() == true; if (showing) shown?.dismiss() }
                 ok(ex, "shown=$showing cancelled=$cancelled")
+            }
+            "/addrepo" -> {
+                // dev: save a repository without the dialog and read it once: /addrepo?url=...&name=...
+                val url = q["url"]!!
+                val out = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    com.lagradost.cloudstream3.plugins.RepositoryManager.addRepository(com.lagradost.cloudstream3.ui.settings.extensions.RepositoryData(null, q["name"] ?: url, url))
+                    val list = com.lagradost.cloudstream3.plugins.RepositoryManager.getRepoPlugins(com.lagradost.cloudstream3.ui.settings.extensions.RepositoryData(null, q["name"] ?: url, url))
+                    "plugins=${list?.size} problem=${com.lagradost.cloudstream3.plugins.RepositoryManager.problems[url]}"
+                }
+                ok(ex, out)
+            }
+            "/picture" -> {
+                // dev: one picture through the app's picture loader: /picture?url=... ; prints the result, the reason of a failure and the time
+                val started = System.currentTimeMillis()
+                val out = kotlinx.coroutines.runBlocking {
+                    val loader = coil3.SingletonImageLoader.get(coil3.PlatformContext.INSTANCE)
+                    val r = loader.execute(coil3.request.ImageRequest.Builder(coil3.PlatformContext.INSTANCE).data(q["url"]!!).memoryCachePolicy(coil3.request.CachePolicy.DISABLED).build())
+                    if (r is coil3.request.ErrorResult) "error ${r.throwable.javaClass.simpleName}: ${r.throwable.message}" else "ok ${r.image?.width}x${r.image?.height}"
+                }
+                ok(ex, "$out in ${System.currentTimeMillis() - started} ms")
             }
             "/cfkiller" -> {
                 // dev: one request through the app's built-in Cloudflare handler (the one many extensions use as `interceptor = CloudflareKiller()`: a

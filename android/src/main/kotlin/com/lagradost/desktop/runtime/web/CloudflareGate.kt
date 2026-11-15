@@ -80,7 +80,7 @@ object CloudflareGate {
     /** Set by the app: the names of the extensions the user is working with now (the one on Home, the title pages that are open); null: all of them (a search in all extensions) */
     @Volatile var activeApis: () -> Set<String>? = { null }
 
-    /** Set by the app: the same as [activeApis] for a window, which is never put up for a search in all extensions (that is null above: every extension) */
+    /** Set by the app: the same as [activeApis] for a window, as a set (a search in all extensions lists every extension) */
     @Volatile var activeApisForWindows: () -> Set<String> = { emptySet() }
 
     /** Set by the app: the names of the extensions of the plugin whose classes [loader] loaded */
@@ -177,6 +177,18 @@ object CloudflareGate {
         if (recentlyFailed(host)) return false
         val at = cancelledHosts[host] ?: return true
         return System.currentTimeMillis() - at > CANCELLED_MS
+    }
+
+    /**
+     * Whether a hidden check of [host] that did not pass by itself may be shown to the user in a window (to tick the box): [allowsSolving], and for a site of an
+     * extension, that extension is one on screen (also each one during a search in all extensions). A site of no extension (a video host while sources load) may.
+     */
+    fun allowsWindowFor(host: String): Boolean = allowsSolving(host) && inUse(runCatching { apisOfHost(host) }.getOrDefault(emptySet()), host, window = true)
+
+    /** The user closed the check window of [host]: that site is left alone for two minutes, like a Cancel of the bar */
+    fun cancelledByUser(host: String) {
+        cancelledHosts[host] = System.currentTimeMillis()
+        Log.i(TAG, "the check window of $host was closed by the user")
     }
 
     /**

@@ -147,6 +147,11 @@ fun HomeScreen() {
     }
     val page by vm.page.observeAsState()
     val preview by vm.preview.observeAsState()
+    // rows of other sources chosen in Customise Home: asked for only once the source's own rows are there, so they never hold those up
+    val mixedRows by androidx.compose.runtime.produceState(emptyList<Pair<String, HomeViewModel.ExpandableHomepageList>>(), vm.apiName.value, HomeLayout.mixed(), page is Resource.Success) {
+        value = emptyList()
+        if (page is Resource.Success && HomeLayout.mixed().isNotEmpty()) value = runCatching { HomeLayout.loadMixed(vm.apiName.value) }.getOrDefault(emptyList())
+    }
     val resume by vm.resumeWatching.observeAsState()
     val bookmarks by vm.bookmarks.observeAsState()
     val statusTypes by vm.availableWatchStatusTypes.observeAsState()
@@ -269,8 +274,9 @@ fun HomeScreen() {
                     discoverSections(cardWidth)
                 }
                 is Resource.Success -> {
-                    val rows = HomeLayout.rowsFor(apiName.orEmpty(), res.value.entries.filter { it.value.list.list.isNotEmpty() }.map { it.key to it.value })
-                    if (rows.isEmpty()) {
+                    val own = HomeLayout.rowsFor(apiName.orEmpty(), res.value.entries.filter { it.value.list.list.isNotEmpty() }.map { it.key to it.value })
+                    val rows = own + mixedRows.filter { m -> own.none { it.first == m.first } }
+                    if (own.isEmpty()) {
                         item(key = "empty") {
                             // extensions that are not loaded because the sandbox cannot start: say that, not "install an extension"
                             val held = com.lagradost.desktop.isolate.Isolation.blockedNames()
@@ -286,7 +292,11 @@ fun HomeScreen() {
                                 action = "Open Settings", onAction = { Navigator.goTab(com.lagradost.desktop.core.Tab.Settings) },
                             ) else com.lagradost.desktop.ui.fluent.NoticeBar(
                                 // no extension chosen at all reads "from None" otherwise
-                                if (apiName.isNullOrBlank() || apiName.equals("none", ignoreCase = true)) "No extension is chosen yet. Install one in Extensions to get catalogues here, or pick a source at the top right."
+                                if (apiName.isNullOrBlank() || apiName.equals("none", ignoreCase = true)) {
+                                    // installed ones are only waiting to be picked: "install one" read wrong then
+                                    if (com.lagradost.cloudstream3.APIHolder.allProviders.isNotEmpty()) "No source is chosen yet. Pick one at the top right to fill Home."
+                                    else "No extension is installed yet. Install one in Extensions to get catalogues here."
+                                }
                                 else "Nothing to show from $apiName yet. Pick another source at the top right, or install an extension.",
                                 Modifier.padding(horizontal = gutter).padding(bottom = 22.dp),
                                 action = "Open Extensions", onAction = { Navigator.goTab(com.lagradost.desktop.core.Tab.Extensions) },
@@ -614,7 +624,7 @@ private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp, tmdbLogo:
                     is com.lagradost.cloudstream3.TvSeriesLoadResponse -> item.episodes.size
                     else -> null
                 }?.takeIf { it > 1 }
-                episodes?.let { add("$it episodes") }
+                episodes?.let { add(com.lagradost.desktop.ui.counted(it, "episode")) }
                 (item as? com.lagradost.cloudstream3.AnimeLoadResponse)?.episodes?.keys?.filter { it != com.lagradost.cloudstream3.DubStatus.None }?.let { keys ->
                     val dub = com.lagradost.cloudstream3.DubStatus.Dubbed in keys
                     val sub = com.lagradost.cloudstream3.DubStatus.Subbed in keys

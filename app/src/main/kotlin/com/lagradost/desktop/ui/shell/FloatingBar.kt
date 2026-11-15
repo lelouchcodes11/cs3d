@@ -108,7 +108,8 @@ internal fun FloatingTopBar() {
             Box(Modifier.weight(1f))
             // a window of half a screen (snapped, or the smallest): the search and reload buttons would sit under the capsule; Ctrl+K and the Search page remain
             if (onHome) {
-                if (!narrow) selectedHomeProvider()?.let { ExtensionSearch(it) }
+                // no extension chosen yet: the same box searches all of them
+                if (!narrow) ExtensionSearch(selectedHomeProvider())
                 if (!narrow) ShellState.homeActions?.let { a ->
                     IconButton(Icons.Refresh, a.reload, Modifier.noWindowDrag("reload"), tooltip = "Reload the home page", kind = ButtonKind.Subtle, size = 36.dp)
                     Box(Modifier.width(6.dp))
@@ -132,7 +133,7 @@ internal fun FloatingTopBar() {
  * Ctrl+K opens it too, and it closes when it loses the focus.
  */
 @Composable
-internal fun ExtensionSearch(provider: String) {
+internal fun ExtensionSearch(provider: String?) {
     if (ShellState.homeSearchOpen) {
         androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { ShellState.searchFocus.requestFocus() } }
         // it closes with its button, Esc, a search, or by itself when it loses the focus with nothing typed
@@ -140,7 +141,7 @@ internal fun ExtensionSearch(provider: String) {
         Box(Modifier.width(4.dp))
         IconButton(Icons.Close, { ShellState.homeSearchOpen = false }, Modifier.noWindowDrag("extSearchClose"), tooltip = "Close the search (Esc)", kind = ButtonKind.Subtle, size = 36.dp)
     } else {
-        IconButton(Icons.Search, { ShellState.homeSearchOpen = true }, Modifier.noWindowDrag("extSearchButton"), tooltip = "Search in $provider (Ctrl+K)", kind = ButtonKind.Subtle, size = 36.dp)
+        IconButton(Icons.Search, { ShellState.homeSearchOpen = true }, Modifier.noWindowDrag("extSearchButton"), tooltip = if (provider != null) "Search in $provider (Ctrl+K)" else "Search all extensions (Ctrl+K)", kind = ButtonKind.Subtle, size = 36.dp)
     }
     Box(Modifier.width(6.dp))
 }

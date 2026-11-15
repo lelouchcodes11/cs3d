@@ -29,8 +29,8 @@ class GroupBuilder {
     }
 
     /** A card that opens something when it is clicked */
-    fun link(title: String, about: String? = null, keywords: String = "", onClick: () -> Unit) {
-        items += SettingItem(title, title, about, keywords) { SettingsCard(title, about, onClick = onClick) }
+    fun link(title: String, about: String? = null, keywords: String = "", icon: androidx.compose.ui.graphics.painter.Painter? = null, onClick: () -> Unit) {
+        items += SettingItem(title, title, about, keywords) { SettingsCard(title, about, icon, onClick = onClick) }.also { it.hasIcon = icon != null }
     }
 
     /** A row of its own (a picture grid, a colour picker): the search knows it by [title], [about] and [keywords] */

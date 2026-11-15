@@ -36,6 +36,7 @@ internal abstract class Wv2Browser(private val initialWidth: Int = 1280, private
         val IID_CORE4 = Com.iid("20d02d59-6df2-42dc-bd06-f98a694b1302")
         val IID_CORE14 = Com.iid("6daa4f10-4a90-4753-8898-77c5df534165")
         val IID_SETTINGS2 = Com.iid("ee9a0f68-f46c-4e32-ac23-ef8cac224d2a")
+        val IID_CONTROLLER2 = Com.iid("c979903e-d4ca-4228-92eb-47ee3fa96eab")
 
         const val CONTEXT_ALL = 0
         const val CONTEXT_DOCUMENT = 1
@@ -117,6 +118,7 @@ internal abstract class Wv2Browser(private val initialWidth: Int = 1280, private
                 core = cw
                 core2 = cw?.let { Com.query(it, IID_CORE2) }
                 Com.putBool(c, 4, true)
+                pageBackground?.let { applyPageBackground(c, it) }
                 onHostResized()
                 rt.onCoreCreated(core2)
                 if (cw != null) {
@@ -150,6 +152,31 @@ internal abstract class Wv2Browser(private val initialWidth: Int = 1280, private
 
     /** After [setup] and the queued work */
     protected open fun onReady() {}
+
+    /**
+     * The colour the page shows where it draws nothing yet (WebView2's own default is white): an opaque ARGB colour, or null for that default.
+     * A page shown in the app gets the colour of the window around it, so a page that is still loading is not a white box.
+     */
+    @Volatile var pageBackground: Int? = null
+        private set
+
+    fun setPageBackground(argb: Int) {
+        if ((argb ushr 24) != 0xFF) return
+        pageBackground = argb
+        rt.post { controller?.let { applyPageBackground(it, argb) } }
+    }
+
+    /** ICoreWebView2Controller2.put_DefaultBackgroundColor (WebView2 thread); COREWEBVIEW2_COLOR {A, R, G, B} is passed by value as one 32-bit word */
+    private fun applyPageBackground(c: Pointer, argb: Int) {
+        val c2 = Com.query(c, IID_CONTROLLER2) ?: return
+        val a = (argb ushr 24) and 0xFF
+        val r = (argb ushr 16) and 0xFF
+        val g = (argb ushr 8) and 0xFF
+        val b = argb and 0xFF
+        val hr = Com.call(c2, 27, a or (r shl 8) or (g shl 16) or (b shl 24))
+        if (hr < 0) Log.w(TAG, "page background not set: HRESULT 0x${Integer.toHexString(hr)}")
+        Com.release(c2)
+    }
 
     /** WM_SIZE of the page's window: the page fills it */
     open fun onHostResized() {

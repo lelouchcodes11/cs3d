@@ -112,7 +112,7 @@ class ExploreFilters {
 fun LazyListScope.exploreSections(f: ExploreFilters, rows: List<ExploreRow>, cardWidth: Dp) {
     item(key = "explore-title") {
         Column(Modifier.padding(horizontal = gutter).padding(top = 6.dp, bottom = 18.dp)) {
-            RichSectionHeader("Explore", subtitle = if (Tmdb.enabled) "Find something to watch; pick a title and your extensions look for it" else "TMDB is switched off (Settings > Appearance > Title information): most film and series lists are empty")
+            RichSectionHeader("Explore", subtitle = if (Tmdb.enabled) null else "TMDB is switched off (Settings > Appearance > Title information): most film and series lists are empty")
             Box(Modifier.height(16.dp))
             // One row of controls instead of three rows of chips: films, series or anime; what the world watches or what is made in the viewer's own
             // country; then drop-downs for the genre, the streaming service and (for local titles) the language.
@@ -230,7 +230,7 @@ internal fun ExploreShelf(row: ExploreRow, cardWidth: Dp) {
         value = runCatching { row.load() }.getOrDefault(emptyList())
     }
     Column(Modifier.padding(bottom = Appearance.space(30.dp))) {
-        RichSectionHeader(row.title, Modifier.padding(horizontal = gutter), subtitle = row.subtitle)
+        RichSectionHeader(row.title, Modifier.padding(horizontal = gutter))
         Box(Modifier.height(12.dp))
         val list = cards
         when {

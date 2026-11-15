@@ -9,6 +9,7 @@ import com.lagradost.desktop.runtime.web.HeadlessBrowser
 import com.lagradost.desktop.runtime.web.PrivateNetworkGuard
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -68,7 +69,7 @@ internal object BrowserFetch {
     private fun close(browser: HeadlessBrowser) = main { runCatching { browser.destroy() } }
 
     /** [url] answered by the browser: a page of the site that is open, or a new page; a 403 when no clearance came in time */
-    suspend fun get(url: String, host: String, timeoutMs: Long = CloudflareGate.UNATTENDED_MS + 5_000): Page {
+    suspend fun get(url: String, host: String, timeoutMs: Long = com.lagradost.desktop.net.CheckWindow.ATTENDED_MS + 30_000): Page {
         janitor
         sessions[host]?.let { s -> inOpenPage(s, host, url)?.let { return it } }
         // one page per site at a time: the others wait for it and ask it (see the description)
@@ -118,9 +119,16 @@ internal object BrowserFetch {
                 if (PrivateNetworkGuard.isAllowed(r.url)) HeadlessBrowser.Decision.CONTINUE else HeadlessBrowser.Decision.BLOCK
             })
             browser.load(url)
-            val found = withTimeoutOrNull(timeoutMs) {
+            // a check that does not pass by itself is shown to the user (a box to tick), and this page loads again once that page is through; one nobody can see
+            // ends at the unattended limit (see CheckWindow)
+            val stopped = CompletableDeferred<Unit>()
+            val hidden: HeadlessBrowser = browser
+            val window = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                com.lagradost.desktop.net.CheckWindow.supervise(url, host, null, stop = { stopped.complete(Unit) }, onPassed = { runCatching { hidden.load(url) } })
+            }
+            val found = try { withTimeoutOrNull(timeoutMs) {
                 var page: Page? = null
-                while (page == null) {
+                while (page == null && !stopped.isCompleted) {
                     delay(450)
                     val s = state(browser) ?: continue
                     if (s.ready == "complete" && !s.challenge && s.length > 0) {
@@ -129,7 +137,7 @@ internal object BrowserFetch {
                     }
                 }
                 page
-            }
+            } } finally { window.cancel() }
             if (found != null) {
                 val origin = originOf(url)
                 if (origin != null) {

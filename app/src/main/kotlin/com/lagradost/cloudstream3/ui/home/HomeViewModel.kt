@@ -585,7 +585,8 @@ class HomeViewModel : ViewModel() {
                 return@ioSafe
             }
 
-            val api = getApiFromNameNull(preferredApiName)
+            // desktop: a kids profile only opens a source a grown-up allowed (anything else: no Home page)
+            val api = getApiFromNameNull(preferredApiName)?.takeIf { com.lagradost.desktop.core.Kids.allows(it) }
             if (preferredApiName == noneApi.name) {
                 // just set to random
                 if (fromUI) DataStoreHelper.currentHomePage = noneApi.name

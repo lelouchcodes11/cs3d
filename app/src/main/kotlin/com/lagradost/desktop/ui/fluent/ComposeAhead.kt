@@ -46,14 +46,17 @@ fun lazyPadding(extra: State<Dp>?, top: Dp = 0.dp, bottom: Dp = 0.dp): PaddingVa
 /** How far below the window a page composes ahead: nothing at first, [step] and then twice [step] once the page has been open for a moment. Null when off (weak PC, the switch) */
 @Composable
 fun rememberComposeAhead(step: Dp = 450.dp): State<Dp>? {
-    if (System.getProperty("cloudstream.composeahead") == "false" || com.lagradost.desktop.platform.LowEnd.detected) return null
+    // High performance: on whatever the PC, sooner, and a screenful further (the rows are ready before the wheel gets there)
+    val smooth = Appearance.highPerformance
+    if (System.getProperty("cloudstream.composeahead") == "false" || (com.lagradost.desktop.platform.LowEnd.detected && !smooth)) return null
     val ahead = remember { mutableStateOf(0.dp) }
-    LaunchedEffect(Unit) {
-        // after the page's first frames and its pictures, in two steps so that the extra composition does not come as one long frame
-        delay(1500)
+    LaunchedEffect(smooth) {
+        // after the page's first frames and its pictures, in steps so that the extra composition does not come as one long frame
+        delay(if (smooth) 900 else 1500)
         ahead.value = step
         delay(600)
         ahead.value = step * 2
+        if (smooth) { delay(600); ahead.value = step * 3; delay(600); ahead.value = step * 4 }
     }
     return ahead
 }

@@ -237,7 +237,38 @@ private class ProfileDraft(val account: DataStoreHelper.Account) {
     var index by mutableIntStateOf(account.defaultImageIndex)
     var startHere by mutableStateOf(StartProfile.get() == account.keyIndex)
     var pin by mutableStateOf(account.lockPin)
+    var kids by mutableStateOf(com.lagradost.desktop.core.Kids.isKids(account.keyIndex))
+    val allowed = androidx.compose.runtime.mutableStateListOf<String>().also { it.addAll(com.lagradost.desktop.core.Kids.allowed(account.keyIndex)) }
     fun asLook() = ProfileLook(style, palette, character)
+}
+
+/** The kids switch of the profile window and, when on, the sources the profile may use; changing it on a kids profile needs a grown-up's PIN */
+@Composable
+private fun KidsCard(draft: ProfileDraft) {
+    val c = Fluent.colors
+    val shape = RoundedCornerShape(FluentShapes.card)
+    Column(Modifier.fillMaxWidth().background(c.card, shape).hairBorder(c.stroke, shape).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                FText("Kids profile")
+                FText("Only the sources you tick below, never adult ones. Settings and Extensions ask for a grown-up's PIN: lock your own profile with one.", style = Fluent.type.caption, color = c.textSecondary, maxLines = 3)
+            }
+            com.lagradost.desktop.ui.fluent.ToggleSwitch(draft.kids, { on -> com.lagradost.desktop.core.Kids.guard { draft.kids = on } })
+        }
+        if (draft.kids) {
+            val sources = remember {
+                com.lagradost.cloudstream3.APIHolder.apis.filter { com.lagradost.cloudstream3.TvType.NSFW !in it.supportedTypes }.map { it.name }.distinct().sortedBy { it.lowercase() }
+            }
+            if (sources.isEmpty()) FText("No sources yet: install extensions first.", style = Fluent.type.caption, color = c.textTertiary)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (name in sources) {
+                    val on = name in draft.allowed
+                    Button(name, { com.lagradost.desktop.core.Kids.guard { if (on) draft.allowed.remove(name) else draft.allowed.add(name) } },
+                        kind = if (on) ButtonKind.Accent else ButtonKind.Standard, icon = if (on) Icons.Accept else null, height = 28.dp)
+                }
+            }
+        }
+    }
 }
 
 /** Saves a changed profile without switching to it */
@@ -319,6 +350,12 @@ private fun openProfileEditor(account: DataStoreHelper.Account, onSaved: () -> U
                 updateProfile(updated)
                 ProfileLooks.set(account.keyIndex, draft.asLook())
                 if (draft.startHere) StartProfile.set(account.keyIndex) else if (StartProfile.get() == account.keyIndex) StartProfile.set(null)
+                val kidsBefore = com.lagradost.desktop.core.Kids.isKids(account.keyIndex) to com.lagradost.desktop.core.Kids.allowed(account.keyIndex)
+                if (kidsBefore != (draft.kids to draft.allowed.toSet())) {
+                    com.lagradost.desktop.core.Kids.set(account.keyIndex, draft.kids, draft.allowed.toSet())
+                    // Home and search follow the new list at once
+                    if (account.keyIndex == DataStoreHelper.selectedKeyIndex) com.lagradost.desktop.core.AppVms.get<com.lagradost.cloudstream3.ui.home.HomeViewModel>().loadAndCancel(DataStoreHelper.currentHomePage, true)
+                }
                 onSaved()
             },
         ) {
@@ -402,6 +439,8 @@ private fun openProfileEditor(account: DataStoreHelper.Account, onSaved: () -> U
                         else if (old != null) PinLock.ask("Enter the PIN", old) { pin -> if (pin != null) draft.pin = null }
                     }, enabled = lockable)
                 }
+
+                KidsCard(draft)
 
                 // Search Bar
                 TextBox(

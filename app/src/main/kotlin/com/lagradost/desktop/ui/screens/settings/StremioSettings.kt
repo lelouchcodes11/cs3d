@@ -63,10 +63,10 @@ fun StremioPage() {
         FText("Add-ons", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
         AddAddonCard()
         for (a in StremioAddons.addons.toList()) AddonCard(a)
-        FText(
-            "Add-on titles play from add-on sources, extension titles from their extension.",
-            style = Fluent.type.caption, color = c.textTertiary, maxLines = 3, modifier = Modifier.padding(top = 6.dp, start = 2.dp).widthIn(max = 720.dp),
-        )
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(top = 28.dp)) {
+        FText("TV playlists", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
+        IptvCards()
     }
     Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(top = 28.dp)) {
         FText("Torrents", style = Fluent.type.bodyStrong, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
