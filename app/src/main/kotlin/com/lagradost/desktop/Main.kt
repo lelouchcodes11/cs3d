@@ -228,5 +228,37 @@ private object UiExceptionHandlerFactory : androidx.compose.ui.window.WindowExce
     override fun exceptionHandler(window: java.awt.Window) = androidx.compose.ui.window.WindowExceptionHandler { throwable ->
         android.util.Log.e("UI", "Uncaught exception in the window", throwable)
         com.lagradost.cloudstream3.mvvm.logError(throwable)
+        noteFailure(throwable)
+    }
+
+    private val recent = ArrayDeque<Long>()
+    @Volatile private var restarting = false
+    private const val LAST_RESTART_KEY = "desktop_ui_broken_restart_at"
+
+    /**
+     * Most errors leave the window working. One that breaks Compose's own layout state does not: every frame after it fails with "layout state is not
+     * idle" and the app looks frozen (2026-11-15: an extension's settings screen called a Material dialog the app lacked). Then the app restarts by
+     * itself, keeping all data, at most once in 10 minutes so that a fault that comes back at once can not loop.
+     */
+    private fun noteFailure(t: Throwable) {
+        if (restarting) return
+        val now = System.currentTimeMillis()
+        val burst = synchronized(recent) {
+            recent.addLast(now)
+            while (recent.isNotEmpty() && now - recent.first() > 5_000) recent.removeFirst()
+            recent.size
+        }
+        val broken = t is IllegalStateException && t.message.orEmpty().contains("layout state is not idle") || burst >= 8
+        if (!broken) return
+        val prefs = runCatching { androidx.preference.PreferenceManager.getDefaultSharedPreferences(com.lagradost.desktop.runtime.AndroidRuntime.context) }.getOrNull()
+        val last = prefs?.getLong(LAST_RESTART_KEY, 0L) ?: 0L
+        if (now - last < 10 * 60_000L) {
+            android.util.Log.w("UI", "the window's drawing is broken, but the app restarted for this less than 10 minutes ago: not again")
+            return
+        }
+        restarting = true
+        runCatching { prefs?.edit()?.putLong(LAST_RESTART_KEY, now)?.commit() }
+        android.util.Log.w("UI", "the window's drawing is broken (${t.javaClass.simpleName}: ${t.message?.take(80)}): the app restarts")
+        com.lagradost.desktop.platform.AppRestart.request()
     }
 }
