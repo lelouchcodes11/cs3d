@@ -169,7 +169,7 @@ object RepositoryManager {
         var status: String? = "unreachable"
         return safeAsync {
             // Take manifestVersion and such into account later
-            val r = app.get(convertRawGitUrl(url), cacheTime = 5, cacheUnit = TimeUnit.MINUTES)
+            val r = app.get(convertRawGitUrl(url), cacheTime = 15, cacheUnit = TimeUnit.MINUTES)
             r.parsedSafe<Repository>().also { status = if (it != null) null else if (r.code in 400..499) "gone" else "broken" }
         }.also { runCatching { if (status == null) problems.remove(url) else problems[url] = status!! } }
     }
@@ -177,7 +177,7 @@ object RepositoryManager {
     private suspend fun parsePlugins(pluginUrls: String): List<SitePlugin> {
         // Take manifestVersion and such into account later
         return try {
-            app.get(convertRawGitUrl(pluginUrls), cacheTime = 5, cacheUnit = TimeUnit.MINUTES)
+            app.get(convertRawGitUrl(pluginUrls), cacheTime = 15, cacheUnit = TimeUnit.MINUTES)
                 .parsed<Array<SitePlugin>>().toList()
         } catch (t: Throwable) {
             logError(t)
@@ -258,9 +258,16 @@ object RepositoryManager {
     private val repoLock = Mutex()
     suspend fun addRepository(repository: RepositoryData) {
         repoLock.withLock {
-            val currentRepos = getRepositories()
-            // No duplicates
-            setKey(REPOSITORIES_KEY, (currentRepos + repository).distinctBy { it.url })
+            // No duplicates, but we want the new repository instead of the old one
+            var currentRepos = getRepositories()
+            val index = currentRepos.indexOfFirst { it.url == repository.url }
+            if(index == -1) {
+                currentRepos += repository
+            } else {
+                /** We want to keep the ordering here, as that is the addition order */
+                currentRepos[index] = repository
+            }
+            setKey(REPOSITORIES_KEY, currentRepos)
         }
     }
 

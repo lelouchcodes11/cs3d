@@ -824,4 +824,5 @@
     <string name="public_dns_fallback_title">Ask public DNS about blocked names</string>
     <string name="public_dns_fallback_des">When your DNS (1.1.1.2, a family or school filter, your ISP) refuses the address of a streaming site, ask public resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9) instead. Fixes sources that fail with unknown host. Off: only your own DNS is trusted.</string>
     <string name="cloudflare_solvers_des">Some sites ask a browser to prove it is not a bot; the app opens a page for that. Off: no page is ever opened and those sites simply fail to load.</string>
+    <string name="installed_plugins">Installed plugins</string>
 </resources>

@@ -33,7 +33,7 @@ kotlin {
 }
 
 /** The CloudStream engine this app is built on: extensions look at it (BuildConfig.VERSION_NAME), so it follows upstream */
-val appVersion = "4.8.0"
+val appVersion = "4.9.1"
 
 /** This desktop app's own release version: the installer, the About page and the update checker (a GitHub release tag `v<this>`) */
 val desktopVersion = "1.1.3"
