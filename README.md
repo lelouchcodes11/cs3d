@@ -10,6 +10,12 @@ Runs your CloudStream extensions on the desktop, with a real <code>mpv</code> pl
 <p align="center">
   <a href="../../releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%7C%2011%20(x64)-0078D4?style=for-the-badge&logo=windows11&logoColor=white"></a>
   <a href="https://discord.gg/9XJQx8eYSG"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
+  <a href="https://t.me/cs3d_official"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-Join-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <a href="https://razorpay.me/@lelouch11"><img alt="Donate (India) via Razorpay" src="https://img.shields.io/badge/Donate-India%20(UPI%20%26%20cards)-0C2451?style=for-the-badge&logo=razorpay&logoColor=white"></a>
+  <a href="https://buymeacoffee.com/lelouchcodes11"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-International-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black"></a>
 </p>
 
 <p align="center">
@@ -90,7 +96,7 @@ Windows SmartScreen may warn on first run because the installer is not signed: c
 - **Video stutters:** set **Upscaling** to Off in the player menu.
 - **Window flickers or the app is slow:** try **Settings → Performance**, or start **CloudStream (safe graphics)** from the Start menu.
 - **A source does not play:** turn off your VPN or Cloudflare WARP, or use **Reload sources** in the player.
-- **Report a bug:** open an [issue](../../issues/new/choose) with **Settings → About → Copy diagnostics**, or ask on [Discord](https://discord.gg/9XJQx8eYSG).
+- **Report a bug:** open an [issue](../../issues/new/choose) with **Settings → About → Copy diagnostics**, or ask on [Discord](https://discord.gg/9XJQx8eYSG) or [Telegram](https://t.me/cs3d_official).
 
 ## Build from source
 
@@ -112,7 +118,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Support
 
-Free and ad-free. A star helps, or donate via [Razorpay](https://razorpay.me/@lelouch11) (India) or [Buy Me a Coffee](https://buymeacoffee.com/lelouchcodes11).
+Free and ad-free. A star helps, or donate via [Razorpay](https://razorpay.me/@lelouch11) (India) or [Buy Me a Coffee](https://buymeacoffee.com/lelouchcodes11). News and new versions: [Telegram](https://t.me/cs3d_official). Chat and help: [Discord](https://discord.gg/9XJQx8eYSG).
 
 ## Disclaimer
 
