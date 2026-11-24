@@ -24,13 +24,13 @@ class GroupBuilder {
     var action: (@Composable () -> Unit)? = null
 
     /** A settings card: [title] and [about] on the left, the [control] on the right */
-    fun card(title: String, about: String? = null, keywords: String = "", control: @Composable () -> Unit = {}) {
-        items += SettingItem(title, title, about, keywords) { SettingsCard(title, about) { control() } }
+    fun card(title: String, about: String? = null, keywords: String = "", glyph: String? = null, control: @Composable () -> Unit = {}) {
+        items += SettingItem(title, title, about, keywords) { SettingsCard(title, about, glyph = glyph) { control() } }.also { it.hasIcon = glyph != null }
     }
 
     /** A card that opens something when it is clicked */
-    fun link(title: String, about: String? = null, keywords: String = "", icon: androidx.compose.ui.graphics.painter.Painter? = null, onClick: () -> Unit) {
-        items += SettingItem(title, title, about, keywords) { SettingsCard(title, about, icon, onClick = onClick) }.also { it.hasIcon = icon != null }
+    fun link(title: String, about: String? = null, keywords: String = "", icon: androidx.compose.ui.graphics.painter.Painter? = null, glyph: String? = null, onClick: () -> Unit) {
+        items += SettingItem(title, title, about, keywords) { SettingsCard(title, about, icon, glyph = glyph, onClick = onClick) }.also { it.hasIcon = icon != null || glyph != null }
     }
 
     /** A row of its own (a picture grid, a colour picker): the search knows it by [title], [about] and [keywords] */

@@ -163,6 +163,12 @@ object WebView2Runtime {
         User32.INSTANCE.PostMessage(parking, WM_RUN, null, null)
     }
 
+    /** Runs [block] on the WebView2 thread after [delayMs] milliseconds */
+    fun postDelayed(delayMs: Long, block: () -> Unit) {
+        ensureThread()
+        timer.schedule({ post(block) }, delayMs.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+    }
+
     val isWebViewThread: Boolean get() = Thread.currentThread() === thread
 
     /** A window for one browser (WebView2 thread): a child of the hidden parking window until a WebView is shown on screen */
@@ -374,10 +380,11 @@ object WebView2Runtime {
         }
         cookiesGiven = true
         Com.call(cm, 10)
-        for (c in WebCookies.all()) addCookie(cm, c)
+        val seed = WebCookies.all().filterNot { it.name.startsWith("cf_chl") }
+        for (c in seed) addCookie(cm, c)
         Com.release(cm)
         WebCookies.backend = cookieBackend
-        Log.i(TAG, "cookie jar given to WebView2 (${WebCookies.all().size} cookies)")
+        Log.i(TAG, "cookie jar given to WebView2 (${seed.size} cookies)")
     }
 
     private fun addCookie(cm: Pointer, c: WebCookie) {

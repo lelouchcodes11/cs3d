@@ -68,6 +68,64 @@ object HlsProxy {
         chosenByMaster[master] = index
     }
 
+    /** An audio language of a master (one #EXT-X-MEDIA TYPE=AUDIO rendition) */
+    class Rendition(val name: String?, val language: String?)
+    private val audioById = ConcurrentHashMap<String, List<Rendition>>()
+    private val audioPickById = ConcurrentHashMap<String, Int>()
+    private val audioWantedById = ConcurrentHashMap<String, String>()
+    private val audioMasterById = ConcurrentHashMap<String, String>()
+    private val chosenAudioByMaster = ConcurrentHashMap<String, Int>()
+
+    /** Every audio language of this stream and the one the player was given, when it was given one of several (see [oneAudio]) */
+    fun audioRenditions(address: String): Pair<List<Rendition>, Int>? {
+        val id = idOf(address) ?: return null
+        val list = audioById[id] ?: return null
+        val pick = audioPickById[id] ?: return null
+        return list to pick
+    }
+
+    /** The audio language picked in the menu: the next open of the same master gets that one */
+    fun chooseAudio(address: String, index: Int) {
+        val id = idOf(address) ?: return
+        chosenAudioByMaster[audioMasterById[id] ?: return] = index
+    }
+
+    /** A language as the app compares them ("en-US", "eng" and "en" are the same) */
+    internal fun langKey(code: String?): String? {
+        val c = code?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return com.lagradost.cloudstream3.utils.SubtitleHelper.fromCodeToLangTagIETF(c)?.substringBefore('-')?.lowercase() ?: c.substringBefore('-').lowercase()
+    }
+
+    /**
+     * A master with several audio languages: the player is given one, the language chosen before (or the stream's default). ffmpeg opens every
+     * language's playlist and first segments before it plays, one after the other (four languages: about 1.1 s of a 2 s start on a test server with
+     * 0.2 s per request; the Netflix mirror lists five). The menu still lists them all; picking another opens the stream again at the same moment.
+     * Returns the rendition lines to change: null = left out, else the line as given. Only a single audio group whose renditions all have their own
+     * playlist (`-Dcloudstream.audiotrim=off`: all of them).
+     */
+    private fun oneAudio(text: String, playlistUrl: String, id: String): Map<String, String?> {
+        if (System.getProperty("cloudstream.audiotrim") == "off") return emptyMap()
+        val lines = text.lineSequence().map { it.trim() }.filter { it.startsWith("#EXT-X-MEDIA") && it.contains("TYPE=AUDIO") }.toList()
+        if (lines.size < 2) return emptyMap()
+        fun attr(line: String, name: String) = Regex("""[:,]$name="([^"]*)"""").find(line)?.groupValues?.get(1)
+        if (lines.map { attr(it, "GROUP-ID") }.distinct().size != 1 || lines.any { attr(it, "URI") == null }) return emptyMap()
+        val list = lines.map { Rendition(attr(it, "NAME"), attr(it, "LANGUAGE")) }
+        val key = playlistUrl.substringBefore('?')
+        val wanted = langKey(audioWantedById[id])
+        // a pick in the menu is for the open it starts (the language it saved as the choice applies after that)
+        val pick = chosenAudioByMaster.remove(key)?.takeIf { it in lines.indices }
+            ?: wanted?.let { w -> list.indexOfFirst { langKey(it.language) == w }.takeIf { it >= 0 } }
+            ?: lines.indexOfFirst { Regex("""[:,]DEFAULT=YES""").containsMatchIn(it) }.takeIf { it >= 0 }
+            ?: 0
+        audioById[id] = list
+        audioPickById[id] = pick
+        audioMasterById[id] = key
+        Log.i(TAG, "the player gets one audio language of ${lines.size}: ${list[pick].name ?: list[pick].language}")
+        return lines.withIndex().associate { (i, l) ->
+            l to (if (i == pick) l.replace("DEFAULT=NO", "DEFAULT=YES").replace("AUTOSELECT=NO", "AUTOSELECT=YES") else null)
+        }
+    }
+
     private fun idOf(address: String): String? = address.substringAfter("h=", "").substringBefore("&").takeIf { it.isNotEmpty() }
 
     /** The quality a player plays best on this PC: the highest up to the screen (at least 1080 lines), else the richest */
@@ -77,8 +135,66 @@ object HlsProxy {
             ?: list.withIndex().maxByOrNull { it.value.bandwidth })?.index
     }
 
-    private class Prefetched(val result: java.util.concurrent.CompletableFuture<Pair<Int, ByteArray>>, val at: Long)
-    private val firstSegments = ConcurrentHashMap<String, Prefetched>()
+    /**
+     * A segment on its way from its server: the bytes so far, which the player is given while the rest still comes. The player used to get a
+     * segment only once all of it was here, so a slow server held the start: a 4.4 MB first segment at ~0.7 MB/s was 6 s before the first picture.
+     */
+    private class Incoming(val at: Long) {
+        class Snap(val buf: ByteArray, val size: Int, val done: Boolean)
+        private val lock = Object()
+        private var buf = ByteArray(64 * 1024)
+        private var size = 0
+        @Volatile var code = 0; private set
+        @Volatile var length = -1L; private set
+        @Volatile var done = false; private set
+        /** ended before all of it came (connection lost, cancelled) */
+        @Volatile var failed = false
+        @Volatile var call: okhttp3.Call? = null
+        @Volatile var cancelled = false
+
+        fun answered(status: Int, contentLength: Long) = synchronized(lock) {
+            code = status; length = contentLength
+            if (contentLength in buf.size.toLong()..(64L shl 20)) buf = buf.copyOf(contentLength.toInt())
+            lock.notifyAll()
+        }
+
+        fun append(chunk: ByteArray, n: Int) = synchronized(lock) {
+            if (size + n > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, size + n))
+            System.arraycopy(chunk, 0, buf, size, n)
+            size += n
+            lock.notifyAll()
+        }
+
+        fun finish() = synchronized(lock) { done = true; lock.notifyAll() }
+
+        fun cancel() {
+            cancelled = true
+            runCatching { call?.cancel() }
+        }
+
+        /** Waits up to [timeoutMs] until the server answered or the download ended; the status (0 = no answer) */
+        fun awaitAnswer(timeoutMs: Long): Int = synchronized(lock) {
+            val end = System.currentTimeMillis() + timeoutMs
+            while (code == 0 && !done) {
+                val left = end - System.currentTimeMillis()
+                if (left <= 0) break
+                lock.wait(left)
+            }
+            code
+        }
+
+        /** Waits up to [timeoutMs] until there are more than [have] bytes or the download ended. Bytes below the size never change, a later copy keeps them */
+        fun await(have: Int, timeoutMs: Long): Snap = synchronized(lock) {
+            val end = System.currentTimeMillis() + timeoutMs
+            while (size <= have && !done) {
+                val left = end - System.currentTimeMillis()
+                if (left <= 0) break
+                lock.wait(left)
+            }
+            Snap(buf, size, done)
+        }
+    }
+    private val firstSegments = ConcurrentHashMap<String, Incoming>()
 
     private class Fetched(val status: Int, val body: ByteArray, val final: Boolean)
     private class CacheEntry(val result: java.util.concurrent.CompletableFuture<Fetched>, val at: Long) {
@@ -98,7 +214,9 @@ object HlsProxy {
             interceptorsById.remove(id)
             streamSubtitlesById.remove(id)
             variantsById.remove(id)
-            trimmedById.remove(id); masterById.remove(id)
+            trimmedById.remove(id); masterById.remove(id); audioById.remove(id); audioPickById.remove(id); audioWantedById.remove(id); audioMasterById.remove(id)
+            liveIds.remove(id)
+            upstreamStatusById.remove(id)
             liveFirstRead.removeIf { it.startsWith("$id|") }
             // what is known of a live stream's window goes with the stream (the playlist reader of [keepFresh] stops when the headers are gone)
             timelines.keys.removeIf { it.startsWith("$id|") }
@@ -109,7 +227,7 @@ object HlsProxy {
             while (it.hasNext()) {
                 val entry = it.next()
                 if (entry.key.startsWith("$id|")) {
-                    runCatching { entry.value.result.cancel(true) }
+                    entry.value.cancel()
                     it.remove()
                 }
             }
@@ -130,7 +248,12 @@ object HlsProxy {
         interceptorsById.clear()
         streamSubtitlesById.clear()
         variantsById.clear()
-        trimmedById.clear(); masterById.clear()
+        trimmedById.clear(); masterById.clear(); audioById.clear(); audioPickById.clear(); audioWantedById.clear(); audioMasterById.clear()
+        liveIds.clear()
+        upstreamStatusById.clear()
+        timelines.clear()
+        liveWindows.clear()
+        startCuts.clear()
         liveFirstRead.clear()
         for ((_, calls) in activeCalls) {
             for (call in calls) {
@@ -138,9 +261,7 @@ object HlsProxy {
             }
         }
         activeCalls.clear()
-        for ((_, p) in firstSegments) {
-            runCatching { p.result.cancel(true) }
-        }
+        for ((_, p) in firstSegments) p.cancel()
         firstSegments.clear()
         for ((_, c) in cache) {
             runCatching { c.result.cancel(true) }
@@ -155,12 +276,49 @@ object HlsProxy {
      */
     private fun prefetchSegment(url: String, id: String, headers: Map<String, String>): String {
         val now = System.currentTimeMillis()
-        firstSegments.entries.removeIf { now - it.value.at > 120_000 }
+        firstSegments.entries.removeIf { e -> (now - e.value.at > 120_000).also { old -> if (old) e.value.cancel() } }
         val key = "$id|$url"
-        firstSegments.computeIfAbsent(key) {
-            Prefetched(java.util.concurrent.CompletableFuture.supplyAsync({ getFull(url, headers, interceptorsById[id], id).let { it.first to it.second } }, sidePool), now)
-        }
+        firstSegments.computeIfAbsent(key) { download(url, headers, interceptorsById[id], id) }
         return "http://127.0.0.1:${server.address.port}/seg?h=$id&u=${URLEncoder.encode(url, "UTF-8")}"
+    }
+
+    /** Starts fetching a segment (see [Incoming]): no time limit for all of it (a slow server's big segment is still coming), only for each read */
+    private fun download(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor?, id: String): Incoming {
+        val incoming = Incoming(System.currentTimeMillis())
+        sidePool.execute {
+            var call: okhttp3.Call? = null
+            try {
+                val client = com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(0, java.util.concurrent.TimeUnit.SECONDS).readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                    .apply { interceptor?.let { addInterceptor(it) } }.build()
+                call = client.newCall(requestFor(url, headers))
+                incoming.call = call
+                if (incoming.cancelled) call.cancel()
+                activeCalls.computeIfAbsent(id) { java.util.concurrent.CopyOnWriteArrayList() }.add(call)
+                call.execute().use { r ->
+                    val ok = r.code in 200..299
+                    incoming.answered(r.code, if (ok) r.body.contentLength() else -1L)
+                    if (ok) {
+                        val src = r.body.byteStream()
+                        val chunk = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = src.read(chunk)
+                            if (n < 0) break
+                            if (n > 0) incoming.append(chunk, n)
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                incoming.failed = true
+                // cancelled: the player went away or the stream was closed (cancel / cancelAll)
+                val stopped = incoming.cancelled || t.message?.contains("cancel", ignoreCase = true) == true
+                val line = "segment download ended (status ${incoming.code}, ${incoming.await(Int.MAX_VALUE, 0).size} bytes): $t"
+                if (stopped) Log.d(TAG, line) else Log.w(TAG, line)
+            } finally {
+                call?.let { c -> activeCalls[id]?.remove(c) }
+                incoming.finish()
+            }
+        }
+        return incoming
     }
 
     private fun firstSegment(ex: HttpExchange) {
@@ -168,14 +326,50 @@ object HlsProxy {
         val id = query(ex, "h") ?: ""
         // a part of a file (#EXT-X-BYTERANGE: Kisskh's segments are ranges of one 400 MB file): that range, passed on as it comes. Without the Range
         // header the whole file was read into memory for every segment (a 20 s wait, then the app ran out of memory).
-        ex.requestHeaders.getFirst("Range")?.let { range -> return passRange(ex, url, id, range) }
-        val ready = firstSegments.remove("$id|$url")?.let { runCatching { it.result.get(30, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() }
-        // asked for again later (a seek back to the start), or the early fetch failed: fetched now
-        val (code, fetched) = ready?.takeIf { it.first in 200..299 } ?: getFull(url, headersById[id] ?: emptyMap(), interceptorsById[id], id).let { it.first to it.second }
-        if (code !in 200..299) { ex.sendResponseHeaders(code, -1); ex.close(); return }
-        val body = withoutDisguise(fetched)
-        ex.sendResponseHeaders(200, body.size.toLong())
-        ex.responseBody.use { it.write(body) }
+        // mpv asks for every segment with "Range: bytes=0-": that is all of it (answered 200), or the segment fetched ahead was not used and came a second
+        // time, both at once on a slow server, and a fake header in front was never cut off
+        ex.requestHeaders.getFirst("Range")?.takeUnless { it.replace(" ", "").equals("bytes=0-", true) }?.let { range -> return passRange(ex, url, id, range) }
+        var incoming = firstSegments.remove("$id|$url")
+        // asked for again later (a seek back to the start), not fetched ahead, or the early fetch failed: fetched now
+        if (incoming == null || incoming.awaitAnswer(30_000) !in 200..299) {
+            incoming?.cancel()
+            incoming = download(url, headersById[id] ?: emptyMap(), interceptorsById[id], id)
+        }
+        try {
+            val code = incoming.awaitAnswer(60_000)
+            if (code !in 200..299) { ex.sendResponseHeaders(if (code == 0) 502 else code, -1); ex.close(); return }
+            // where the video starts (behind a fake file header): known from its first bytes
+            var snap = incoming.await(-1, 0)
+            var start = videoStart(snap.buf, snap.size, snap.done)
+            while (start == null) {
+                val more = incoming.await(snap.size, 30_000)
+                if (more.size == snap.size && !more.done) { ex.sendResponseHeaders(504, -1); ex.close(); return }
+                snap = more
+                start = videoStart(snap.buf, snap.size, snap.done)
+            }
+            if (start > 0) Log.i(TAG, "segment behind a fake $start-byte header: cut off")
+            if (snap.done && incoming.failed && snap.size == 0) { ex.sendResponseHeaders(502, -1); ex.close(); return }
+            val total = incoming.length
+            ex.sendResponseHeaders(200, when {
+                snap.done && !incoming.failed -> (snap.size - start).toLong()
+                total > start -> total - start
+                else -> 0L // as it comes (chunked)
+            })
+            ex.responseBody.use { out ->
+                var pos: Int = start
+                while (true) {
+                    val s = incoming.await(pos, 30_000)
+                    if (s.size > pos) {
+                        out.write(s.buf, pos, s.size - pos)
+                        out.flush()
+                        pos = s.size
+                    } else break // all of it, or nothing new for 30 s
+                }
+            }
+        } finally {
+            // the player went away (a seek, the player closed) before all of it came: the rest is not needed
+            if (!incoming.done) incoming.cancel()
+        }
     }
 
     private fun passRange(ex: HttpExchange, url: String, id: String, range: String) {
@@ -209,23 +403,31 @@ object HlsProxy {
     private val DISGUISED = Regex("""\.(png|jpe?g|webp|gif|bmp|ico|svg|avif|css|js|html?|txt|json|woff2?|ttf|xml)$""", RegexOption.IGNORE_CASE)
 
     /**
-     * A segment with a fake file header in front (an image or a script, so that the CDN serves it as one): the bytes from the start of
-     * the real MPEG-TS (five packets in a row) or MP4 box on. ExoPlayer finds the sync bytes by itself; ffmpeg reads the header,
-     * takes the segment for a picture and fails ("png: chunk too big"). A segment that already starts right is returned as it is.
+     * Where the video of a segment starts in its first [n] bytes of [b]. A fake file header in front (an image or a script, so that the CDN serves it as
+     * one) is cut off: ExoPlayer finds the sync bytes by itself, ffmpeg reads the header, takes the segment for a picture and fails ("png: chunk too big").
+     * The start is five MPEG-TS packets in a row or an MP4 box; 0 = it starts right (or nothing was found in the first 256 KB: passed on as it is);
+     * null = [n] bytes are too few to tell and more are coming ([complete] = there are no more). Five packets must be there: a body shorter than that
+     * (a 16-byte key of an extension's stream) is never cut, before it lost its first bytes when one of them was 0x47.
      */
-    internal fun withoutDisguise(body: ByteArray): ByteArray {
-        fun ts(at: Int) = (0 until 5).all { i -> at + i * 188 < body.size && body[at + i * 188] == 0x47.toByte() }
-        if (body.isEmpty() || ts(0)) return body
-        fun box(at: Int) = at + 8 <= body.size && MP4_BOXES.any { t -> (0 until 4).all { i -> body[at + 4 + i] == t[i].code.toByte() } }
-        if (box(0) || (body.size >= 3 && body[0] == 'I'.code.toByte() && body[1] == 'D'.code.toByte() && body[2] == '3'.code.toByte())) return body
-        val limit = minOf(body.size - 1, 256 * 1024)
-        for (at in 1..limit) {
-            if ((body[at] == 0x47.toByte() && ts(at)) || box(at)) {
-                Log.i(TAG, "segment behind a fake $at-byte header: cut off")
-                return body.copyOfRange(at, body.size)
+    internal fun videoStart(b: ByteArray, n: Int, complete: Boolean): Int? {
+        if (n >= 3 && b[0] == 'I'.code.toByte() && b[1] == 'D'.code.toByte() && b[2] == '3'.code.toByte()) return 0
+        fun box(at: Int) = MP4_BOXES.any { t -> (0 until 4).all { i -> b[at + 4 + i] == t[i].code.toByte() } }
+        for (at in 0..256 * 1024) {
+            if (at >= n) return if (complete) 0 else null
+            if (at + 4 * 188 >= n) {
+                if (!complete) return null
+                if (at + 8 <= n && box(at)) return at
+                continue
             }
+            if ((b[at] == 0x47.toByte() && (1 until 5).all { i -> b[at + i * 188] == 0x47.toByte() }) || box(at)) return at
         }
-        return body
+        return 0
+    }
+
+    /** The bytes of a whole segment without a fake header in front (see [videoStart]) */
+    internal fun withoutDisguise(body: ByteArray): ByteArray {
+        val start = videoStart(body, body.size, true) ?: 0
+        return if (start > 0) body.copyOfRange(start, body.size) else body
     }
 
     private val MP4_BOXES = listOf("ftyp", "styp", "moof", "sidx")
@@ -239,21 +441,30 @@ object HlsProxy {
      * The single file of a subtitle playlist that lists exactly one (`#EXTINF:99999` over the whole film), or null. ffmpeg's HLS reader
      * never delivered the cues of such a playlist (CNCVerse's Netflix / Prime Video / Hotstar); as a plain subtitle file it works.
      */
-    private fun singleSubtitleFile(url: String, headers: Map<String, String>): String? = runCatching {
-        val (code, bytes, finalUrl) = getFull(url, headers)
+    private fun singleSubtitleFile(url: String, headers: Map<String, String>, id: String): String? = runCatching {
+        val (code, bytes, finalUrl) = getFull(url, headers, interceptorsById[id], id)
         if (code !in 200..299) return null
         val text = String(bytes, Charsets.UTF_8)
         if (!text.contains("#EXT-X-ENDLIST")) return null
         val segments = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
-        segments.singleOrNull()?.let { resolve(finalUrl, it) }
+        segments.singleOrNull()?.let { return resolve(finalUrl, it) }
+        // a playlist of several files stays in the master and the player asks for it next: it gets this copy. It was fetched again after this
+        // check (one more wait: 0.8 s of a 1.4 s start with ten subtitle languages, 0.2 s per request on a test server)
+        cache.putIfAbsent("$id|$url", CacheEntry(java.util.concurrent.CompletableFuture.completedFuture(Fetched(200, rewrite(text, finalUrl, id, headers).toByteArray(Charsets.UTF_8), true)), System.currentTimeMillis()))
+        null
     }.getOrNull()
     private val keyCache = ConcurrentHashMap<String, String>()
 
     // wrapped streams (by id) with a media playlist that has no end: live
     private val liveIds = java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    // non-2xx HTTP status actually answered by the remote server for a playlist of this stream (null when the proxy failed locally before a reply)
+    private val upstreamStatusById = ConcurrentHashMap<String, Int>()
 
     /** Whether a [wrap] address plays a live playlist (known once a media playlist was read) */
     fun isLive(address: String): Boolean = address.substringAfter("h=", "").substringBefore("&").let { it.isNotEmpty() && it in liveIds }
+
+    /** The HTTP status code the remote server itself answered for a failed playlist of [address], or null when no upstream HTTP error was received */
+    fun upstreamStatus(address: String): Int? = idOf(address)?.let { upstreamStatusById[it] }
 
     // the length (s) of the newest live media playlist of a stream (by id): how far back a viewer can go. Only read, nothing served is changed.
     private val liveWindows = ConcurrentHashMap<String, Double>()
@@ -294,6 +505,7 @@ object HlsProxy {
             val t = timelines[key]
             if (t == null) { timelines[key] = Timeline(playlistUrl, now, last, durations.sum(), now, target).also { it.note(now) }; keepFresh(id); return }
             t.readAt = now
+            keepFresh(id) // it stops when the player stops reading (below); a read after that starts it again
             if (last > t.lastSeq) {
                 // the segments that are new since the last read; if the playlist slid past some between two reads they are counted at the average length
                 val firstNew = maxOf(t.lastSeq + 1, seq)
@@ -330,6 +542,9 @@ object HlsProxy {
     // the end stand still while the channel goes on: the followed playlist is read from here, once per target duration, whenever ffmpeg has not read it itself
     private val keepers = ConcurrentHashMap<String, Boolean>()
 
+    // when the player last asked for a playlist of a stream ([keepFresh] ends after 3 minutes without)
+    private val playerReadAt = ConcurrentHashMap<String, Long>()
+
     private fun keepFresh(id: String) {
         if (keepers.putIfAbsent(id, true) != null) return
         Thread({
@@ -337,6 +552,9 @@ object HlsProxy {
                 // until the player has let go of the stream ([cancel])
                 while (headersById.containsKey(id)) {
                     Thread.sleep(1000)
+                    // nobody reads the playlist any more (a channel handed to VLC or Energy that was closed: nothing calls [cancel] for those), so stop polling it
+                    val seen = playerReadAt[id]
+                    if (seen != null && System.currentTimeMillis() - seen > 180_000L) break
                     val t = primary(id) ?: continue
                     val everyMs = (t.targetSeconds.coerceIn(2.0, 10.0) * 1000).toLong()
                     if ((System.nanoTime() - t.readAt) / 1_000_000L < everyMs) continue
@@ -350,12 +568,16 @@ object HlsProxy {
             } catch (_: Throwable) {
             } finally {
                 keepers.remove(id)
+                playerReadAt.remove(id)
             }
         }, "HlsProxy-live").apply { isDaemon = true }.start()
     }
 
     /** How many seconds the live playlist of a [wrap] address lists (what the channel keeps: 20 s on some channels, 10 minutes on others), null while unknown */
     fun windowSeconds(address: String): Double? = address.substringAfter("h=", "").substringBefore("&").takeIf { it.isNotEmpty() }?.let { liveWindows[it] }
+
+    /** Starts the local server ahead of the first video (the warm-up after the start): the first video started it on the UI thread */
+    fun warmUp() { server }
 
     private val server: HttpServer by lazy {
         HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 32).apply {
@@ -372,9 +594,11 @@ object HlsProxy {
      * less): ffmpeg starts three segments before the end of the first copy of each live playlist it reads, so that copy is given without its last segments, once
      * per playlist; every later copy is the whole playlist and playback goes on from the next segment, no seek and nothing else changed.
      */
-    fun wrap(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null, startBehindSeconds: Double = 0.0): String {
+    fun wrap(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null, startBehindSeconds: Double = 0.0, audioLanguage: String? = null): String {
         val id = Integer.toHexString(url.hashCode()) + "-" + System.nanoTime().toString(16)
         headersById[id] = headers
+        // the audio language chosen before (see oneAudio); none for a live channel, which keeps its own
+        if (audioLanguage != null) audioWantedById[id] = audioLanguage
         if (interceptor != null) interceptorsById[id] = interceptor
         if (startBehindSeconds > 0.0) startCuts[id] = StartCut(startBehindSeconds)
         return playlistAddress(url, id)
@@ -437,7 +661,11 @@ object HlsProxy {
         "http://127.0.0.1:${server.address.port}/pl?h=$id&u=${URLEncoder.encode(url, "UTF-8")}"
 
     private fun fail(ex: HttpExchange, t: Throwable) {
-        Log.w(TAG, "playlist request failed: ${t.message}")
+        val what = if (ex.requestURI.path.startsWith("/seg")) "segment" else "playlist"
+        // the player closed the connection (a seek, a quality switch, the player closed): normal, not a failure (65 of the 72 warnings of a real log)
+        val playerLeft = t is java.io.IOException && listOf("aborted by the software", "Socket closed", "insufficient bytes written", "Broken pipe")
+            .any { t.message?.contains(it, ignoreCase = true) == true }
+        if (playerLeft) Log.d(TAG, "$what request ended by the player: ${t.message}") else Log.w(TAG, "$what request failed: ${t.message ?: t.javaClass.simpleName}")
         runCatching { ex.sendResponseHeaders(502, -1) }
         ex.close()
     }
@@ -455,7 +683,7 @@ object HlsProxy {
     private fun get(url: String, headers: Map<String, String>): Pair<Int, ByteArray> = getFull(url, headers).let { it.first to it.second }
 
     /** [get] and the address the answer came from after the redirects: relative addresses in a playlist are meant against that one */
-    private fun getFull(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null, id: String? = null): Triple<Int, ByteArray, String> {
+    private fun requestFor(url: String, headers: Map<String, String>): Request {
         val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: toUri(url).toString().toHttpUrl())
         var userAgent = false
         for ((k, v) in headers) {
@@ -465,8 +693,60 @@ object HlsProxy {
             com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
         }
         if (!userAgent) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
-        val client = com.lagradost.cloudstream3.app.baseClient.newBuilder().callTimeout(if (interceptor != null) 60 else 20, java.util.concurrent.TimeUnit.SECONDS).apply { interceptor?.let { addInterceptor(it) } }.build()
-        val call = client.newCall(builder.build())
+        return builder.build()
+    }
+
+    /** Its own connections, HTTP/1.1: a second try of a playlist must not wait behind the same stalled HTTP/2 connection as the first one. Rebuilt if [app.baseClient] changes (e.g. a new DNS setting). */
+    @Volatile private var freshSource: okhttp3.OkHttpClient? = null
+    @Volatile private var freshDerived: okhttp3.OkHttpClient? = null
+
+    private fun freshBaseClient(): okhttp3.OkHttpClient {
+        val current = com.lagradost.cloudstream3.app.baseClient
+        freshDerived?.takeIf { freshSource === current }?.let { return it }
+        return synchronized(this) {
+            freshDerived?.takeIf { freshSource === current } ?: current.newBuilder()
+                .connectionPool(okhttp3.ConnectionPool())
+                .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+                .build()
+                .also { freshSource = current; freshDerived = it }
+        }
+    }
+
+    /** How long a playlist may take before it is asked for a second time ([getHedged]) */
+    internal var hedgeAfterMs = 2_500L
+
+    /**
+     * [getFull], asked a second time on a new connection when the first answer has not come in [hedgeAfterMs]; the first good answer wins. One stalled
+     * request held a whole start: the player reads every audio language's playlist before it plays, and of a Netflix mirror's five, two hung until the
+     * read timeout ("SocketTimeoutException: timeout", an HTTP/2 stream) while the others came in 15-900 ms from the same server: 14 s of nothing, twice.
+     */
+    private fun getHedged(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor?, id: String): Triple<Int, ByteArray, String> {
+        val first = java.util.concurrent.CompletableFuture.supplyAsync({ getFull(url, headers, interceptor, id) }, sidePool)
+        try {
+            return first.get(hedgeAfterMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (_: java.util.concurrent.TimeoutException) {
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw e.cause ?: e
+        }
+        Log.i(TAG, "playlist slow (${hedgeAfterMs} ms): asking again on a new connection: ${url.take(100)}")
+        val second = java.util.concurrent.CompletableFuture.supplyAsync({ getFull(url, headers, interceptor, id, fresh = true) }, sidePool)
+        val winner = java.util.concurrent.CompletableFuture<Triple<Int, ByteArray, String>>()
+        val ended = java.util.concurrent.atomic.AtomicInteger(0)
+        for (f in listOf(first, second)) f.whenComplete { r, t ->
+            if (t == null && r.first in 200..299) winner.complete(r)
+            else if (ended.incrementAndGet() == 2) { if (r != null) winner.complete(r) else winner.completeExceptionally(t) }
+            // one failed and the other is still on its way: that one decides
+        }
+        try {
+            return winner.get(60, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw e.cause ?: e
+        }
+    }
+
+    private fun getFull(url: String, headers: Map<String, String>, interceptor: okhttp3.Interceptor? = null, id: String? = null, fresh: Boolean = false): Triple<Int, ByteArray, String> {
+        val client = (if (fresh) freshBaseClient() else com.lagradost.cloudstream3.app.baseClient).newBuilder().callTimeout(if (interceptor != null) 60 else 20, java.util.concurrent.TimeUnit.SECONDS).apply { interceptor?.let { addInterceptor(it) } }.build()
+        val call = client.newCall(requestFor(url, headers))
         if (id != null) {
             activeCalls.computeIfAbsent(id) { java.util.concurrent.CopyOnWriteArrayList() }.add(call)
         }
@@ -506,12 +786,14 @@ object HlsProxy {
         cache[key] = entry
         pool.execute {
             try {
-                val (code, bytes, finalUrl) = getFull(url, headers, interceptorsById[id], id)
+                val (code, bytes, finalUrl) = getHedged(url, headers, interceptorsById[id], id)
                 if (code !in 200..299) {
+                    upstreamStatusById[id] = code
                     Log.w(TAG, "playlist $code: ${url.take(120)}")
                     future.complete(Fetched(code, ByteArray(0), false))
                     cache.remove(key, entry)
                 } else {
+                    upstreamStatusById.remove(id)
                     val text = String(bytes, Charsets.UTF_8)
                     if (finalUrl.substringBefore('?') != url.substringBefore('?')) Log.i(TAG, "playlist redirected: segments come from ${finalUrl.substringBefore('?').take(100)}")
                     val isLive = text.contains("#EXTINF") && !text.contains("#EXT-X-ENDLIST")
@@ -538,6 +820,7 @@ object HlsProxy {
         val id = query(ex, "h") ?: ""
         val headers = headersById[id] ?: emptyMap()
         val started = System.currentTimeMillis()
+        if (id.isNotEmpty()) playerReadAt[id] = started
         val result = fetch(url, id, headers, forPlayer = true).get(30, java.util.concurrent.TimeUnit.SECONDS)
         if (result.status !in 200..299) {
             ex.sendResponseHeaders(result.status, -1)
@@ -579,9 +862,10 @@ object HlsProxy {
         val wholeFile = HashMap<String, StreamSubtitle>()
         if (master) {
             val attr = { line: String, name: String -> Regex("""$name="([^"]*)"""").find(line)?.groupValues?.get(1) }
-            val checks = text.lineSequence().map { it.trim() }.filter { it.startsWith("#EXT-X-MEDIA") && it.contains("TYPE=SUBTITLES") }
-                .mapNotNull { line -> attr(line, "URI")?.let { uri -> line to java.util.concurrent.CompletableFuture.supplyAsync({ singleSubtitleFile(resolve(playlistUrl, uri), headers) }, sidePool) } }
-                .toList()
+            val subtitleLines = text.lineSequence().map { it.trim() }.filter { it.startsWith("#EXT-X-MEDIA") && it.contains("TYPE=SUBTITLES") }.toList()
+            // (the copies of the playlists that stay in the master are kept for the player, see singleSubtitleFile)
+            val checks = subtitleLines
+                .mapNotNull { line -> attr(line, "URI")?.let { uri -> line to java.util.concurrent.CompletableFuture.supplyAsync({ singleSubtitleFile(resolve(playlistUrl, uri), headers, id) }, sidePool) } }
             val deadline = System.currentTimeMillis() + 6_000
             for ((line, check) in checks) {
                 val file = runCatching { check.get((deadline - System.currentTimeMillis()).coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull() ?: continue
@@ -600,6 +884,8 @@ object HlsProxy {
                 Variant(res?.groupValues?.get(1)?.toIntOrNull(), res?.groupValues?.get(2)?.toIntOrNull(), Regex("""[^-]BANDWIDTH=(\d+)""").find(line)?.groupValues?.get(1)?.toLongOrNull() ?: 0L)
             }.toList()
         }
+        // audio languages the player is not given (see oneAudio)
+        val audioOut = if (master) oneAudio(text, playlistUrl, id) else emptyMap()
         // the variants name the subtitle group; with all of its renditions left out the reference goes too
         val allSubtitlesOut = wholeFile.isNotEmpty() && text.lineSequence().count { it.startsWith("#EXT-X-MEDIA") && it.contains("TYPE=SUBTITLES") } == wholeFile.size
         val embedded = embeddedAddress(playlistUrl)
@@ -607,7 +893,13 @@ object HlsProxy {
         val out = StringBuilder(text.length + 256)
         var nextIsVariant = false
         // a recorded media playlist: its first segment is fetched now (see firstSegments); byte ranges are left alone
-        var prefetchFirst = System.getProperty("cloudstream.noprefetch") == null && !master && text.contains("#EXT-X-ENDLIST") && text.contains("#EXTINF") && !text.contains("#EXT-X-BYTERANGE")
+        // (not a subtitle playlist: the player reads those only when that language is turned on, and a service with dozens of languages
+        // fetched dozens of files next to the first picture)
+        val subtitleSegments = text.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("#") }?.trim()?.substringBefore('?')
+            ?.let { Regex("""\.(vtt|webvtt|srt|ttml|dfxp)$""", RegexOption.IGNORE_CASE).containsMatchIn(it) } == true
+        var prefetchFirst = System.getProperty("cloudstream.noprefetch") == null && !master && !subtitleSegments && text.contains("#EXT-X-ENDLIST") && text.contains("#EXTINF") && !text.contains("#EXT-X-BYTERANGE") &&
+            // a film listed as one long segment is not held in memory (the prefetched segment is kept whole: 1.5 GB ran out of memory)
+            (extInf.find(text)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0) <= 60.0
         // a LIVE media playlist, the first time it is read: the segment the player starts on (ffmpeg starts 3 from the end) is fetched now. All the
         // qualities are read at the same moment (see the end of this function), so their first segments come in parallel; the player opened them one
         // after the other, ~4.6 s of a 8.3 s start of a live channel with 5 qualities (Android plays one quality and starts in ~2 s). Once per playlist:
@@ -629,8 +921,9 @@ object HlsProxy {
         val audio = ArrayList<String>()
         val subtitles = ArrayList<String>()
         for (raw in text.lineSequence()) {
-            val line = raw.trimEnd('\r')
+            var line = raw.trimEnd('\r')
             if (line in wholeFile) continue
+            if (audioOut.containsKey(line.trim())) line = audioOut[line.trim()] ?: continue
             when {
                 line.isBlank() -> out.append(line)
                 line.startsWith("#") -> {
@@ -679,12 +972,17 @@ object HlsProxy {
             val key = playlistUrl.substringBefore('?')
             val pick = chosenByMaster[key]?.takeIf { it in variants.indices } ?: bestFor(list)?.takeIf { it in variants.indices }
             if (pick != null) {
-                val probe = runCatching { fetch(variants[pick], id, headers, forPlayer = false).get(4, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull()
-                if (probe != null && probe.status in 200..299 && !probe.final) {
+                val probing = fetch(variants[pick], id, headers, forPlayer = false)
+                // the audio and subtitle playlists are needed either way: they load while the quality is looked at (they came after it, the player
+                // then waited for the audio playlist: 0.8 s of a 6 s start of RUV)
+                for (url in audio + subtitles) fetch(url, id, headers, forPlayer = false)
+                val probe = runCatching { probing.get(4, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull()
+                // a recorded film too (-Dcloudstream.vodtrim=off: all qualities): ffmpeg opens the first segments of EVERY quality before it plays (four
+                // qualities: 6 s to the first picture) and keeps those connections, so a server that allows few connections at a time held the next segment
+                if (probe != null && probe.status in 200..299 && (!probe.final || System.getProperty("cloudstream.vodtrim") != "off")) {
                     masterById[id] = key
                     trimmedById[id] = pick
-                    Log.i(TAG, "live master: the player gets one quality, ${list.getOrNull(pick)?.height ?: "?"}p (${pick + 1} of ${variants.size})")
-                    for (url in audio + subtitles) fetch(url, id, headers, forPlayer = false)
+                    Log.i(TAG, "${if (probe.final) "master" else "live master"}: the player gets one quality, ${list.getOrNull(pick)?.height ?: "?"}p (${pick + 1} of ${variants.size})")
                     return keepOneVariant(out.toString(), pick)
                 }
             }

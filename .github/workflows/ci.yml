@@ -1,10 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
+  # manual only (Actions tab > CI > Run workflow): a Windows build on every push used up the monthly Actions minutes
+  workflow_dispatch:
 
 jobs:
   build-and-test:

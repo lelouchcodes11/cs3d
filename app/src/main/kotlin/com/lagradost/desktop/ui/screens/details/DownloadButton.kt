@@ -36,7 +36,12 @@ import com.lagradost.desktop.ui.fluent.MenuFlyout
 import com.lagradost.desktop.ui.fluent.MenuItem
 import com.lagradost.desktop.ui.fluent.Icons
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.lagradost.desktop.ui.counted
+import com.lagradost.desktop.ui.fluent.FText
+import com.lagradost.desktop.ui.fluent.Fluent
+import com.lagradost.desktop.ui.fluent.Overlays
 
 /** Where the download of an episode or film is: nothing yet, waiting or running (with how far), done, or failed */
 internal enum class DlKind { None, Running, Done, Failed }
@@ -65,8 +70,12 @@ internal fun rememberDownloadState(id: Int): MutableState<DlState> {
     // a file left by an earlier run of the app
     LaunchedEffect(id) {
         if (state.value.kind != DlKind.None) return@LaunchedEffect
-        val onDisk = withContext(Dispatchers.IO) { runCatching { VideoDownloadManager.getDownloadFileInfo(ctx, id) != null }.getOrDefault(false) }
-        if (onDisk && state.value.kind == DlKind.None) state.value = DlState(DlKind.Done)
+        val info = withContext(Dispatchers.IO) { runCatching { VideoDownloadManager.getDownloadFileInfo(ctx, id) }.getOrNull() }
+        // a file cut off by a failed download is not "Downloaded": the same test the download queue uses to resume it (98 % of the size)
+        if (info != null && state.value.kind == DlKind.None) {
+            val whole = info.totalBytes <= 0 || info.fileLength.toFloat() / info.totalBytes.toFloat() > 0.98f
+            state.value = DlState(if (whole) DlKind.Done else DlKind.Failed)
+        }
     }
     DisposableEffect(id) {
         val status: (Pair<Int, VideoDownloadManager.DownloadType>) -> Unit = { (changed, type) ->
@@ -172,5 +181,43 @@ internal fun EpisodeDownloadButton(vm: ResultViewModel2, ep: ResultEpisode, what
             tooltip = tipOf(s, what), size = 28.dp, iconSize = 14.dp,
         )
         if (menu) MenuFlyout(choices(vm, ep, state, what, s.kind == DlKind.Failed), { menu = false })
+    }
+}
+
+/**
+ * "Download all": every episode on show (the season picked, or the range of it) is queued; those downloaded or downloading already are left as
+ * they are. Asked first, with how many: a season is a lot of disk. They download one after another, each in the quality set under Settings.
+ */
+internal fun downloadAll(vm: ResultViewModel2, episodes: List<ResultEpisode>, what: String) {
+    val ctx = DesktopBootstrap.activity
+    kotlinx.coroutines.MainScope().launch {
+        val busy = setOf(VideoDownloadManager.DownloadType.IsDownloading, VideoDownloadManager.DownloadType.IsPending, VideoDownloadManager.DownloadType.IsPaused, VideoDownloadManager.DownloadType.IsDone)
+        val todo = withContext(Dispatchers.IO) {
+            episodes.filter { ep ->
+                if (VideoDownloadManager.downloadStatus[ep.id] in busy) return@filter false
+                val info = runCatching { VideoDownloadManager.getDownloadFileInfo(ctx, ep.id) }.getOrNull()
+                !(info != null && info.totalBytes > 0 && info.fileLength.toFloat() / info.totalBytes.toFloat() > 0.98f)
+            }
+        }
+        val skipped = episodes.size - todo.size
+        if (todo.isEmpty()) {
+            Toasts.show("Every episode of $what is downloaded or downloading already.", false)
+            return@launch
+        }
+        Overlays.show(
+            Overlays.Dialog(
+                title = "Download ${counted(todo.size, "episode")}?", primary = "Download", close = "Not now", width = 440.dp,
+                onPrimary = {
+                    todo.forEach { vm.handleAction(EpisodeClickEvent(ACTION_DOWNLOAD_EPISODE, it)) }
+                    Toasts.show("Downloading ${counted(todo.size, "episode")} of $what. The progress is under Downloads.", false)
+                },
+            ) {
+                FText(
+                    "$what: they download one after another, each in the quality set under Settings > Downloads." +
+                        (if (skipped > 0) " ${counted(skipped, "episode")} downloaded or downloading already ${if (skipped == 1) "is" else "are"} left out." else ""),
+                    color = Fluent.colors.textSecondary,
+                )
+            },
+        )
     }
 }

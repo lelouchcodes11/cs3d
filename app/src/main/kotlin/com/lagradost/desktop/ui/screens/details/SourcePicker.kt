@@ -96,8 +96,12 @@ private fun SourcePickerBody(links: List<ExtractorLink>, onPick: (Int) -> Unit) 
     val hasSizes = rows.any { it.sizeGb != null }
     val hasSeeders = rows.any { it.seeders != null }
     val ordered = when (sort) {
-        // the picture size first; the huge files (remux, 4K) after the others when "prefer smooth sources" is on, like the player's automatic choice
-        LastSource.Sort.Best -> rows.sortedWith(compareBy<LinkRow>({ if (Appearance.smoothSources && it.heavy) 1 else 0 }, { -it.link.quality }))
+        // the order the player tries them in: direct sources before torrents, torrents by how well shared they are (in steps), then the picture
+        // size, the huge files (remux, 4K) after the others when "prefer smooth sources" is on, then the most seeders
+        LastSource.Sort.Best -> rows.sortedWith(compareBy<LinkRow>(
+            { if (TorrentEngine.isTorrent(it.link)) 1 else 0 }, { -TorrentEngine.seedTier(it.link) },
+            { if (Appearance.smoothSources && it.heavy) 1 else 0 }, { -it.link.quality }, { -(it.seeders ?: 0) },
+        ))
         LastSource.Sort.Quality -> rows.sortedByDescending { it.link.quality }
         LastSource.Sort.Size -> rows.sortedByDescending { it.sizeGb ?: -1.0 }
         LastSource.Sort.Seeders -> rows.sortedByDescending { it.seeders ?: -1 }

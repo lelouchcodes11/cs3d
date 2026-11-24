@@ -32,17 +32,11 @@ object StremioStreams {
         Target(j.getString("t"), j.getString("i"), j.optJSONArray("s"))
     }.getOrNull()
 
-    /** The default trackers a magnet gets when its stream names none */
-    private val defaultTrackers = listOf(
-        "udp://tracker.opentrackr.org:1337/announce", "udp://open.stealth.si:80/announce", "udp://tracker.torrent.eu.org:451/announce",
-        "udp://explodie.org:6969/announce", "udp://open.demonii.com:1337/announce", "udp://exodus.desync.com:6969/announce",
-        "udp://tracker.openbittorrent.com:6969/announce", "udp://tracker.tiny-vps.com:6969/announce",
-    )
-
+    /** A magnet with the stream's own trackers and the public ones that answer (most Torrentio streams name none) */
     fun magnetOf(hash: String, name: String?, trackers: List<String>): String = buildString {
         append("magnet:?xt=urn:btih:").append(hash.lowercase())
         if (!name.isNullOrBlank()) append("&dn=").append(StremioClient.enc(name))
-        (trackers.ifEmpty { defaultTrackers }).forEach { append("&tr=").append(StremioClient.enc(it)) }
+        (trackers + com.lagradost.desktop.torrent.TorrentEngine.trackers).distinct().forEach { append("&tr=").append(StremioClient.enc(it)) }
     }
 
     fun qualityOf(text: String): Int {
@@ -103,8 +97,11 @@ object StremioStreams {
     ): Int {
         // the episode asked for: a season pack without a file number is searched for it (see TorrentEngine.pickFile)
         val parts = target?.id?.split(':')
-        val season = if (target?.type == "series" && parts != null && parts.size >= 3) parts[parts.size - 2].toIntOrNull() else null
-        val episode = if (target?.type == "series" && parts != null && parts.size >= 3) parts.last().toIntOrNull() else null
+        // only an IMDb id has a season (tt..:S:E); kitsu:ID:E and mal:ID:E hold the show id there, not a season
+        // ("anime" add-ons list their shows as that type: a batch got no episode, and the biggest file of the pack played)
+        val episodic = setOf("series", "anime")
+        val season = if (target?.type in episodic && parts != null && parts.size == 3 && parts[0].startsWith("tt")) parts[1].toIntOrNull() else null
+        val episode = if (target?.type in episodic && parts != null && parts.size >= 3) parts.last().toIntOrNull() else null
         var found = 0
         for (s in streams) {
             val label = displayName(addon.name, s)

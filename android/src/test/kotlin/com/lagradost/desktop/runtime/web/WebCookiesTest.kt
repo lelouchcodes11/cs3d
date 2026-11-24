@@ -45,6 +45,26 @@ class WebCookiesTest {
         assertEquals(listOf(old), WebCookies.all())
     }
 
+    @Test fun onTheBrowserThreadTheCopiedJarAnswers() {
+        WebCookies.put(old)
+        // the browser's own thread cannot wait for a live read: the jar (copied from the browser every 1.5 s) answers, as getCookie does on Android
+        WebCookies.backend = object : WebCookies.BrowserBackend {
+            override fun push(cookie: WebCookie) {}
+            override fun delete(cookie: WebCookie) {}
+            override fun deleteAll() {}
+            // the live read gives nothing in time (an answer that never came would hold the shared read for the next test)
+            override fun readCookies(complete: (List<WebCookie>?) -> Unit) { complete(null) }
+            override fun canWaitForCookies(): Boolean = false
+        }
+        assertEquals("session=synthetic-old", WebCookies.freshHeader(url))
+    }
+
+    @Test fun addressesWithSpacesAndForeignHostsGetTheirCookies() {
+        WebCookies.put(old)
+        assertEquals("session=synthetic-old", WebCookies.header("https://example.invalid/search?q=one piece|x"))
+        assertEquals("xn--bcher-kva.example", WebCookies.cookieUri("https://bücher.example/a b")?.host)
+    }
+
     @Test fun flushOnTheUiThreadDoesNotWaitForABusyBrowserButStillSaves() {
         WebCookies.put(old)
         // a browser busy with a page: it never answers the cookie read

@@ -61,20 +61,24 @@ import org.json.JSONObject
  * asks for its consent the first time, like any torrent source).
  */
 object TorrentPicker {
-    fun show(title: String, episode: Int?, poster: String?, posterHeaders: Map<String, String>?) {
+    fun show(title: String, episode: Int?, poster: String?, posterHeaders: Map<String, String>?, season: Int? = null) {
         Overlays.show(
             Overlays.Dialog(title = "Select a torrent to stream", close = "Cancel", width = 1080.dp, bodyMax = 660.dp, dismissOnOutside = true) { dismiss ->
-                Body(title, episode, poster, posterHeaders) { r, ep ->
+                Body(title, episode, season, poster, posterHeaders) { r, ep ->
                     dismiss()
-                    play(title, ep, r)
+                    play(title, ep, season, r)
                 }
             },
         )
     }
 
-    private fun play(title: String, episode: Int?, r: TorrentSearch.Result) {
+    private fun play(title: String, episode: Int?, season: Int?, r: TorrentSearch.Result) {
         com.lagradost.desktop.core.ioTask {
-            val data = JSONObject().put("hash", r.hash).put("seeders", r.seeders).also { o -> if (r.batch && episode != null) o.put("episode", episode) }
+            // the episode in a batch; the season too when the batch holds several ("S01E03" files of an S01-S03 pack) or does not say which it holds
+            // (a "Complete" batch with "Season 1/" and "Season 2/" folders played episode 5 of whichever season had the bigger file)
+            val data = JSONObject().put("hash", r.hash).put("seeders", r.seeders).also { o ->
+                if (r.batch && episode != null) { o.put("episode", episode); if (season != null && r.seasons.let { it == null || it.first != it.last }) o.put("season", season) }
+            }
             val link = newExtractorLink(r.provider.label, "${r.group?.let { "[$it] " }.orEmpty()}$title${episode?.let { " · Episode $it" }.orEmpty()}", r.magnet, ExtractorLinkType.MAGNET) {
                 quality = r.resolution ?: com.lagradost.cloudstream3.utils.Qualities.Unknown.value
                 extractorData = data.toString()
@@ -100,7 +104,7 @@ object TorrentPicker {
     }
 
     @Composable
-    private fun Body(title: String, startEpisode: Int?, poster: String?, posterHeaders: Map<String, String>?, onPick: (TorrentSearch.Result, Int?) -> Unit) {
+    private fun Body(title: String, startEpisode: Int?, season: Int?, poster: String?, posterHeaders: Map<String, String>?, onPick: (TorrentSearch.Result, Int?) -> Unit) {
         val c = Fluent.colors
         var query by remember { mutableStateOf(title) }
         var submitted by remember { mutableStateOf(title) }
@@ -121,6 +125,8 @@ object TorrentPicker {
         val all = answer?.results.orEmpty()
         val shown = all.filter { r ->
             (!smart || episode == null || r.episode == episode || (batches && r.batch)) &&
+                // a release that says it is of another season ("S2", "2nd Season"): the season 2 batches came first for a season 1 episode
+                (!smart || season == null || r.seasons.let { it == null || season in it }) &&
                 (resolution == 0 || r.resolution == resolution) && (!trustedOnly || r.trusted)
         }.let { list ->
             when (sort) {
@@ -139,7 +145,7 @@ object TorrentPicker {
                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))))
                     Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
                         FText(title, style = Fluent.type.bodyStrong, color = Color.White, maxLines = 2)
-                        episode?.let { FText("Episode $it", style = Fluent.type.caption, color = Color.White.copy(alpha = 0.8f), maxLines = 1) }
+                        episode?.let { FText((if (season != null) "Season $season · " else "") + "Episode $it", style = Fluent.type.caption, color = Color.White.copy(alpha = 0.8f), maxLines = 1) }
                     }
                 }
                 TextBox(query, { query = it }, Modifier.fillMaxWidth(), placeholder = "Search", leadingIcon = Icons.Search, height = 34.dp, onSubmit = { submitted = query.trim().ifEmpty { title } })
@@ -230,7 +236,6 @@ object TorrentPicker {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     FText(when { r.episode != null -> "Episode ${r.episode}"; r.batch -> "Batch"; else -> "Release" }, style = Fluent.type.bodyStrong, maxLines = 1)
                     r.resolution?.let { Badge("${it}p", c.control, c.text) }
-                    if (r.batch) Badge("Batch", Color(0x335B8DEF), Color(0xFF8FB2FF))
                     if (r.dualAudio) Badge("Dual audio", Color(0x33B07CFF), Color(0xFFC9A6FF))
                     if (r.multiSubs) Badge("Multi subs", Color(0x33FFB84D), Color(0xFFFFC870))
                     if (r.trusted) Badge("Trusted", Color(0x3337C871), Color(0xFF4CD787))

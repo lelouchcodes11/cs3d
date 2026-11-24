@@ -236,6 +236,7 @@ object SettingsGeneralScreen : SearchableSettings {
                                 @OptIn(UnsafeSSL::class)
                                 insecureApp.initClient(ctx, ignoreSSL = true)
                             }
+                            com.lagradost.desktop.isolate.IsolatedHost.notifySettingsChanged()
                             return@ListPreference true
                         },
                     ),

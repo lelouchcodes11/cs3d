@@ -238,7 +238,8 @@ class AniSkip : SkipAPI() {
 
     private suspend fun fetchStamps(malId: Int, episodeNumber: Int, episodeDurationMs: Long): List<SkipStamp>? {
         val durationSec = if (episodeDurationMs > 0) episodeDurationMs / 1000L else 0L
-        val lengthParam = if (durationSec > 0) "&episodeLength=$durationSec" else ""
+        // AniSkip answers 400 "Validation failed" when episodeLength is missing; 0 means "any length".
+        val lengthParam = "&episodeLength=$durationSec"
         val url = "https://api.aniskip.com/v2/skip-times/$malId/$episodeNumber?types[]=ed&types[]=mixed-ed&types[]=mixed-op&types[]=op&types[]=recap$lengthParam"
         val response = runCatching { app.get(url).parsed<AniSkipResponse>() }.getOrNull() ?: return null
         if (!response.found || response.results.isNullOrEmpty()) return null

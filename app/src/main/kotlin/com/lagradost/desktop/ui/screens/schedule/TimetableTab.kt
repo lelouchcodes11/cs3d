@@ -116,13 +116,25 @@ internal class TimetableState(val first: LocalDate, val zone: ZoneId) {
 @Composable
 internal fun rememberTimetable(): TimetableState {
     val zone = remember { ZoneId.systemDefault() }
-    val state = remember { TimetableState(LocalDate.now(zone), zone) }
-    LaunchedEffect(state.refresh) {
+    // the page left open past midnight moves on to the new day (it kept calling yesterday "Today", every episode of it aired, and the new
+    // day's episodes stood under "Tomorrow")
+    var today by remember { mutableStateOf(LocalDate.now(zone)) }
+    val state = remember(today) { TimetableState(today, zone) }
+    LaunchedEffect(state, state.refresh) {
         state.loaded = null
-        state.loaded = runCatching { AiringSchedule.timetable(state.first, 7, force = state.refresh > 0) }
+        // a load stopped by Reload (or by leaving) is not stored as a failure: it flashed "could not be loaded" before the new one came in
+        val result = runCatching { AiringSchedule.timetable(state.first, 7, force = state.refresh > 0) }
+        if (!kotlinx.coroutines.currentCoroutineContext().let { it[kotlinx.coroutines.Job]?.isActive != false }) return@LaunchedEffect
+        state.loaded = result
     }
     // the clock moves: "in 12 min" and the now line stay right while the page is open
-    LaunchedEffect(Unit) { while (true) { delay(30_000); state.nowMs = System.currentTimeMillis() } }
+    LaunchedEffect(state) {
+        while (true) {
+            delay(30_000)
+            state.nowMs = System.currentTimeMillis()
+            LocalDate.now(zone).takeIf { it != state.first }?.let { today = it }
+        }
+    }
     return state
 }
 

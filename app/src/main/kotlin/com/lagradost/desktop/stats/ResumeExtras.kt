@@ -1,5 +1,6 @@
 package com.lagradost.desktop.stats
 
+import com.lagradost.desktop.core.writeTextAtomic
 import android.util.Log
 import com.lagradost.desktop.runtime.AndroidRuntime
 import org.json.JSONObject
@@ -62,7 +63,7 @@ object ResumeExtras {
             val root = JSONObject()
             root.put("thumbs", JSONObject().also { o -> thumbs.forEach { (k, v) -> o.put(k.toString(), v) } })
             root.put("sources", JSONObject().also { o -> sources.forEach { (k, v) -> o.put(k.toString(), v) } })
-            file.writeText(root.toString())
+            file.writeTextAtomic(root.toString())
         }.onFailure { Log.w(TAG, "save: $it") }
     }
 }

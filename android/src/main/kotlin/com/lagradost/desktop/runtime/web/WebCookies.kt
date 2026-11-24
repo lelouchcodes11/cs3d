@@ -61,7 +61,12 @@ object WebCookies {
 
     /** No browser is started for cookie reads. A failed live read must not masquerade as fresh login cookies. */
     fun freshHeader(url: String): String? {
-        if (!refreshFromBrowser()) return null
+        if (!refreshFromBrowser()) {
+            // on the browser's own thread nothing can wait for a live read (it always "failed"): an extension's request callback, which runs there and looks
+            // for cf_clearance with getCookie, never saw the pass and its page ran to its time limit. The jar is copied from the browser every 1.5 s: it answers there.
+            if (backend?.canWaitForCookies() == false) return header(url)
+            return null
+        }
         return header(url)
     }
 
@@ -214,9 +219,31 @@ object WebCookies {
         return h == d || h.endsWith(".$d")
     }
 
+    /**
+     * [url] as an address cookies can be matched to. java.net.URI refuses spaces and "|" ("$mainUrl/search?q=one piece" got no cookies, a cookie set for it
+     * was dropped) and gives no host for a name in another script: those are encoded first, the host turned into its ASCII form (as browsers do).
+     */
+    internal fun cookieUri(url: String): URI? {
+        val s = url.trim().let { if (it.contains("://")) it else "https://$it" }
+        runCatching { URI(s) }.getOrNull()?.takeIf { it.host != null }?.let { return it }
+        val encoded = buildString {
+            for (ch in s) {
+                if (ch == ' ' || ch == '|' || ch == '"' || ch == '<' || ch == '>' || ch == '`' || ch == '{' || ch == '}' || ch == '^' || ch == '\\') {
+                    append('%').append(String.format("%02X", ch.code))
+                } else append(ch)
+            }
+        }
+        val u = runCatching { URI(encoded) }.getOrNull() ?: return null
+        if (u.host != null) return u
+        val authority = u.rawAuthority ?: return null
+        val hostPart = authority.substringAfter('@').substringBefore(':')
+        val ascii = runCatching { java.net.IDN.toASCII(hostPart) }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching { URI(encoded.replaceFirst(hostPart, ascii)) }.getOrNull()?.takeIf { it.host != null }
+    }
+
     /** Cookies that would be sent to [url], "name=value; name2=value2" (Android CookieManager.getCookie) */
     fun header(url: String): String? {
-        val uri = runCatching { URI(if (url.contains("://")) url else "https://$url") }.getOrNull() ?: return null
+        val uri = cookieUri(url) ?: return null
         val host = uri.host ?: return null
         val path = (uri.rawPath ?: "/").ifEmpty { "/" }
         val secure = uri.scheme.equals("https", true) || uri.scheme.equals("wss", true)
@@ -232,7 +259,7 @@ object WebCookies {
 
     /** Parses a Set-Cookie style [value] for [url] and stores it (Android CookieManager.setCookie) */
     fun set(url: String, value: String): Boolean {
-        val uri = runCatching { URI(if (url.contains("://")) url else "https://$url") }.getOrNull() ?: return false
+        val uri = cookieUri(url) ?: return false
         val host = uri.host ?: return false
         val parts = value.split(';').map { it.trim() }
         val nv = parts.firstOrNull()?.takeIf { it.isNotEmpty() } ?: return false
@@ -271,6 +298,30 @@ object WebCookies {
     }
 
     private fun cloudflareCookie(name: String): Boolean = name == "cf_clearance" || name == "__cf_bm" || name == "_cfuvid" || name == "__cflb" || name.startsWith("cf_chl")
+
+    /** True when the jar holds a non-expired Cloudflare clearance cookie matching [host]. */
+    fun hasClearance(host: String): Boolean =
+        all().any { it.name == "cf_clearance" && domainMatches(host, it.domain) }
+
+    /**
+     * Drops stale Cloudflare cookies (`cf_clearance`, `__cf_bm`, `cf_chl*`, …) for [host] from both
+     * the jar and the running browser so a fresh Cloudflare solve does not stall on an expired token.
+     * When [onlyClearance] is true, only `cf_clearance` is removed so an in-progress browser challenge
+     * does not lose its active `__cf_bm` / `cf_chl*` state.
+     * With [onlyValue] only a cookie that still has that value goes: a request refused with the old pass is often answered just after the
+     * browser earned a new one (AnimePahe: solve passed, a precursor check, then the refusal of a request sent before), and dropping by name
+     * deleted the NEW pass, so the check ran again.
+     */
+    fun dropCloudflareCookies(host: String, onlyClearance: Boolean = false, onlyValue: String? = null): Int {
+        val matching = all().filter {
+            val matchName = if (onlyClearance) it.name == "cf_clearance" else cloudflareCookie(it.name)
+            matchName && domainMatches(host, it.domain) && (onlyValue == null || it.value == onlyValue)
+        }
+        if (matching.isEmpty()) return 0
+        for (c in matching) put(c.copy(expires = 0L))
+        Log.i(TAG, "dropped ${matching.size} stale Cloudflare cookie(s) for $host")
+        return matching.size
+    }
 
     @Volatile private var keptCount = 0
     @Volatile private var lastKeptLog = 0L

@@ -7,9 +7,14 @@ import com.lagradost.cloudstream3.APIHolder
 import kotlin.reflect.full.createInstance
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.UnsafeSSL
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.insecureApp
 import com.lagradost.cloudstream3.mapper
 import com.lagradost.cloudstream3.network.WebViewResolver
+import com.lagradost.cloudstream3.network.initClient
 import com.lagradost.cloudstream3.plugins.Plugin
 import com.lagradost.cloudstream3.plugins.PluginData
 import com.lagradost.cloudstream3.plugins.PluginManager
@@ -17,6 +22,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.desktop.DesktopBootstrap
 import com.lagradost.desktop.runtime.AndroidRuntime
 import com.lagradost.desktop.runtime.UiHost
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import okhttp3.Request
 import java.io.File
@@ -45,6 +51,7 @@ object ExtensionWorker {
      * the extension does not load at all)
      */
     @Volatile internal var pluginContext: android.content.Context? = null
+    @Volatile private var appliedDns: Int = -1
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -57,6 +64,7 @@ object ExtensionWorker {
         pluginContext = activity
         AndroidRuntime.host = WorkerUiHost
         DesktopBootstrap.onCreate(activity, loadPlugins = false, activityLifecycle = false)
+        appliedDns = runCatching { androidx.preference.PreferenceManager.getDefaultSharedPreferences(activity).getInt(activity.getString(R.string.dns_key), 0) }.getOrDefault(0)
         val rpc = RpcPeer("worker", System.`in`, protocolOut) { handle(it) }
         peer = rpc
         rpc.onClosed = { reason -> System.err.println("worker: $reason"); exitProcess(0) }
@@ -141,6 +149,8 @@ object ExtensionWorker {
             "settings" -> { applySettings(b); null }
             "loadPlugin" -> loadPlugin(b)
             "unloadPlugin" -> { PluginManager.unloadPlugin(b.get("path").asText()); null }
+            // an update that is about to replace a loaded extension: its code is converted now, so the swap (unload, load) finds it ready
+            "prepare" -> { com.lagradost.desktop.dex.DexCache.jarFor(File(b.get("path").asText())); null }
             "mainPage" -> {
                 val api = provider(b.get("path").asText(), b.get("api").asText())
                 val page = api.getMainPage(b.get("page").asInt(1), MainPageRequest(b.get("name").asText(), b.get("data").asText(), b.get("horizontal").asBoolean()))
@@ -210,12 +220,26 @@ object ExtensionWorker {
      * extensions' own preference files (what the user changes on an extension's settings page) and the browser's user agent. Merged into this process's preferences:
      * what an extension saved here itself (a token it refreshed) is not taken away.
      */
-    private fun applySettings(payload: JsonNode) {
+    internal fun applySettings(payload: JsonNode) {
         val ctx = AndroidRuntime.context
         payload.get("userAgent")?.asText()?.takeIf { it.isNotBlank() }?.let { Log.i(TAG, "the app's user agent: $it"); WebViewResolver.webViewUserAgent = it; com.lagradost.desktop.runtime.web.WebRuntime.reportedUserAgent = it }
-        merge(androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx), payload.get("default"))
+        val defaultPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+        merge(defaultPrefs, payload.get("default"))
         merge(ctx.getSharedPreferences("rebuild_preference", 0), payload.get("store"))
         payload.get("files")?.fields()?.forEach { (name, values) -> if (Regex("[A-Za-z0-9._-]{1,120}").matches(name)) merge(ctx.getSharedPreferences(name, 0), values) }
+        // settings that take effect only when the HTTP client or provider config is updated (the worker started before it received the app's settings,
+        // and the user can also change DNS at runtime without restarting)
+        runCatching {
+            val dns = defaultPrefs.getInt(ctx.getString(R.string.dns_key), 0)
+            if (dns != appliedDns) {
+                appliedDns = dns
+                app.initClient(ctx, ignoreSSL = false)
+                @OptIn(UnsafeSSL::class)
+                insecureApp.initClient(ctx, ignoreSSL = true)
+                Log.i(TAG, "applied DNS setting $dns in the sandbox")
+            }
+            MainAPI.settingsForProvider.enableAdult = defaultPrefs.getBoolean(ctx.getString(R.string.enable_nsfw_on_providers_key), false)
+        }
     }
 
     private fun merge(prefs: android.content.SharedPreferences, settings: JsonNode?) {
@@ -230,6 +254,7 @@ object ExtensionWorker {
                 "f" -> edit.putFloat(key, v.floatValue())
                 "b" -> edit.putBoolean(key, v.asBoolean())
                 "set" -> edit.putStringSet(key, v.map { it.asText() }.toSet())
+                "rm" -> edit.remove(key) // removed in the app since the last copy
             }
         }
         edit.apply()
@@ -294,15 +319,25 @@ object ExtensionWorker {
             // a Cloudflare check may be held until its extension is the one in use (see IsolatedHost.webview): the call waits as long
             val cloudflareSolve = source(resolver.interceptUrl) == ".^"
             val hold = if (cloudflareSolve) 190_000 else 15_000
-            val reply = rpc().call("webview", body, resolver.timeout + hold) { op, node ->
-                when (op) {
-                    "request" -> runCatching { toRequest(node) }.getOrNull()?.let { r ->
-                        synchronized(collected) { collected += r }
-                        requestCallBack(r)
+            // the extension says "enough" by returning true from its callback (it saw the .m3u8 it waits for): in the app that closes the page at once, here the
+            // call is cancelled (the app then closes its page) instead of the page running to its whole time limit
+            val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+            var callJob: kotlinx.coroutines.Deferred<JsonNode>? = null
+            val reply: JsonNode = kotlinx.coroutines.coroutineScope {
+                val d = async {
+                    rpc().call("webview", body, resolver.timeout + hold) { op, node ->
+                        when (op) {
+                            "request" -> runCatching { toRequest(node) }.getOrNull()?.let { r ->
+                                synchronized(collected) { collected += r }
+                                if (requestCallBack(r) && !cloudflareSolve && stop.compareAndSet(false, true)) callJob?.cancel()
+                            }
+                            "script" -> resolver.scriptCallback?.invoke(node.asText())
+                        }
                     }
-                    "script" -> resolver.scriptCallback?.invoke(node.asText())
                 }
-            }
+                callJob = d
+                try { d.await() } catch (e: kotlinx.coroutines.CancellationException) { if (stop.get()) null else throw e }
+            } ?: return null to synchronized(collected) { collected.toList() }
             // the cookies the app's browser holds for this site (the Cloudflare clearance) are this process's too from now on: its own requests carry them
             reply.get("cookies")?.forEach { c -> runCatching { com.lagradost.desktop.runtime.web.WebCookies.put(mapper.treeToValue(c, com.lagradost.desktop.runtime.web.WebCookie::class.java)) } }
             // Cloudflare ties its clearance to the user agent that passed the check: this process's requests use the browser's from now on

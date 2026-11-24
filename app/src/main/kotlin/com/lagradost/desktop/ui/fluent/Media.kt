@@ -125,8 +125,12 @@ fun SearchResponse.watchedFraction(): Float? {
 fun PosterImage(item: SearchResponse, modifier: Modifier = Modifier, scale: ContentScale = ContentScale.Crop) {
     val c = Fluent.colors
     // until the picture is there (a slow network, a title with none) the card says what it is, instead of a dark box with a camera in it
+    // a picture much wider than its place (a TV channel's square logo in a tall poster card) is shown whole: cropped to fill, "GEMINI COMEDY" read "GEMI COM"
+    var picRatio by androidx.compose.runtime.remember(item.posterUrl) { androidx.compose.runtime.mutableStateOf(0f) }
+    var placeRatio by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
+    val whole = scale == ContentScale.Crop && picRatio > 0f && placeRatio > 0f && picRatio > placeRatio * 1.4f
     var loaded by androidx.compose.runtime.remember(item.posterUrl) { androidx.compose.runtime.mutableStateOf(false) }
-    Box(modifier.background(c.card), contentAlignment = Alignment.Center) {
+    Box(modifier.background(c.card).onSizeChanged { if (it.height > 0) placeRatio = it.width.toFloat() / it.height }, contentAlignment = Alignment.Center) {
         if (!loaded) Column(Modifier.padding(horizontal = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Video, size = 24.dp, tint = c.textDisabled)
             if (item.name.isNotBlank()) FText(item.name, style = Fluent.type.caption, color = c.textTertiary, maxLines = 3, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -142,8 +146,8 @@ fun PosterImage(item: SearchResponse, modifier: Modifier = Modifier, scale: Cont
             value = info?.takeIf { com.lagradost.desktop.tmdb.Tmdb.sameTitle(item.name, it.title) }?.poster
         }
         val shown = if (failed) stand else item.posterUrl
-        if (shown != null) RemoteImage(shown, if (failed) null else item.posterHeaders, item.name, Modifier.fillMaxSize(), scale,
-            onSize = { _, _ -> loaded = true }, onError = { if (!failed) failed = true })
+        if (shown != null) RemoteImage(shown, if (failed) null else item.posterHeaders, item.name, Modifier.fillMaxSize(), if (whole) ContentScale.Fit else scale,
+            onSize = { w, h -> loaded = true; if (h > 0) picRatio = w.toFloat() / h }, onError = { if (!failed) failed = true })
     }
 }
 
@@ -215,7 +219,7 @@ fun PosterCard(
                     dubLabel(item)?.let { Overlay(it) }
                 }
                 item.score.shown()?.let { s ->
-                    Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Overlay("★ " + s.toString(10, 1)) }
+                    Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Overlay("★ " + s.toString(10, 1, removeTrailingZeros = false)) }
                 }
                 episodeCount(item)?.let { n ->
                     // it fades as the play / add buttons come up in the same corner (half of "6 eps" showed beside the play button)

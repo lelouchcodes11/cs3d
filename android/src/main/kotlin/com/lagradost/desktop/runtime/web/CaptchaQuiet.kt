@@ -32,4 +32,21 @@ object CaptchaQuiet {
         p.setProperty(keyOf(name), System.currentTimeMillis().toString())
         runCatching { file.outputStream().use { p.store(it, "check windows shown (milliseconds)") } }
     }
+
+    @Synchronized
+    fun clear(name: String) {
+        val p = props()
+        if (p.remove(keyOf(name)) != null) {
+            runCatching { file.outputStream().use { p.store(it, "check windows shown (milliseconds)") } }
+        }
+    }
+
+    @Synchronized
+    fun clearAll() {
+        val p = props()
+        if (p.isNotEmpty()) {
+            p.clear()
+            runCatching { file.outputStream().use { p.store(it, "check windows shown (milliseconds)") } }
+        }
+    }
 }

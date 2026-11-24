@@ -30,19 +30,27 @@ object SubtitleTranslate {
     class Result(val file: File?, val error: String? = null)
 
     /** [raw]: the subtitle as downloaded; [sourceKey]: where it came from (its address), for the cache */
-    suspend fun translate(raw: ByteArray, sourceKey: String, to: String): Result {
-        val clean = SubtitleFiles.normalize(raw) ?: return Result(null, "This subtitle has no lines that can be read")
+    suspend fun translate(raw: ByteArray, sourceKey: String, to: String, language: String? = null): Result {
+        val clean = SubtitleFiles.normalize(raw, language) ?: return Result(null, "This subtitle has no lines that can be read")
         if (clean.extension !in setOf(".srt", ".vtt", ".ass")) return Result(null, "Only SRT, WebVTT and ASS subtitles can be translated")
         val out = File(cacheDir(), key(sourceKey, to) + clean.extension)
         if (out.length() > 0) return Result(out)
         val text = String(clean.bytes, Charsets.UTF_8)
-        var noAnswer = false
+        var totalSlots = 0
+        var translatedSlots = 0
         val result = rewrite(text, clean.extension) { words ->
-            translateAll(words, to).also { got -> noAnswer = got.all { it == null } }
+            totalSlots = words.size
+            translateAll(words, to).also { got -> translatedSlots = got.count { it != null } }
         } ?: return Result(null, "This subtitle has no lines that can be read")
-        if (noAnswer) return Result(null, "The translation service did not answer. Check the internet connection and try again.")
-        out.writeText(result, Charsets.UTF_8)
-        return Result(out)
+        if (translatedSlots == 0) return Result(null, "The translation service did not answer. Check the internet connection and try again.")
+        // only cache when almost everything came back: a partial answer (rate limit / network drop) still plays now, and retrying later can fetch the rest
+        val target = if (totalSlots > 0 && translatedSlots * 10 >= totalSlots * 9) {
+            out
+        } else {
+            File.createTempFile("subtitle-partial-", clean.extension).apply { deleteOnExit() }
+        }
+        target.writeText(result, Charsets.UTF_8)
+        return Result(target)
     }
 
     /** [text] with the words of every cue replaced by what [translate] gives for them (null: the original stays); null when it has no cues */
@@ -70,7 +78,10 @@ object SubtitleTranslate {
             if ("-->" in lines[i]) {
                 val start = i + 1
                 var end = start
-                while (end < lines.size && lines[end].isNotBlank()) end++
+                // a file without blank lines between cues: the cue ends where the next timing (and its number) begins; read as one cue,
+                // the next cue's number and timing were dropped from the translated file and the two cues ran together
+                while (end < lines.size && lines[end].isNotBlank() && "-->" !in lines[end]) end++
+                if (end < lines.size && "-->" in lines[end] && end - 1 > start && lines[end - 1].trim().let { n -> n.isNotEmpty() && n.all { it.isDigit() } }) end--
                 if (end > start) {
                     val words = lines.subList(start, end).joinToString(BREAK) { it.trim() }
                     if (words.any { it.isLetter() }) {
@@ -121,28 +132,50 @@ object SubtitleTranslate {
                 val part = texts.subList(range.first, range.last + 1)
                 val got = gate.withPermit { call(part.joinToString("\n"), to) }?.split('\n')
                 if (got != null && got.size == part.size) got.forEachIndexed { k, s -> out[range.first + k] = s }
-                // the lines did not come back one for one: each cue alone
-                else part.forEachIndexed { k, s -> out[range.first + k] = gate.withPermit { call(s, to) } }
+                // the lines did not come back one for one: each cue alone (not when the service did not answer at all, which would repeat the failure for every cue)
+                else if (got != null) part.forEachIndexed { k, s -> out[range.first + k] = gate.withPermit { call(s, to) } }
             }
         }.awaitAll()
         out.toList()
     }
 
+    /**
+     * Two of Google's free interfaces. translate.googleapis.com (gtx) answers a "Sorry..." page to whole networks it finds busy (the owner's,
+     * 2026-11-20: every subtitle came back untranslated); clients5 (the Chrome extension's) answered the same request from there. Each is tried
+     * in turn; the one that worked is asked first next time.
+     */
+    @Volatile private var chromeFirst = true
+
     private suspend fun call(text: String, to: String): String? {
         repeat(3) { attempt ->
-            val got = runCatching {
-                val body = app.post(
-                    "https://translate.googleapis.com/translate_a/single",
-                    params = mapOf("client" to "gtx", "sl" to "auto", "tl" to to, "dt" to "t"),
-                    data = mapOf("q" to text),
-                    timeout = 30,
-                ).text
-                parse(body)
-            }.getOrNull()
-            if (!got.isNullOrBlank()) return got
+            for (chrome in if (chromeFirst) listOf(true, false) else listOf(false, true)) {
+                val got = runCatching { if (chrome) viaChrome(text, to) else viaGtx(text, to) }.getOrNull()
+                if (!got.isNullOrBlank()) { chromeFirst = chrome; return got }
+            }
             delay(600L * (attempt + 1))
         }
         return null
+    }
+
+    private suspend fun viaGtx(text: String, to: String): String = parse(
+        app.post(
+            "https://translate.googleapis.com/translate_a/single",
+            params = mapOf("client" to "gtx", "sl" to "auto", "tl" to to, "dt" to "t"),
+            data = mapOf("q" to text),
+            timeout = 30,
+        ).text
+    )
+
+    /** [["translation","en"]] for sl=auto (a plain ["translation"] otherwise) */
+    private suspend fun viaChrome(text: String, to: String): String {
+        val body = app.post(
+            "https://clients5.google.com/translate_a/t",
+            params = mapOf("client" to "dict-chrome-ex", "sl" to "auto", "tl" to to),
+            data = mapOf("q" to text),
+            timeout = 30,
+        ).text
+        val first = org.json.JSONArray(body).get(0)
+        return (if (first is org.json.JSONArray) first.optString(0) else first.toString()).trim('\n', ' ')
     }
 
     /** The answer's pieces joined (each piece is a sentence and keeps its own line breaks) */

@@ -19,7 +19,6 @@ import com.lagradost.desktop.ui.fluent.Fluent
 import com.lagradost.desktop.ui.fluent.Overlays
 import com.lagradost.desktop.ui.fluent.TextBox
 import com.lagradost.desktop.ui.fluent.ToggleSwitch
-import kotlinx.coroutines.runBlocking
 
 /** The word that has to be typed before everything is erased */
 private const val ERASE_WORD = "ERASE"
@@ -52,8 +51,10 @@ internal fun showEraseEverything() {
             onPrimary = {
                 val save = backupFirst
                 Thread({
-                    if (save) runCatching { BackupUtils.backup(DesktopBootstrap.activity).let { job -> runBlocking { job.join() } } }
-                    if (!ResetApp.request(ResetApp.Scope.Everything)) refused()
+                    // nothing is erased without the backup the user asked for (a failed one used to be a toast, and everything was deleted anyway)
+                    if (save && runCatching { BackupUtils.writeBackup(DesktopBootstrap.activity) }.getOrDefault(false) != true) {
+                        Toasts.show("The backup could not be saved, so nothing was erased. Pick another backup folder, or turn off the backup and erase again.", true)
+                    } else if (!ResetApp.request(ResetApp.Scope.Everything)) refused()
                 }, "reset-app").apply { isDaemon = true }.start()
             },
         ) {

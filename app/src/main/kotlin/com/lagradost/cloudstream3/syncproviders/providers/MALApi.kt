@@ -337,17 +337,21 @@ class MALApi : SyncAPI() {
         // https://myanimelist.net/apiconfig/references/api/v2#operation/anime_anime_id_get
         val url =
             "$apiUrl/v2/anime/$id?fields=id,title,num_episodes,my_list_status"
-        val data = app.get(
+        val anime = app.get(
             url, headers = mapOf(
                 "Authorization" to "Bearer $auth"
             ), cacheTime = 0
-        ).parsed<SmallMalAnime>().myListStatus
+        ).parsed<SmallMalAnime>()
+        val data = anime.myListStatus
 
         return SyncAPI.SyncStatus(
             score = Score.from10(data?.score),
             status = SyncWatchType.fromInternalId(malStatusAsString.indexOf(data?.status)),
             isFavorite = null,
             watchedEpisodes = data?.numEpisodesWatched,
+            // desktop: the episode count was asked for and dropped; without it a finished series was only marked Completed when the
+            // title's details had loaded too (MyAnimeList says 0 while the count is not known)
+            maxEpisodes = anime.numEpisodes.takeIf { it > 0 },
         )
     }
 

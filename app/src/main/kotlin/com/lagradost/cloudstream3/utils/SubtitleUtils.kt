@@ -49,7 +49,11 @@ object SubtitleUtils {
         val isNotDisplayName = !name.equals(display, ignoreCase = true)
 
         // Check if the file name starts with a cleaned version of the display name
-        val startsWithCleanDisplay = cleanDisplayName(name).startsWith(cleanDisplay, ignoreCase = true)
+        val cleanName = cleanDisplayName(name)
+        val startsWithCleanDisplay = cleanName.startsWith(cleanDisplay, ignoreCase = true) &&
+            // desktop: and the name of the video ends there: "Season 1 Episode 10 English.vtt" was taken for a subtitle of "Season 1 Episode 1"
+            // (episode 1 played with episode 10's subtitles, and deleting episode 1 deleted those of episodes 10 to 19)
+            cleanName.getOrNull(cleanDisplay.length)?.isLetterOrDigit() != true
 
         return hasValidExtension && isNotDisplayName && startsWithCleanDisplay
     }

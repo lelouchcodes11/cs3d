@@ -20,7 +20,7 @@
         <item>Cloudflare</item>
         <!--        <item>OpenDns</item>-->
         <item>AdGuard</item>
-        <item>DNS.WATCH</item>
+        <!-- DNS.WATCH (5) shut down in 2026: its name no longer exists and its servers do not answer -->
         <item>Quad9</item>
         <item>DNS.SB</item>
         <item>Canadian Shield</item>
@@ -31,7 +31,7 @@
         <item>2</item>
         <!--        <item>3</item>-->
         <item>4</item>
-        <item>5</item>
+        <!--        <item>5</item>-->
         <item>6</item>
         <item>7</item>
         <item>8</item>

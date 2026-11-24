@@ -22,6 +22,7 @@ import com.lagradost.cloudstream3.utils.DataStoreHelper.currentAccount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -57,7 +58,21 @@ class SearchViewModel : ViewModel() {
 
     private var repos = apis.withLock { apis.map { APIRepository(it) } }
 
+    /** desktop: the error of a host name that does not resolve: throwAbleToResource's text for an UnknownHostException, or the message itself (as the extension sandbox passes it on) */
+    internal fun noSuchHost(error: String): Boolean = listOf("Cannot connect to server, try again later.", "No such host is known", "UnknownHostException", "Unable to resolve host", "nodename nor servname")
+        .any { error.contains(it, ignoreCase = true) }
+
+    /**
+     * desktop: also stops the search that is running. The page clears the results when its query is empty or one letter, and a search still
+     * running then filled them in again: the results of the earlier query showed under the new one.
+     */
     fun clearSearch() {
+        currentSearchIndex++
+        onGoingSearch?.cancel()
+        clearResults()
+    }
+
+    private fun clearResults() {
         _searchResponse.postValue(Resource.Success(ExpandableSearchList(emptyList(), 0, false)))
         _currentSearch.postValue(emptyMap())
         _progress.postValue(SearchProgress(emptyList(), 0))
@@ -77,7 +92,7 @@ class SearchViewModel : ViewModel() {
      * @see [HomeViewModel.expandable] */
     private val expandableSearches: MutableMap<String, ExpandableSearchList> = mutableMapOf()
 
-    private var currentSearchIndex = 0
+    @Volatile private var currentSearchIndex = 0
     private var onGoingSearch: Job? = null
 
     fun reloadRepos() {
@@ -129,6 +144,8 @@ class SearchViewModel : ViewModel() {
         suggestionJob = ioSafe {
             delay(300) // Debounce
             val suggestions = SearchSuggestionApi.getSuggestions(query)
+            // desktop: getSuggestions answers a cancelled request too (with nothing, or with what came late): only the newest text is shown
+            if (!isActive) return@ioSafe
             _searchSuggestions.postValue(suggestions)
         }
     }
@@ -141,16 +158,26 @@ class SearchViewModel : ViewModel() {
         _searchSuggestions.postValue(emptyList())
     }
 
-    private val lock: MutableSet<String> = mutableSetOf()
+    private val lock: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
 
     // ExpandableHomepageList because the home adapter is reused in the search fragment
-    suspend fun expandAndReturn(name: String): HomeViewModel.ExpandableHomepageList? {
-        if (lock.contains(name)) return null
+    // desktop: [forQuery] is the search the caller shows; when another search was made since (Back to a "See all" page of an earlier search),
+    // nothing is asked for: the next page of the new query's list was handed to it, and its titles replaced the ones it showed
+    suspend fun expandAndReturn(name: String, forQuery: String? = null): HomeViewModel.ExpandableHomepageList? {
         val query = lastQuery ?: return null
+        if (forQuery != null && forQuery != query) return null
         val repo = repos.find { it.name == name } ?: return null
+        if (!lock.add(name)) return null
+        // desktop: the lock is let go however this ends (a "See all" page left while its next page loaded kept the extension locked for good)
+        try {
+            return expandLocked(name, query, repo)
+        } finally {
+            lock -= name
+        }
+    }
 
-        lock += name
-
+    private suspend fun expandLocked(name: String, query: String, repo: APIRepository): HomeViewModel.ExpandableHomepageList? {
+        val searchIndex = currentSearchIndex
         expandableSearches[name]?.let { current ->
             debugAssert({ !current.hasNext }) {
                 "Expand called when not needed"
@@ -158,6 +185,8 @@ class SearchViewModel : ViewModel() {
 
             val nextPage = current.currentPage + 1
             val next = repo.search(query, nextPage)
+            // desktop: a new search started while this page loaded: its results are in the map now, and this page of the old query is not theirs
+            if (currentSearchIndex != searchIndex || expandableSearches[name] !== current) return null
             if (next is Resource.Success) {
                 val nextValue = next.value
                 expandableSearches[name]?.apply {
@@ -181,8 +210,6 @@ class SearchViewModel : ViewModel() {
             _searchResponse.postValue(Resource.Success(synchronized(expandableSearches) { bundleSearch(expandableSearches) }))
             publishSearches()
         }
-
-        lock -= name
 
         val item = expandableSearches[name] ?: return null
         return HomeViewModel.ExpandableHomepageList(
@@ -227,7 +254,7 @@ class SearchViewModel : ViewModel() {
         viewModelScope.launchSafe {
             val currentIndex = currentSearchIndex
             if (query.length <= 1) {
-                clearSearch()
+                clearResults()
                 return@launchSafe
             }
 
@@ -264,25 +291,32 @@ class SearchViewModel : ViewModel() {
                     var search = if (isQuickSearch) a.quickSearch(query) else a.search(query, 1)
                     // desktop: a provider that failed (timeout, dropped connection, busy host) is asked again, up to twice;
                     // flaky hosts usually answer the second time, otherwise the user sees results from "some sources only"
+                    // A host name that does not exist (a dead IPTV playlist, a site that moved) is not flaky: asked again it fails the same way and the
+                    // source stayed "still searching" ~3 s longer on every search. The error text is a message and stack lines: only its first line is logged.
                     var attempt = 0
-                    while (search is Resource.Failure && attempt < 2 && currentSearchIndex == currentIndex) {
-                        android.util.Log.w("SearchVM", "${a.name}: ${search.errorString.take(160)}, retrying")
+                    while (search is Resource.Failure && attempt < 2 && currentSearchIndex == currentIndex && !noSuchHost(search.errorString)) {
+                        android.util.Log.w("SearchVM", "${a.name}: ${search.errorString.lineSequence().firstOrNull { it.isNotBlank() }?.take(160)}, retrying")
                         attempt++
                         kotlinx.coroutines.delay(700L * attempt)
                         search = if (isQuickSearch) a.quickSearch(query) else a.search(query, 1)
                     }
-                    if (search is Resource.Failure) android.util.Log.w("SearchVM", "${a.name} failed: ${search.errorString.take(200)}")
-                    if (currentSearchIndex != currentIndex) return@amap
-                    synchronized(expandableSearches) {
+                    if (search is Resource.Failure) android.util.Log.w("SearchVM", "${a.name} failed: ${search.errorString.lineSequence().firstOrNull { it.isNotBlank() }?.take(200)}")
+                    // desktop: the check is made under the lock the next search clears the results with; made before it, an answer that came
+                    // just as a new search started was put among the new query's results
+                    val stale = synchronized(expandableSearches) {
+                        if (currentSearchIndex != currentIndex) return@synchronized true
                         if (search is Resource.Success && search.value.items.isNotEmpty()) {
                             val searchValue = search.value
                             expandableSearches[a.name] =
                                 ExpandableSearchList(searchValue.items, 1, searchValue.hasNext)
                         }
                         pending.remove(a.name)
+                        false
                     }
+                    if (stale) return@amap
                     publishSearches()
-                    _progress.postValue(SearchProgress(synchronized(expandableSearches) { pending.toList() }, chosen.size))
+                    val left = synchronized(expandableSearches) { pending.toList() }
+                    if (currentSearchIndex == currentIndex) _progress.postValue(SearchProgress(left, chosen.size))
                 }
 
                 if (currentSearchIndex != currentIndex) return@withContext // this should prevent rewrite of existing data bug

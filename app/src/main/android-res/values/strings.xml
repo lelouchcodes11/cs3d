@@ -199,10 +199,10 @@
     <string name="kitsu_settings">Show posters from Kitsu</string>
     <string name="show_cast_in_details">Show cast panel</string>
     <string name="pref_filter_search_quality">Hide selected video quality in search results</string>
-    <string name="automatic_plugin_updates">Automatic plugin updates</string>
-    <string name="automatic_plugin_download">Automatically download plugins</string>
-    <string name="automatic_plugin_download_mode_title">Select mode to filter plugins download</string>
-    <string name="automatic_plugin_download_summary">Automatically install all not yet installed plugins from added repositories.</string>
+    <string name="automatic_plugin_updates">Update extensions automatically</string>
+    <string name="automatic_plugin_download">Install new extensions automatically</string>
+    <string name="automatic_plugin_download_mode_title">Which new extensions to install</string>
+    <string name="automatic_plugin_download_summary">Installs the extensions of your repositories that are not installed yet.</string>
     <string name="updates_settings">Show app updates</string>
     <string name="updates_settings_des">Automatically search for new updates after starting the app.</string>
     <string name="redo_setup_process">Redo setup process</string>
@@ -514,19 +514,19 @@
     <string name="batch_download_start_format" formatted="true">Started downloading %1$d %2$s…</string>
     <string name="batch_download_finish_format" formatted="true">Downloaded %1$d %2$s</string>
     <string name="batch_download_nothing_to_download_format" formatted="true">All %s already downloaded</string>
-    <string name="no_plugins_found_error">No plugins found in repository</string>
+    <string name="no_plugins_found_error">No extensions found in this repository</string>
     <string name="no_repository_found_error">Repository not found, check the URL and try VPN</string>
     <string name="batch_download">Batch download</string>
-    <string name="plugin_singular">plugin</string>
-    <string name="plugin">plugins</string>
-    <string name="delete_repository_plugins">This will also delete all repository plugins</string>
+    <string name="plugin_singular">extension</string>
+    <string name="plugin">extensions</string>
+    <string name="delete_repository_plugins">This also removes the repository\'s extensions</string>
     <string name="delete_repository">Delete repository</string>
-    <string name="delete_plugin">Delete plugin</string>
+    <string name="delete_plugin">Remove extension</string>
     <string name="setup_extensions_subtext">Download the list of sites you want to use</string>
     <string name="plugins_downloaded" formatted="true">Downloaded: %d</string>
     <string name="plugins_disabled" formatted="true">Disabled: %d</string>
     <string name="plugins_not_downloaded" formatted="true">Not downloaded: %d</string>
-    <string name="plugins_updated" formatted="true">Updated %d plugins</string>
+    <string name="plugins_updated" formatted="true">Updated %d extensions</string>
     <string name="blank_repo_message">CloudStream has no sites installed by default. You need to install the sites from repositories.
 \n
 \nJoin our Discord or search online.</string>
@@ -746,11 +746,11 @@
     <string name="software_decoding_desc">Software decoding enables the player to play video files not supported by your device, but may cause laggy or unstable playback on high resolution.</string>
     <string name="volume_exceeded_100">Volume has exceeded 100%</string>
     <string name="slide_up_again_to_exceed_100">Slide up again to go beyond 100%</string>
-    <string name="update_plugins">Update Plugins</string>
+    <string name="update_plugins">Update extensions now</string>
     <!--Manual Update Button-->
-    <string name="update_plugins_manually">Update plugins manually</string>
+    <string name="update_plugins_manually">Checks your repositories for newer versions</string>
     <string name="starting_plugin_update_manually">Checking your extensions for updates…</string>
-    <string name="plugins_updated_manually">Successfully updated %d plugin(s)</string>
+    <string name="plugins_updated_manually">Updated %d extension(s)</string>
     <string name="no_plugins_updated_manually">All your extensions are up to date.</string>
     <string name="player_notification_channel_name">Player notifications</string>
     <string name="player_notification_channel_description">The player notification for controlling the playback from the background</string>
@@ -824,5 +824,5 @@
     <string name="public_dns_fallback_title">Ask public DNS about blocked names</string>
     <string name="public_dns_fallback_des">When your DNS (1.1.1.2, a family or school filter, your ISP) refuses the address of a streaming site, ask public resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9) instead. Fixes sources that fail with unknown host. Off: only your own DNS is trusted.</string>
     <string name="cloudflare_solvers_des">Some sites ask a browser to prove it is not a bot; the app opens a page for that. Off: no page is ever opened and those sites simply fail to load.</string>
-    <string name="installed_plugins">Installed plugins</string>
+    <string name="installed_plugins">Installed extensions</string>
 </resources>

@@ -195,6 +195,12 @@ object Appearance {
     /** The automatic choice of a source puts 4K, REMUX and very large files behind the lighter ones: they stall on slow hosts and weak graphics cards (the Sources list still has them) */
     var smoothSources by mutableStateOf(true)
 
+    /** Which source a download takes by itself (see DownloadChoice): up to 1080p and not huge unless chosen otherwise */
+    var downloadQuality by mutableStateOf(com.lagradost.desktop.net.DownloadQuality.Fhd)
+
+    /** Download speed limit in MB/s (0 = none), shared by every download: see DownloadThrottle */
+    var downloadSpeedMb by mutableStateOf(0)
+
     /** A maximized window hides its title bar; it slides in when the pointer touches the top edge (full screen always does this) */
     var hideTitleBar by mutableStateOf(true)
 
@@ -332,6 +338,9 @@ object Appearance {
             smoothMotion = p.getBoolean(PREFIX + "smooth_motion", true)
             nativePlayer = p.getBoolean(PREFIX + "native_player", false)
             smoothSources = p.getBoolean(PREFIX + "smooth_sources", true)
+            downloadQuality = enumOf(p.getString(PREFIX + "download_quality", null), com.lagradost.desktop.net.DownloadQuality.Fhd)
+            downloadSpeedMb = p.getInt(PREFIX + "download_speed_mb", 0)
+            com.lagradost.desktop.net.DownloadThrottle.limit = downloadSpeedMb * 1024L * 1024L
             hideTitleBar = p.getBoolean(PREFIX + "hide_title_bar", true)
             // before the modes there was one switch, Anime4K on or off: it becomes Mode A
             upscaler = enumOf(p.getString(PREFIX + "upscaler", null), if (p.getBoolean(PREFIX + "anime4k", false)) Upscaler.Anime4kA else Upscaler.Off)
@@ -371,6 +380,7 @@ object Appearance {
 
     /** Saves the current values (called by the settings page after each change) */
     fun save() {
+        com.lagradost.desktop.net.DownloadThrottle.limit = downloadSpeedMb * 1024L * 1024L
         runCatching {
             prefs().edit()
                 .putString(PREFIX + "nav", navPosition.name)
@@ -395,6 +405,8 @@ object Appearance {
                 .putBoolean(PREFIX + "smooth_motion", smoothMotion)
                 .putBoolean(PREFIX + "native_player", nativePlayer)
                 .putBoolean(PREFIX + "smooth_sources", smoothSources)
+                .putString(PREFIX + "download_quality", downloadQuality.name)
+                .putInt(PREFIX + "download_speed_mb", downloadSpeedMb)
                 .putBoolean(PREFIX + "stable_volume", stableVolume)
                 .putBoolean(PREFIX + "hide_title_bar", hideTitleBar)
                 .putString(PREFIX + "upscaler", upscaler.name)
@@ -434,7 +446,7 @@ object Appearance {
         touchSwipes = TouchSwipes.Auto
         navPosition = NavPosition.Floating; navStyle = NavStyle.Hover; cornerRadius = 12; density = Density.Standard
         posterSize = PosterSize.Large; backdrop = Backdrop.Black; buttonStyle = ButtonStyle.White; surfaceTint = SurfaceTint.Balanced; navAccentPill = false; glass = true; motion = Motion.Full; performance = PerformanceMode.Auto; uiScale = 1f
-        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; dimmer = 0f; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; controlsGuard = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; palette = Themes.DEFAULT_ID; themeGlow = false; skinLayout = true; hideSpoilers = true; hideSpoilerTitles = false
+        playerStyle = PlayerStyle.Modern; startupAnimation = true; hoverZoom = true; smoothMotion = true; nativePlayer = false; smoothSources = true; downloadQuality = com.lagradost.desktop.net.DownloadQuality.Fhd; hideTitleBar = true; upscaler = Upscaler.Off; autoSkipStamps = false; autoSkipDelay5s = false; showRemainingTime = false; dockAutoHide = false; dimmer = 0f; tmdbEnabled = true; seekPreviews = true; controlsHideSeconds = 2; controlsGuard = true; tmdbRegion = ""; theme = Themes.DEFAULT_ID; palette = Themes.DEFAULT_ID; themeGlow = false; skinLayout = true; hideSpoilers = true; hideSpoilerTitles = false
         FluentSettings.chooseAccent(null)
         FluentSettings.chooseButtonColor(null)
         save()

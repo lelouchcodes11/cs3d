@@ -176,7 +176,7 @@ internal fun ModernChrome(
                 .padding(start = 28.dp, end = 28.dp + com.lagradost.desktop.ui.shell.captionInset, top = 16.dp, bottom = 40.dp),
         ) {
             Row(Modifier.fillMaxWidth().onGloballyPositioned { onTop(it.boundsInRoot()) }, verticalAlignment = Alignment.CenterVertically) {
-                GlassButton("Back (Esc)", Modifier.noWindowDrag("playerBack"), size = 42.dp, onClick = { Navigator.back() }) { Icon(Icons.Back, size = 19.dp, tint = Color.White) }
+                GlassButton("Back (Esc)", Modifier.noWindowDrag("playerBack"), size = com.lagradost.desktop.ui.fluent.BackMetrics.player, onClick = { Navigator.back() }) { Icon(Icons.Back, size = com.lagradost.desktop.ui.fluent.BackMetrics.icon, tint = Color.White) }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     // not while the loading screen is up: it shows the title and the episode in its middle (they were there twice)
@@ -465,7 +465,8 @@ internal fun ModernSeekBar(s: PlayerSession, modifier: Modifier = Modifier.fillM
     // the played part glides between the four position reports a second instead of stepping (drawn only: nothing recomposes)
     val glide = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(s) {
-        snapshotFlow { (s.positionMs.toFloat() / s.durationMs.coerceAtLeast(1)).coerceIn(0f, 1f) }.collectLatest { f ->
+        // a length not known yet is an empty bar (over 1 ms any position filled it)
+        snapshotFlow { if (s.durationMs <= 0L) 0f else (s.positionMs.toFloat() / s.durationMs).coerceIn(0f, 1f) }.collectLatest { f ->
             // a seek or a new video jumps; normal playback moves a hair
             if (kotlin.math.abs(f - glide.value) > 0.02f || Appearance.motion == Motion.Off) glide.snapTo(f)
             else glide.animateTo(f, tween(300, easing = LinearEasing))

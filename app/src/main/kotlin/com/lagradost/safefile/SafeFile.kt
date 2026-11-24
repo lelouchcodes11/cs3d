@@ -311,7 +311,9 @@ class JavaFile(val file: File) : SafeFile {
     override fun createDirectoryOrThrow(directoryName: String?): SafeFile {
         if (directoryName == null) throw IOException("No name")
         val child = File(file, directoryName)
-        if (!child.isDirectory && !child.mkdirs()) throw IOException("Could not create $child")
+        // desktop: mkdirs is false when another thread made the folder a moment ago (a download and its subtitles start together in a new folder:
+        // "Cant create directory" failed the download); the folder being there is what counts
+        if (!child.isDirectory && !child.mkdirs() && !child.isDirectory) throw IOException("Could not create $child")
         return JavaFile(child)
     }
 

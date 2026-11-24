@@ -195,7 +195,7 @@ fun showPluginUpdateHistory() {
             secondary = if (entries.isNotEmpty()) "Clear" else null, onSecondary = { com.lagradost.desktop.platform.PluginUpdateLog.clear() },
         ) {
             val c = Fluent.colors
-            if (entries.isEmpty()) FText("No extension has been updated yet. Updates found by the automatic check at start, or by Update Plugins, are listed here.", color = c.textSecondary)
+            if (entries.isEmpty()) FText("No extension has been updated yet. Updates found by the automatic check at start, or by Update extensions now, are listed here.", color = c.textSecondary)
             else androidx.compose.foundation.layout.Column(
                 Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),

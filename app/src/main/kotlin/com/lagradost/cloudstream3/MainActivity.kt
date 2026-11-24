@@ -299,7 +299,8 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
 
                 if (str != null && this != null) {
                     if (str.startsWith("https://cs.repo")) {
-                        val realUrl = "https://" + str.substringAfter("?")
+                        // desktop: "https://cs.repo/?https://..." became "https://https://..." (see RepositoryManager.repoLinkToUrl)
+                        val realUrl = com.lagradost.cloudstream3.plugins.RepositoryManager.repoLinkToUrl(str) ?: ("https://" + str.substringAfter("?"))
                         println("Repository url: $realUrl")
                         loadRepository(realUrl)
                         return true

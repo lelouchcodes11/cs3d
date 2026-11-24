@@ -361,6 +361,16 @@ fun ButtonBase(
     ) { content(content0) }
 }
 
+/**
+ * Back looks the same everywhere: one arrow size, a [bar] button on the bars over the pages (the window's title bar, the top bar, the floating bar)
+ * and a [player] round button in the player, the size of its other controls. They were 30, 32, 40 and 42 dp with 14 to 19 dp arrows.
+ */
+object BackMetrics {
+    val bar = 32.dp
+    val player = 40.dp
+    val icon = 16.dp
+}
+
 /** Square icon-only button (subtle by default) */
 @Composable
 fun IconButton(
@@ -560,8 +570,8 @@ fun TextBox(
                         },
                 )
             }
-            if (clearable && value.isNotEmpty() && focused) {
-                IconButton(Icons.Close, { onValueChange("") }, size = 24.dp, iconSize = 10.dp)
+            if (clearable && value.isNotEmpty() && enabled) {
+                IconButton(Icons.Close, { onValueChange("") }, tooltip = "Clear", size = 24.dp, iconSize = 10.dp, tint = if (focused || hovered) c.textSecondary else c.textTertiary)
             }
         }
     }
@@ -641,10 +651,16 @@ fun Slider(
     val thumb by animateDpAsState(if (dragging || hovered) 16.dp else 14.dp, FluentMotion.tweenStd(FluentMotion.FAST))
     // in a right-to-left language the bar fills from the right: the pointer's x is counted from there
     val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    // the pointer handlers live as long as the range: they read the newest callbacks (a slider reused for another setting in a list wrote to the old one)
+    val onChange by androidx.compose.runtime.rememberUpdatedState(onValueChange)
+    val onFinish by androidx.compose.runtime.rememberUpdatedState(onValueChangeFinished)
+    val stepNow by androidx.compose.runtime.rememberUpdatedState(steps)
+    val rtlNow by androidx.compose.runtime.rememberUpdatedState(rtl)
     fun setFromX(x: Float) {
-        var v = valueRange.start + ((if (rtl) width - x else x) / width).coerceIn(0f, 1f) * span
-        if (steps != null && steps > 0f) v = (v / steps).roundToInt() * steps
-        onValueChange(v.coerceIn(valueRange.start, valueRange.endInclusive))
+        var v = valueRange.start + ((if (rtlNow) width - x else x) / width).coerceIn(0f, 1f) * span
+        val st = stepNow
+        if (st != null && st > 0f) v = (v / st).roundToInt() * st
+        onChange(v.coerceIn(valueRange.start, valueRange.endInclusive))
     }
     Box(
         modifier
@@ -656,8 +672,8 @@ fun Slider(
                 if (!enabled) return@pointerInput
                 detectDragGestures(
                     onDragStart = { dragging = true; setFromX(it.x) },
-                    onDragEnd = { dragging = false; onValueChangeFinished?.invoke() },
-                    onDragCancel = { dragging = false; onValueChangeFinished?.invoke() },
+                    onDragEnd = { dragging = false; onFinish?.invoke() },
+                    onDragCancel = { dragging = false; onFinish?.invoke() },
                 ) { change, _ -> change.consume(); setFromX(change.position.x) }
             }
             .pointerInput(enabled, valueRange) {
@@ -668,7 +684,7 @@ fun Slider(
                         if (e.type == PointerEventType.Press && e.primaryContactPressed && !dragging) {
                             setFromX(e.changes.first().position.x)
                         }
-                        if (e.type == PointerEventType.Release && !dragging) onValueChangeFinished?.invoke()
+                        if (e.type == PointerEventType.Release && !dragging) onFinish?.invoke()
                     }
                 }
             },

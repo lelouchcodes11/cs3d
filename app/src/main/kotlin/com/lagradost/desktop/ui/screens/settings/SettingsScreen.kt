@@ -257,7 +257,7 @@ private fun UpdateNotice() {
 /** The small grey line over a group of pages in the list on the left */
 @Composable
 private fun SectionCaption(title: String) {
-    FText(title.uppercase(), Modifier.padding(start = 14.dp, top = 16.dp, bottom = 4.dp), style = Fluent.type.caption, color = Fluent.colors.textTertiary, maxLines = 1)
+    FText(com.lagradost.desktop.i18n.Tr.upper(com.lagradost.desktop.i18n.Tr.t(title)), Modifier.padding(start = 14.dp, top = 16.dp, bottom = 4.dp), style = Fluent.type.caption, color = Fluent.colors.textTertiary, maxLines = 1)
 }
 
 /** The settings people reach for most, pulled from their own pages (the same rows, so they work and are found by the search exactly alike) */

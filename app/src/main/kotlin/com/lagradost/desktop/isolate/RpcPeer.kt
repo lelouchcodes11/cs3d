@@ -44,7 +44,30 @@ class RpcPeer(
     private val closed = AtomicBoolean()
     private val writeLock = Any()
 
-    private class Call(val done: CompletableDeferred<JsonNode>, val onEvent: ((String, JsonNode) -> Unit)?)
+    // the events of a call run in order on a thread of their own, and its answer after them: run on the pipe's reader, an event handler that asked the
+    // other side something (extension code: a toast, another browser page) stopped all reading, its own answer included, until the time limit
+    private class Call(val done: CompletableDeferred<JsonNode>, val onEvent: ((String, JsonNode) -> Unit)?) {
+        val queue: SerialQueue? = if (onEvent != null) SerialQueue() else null
+    }
+
+    private class SerialQueue {
+        private val tasks = java.util.ArrayDeque<Runnable>()
+        private var running = false
+        fun execute(task: Runnable) {
+            synchronized(this) { tasks.add(task); if (running) return; running = true }
+            eventPool.execute { drain() }
+        }
+        private fun drain() {
+            while (true) {
+                val next = synchronized(this) { tasks.poll() ?: run { running = false; null } } ?: return
+                runCatching { next.run() }
+            }
+        }
+    }
+
+    companion object {
+        private val eventPool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "rpc-events").apply { isDaemon = true } }
+    }
 
     val isClosed: Boolean get() = closed.get()
 
@@ -108,12 +131,18 @@ class RpcPeer(
                 running[id]?.cancel()
             }
             "r" -> pending.remove(id)?.let { call ->
-                if (node.get("ok")?.asBoolean() == true) call.done.complete(node.get("b") ?: JsonNodeFactory.instance.nullNode())
-                else call.done.completeExceptionally(remoteFailure(node))
+                val finish = Runnable {
+                    if (node.get("ok")?.asBoolean() == true) call.done.complete(node.get("b") ?: JsonNodeFactory.instance.nullNode())
+                    else call.done.completeExceptionally(remoteFailure(node))
+                }
+                call.queue?.execute(finish) ?: finish.run()
             }
-            "e" -> pending[id]?.onEvent?.let { handler ->
-                runCatching { handler(node.get("o")?.asText() ?: "", node.get("b") ?: JsonNodeFactory.instance.nullNode()) }
-                    .onFailure { Log.w("RpcPeer", "$label: event handler failed: $it") }
+            "e" -> pending[id]?.let { call ->
+                val handler = call.onEvent ?: return
+                call.queue?.execute {
+                    runCatching { handler(node.get("o")?.asText() ?: "", node.get("b") ?: JsonNodeFactory.instance.nullNode()) }
+                        .onFailure { Log.w("RpcPeer", "$label: event handler failed: $it") }
+                }
             }
         }
     }
@@ -177,6 +206,9 @@ class RpcPeer(
         val id = ids.incrementAndGet()
         val call = Call(CompletableDeferred(), onEvent)
         pending[id] = call
+        // closed between the check above and now: nothing would ever answer, and the caller waited its whole time limit (up to 5 minutes of "loading")
+        // with a time-out instead of the error that makes the host start the sandbox again
+        if (closed.get()) { pending.remove(id); throw IllegalStateException("the sandbox is not running") }
         send("q", id, op, body = body)
         try {
             return withTimeout(timeoutMs) { call.done.await() }

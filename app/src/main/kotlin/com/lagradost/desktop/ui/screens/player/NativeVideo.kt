@@ -15,6 +15,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindow
 import androidx.compose.ui.window.WindowPosition
@@ -304,6 +305,67 @@ private fun videoOrigin(canvas: Canvas): java.awt.Point? {
     return c.locationOnScreen.also { it.translate(x, y) }
 }
 
+private fun applyBounds(d: java.awt.Window, position: WindowPosition, size: DpSize) {
+    if (position !is WindowPosition.Absolute || !size.isSpecified) return
+    val x = position.x.value.toInt(); val y = position.y.value.toInt()
+    val w = size.width.value.toInt(); val h = size.height.value.toInt()
+    if (w > 0 && h > 0 && (d.x != x || d.y != y || d.width != w || d.height != h)) d.setBounds(x, y, w, h)
+}
+
+/**
+ * The controls window is made once and kept, hidden, between videos. A new one for every video meant a new Direct3D device, swap chain and first
+ * draw on the UI thread each time the video page opened: measured with the GPU player, 380 ms on the first video of a run, then 138 ms and 1.2 s
+ * on the next ones (the shake of the switch into a video that never went away). After 10 minutes without a video the window is let go.
+ * -Dcloudstream.overlaypool=off makes a new window every time, as before.
+ */
+internal object OverlayPool {
+    private var idle: androidx.compose.ui.awt.ComposeDialog? = null
+    private var letGo: javax.swing.Timer? = null
+
+    fun acquire(owner: java.awt.Window?): androidx.compose.ui.awt.ComposeDialog {
+        letGo?.stop(); letGo = null
+        idle?.let { d ->
+            idle = null
+            if (d.isDisplayable && d.owner === owner) return d
+            d.dispose()
+        }
+        return androidx.compose.ui.awt.ComposeDialog(owner, java.awt.Dialog.ModalityType.MODELESS).apply {
+            isUndecorated = true
+            isTransparent = true
+            isResizable = false
+        }
+    }
+
+    fun release(d: androidx.compose.ui.awt.ComposeDialog) {
+        d.isVisible = false
+        // the page's controls end with the page (their effects stop now); the window and its drawing surface stay
+        runCatching { d.setContent { } }
+        if (idle != null || System.getProperty("cloudstream.overlaypool") == "off") { d.dispose(); return }
+        idle = d
+        letGo = javax.swing.Timer(10 * 60_000) { idle?.dispose(); idle = null; letGo = null }.apply { isRepeats = false; start() }
+    }
+
+    /**
+     * The first video's window, made ahead (UI thread, while Home is calm; see ScreenWarmup): shown for a moment far off screen, small and without
+     * the focus, so its Direct3D device and first frame are done, then kept hidden. Measured without it: 198 ms on the first video after a start.
+     */
+    fun prewarm(owner: java.awt.Window) {
+        if (idle != null || System.getProperty("cloudstream.overlaypool") == "off") return
+        val d = acquire(owner)
+        runCatching {
+            d.focusableWindowState = false
+            d.isAutoRequestFocus = false
+            d.setBounds(-32000, -32000, 64, 64)
+            d.setContent { }
+            d.isVisible = true
+        }.onFailure { d.dispose(); return }
+        javax.swing.Timer(400) {
+            d.isVisible = false
+            if (idle == null) idle = d else d.dispose()
+        }.apply { isRepeats = false; start() }
+    }
+}
+
 /**
  * The controls window: transparent, owned by the main window (so it is always above it and goes with it when it is minimised), kept exactly over
  * the video. It does not take the keyboard focus unless [focusable] (a dialog with a text field is open): the keys stay with the main window.
@@ -323,7 +385,22 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
     val shown = remember(canvas) { arrayOfNulls<java.awt.Window>(1) }
     // -Dcloudstream.overlaytest=hidden / blind breaks the controls window on purpose, to test ControlsGuard (it must put it right or give it up)
     val overlayTest = remember { System.getProperty("cloudstream.overlaytest") }
-    DialogWindow(onCloseRequest = {}, state = state, visible = placed && overlayTest != "hidden", undecorated = true, transparent = true, resizable = false, focusable = focusable) {
+    // the window belongs to the app's window (above it, minimised with it)
+    val owner = remember(canvas) {
+        javax.swing.SwingUtilities.getWindowAncestor(canvas) ?: java.awt.Window.getWindows().firstOrNull { it is androidx.compose.ui.awt.ComposeWindow && it.isShowing }
+    }
+    val position = state.position
+    val size = state.size
+    DialogWindow(
+        visible = placed && overlayTest != "hidden",
+        // one window kept for every video (see OverlayPool), not a new one per video
+        create = { OverlayPool.acquire(owner).also { applyBounds(it, position, size) } },
+        dispose = { OverlayPool.release(it) },
+        update = { d ->
+            if (d.focusableWindowState != focusable) d.focusableWindowState = focusable
+            applyBounds(d, position, size)
+        },
+    ) {
         shown[0] = window
         // drawn at its place: the video's window may be shown under it now (see NativeVideo.overlayPainted)
         LaunchedEffect(placed) {
@@ -333,7 +410,11 @@ fun NativeOverlayWindow(focusable: Boolean, content: @Composable () -> Unit) {
         // a new window of this class is white until something paints it (the first frame of the first video of a run showed it as one half-white frame at the
         // moment the page changes): its own background brush is black from its first paint, like the video's window
         remember(window) {
-            window.addHierarchyListener { if (window.isDisplayable) NativeVideo.blackBrush(window) }
+            // the window is used again by the next video: its listener is added once
+            if (window.rootPane.getClientProperty("cs.blackBrush") == null) {
+                window.rootPane.putClientProperty("cs.blackBrush", true)
+                window.addHierarchyListener { if (window.isDisplayable) NativeVideo.blackBrush(window) }
+            }
             if (window.isDisplayable) NativeVideo.blackBrush(window)
         }
         // NOT here: a fade-in with window.opacity (0 until the first frames, then 1). On the owner's PC (measured 2026-10-22 with real mouse and touch input)

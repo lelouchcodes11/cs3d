@@ -79,6 +79,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -173,6 +174,8 @@ class PlayerSession(
     private var playingTorrent by mutableStateOf(false)
     /** A torrent is being opened (the engine starts, peers are found): the stall watch leaves it to the engine, which has time limits of its own */
     private var torrentBusy = false
+    /** When the engine handed the torrent's stream to the player (0: none waiting for its first picture) */
+    private var torrentHandedAt = 0L
     private var torrentJob: kotlinx.coroutines.Job? = null
     /** The address on this PC the engine made of the torrent that plays (what VLC is given) */
     private var resolvedTorrent: ExtractorLink? = null
@@ -193,12 +196,32 @@ class PlayerSession(
     /** The list of sources was opened: the user picks, nothing starts by itself */
     fun holdAutoPlay() { if (!playerActive) autoPlayAt = -1L }
 
+    /** When the first playable source of this page came (0 = none yet) */
+    private var firstUsableAt = 0L
+
+    /**
+     * The best source found so far is as good as waiting would make it: the source that played this title last time, or a direct 1080p (or
+     * better) one that is not a huge file. Then the wait is [QUICK_AUTO_PLAY_MS], not [AUTO_PLAY_MS]: on CineStream a film started 6 s after its
+     * first source every time (8-9 s after Play, 10-15 s to the picture) although a 1080p source was there within 3 s.
+     */
+    private fun bestIsGoodEnough(): Boolean {
+        val top = vm.state.sortLinks(qualityProfile).firstOrNull { it.shouldUseLink }?.link?.first ?: return false
+        if (com.lagradost.desktop.net.LastSource.isPreferred(top)) return true
+        if (TorrentEngine.isTorrent(top)) return false
+        if (com.lagradost.desktop.ui.fluent.Appearance.smoothSources && com.lagradost.desktop.net.SourceWeight.heavy(top)) return false
+        return top.quality in 1080..4320
+    }
+
     private fun planAutoPlay() {
-        if (autoPlayAt != 0L || playerActive || !canSkipLoading) return
-        val at = System.currentTimeMillis() + AUTO_PLAY_MS
+        if (autoPlayAt == -1L || playerActive || !canSkipLoading) return
+        val now = System.currentTimeMillis()
+        if (firstUsableAt == 0L) firstUsableAt = now
+        val at = firstUsableAt + if (bestIsGoodEnough()) QUICK_AUTO_PLAY_MS else AUTO_PLAY_MS
+        // planned already, as soon or sooner
+        if (autoPlayAt != 0L && autoPlayAt <= at) return
         autoPlayAt = at
         scope.launch {
-            delay(AUTO_PLAY_MS)
+            delay((at - System.currentTimeMillis()).coerceAtLeast(0L))
             if (autoPlayAt == at && !playerActive && canSkipLoading) skipLoading()
         }
     }
@@ -292,6 +315,10 @@ class PlayerSession(
     // where the next source of this episode picks up: the saved position at first, then wherever the video was
     private var resumeMs = 0L
     private var released = false
+    /** Still being built: set until the last line of the class has run (see the init block at its end) */
+    private var constructing = true
+    /** The first source of this page has been handed to the player (see loadLink) */
+    private var firstBeginDone = false
     val isReleased: Boolean get() = released
     private var audioApplied = false
     private val removers = mutableListOf<() -> Unit>()
@@ -325,7 +352,9 @@ class PlayerSession(
         sync.updateUserData()
 
         fun <T> LiveData<T>.watch(block: (T?) -> Unit) {
-            val observer = Observer<T> { block(it) }
+            // a value the page's model already holds (a session made again on the same page keeps the subtitles of the video before) arrives
+            // during this registration, while the fields further down are not set yet ("subtitleChecks is null" broke the page): handled once built
+            val observer = Observer<T> { v -> if (constructing) java.awt.EventQueue.invokeLater { if (!released) block(v) } else block(v) }
             observeForever(observer)
             removers += { removeObserver(observer) }
         }
@@ -354,7 +383,10 @@ class PlayerSession(
                 }
                 is Resource.Failure -> {
                     Toasts.show(loading.errorString, true)
-                    startPlayer()
+                    if (waitingForMore) {
+                        waitingForMore = false
+                        firstUsableLink()?.let { loadLink(it.link, true, "Trying another source…") } ?: noMoreSources()
+                    } else startPlayer()
                 }
             }
         }
@@ -382,6 +414,13 @@ class PlayerSession(
             while (true) {
                 val more = playerActive && vm.isLoadingLinks
                 if (more != loadingMore) loadingMore = more
+                // waiting for a source that will never come: after "Play now" or auto-play the search ends without another update, and the screen said
+                // "Looking for another one…" until the viewer left
+                if (waitingForMore && !vm.isLoadingLinks) {
+                    waitingForMore = false
+                    val another = firstUsableLink()
+                    if (another != null) loadLink(another.link, true, "Trying another source…") else noMoreSources()
+                }
                 if (playerActive) {
                     player.getPosition()?.let { positionMs = it }
                     if (loadingText == null && positionMs > 0) resumeMs = positionMs
@@ -417,6 +456,8 @@ class PlayerSession(
     private var stallBuffered = -1L
     private var stallSince = 0L
     private var stallRetries = 0
+    /** Since when mpv has downloaded nothing while the video waits (0: data is coming in), see watchStalls */
+    private var noDataSince = 0L
     // a source the viewer chose in the list gets longer to start: a huge file (a 48 GB MP4 reads its index for ~20 s) is still loading
     private var pickedByHand = false
 
@@ -445,25 +486,65 @@ class PlayerSession(
         player.seekTo(seekTarget)
     }
 
+    /**
+     * A new open of a source gets the whole wait. The clock only restarted when the position or the buffer moved, so a source opened again 15 s into a
+     * slow first try was given up 4.6 s later, just as its playlist had come in (seen in a real log: "no progress for 20007 ms" for a 4.6 s old open).
+     */
+    private fun restartStallClock() {
+        stallSince = System.currentTimeMillis()
+        stallPosition = -1L
+        stallBuffered = -1L
+    }
+
     private fun watchStalls() {
         scope.launch {
             while (true) {
                 delay(2000)
                 kickStuckSeek(System.currentTimeMillis())
-                val waiting = playerActive && failure == null && !waitingForMore && !torrentBusy && (startingSource || status == CSPlayerLoading.IsBuffering)
+                // a torrent trickles in: mpv's buffer keeps growing, so it never counts as stalled, yet no picture comes (a 1-peer swarm sat
+                // on the loading screen for 3+ minutes). With another source to go to, 60 s after the hand-over is enough.
+                if (torrentHandedAt > 0 && (!playingTorrent || loadingText == null)) torrentHandedAt = 0
+                if (torrentHandedAt > 0 && playerActive && failure == null && !pickedByHand && System.currentTimeMillis() - torrentHandedAt > 60_000 && nextLink() != null) {
+                    android.util.Log.i("PlayerSession", "torrent gave no picture 60 s after the hand-over: next source")
+                    TorrentEngine.markFailed()
+                    torrentHandedAt = 0
+                    onStalled()
+                    continue
+                }
+                val waiting =playerActive && failure == null && !waitingForMore && !torrentBusy && (startingSource || status == CSPlayerLoading.IsBuffering)
                 val now = System.currentTimeMillis()
-                if (!waiting || positionMs != stallPosition || bufferedMs != stallBuffered) {
+                // desktop: is anything coming in at all (mpv's download rate)? A dead connection gets its first reload after DEAD_LINK_MS instead of the
+                // 14-45 s below, which are for servers that are slow but sending: one hung HLS connection held a film 20 s on a still screen, and the reload
+                // played it 3.7 s later. Anything over 1 KB/s is a server still sending, and the limits below stay as they are.
+                val speed = if (waiting && !playingTorrent) player.getMpvPropertyString("cache-speed")?.toDoubleOrNull() else null
+                if (speed == null || speed > 1024.0) noDataSince = 0L else if (noDataSince == 0L) noDataSince = now
+                // a torrent that is coming in is not stalled while it starts: the player first reads the end of the file (an mkv's index), which comes from
+                // the peers at their pace, so neither position nor buffer moves (a 322-seeder release was left 14 s after the hand-over, just as it came in).
+                // The 60 s rule above still ends a start that gives no picture
+                val torrentFlowing = playingTorrent && startingSource && (TorrentEngine.progress?.speedBps ?: 0L) >= 32L * 1024
+                if (!waiting || torrentFlowing || positionMs != stallPosition || bufferedMs != stallBuffered) {
                     stallPosition = positionMs
                     stallBuffered = bufferedMs
                     stallSince = now
                     continue
                 }
+                // the file opening is progress: a live channel that opened after 20.3 s was reloaded 12 ms later (liveStream was set by then, so it no longer
+                // counted as "opening", and neither position nor buffer had moved yet)
+                if (player.fileOpenedAt > stallSince) stallSince = player.fileOpenedAt
                 // a source that has not shown a picture after 20 s is not worth waiting for (it used to be 35 s); one that stops half way gets 25 s
                 // (with another source to go to, 14 s: VegaMovies lists several mirrors and a dead first one cost 20 s each time)
                 // A live channel that the playlist server has read (it is live, and its manifest came) is still opening, one stream after the other: WILLOW lists 8 and
                 // took 14 to 18 s on a network with a slow CDN, the 14 / 20 s limit reloaded it every time before it showed a picture, for ever.
                 // (mpv's own state decides, not loadingText: it is already gone while the channel is still opening; once the file is open, liveStream is set and a stall is a stall)
                 val openingLive = player.opensLive() && !player.liveStream
+                val opened = player.fileOpenedAt
+                if (stallRetries == 0 && !openingLive && opened > 0 && noDataSince != 0L && now - maxOf(noDataSince, opened, stallSince) > DEAD_LINK_MS) {
+                    android.util.Log.i("PlayerSession", "nothing came in for ${now - maxOf(noDataSince, opened, stallSince)} ms (dead connection): reloading now")
+                    stallSince = now
+                    noDataSince = 0L
+                    onStalled()
+                    continue
+                }
                 val limit = if (openingLive) 45_000 else if (startingSource) (if (pickedByHand) 45_000 else if (nextLink() != null) 14_000 else 20_000) else 20_000
                 if (now - stallSince > limit) {
                     android.util.Log.i("PlayerSession", "no progress for ${now - stallSince} ms (limit $limit ms, starting=$startingSource, opening live=$openingLive, byHand=$pickedByHand)")
@@ -481,9 +562,14 @@ class PlayerSession(
         if (stallRetries == 0 && !(neverStarted && nextLink() != null)) {
             stallRetries++
             Toasts.show("The connection is slow, trying again…", false)
+            restartStallClock()
             player.reloadPlayer(ctx)
         } else {
+            if (reloadIfStale()) { stallRetries = 0; return }
             stallRetries = 0
+            // a source that never showed a picture is marked as failed: the next one after the last was "the first one not failed yet", so a title whose
+            // links all refuse this PC (AniVortex's vkuser.net links are bound to the extension's server address) went round them every 14 s for ever
+            if (neverStarted) selectedLink?.let { bad -> vm.modifyState { addError(bad) } }
             if (nextLink() != null) {
                 Toasts.show("This source is not responding, trying the next one", false)
                 nextMirror("That source is not responding. Trying the next one…")
@@ -491,7 +577,7 @@ class PlayerSession(
                 waitForMoreSources("That source is not responding. Looking for another one…")
             } else {
                 loadingText = null
-                failure = "The source stopped responding."
+                failure = if (neverStarted) "None of the sources could be played." else "The source stopped responding."
             }
         }
     }
@@ -531,7 +617,9 @@ class PlayerSession(
             noLinksFound()
             return
         }
+        // used once: the flag stayed on after the first episode switch and every later video (a half-watched episode from the list, Reload) began at 0:00
         resumeMs = if (isNextEpisode) 0L else getPos()
+        isNextEpisode = false
         positionMs = resumeMs
         loadLink(first, false)
         updateTitle()
@@ -548,9 +636,10 @@ class PlayerSession(
      * [reason] is what the loading screen says (a failed source: "trying the next one"); [resumeAt] carries on at that position instead
      * of where the playing video is (a stream that ended early is continued where it broke off).
      */
-    private fun loadLink(link: VideoLink, sameEpisode: Boolean, reason: String? = null, resumeAt: Long? = null) {
+    // [byHand] is set before anything starts: a torrent job runs at once on this thread and read the flag while it was still false (a picked torrent got the short limits)
+    private fun loadLink(link: VideoLink, sameEpisode: Boolean, reason: String? = null, resumeAt: Long? = null, byHand: Boolean = false) {
         stallRetries = 0
-        pickedByHand = false
+        pickedByHand = byHand
         if (link != selectedLink) prematureRetries = 0
         // another source of the same episode carries on where the video was (not at 0:00)
         if (resumeAt != null) resumeMs = resumeAt
@@ -564,6 +653,7 @@ class PlayerSession(
         loadingText = reason ?: "Starting playback…"
         playingSince = 0L
         loadStartMs = resumeMs
+        viewerMovedLive = false
         sourceStartedAt = System.currentTimeMillis()
         val usable = vm.state.sortLinks(qualityProfile).filter { it.shouldUseLink }
         val at = usable.indexOfFirst { it.link == link }
@@ -587,6 +677,13 @@ class PlayerSession(
         // another language, a signs-only track or nothing (wrong subtitles after a source switch). This file lists its own once it is open,
         // and a track chosen in the old file is replaced by the same language in the new one
         if (vm.state.subtitles.any { it.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO }) vm.modifyState { set(subtitles.filter { it.origin != SubtitleOrigin.EMBEDDED_IN_VIDEO }) }
+        // the subtitle files of the torrent played before go with it, before the list below is handed to the player: removed after it, the new
+        // source was still opened with them (and with the one chosen, a file of another release, read from a torrent the engine had dropped)
+        vm.state.subtitles.filter { TorrentEngine.isOwnAddress(it.url) }.takeIf { it.isNotEmpty() }?.let { gone -> vm.modifyState { set(subtitles - gone.toSet()) } }
+        if (selectedSubtitle?.let { TorrentEngine.isOwnAddress(it.url) } == true) {
+            selectedSubtitle = null
+            subtitleChosenByUser = false
+        }
         failedSubtitles.removeAll { it.toIntOrNull() != null }
         if (selectedSubtitle?.origin == SubtitleOrigin.EMBEDDED_IN_VIDEO) {
             selectedSubtitle = null
@@ -605,7 +702,10 @@ class PlayerSession(
         // another source of a live channel does not carry on where the old one was: it starts a little behind the live picture (30 s, or the oldest picture when the channel keeps
         // less), so there is something in front of it; a recording carries on where it was
         player.liveStartBehindS = if (liveChannel && sameEpisode) LIVE_SWITCH_BEHIND_S else 0.0
+        // a stream with several audio languages is given the one chosen before (see applyPreferredAudio); a channel keeps its own default
+        player.hlsAudioLanguage = if (liveChannel) null else CS3IPlayer.preferredAudioTrackLanguage
         val begin: (ExtractorLink?) -> Unit = { toPlay ->
+            restartStallClock()
             player.loadPlayer(
                 ctx, sameEpisode, toPlay, uri,
                 startPosition = startAt,
@@ -628,8 +728,13 @@ class PlayerSession(
             torrentBusy = false
             playingTorrent = false
             torrentStatus = null
-            TorrentEngine.release()
-            begin(url)
+            TorrentEngine.release(this)
+            // the first video of the page: mpv starts in an event of its own, after the frame that shows the page. Together they made one frame of
+            // 70-170 ms right as the page changed (the shake of the first video after a start); the later sources load at once
+            if (!firstBeginDone) {
+                firstBeginDone = true
+                java.awt.EventQueue.invokeLater { if (!released && selectedLink == link) begin(url) }
+            } else begin(url)
             return
         }
         // a magnet / torrent source: the engine finds the peers and gives the player an address on this PC to play
@@ -637,7 +742,7 @@ class PlayerSession(
             // the questions are open: the stall watch waits for the answer
             torrentBusy = true
             TorrentConsent.request(
-                onReady = { if (!released && selectedLink == link) loadLink(link, sameEpisode, reason, resumeAt = startAt) },
+                onReady = { if (!released && selectedLink == link) loadLink(link, sameEpisode, reason, resumeAt = startAt, byHand = pickedByHand) },
                 onDecline = {
                     torrentBusy = false
                     if (!released && selectedLink == link) {
@@ -660,16 +765,39 @@ class PlayerSession(
         torrentBusy = true
         playingTorrent = true
         torrentStatus = null
+        // the file that was loading (the source before, which gave no picture) is stopped now: it kept reading its torrent while this one was opened,
+        // which made the engine add that torrent again and took this one's speed, and its failure, when it came, was taken for this source's
+        // ("unrecognized file format" skipped a 322-seeder release). A video that plays on while a picked source is tried is left playing
+        if (fallbackLink == null) player.stopFile()
         torrentJob = scope.launch {
             try {
-                val resolved = TorrentEngine.open(url!!) { p ->
+                // another source to go to (not when the viewer picked this one): a dead or far too slow torrent is left sooner
+                val alternative = !pickedByHand && nextLink() != null
+                val runtime = (currentMeta as? ResultEpisode)?.runTime?.takeIf { it > 0 }?.times(60)
+                val opened = TorrentEngine.open(url!!, alternative, runtime, resumeMs = startAt, owner = this@PlayerSession, next = nextLink()?.link?.first) { p ->
                     torrentStatus = p
                     if (selectedLink == link && loadingText != null) loadingText = torrentLine(p)
                 }
                 torrentBusy = false
+                torrentHandedAt = System.currentTimeMillis()
+                val resolved = opened.link
                 resolvedTorrent = resolved
-                if (!released && selectedLink == link) begin(resolved)
+                if (!released && selectedLink == link) {
+                    // subtitle files that came in the torrent (a "Subs" folder, "Film.en.srt"): in the list like any other, made for this very release
+                    if (opened.subtitles.isNotEmpty()) vm.addSubtitles(opened.subtitles.map { s ->
+                        SubtitleData(s.name, "", s.url, SubtitleOrigin.URL, s.url.substringBefore('?').toSubtitleMimeType(), emptyMap(),
+                            s.language?.let { com.lagradost.cloudstream3.utils.SubtitleHelper.fromLanguageToTagIETF(it) } ?: s.language)
+                    }.toSet())
+                    begin(resolved)
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
+                // not stopped here (this job still runs): the engine was taken over (another window opened a torrent, torrents were turned
+                // off). The loading screen stayed up for good; it says so now, and no other source is started (it would take the engine back)
+                if (isActive && !released && selectedLink == link) {
+                    torrentBusy = false
+                    loadingText = null
+                    failure = "The torrent was stopped: another window started one, or torrent streaming was turned off."
+                }
                 throw e
             } catch (t: Throwable) {
                 torrentBusy = false
@@ -685,6 +813,8 @@ class PlayerSession(
     private fun releaseForReload() {
         flushProgress()
         player.release()
+        durationMs = 0L
+        subtitlesFirstSeenAt = 0L
         selectedSubtitle = null
         subtitleChosenByUser = false
         failedSubtitles.clear()
@@ -697,6 +827,7 @@ class PlayerSession(
         loadingText = "Looking for sources…"
         canSkipLoading = false
         autoPlayAt = 0L
+        firstUsableAt = 0L
         vm.modifyState { setError(emptyList()) }
     }
 
@@ -728,8 +859,13 @@ class PlayerSession(
      */
     private fun endedTooEarly(): Boolean {
         val duration = durationMs
-        if (duration < 120_000L) return false
         if ((currentMeta as? ResultEpisode)?.tvType?.isLiveStream() == true) return false
+        // nothing played at all: the file opened and "ended" at 0 of 0 (an AVI from a torrent whose data had not come yet). A failure, not the end:
+        // taken as the end, a series went on to the next episode
+        // (from where this load started: a resumed episode's position is the resume point until the file reports one, so "under 1 s" missed
+        // every episode with saved progress, and the series still went on to the next one)
+        if (duration <= 0L && positionMs < loadStartMs + 1_000L) return true
+        if (duration < 120_000L) return false
         val position = positionMs
         if (position < duration - 25_000L) return true
         val played = if (playingSince > 0) System.currentTimeMillis() - playingSince else 0L
@@ -745,9 +881,10 @@ class PlayerSession(
         if (prematureRetries == 0) {
             prematureRetries++
             Toasts.show("The connection was lost, reconnecting…", false)
-            loadLink(link, true, "The connection was lost. Reconnecting…", resumeAt = at)
+            loadLink(link, true, "The connection was lost. Reconnecting…", resumeAt = at, byHand = pickedByHand)
             return
         }
+        if (reloadIfStale()) return
         vm.modifyState { addError(link) }
         if (nextLink() != null) {
             Toasts.show("This source keeps stopping, trying the next one", false)
@@ -760,8 +897,29 @@ class PlayerSession(
         }
     }
 
+    private var staleReloadAt = 0L
+
+    /**
+     * The links of this episode were asked for 20+ minutes ago (a long pause): many sites sign their addresses for a limited time, and the other links of
+     * that batch are just as old. The source that stopped was reloaded once, then each old link was tried in turn, and the end was "no other source is
+     * left". Fresh links are asked for once instead (the position is kept: [reloadSources] saves it first).
+     */
+    private fun reloadIfStale(): Boolean {
+        val now = System.currentTimeMillis()
+        // a torrent's address never expires (a stall there is the peers, which fresh links do not change)
+        if (!picture || released || playingTorrent || vm.linksRequestedAt == 0L || now - vm.linksRequestedAt < 20 * 60_000L || now - staleReloadAt < 10 * 60_000L) return false
+        staleReloadAt = now
+        android.util.Log.i("PlayerSession", "the source stopped and its links are ${(now - vm.linksRequestedAt) / 60_000} min old: asking for fresh links")
+        Toasts.show("The video link has expired, getting a fresh one…", false)
+        reloadSources()
+        return true
+    }
+
     private fun onPlayerError(error: Throwable) {
+        // a source picked by hand that fails goes back to the video that plays first: 20 min into a film, a failed pick reloaded every source
+        // (the playing video stopped) because the old links counted as expired
         if (backToFallback("That source could not be played.")) return
+        if (reloadIfStale()) return
         selectedLink?.let { link -> vm.modifyState { addError(link) } }
         android.util.Log.e("NativePlayer", "playerError ${selectedLink?.first?.name}: ${error.message}", error)
         val message = error.message ?: error.toString()
@@ -790,8 +948,12 @@ class PlayerSession(
                     picture = true
                     if (loadingText != null || playingSince == 0L) playingSince = System.currentTimeMillis()
                     com.lagradost.desktop.net.HostHealth.worked(selectedLink?.first)
+                    // how long this kind of source took to its first picture (a start, not a resume after buffering)
+                    if (loadingText != null) com.lagradost.desktop.net.HostHealth.started(selectedLink?.first, player.firstFrameMs)
                     com.lagradost.desktop.net.LastSource.remember(selectedLink?.first)
+                    if (playingTorrent) TorrentEngine.markPlayed()
                     (currentMeta as? ResultEpisode)?.let { com.lagradost.desktop.stats.ResumeExtras.setSource(it.parentId, selectedLink?.first?.name?.lineSequence()?.firstOrNull()?.trim()) }
+                    restoreSpeed()
                     loadingText = null
                     sourceIndex = -1
                     waitingForMore = false
@@ -800,7 +962,8 @@ class PlayerSession(
                 }
             }
             is PositionEvent -> positionChanged(event.toMs, event.durationMs)
-            is ErrorEvent -> onPlayerError(event.error)
+            // while a torrent is being opened the player is not playing it: an error is the file before's
+            is ErrorEvent -> if (torrentBusy) android.util.Log.i("PlayerSession", "an error of the file before, while a torrent opens: ${event.error.message}") else onPlayerError(event.error)
             is VideoEndedEvent -> {
                 android.util.Log.i("PlayerSession", "video ended at $positionMs of $durationMs (started at $loadStartMs, loading text: ${loadingText ?: "none"})")
                 // the end of a file that has been replaced already (a source that is just starting) is not news
@@ -946,6 +1109,8 @@ class PlayerSession(
         val meta = currentMeta as? ResultEpisode
         if (meta?.tvType?.isLiveStream() == true || meta?.tvType == TvType.NSFW) return
         if (duration <= 0L) return
+        // the next episode of a season pack: its first parts are fetched ahead in the last three minutes
+        if (playingTorrent && duration - position in 1..180_000) TorrentEngine.prefetchNextEpisode()
         if (!requestedStamps) {
             requestedStamps = true
             if (prefs.getBoolean(ctx.getString(R.string.enable_skip_op_from_database), true)) vm.loadStamps(duration)
@@ -966,10 +1131,13 @@ class PlayerSession(
                 sync.autoFinished(meta.totalEpisodeIndex ?: meta.episode, everyTitle)
             }
         }
-        if (meta != null && percentage >= UPDATE_SYNC_PROGRESS_PERCENTAGE && (maxEpisodeSet ?: -1) < meta.episode) {
+        // the number the tracker gets is the one remembered: remembering the episode of the season (12) and sending the count over all seasons
+        // (13 for S2 E1) skipped every episode of season 2 up to E12 when the next-episode button went on from S1 E12
+        val syncEpisode = meta?.let { it.totalEpisodeIndex ?: it.episode }
+        if (meta != null && syncEpisode != null && percentage >= UPDATE_SYNC_PROGRESS_PERCENTAGE && (maxEpisodeSet ?: -1) < syncEpisode) {
             if (prefs.getBoolean(ctx.getString(R.string.episode_sync_enabled_key), true)) {
-                maxEpisodeSet = meta.episode
-                sync.modifyMaxEpisode(meta.totalEpisodeIndex ?: meta.episode)
+                maxEpisodeSet = syncEpisode
+                sync.modifyMaxEpisode(syncEpisode, includeUnlisted = prefs.getBoolean(ctx.getString(R.string.auto_status_sync_key), true) && prefs.getBoolean(ctx.getString(R.string.auto_status_sync_all_key), false))
             }
         }
         if (percentage >= PRELOAD_NEXT_EPISODE_PERCENTAGE) vm.preLoadNextLinks()
@@ -1011,12 +1179,36 @@ class PlayerSession(
      */
     private fun checkRank(sub: SubtitleData): Int {
         if (sub.origin != SubtitleOrigin.URL) return 0
+        // a file that came in the torrent with the video is made for this very release (Sintel's English ends at 72 % of the film, before long credits)
+        if (TorrentEngine.isOwnAddress(sub.url)) return if (subtitleChecks[sub.getId()]?.usable == false) 4 else 0
         val c = subtitleChecks[sub.getId()] ?: return 2
         if (!c.usable) return 4
         val d = durationMs
         if (d <= 0 || c.lastCueMs <= 0) return 1
         val r = c.lastCueMs.toDouble() / d
         return when { r in 0.80..1.06 -> 1; r in 0.50..1.25 -> 3; else -> 5 }
+    }
+
+    /**
+     * What looking at each online file found, for the subtitle list (by [SubtitleData.getId]): whether it fits this video, seems made for another cut
+     * or another video, or does not work. The owner tried "English 3", then "English 4" to find one that fit (2026-11-20): the list only said "Online".
+     * Files that were not looked at yet have no note.
+     */
+    fun subtitleFitNotes(): Map<String, String> {
+        val typical = typicalTiming()
+        val out = HashMap<String, String>()
+        for (sub in vm.state.subtitles.toList()) {
+            if (sub.origin != SubtitleOrigin.URL) continue
+            val note = when (checkRank(sub)) {
+                1 -> if (typical != null && timingPenalty(sub, typical) >= 20.0) "Timing differs from the others" else "Fits this video"
+                3 -> "Maybe another cut"
+                4 -> "Does not load"
+                5 -> "Made for another video"
+                else -> null
+            }
+            if (note != null) out[sub.getId()] = note
+        }
+        return out
     }
 
     /** Of two files that both fit, the one whose end is nearest to where a film's talk usually ends (97 % of the length) */
@@ -1181,6 +1373,8 @@ class PlayerSession(
         if (subDomain != null && (subDomain == baseDomain(link.url) || subDomain == baseDomain(link.referer))) score += 2
         val tags = Regex("\\(([^)]+)\\)").findAll(sub.name).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toList()
         if (tags.any { link.name.contains(it, ignoreCase = true) }) score += 1
+        // made for the same release (group, BluRay / WEB / HDTV, the IMAX cut) as the file that plays: far more often in sync
+        score += com.lagradost.desktop.player.SubtitleRelease.match(sub.name + " " + sub.nameSuffix, link.name + " " + link.url.substringBefore('?').substringAfterLast('/'))
         // machine translations ("... (translated from Aragonese)", Subtitle Cat) are the last resort
         if (sub.name.contains("translated", ignoreCase = true) || sub.nameSuffix.contains("translated", ignoreCase = true)) score -= 4
         // a file looked at and found good beats one that was not looked at, a dead one or one for another cut loses
@@ -1273,6 +1467,7 @@ class PlayerSession(
             else if (!lang.isNullOrEmpty()) autoSubtitle(vm.state.subtitles, settings = true, downloads = false) else null
             if (pick != null && applySubtitle(pick, false)) {
                 player.saveData()
+                restartStallClock()
                 player.reloadPlayer(ctx)
                 player.handleEvent(CSPlayerEvent.Play)
             }
@@ -1310,6 +1505,7 @@ class PlayerSession(
         android.util.Log.i("PlayerSession", "subtitle chosen: ${sub?.let { "${it.originalName} ${it.nameSuffix} [${it.origin}]" } ?: "none"}")
         if (applySubtitle(sub, true)) {
             player.saveData()
+            restartStallClock()
             player.reloadPlayer(ctx)
             player.handleEvent(CSPlayerEvent.Play)
         }
@@ -1428,6 +1624,29 @@ class PlayerSession(
         )
     }
 
+    /**
+     * Many extensions give no IMDb or TMDB id. SubSource searches by IMDb id only (0 results for every such title) and OpenSubtitles / SubDL fell
+     * back to a loose name search; the title page's TMDB match (the same lookup as for skip times and the art) fills them in. Only for the
+     * playing title: a search for another name keeps no ids.
+     */
+    private suspend fun fillIdsFromTmdb(search: SubtitleSearch, query: String) {
+        if (search.imdbId != null && search.tmdbId != null) return
+        val response = vm.state.generatorState?.response ?: return
+        if (response.type.isLiveStream()) return
+        val q = query.trim()
+        if (!q.equals(defaultSubtitleQuery.trim(), true) && !q.equals(response.name.trim(), true)) return
+        val hints = response.syncData.values + listOfNotNull(response.getTMDbId()?.let { "tmdb:$it" }, response.getImdbId())
+        val info = runCatching {
+            kotlinx.coroutines.withTimeoutOrNull(6_000) { com.lagradost.desktop.tmdb.Tmdb.info(response.name, response.year, response.type.isMovieType(), hints) }
+        }.getOrNull() ?: return
+        // an anime that matched a live-action entry of the same name is not it
+        val anime = response.type == TvType.Anime || response.type == TvType.OVA || response.type == TvType.AnimeMovie
+        if (anime && info.genres.none { it.equals("Animation", true) }) return
+        if (search.imdbId == null) search.imdbId = info.imdbId?.takeIf { it.startsWith("tt") }
+        if (search.tmdbId == null && info.id > 0) search.tmdbId = info.id
+        android.util.Log.i("PlayerSession", "subtitle search ids from TMDB: imdb=${search.imdbId} tmdb=${search.tmdbId}")
+    }
+
     val defaultSubtitleQuery: String get() = (currentMeta as? ResultEpisode)?.headerName ?: title
 
     /** The title the video belongs to (its logo, story and artwork), for the pause screen; null for a plain link */
@@ -1444,7 +1663,7 @@ class PlayerSession(
      * has answered, so a slow one (a timeout takes 15 s) does not keep the results of the others from showing.
      */
     suspend fun searchSubtitles(query: String, lang: String?, onPartial: ((List<SubtitleEntity>) -> Unit)? = null): List<SubtitleEntity> {
-        val search = subtitleSearchOf(query, lang)
+        val search = subtitleSearchOf(query, lang).also { fillIdsFromTmdb(it, query) }
         val providers = GeneratorPlayer.subsProviders.toList()
         val answers = java.util.concurrent.ConcurrentHashMap<String, List<SubtitleEntity>>()
         fun merged(): List<SubtitleEntity> {
@@ -1496,7 +1715,13 @@ class PlayerSession(
         postSubtitleStatus(SubtitleLoadState.Loading, "Downloading subtitles · $label")
         return when (val r = Resource.fromResult(provider.resource(entity))) {
             is Resource.Success -> {
-                val subs = r.value.getSubtitles().map { res ->
+                // a zip (SubDL, SubSource) holds a season, other languages, an .nfo: the first file was selected, often another episode's or no subtitle
+                val files = r.value.getSubtitles()
+                val meta = currentMeta as? ResultEpisode
+                val episode = entity.epNumber?.takeIf { it > 0 } ?: meta?.takeIf { !it.tvType.isMovieType() }?.episode
+                val season = entity.seasonNumber?.takeIf { it > 0 } ?: meta?.takeIf { !it.tvType.isMovieType() }?.season
+                val order = com.lagradost.desktop.player.SubtitleFiles.downloadOrder(files.map { it.name }, entity.lang, season, episode)
+                val subs = order.map { files[it] }.map { res ->
                     SubtitleData(res.name ?: entity.name, "", res.url, res.origin, res.url.toSubtitleMimeType(), entity.headers, entity.lang)
                 }
                 android.util.Log.i("PlayerSession", "online subtitle ${entity.idPrefix} '${entity.name}': ${subs.size} file(s) ${subs.map { it.url.take(200) }}")
@@ -1560,9 +1785,10 @@ class PlayerSession(
             val url = sub.url.trim()
             val raw = runCatching {
                 if (url.startsWith("file:")) java.io.File(java.net.URI(url)).readBytes()
-                else com.lagradost.cloudstream3.app.get(url, headers = sub.headers, timeout = 20).okhttpResponse.body.bytes()
+                // a refused download (403, 404 page) is no subtitle: it was handed to the translator, which said "no lines that can be read"
+                else com.lagradost.cloudstream3.app.get(url, headers = sub.headers, timeout = 20).okhttpResponse.use { r -> if (r.isSuccessful) r.body.bytes() else null }
             }.getOrNull()
-            val result = if (raw == null) null else com.lagradost.desktop.player.SubtitleTranslate.translate(raw, url, to)
+            val result = if (raw == null) null else com.lagradost.desktop.player.SubtitleTranslate.translate(raw, url, to, sub.languageCode?.takeIf { it.isNotBlank() } ?: sub.originalName)
             val file = result?.file
             if (file == null) {
                 postSubtitleStatus(SubtitleLoadState.Failed, result?.error ?: "Couldn't download this subtitle to translate it")
@@ -1663,8 +1889,7 @@ class PlayerSession(
         if (link == selectedLink) return
         // a pick made while an earlier pick is still being tried keeps the source that really played
         if (loadingText == null) fallbackLink = selectedLink
-        loadLink(link, true)
-        pickedByHand = true
+        loadLink(link, true, byHand = true)
     }
 
     /** A source that was picked failed: true when it was handled (the next source after it, else the one that was playing) */
@@ -1716,7 +1941,7 @@ class PlayerSession(
 
     fun playEpisode(item: EpisodeItem) {
         if (item.current) return
-        isNextEpisode = true
+        // an episode picked from the list carries on where it was left (its bar in the list shows that)
         releaseForReload()
         vm.loadThisEpisode(item.index)
         episodeVersion++
@@ -1732,7 +1957,6 @@ class PlayerSession(
 
     fun prevEpisode() {
         if (!hasPrev) return
-        isNextEpisode = true
         releaseForReload()
         vm.loadLinksPrev()
         episodeVersion++
@@ -1741,6 +1965,8 @@ class PlayerSession(
     // ------------------------------------------------------------------ transport
 
     /** Hands the playing link to VLC, mpv, Energy Media Player or the browser; the picture here stops (the other player starts where it was) */
+    @Volatile private var torrentHandedOut = false
+
     fun openExternal(target: com.lagradost.desktop.player.ExternalPlayers.Target) {
         val link = (if (playingTorrent) resolvedTorrent else null) ?: selectedLink?.first
         if (link == null) { Toasts.show("This source can not be handed to another player", false); return }
@@ -1756,6 +1982,8 @@ class PlayerSession(
                 com.lagradost.desktop.player.ExternalPlayers.Target.Energy -> players.openInEnergy(link, name)
                 com.lagradost.desktop.player.ExternalPlayers.Target.Browser -> players.openInBrowser(link)
             }
+            // the other player reads the torrent from the engine: closing this page must not drop it
+            if (outcome.ok && link === resolvedTorrent) torrentHandedOut = true
             if (!outcome.ok) {
                 if (target == com.lagradost.desktop.player.ExternalPlayers.Target.Vlc && players.vlcPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.vlcMissing()
                 else if (target == com.lagradost.desktop.player.ExternalPlayers.Target.Mpv && players.mpvPath() == null) com.lagradost.desktop.ui.ExternalPlayerHints.mpvMissing()
@@ -1785,7 +2013,7 @@ class PlayerSession(
     }
 
     /** @return true when the video plays now, false when it was paused by this call */
-    fun togglePlay(): Boolean = player.togglePause()
+    fun togglePlay(): Boolean { viewerMovedLive = true; return player.togglePause() }
 
     /** What the main button shows: a pause button while the video plays or is only waiting for data (buffering, seeking), a play button when it is paused */
     /** T: the writing on the picture (game windows, signs, letters) is read and shown translated over it; a second press puts it away */
@@ -1798,6 +2026,7 @@ class PlayerSession(
     val showsPause: Boolean get() = status == CSPlayerLoading.IsPlaying || (status == CSPlayerLoading.IsBuffering && loadingText == null && !player.pausedByUser)
     fun play() = player.handleEvent(CSPlayerEvent.Play)
     fun pause() {
+        viewerMovedLive = true
         flushProgress()
         player.handleEvent(CSPlayerEvent.Pause)
     }
@@ -1810,6 +2039,7 @@ class PlayerSession(
     }
 
     fun seekBy(ms: Long) {
+        viewerMovedLive = true
         if (refuseSeek()) return
         val d = durationMs
         // a live channel moves inside its window; the player keeps the target inside what it can reach
@@ -1833,6 +2063,7 @@ class PlayerSession(
     private var seekBubbleAt = 0L
 
     fun seekTo(ms: Long) {
+        viewerMovedLive = true
         if (refuseSeek()) return
         player.seekTo(ms)
         markSeek(ms)
@@ -1858,6 +2089,8 @@ class PlayerSession(
     private var liveReportedAt = 0L
     private var liveTicks = 0
     private var liveGoneTicks = 0
+    /** The viewer paused or moved on this channel: only then does falling out of its window get a word (after a stall or a slow start it was news to nobody) */
+    private var viewerMovedLive = false
 
     /** The window slides (a playlist, a manifest) or is what the player holds (its start stays): see MpvPlayer.liveWindowSliding */
     var liveSliding by mutableStateOf(false); private set
@@ -1931,6 +2164,8 @@ class PlayerSession(
     /** Where the knob sits on the seek bar, 0 to 1: the position in the video, or for a live channel the position in its window */
     val barFraction: Float get() =
         if (liveWindowKnown) (liveElapsedMs.toFloat() / liveLengthMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+        // a video whose length is not known yet: an empty bar (the position over a length of 1 ms filled it as if it had been played to the end)
+        else if (!live && durationMs <= 0L) 0f
         else (positionMs.toFloat() / durationMs.coerceAtLeast(1)).coerceIn(0f, 1f)
 
     /** How much of the bar is buffered, 0 to 1 */
@@ -1957,12 +2192,14 @@ class PlayerSession(
 
     /** Seeks to a place on the bar (0 to 1) */
     fun seekToFraction(f: Float) {
+        viewerMovedLive = true
         val fraction = f.coerceIn(0f, 1f)
         if (liveWindowKnown) {
             val behind = behindAt(fraction)
             seekTo(liveEdgeMs - behind)
             holdBehind(behind)
-        } else seekTo((fraction * durationMs).toLong())
+        } else if (durationMs > 0L) seekTo((fraction * durationMs).toLong())
+        // no length known yet (a stream that has not said it, a live channel before its window is read): a click on the bar went to 0, the start
     }
 
     /** Back to the newest picture of a live channel */
@@ -2006,7 +2243,7 @@ class PlayerSession(
         if (livePendingAt == 0L && liveWindowKnown && showsPause && positionMs < liveStartMs - LIVE_GONE_MS) {
             if (++liveGoneTicks >= 8) {
                 liveGoneTicks = 0
-                Toasts.show("That part of the channel is no longer kept. Back to live.", false)
+                if (viewerMovedLive) Toasts.show("That part of the channel is no longer kept. Back to live.", false)
                 goLive()
                 return
             }
@@ -2035,6 +2272,29 @@ class PlayerSession(
         speed = value
         player.setPlaybackSpeed(value)
         showHud(Icons.Speed, if (value == 1f) "Normal speed" else "$value×")
+        // kept for this title: a series watched at 1.5× started at 1× again every time it was opened
+        speedKey()?.let { k -> prefs.edit().apply { if (value == 1f) remove(k) else putFloat(k, value) }.apply() }
+    }
+
+    /** The speed of this title is put back once, when its first picture comes (not for live channels) */
+    private var speedRestored = false
+
+    private fun speedKey(): String? {
+        val ep = currentMeta as? ResultEpisode ?: return null
+        if (ep.tvType.isLiveStream()) return null
+        return SPEED_KEY_PREFIX + ep.parentId
+    }
+
+    private fun restoreSpeed() {
+        if (speedRestored) return
+        speedRestored = true
+        val k = speedKey() ?: return
+        val saved = prefs.getFloat(k, 1f)
+        if (saved != 1f && speed == 1f && saved in 0.25f..4f) {
+            speed = saved
+            player.setPlaybackSpeed(saved)
+            showHud(Icons.Speed, "$saved× (as last time)")
+        }
     }
 
     /** True while a long press (finger, left mouse button) or Space held down plays the picture faster; letting go puts the speed back */
@@ -2060,7 +2320,16 @@ class PlayerSession(
         volume = percent.coerceIn(0, 200)
         if (volume > 0) muted = false
         applyVolume()
-        prefs.edit().putInt(VOLUME_KEY, volume).apply()
+        // A drag or wheel spin sends dozens of levels: write the file (and wake the sync plugin) once it settles.
+        volumeSaveJob?.cancel()
+        volumeSaveJob = scope.launch { delay(800); saveVolume() }
+    }
+
+    private var volumeSaveJob: Job? = null
+
+    private fun saveVolume() {
+        volumeSaveJob = null
+        if (prefs.getInt(VOLUME_KEY, 100) != volume) prefs.edit().putInt(VOLUME_KEY, volume).apply()
     }
 
     /** Up/down to the next multiple of 5 (up to 200 %), with the on-screen level */
@@ -2077,8 +2346,9 @@ class PlayerSession(
     }
 
     private fun applyVolume() {
-        player.setMpvProperty("volume", volume.toString())
-        player.setMpvProperty("mute", if (muted) "yes" else "no")
+        // queued to mpv, not waited for: a wheel step while mpv was busy opening a file froze the window for 1.4 s (jank.txt, 2026-10-31)
+        player.setMpvPropertyAsync("volume", volume.toString())
+        player.setMpvPropertyAsync("mute", if (muted) "yes" else "no")
     }
 
     fun changeResize(value: Resize) {
@@ -2099,13 +2369,14 @@ class PlayerSession(
         stopThumbs()
         if (released) return
         released = true
+        if (volumeSaveJob != null) saveVolume()
         if (active === this) active = null
         flushProgress()
         removers.forEach { it() }
         removers.clear()
         verifyJob?.cancel()
         torrentJob?.cancel()
-        TorrentEngine.release()
+        if (!torrentHandedOut) TorrentEngine.release(this)
         scope.cancel()
         runCatching { player.release() }
         runCatching { player.releaseCallbacks() }
@@ -2171,14 +2442,26 @@ class PlayerSession(
 
     fun debugLine(): String = "loading=${loadingText} status=$status boosting=$boosting failure=${failure?.take(60)} source=${sourceName?.lineSequence()?.firstOrNull()} links=$linksFound more=$loadingMore pos=$positionMs dur=$durationMs volume=$volume mpv[${player.debugState()}] live=$live window=${liveWindowKnown}[${liveStartMs}..${liveEndMs}] length=${liveLengthMs} behind=${liveBehindMs} elapsed=${liveElapsedMs} atEdge=$liveAtEdge pending=${livePendingAt != 0L} sliding=$liveSliding bar=${"%.3f".format(barFraction)}"
 
+    // the last of the class to run: every field above is set now
+    init {
+        constructing = false
+    }
+
     companion object {
         @Volatile
         var active: PlayerSession? = null
         const val VOLUME_KEY = "desktop_player_volume"
         const val AUDIO_LANG_KEY = "desktop_player_audio_lang"
+        const val SPEED_KEY_PREFIX = "desktop_player_speed:"
 
         /** How long after the first playable source the best one found starts by itself (see [autoPlayAt]) */
         const val AUTO_PLAY_MS = 6_000L
+
+        /** The same when the best source found is already as good as waiting would make it (see bestIsGoodEnough) */
+        const val QUICK_AUTO_PLAY_MS = 2_000L
+
+        /** A video that waits with nothing coming in at all is reloaded after this long (once; see watchStalls) */
+        const val DEAD_LINK_MS = 8_000L
 
         /** Jumps that come within this time of each other are one run in the seek bubble (it also stays up that long) */
         const val SEEK_BUBBLE_MS = 1_000L

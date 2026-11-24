@@ -65,14 +65,16 @@ object TorrServer {
         val url = "https://github.com/YouROK/TorrServer/releases/download/$VERSION/$name"
         Log.i(TAG, "Downloading $url")
         val tmp = File(dir, "$name.tmp")
-        var connection = URI(url).toURL().openConnection() as HttpURLConnection
+        // timeouts: a stalled download held the torrent start on "starting" for ever (no timeout is the default of HttpURLConnection)
+        fun open(address: String) = (URI(address).toURL().openConnection() as HttpURLConnection).apply { connectTimeout = 15_000; readTimeout = 30_000 }
+        var connection = open(url)
         var redirects = 0
         while (connection.responseCode in 300..399 && redirects++ < 10) {
             val location = connection.getHeaderField("Location")
             connection.disconnect()
             // a redirect must stay on https
             require(location.startsWith("https://")) { "the download was redirected to an address that is not https" }
-            connection = URI(location).toURL().openConnection() as HttpURLConnection
+            connection = open(location)
         }
         connection.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
         if (ProcessConfine.sha256(tmp) != pinned) {

@@ -112,6 +112,29 @@ import kotlinx.coroutines.ensureActive
 private val gutter: Dp
     @Composable get() = 36.dp + com.lagradost.desktop.ui.shell.LocalDockStart.current
 
+/** The same title from any source: its name without the year and punctuation, and whether it is a film (null: no name to go by) */
+private fun titleKey(card: SearchResponse): String? {
+    val name = card.name.lowercase().replace(Regex("""\((19|20)\d\d\)"""), "").replace(Regex("""[^\p{L}\p{N}]+"""), "")
+    return if (name.isEmpty()) null else name + "|" + (card.type?.isMovieType() ?: "?")
+}
+
+/**
+ * Continue watching on Home: one card per title. A film played from two sources (FibWatch, then MovieBoxIN) has a resume point in each, and the
+ * row showed the same poster twice; the newest one stays (the list comes newest first). The History page keeps every one of them.
+ */
+internal fun oneCardPerTitle(list: List<SearchResponse>): List<SearchResponse> {
+    if (list.size < 2) return list
+    val seen = HashSet<String>()
+    return list.filter { card -> titleKey(card)?.let { seen.add(it) } ?: true }
+}
+
+/** Removing a card of Continue watching removes the title's resume points of every source, or the hidden one of another source took its place */
+private fun removeResumeOfTitle(card: SearchResponse, all: List<SearchResponse>?) {
+    val key = titleKey(card)
+    val same = if (key == null) listOf(card) else all.orEmpty().filter { titleKey(it) == key }.ifEmpty { listOf(card) }
+    same.forEach { (it as? DataStoreHelper.ResumeWatchingResult)?.let { r -> DataStoreHelper.removeLastWatched(r.parentId) } }
+}
+
 /** Opens a card: a continue-watching entry resumes its episode, anything else opens the title page */
 fun openCard(card: SearchResponse) {
     // a title from TMDB or the Explore lists belongs to no extension: the extensions are searched for it
@@ -150,7 +173,12 @@ fun HomeScreen() {
     // rows of other sources chosen in Customise Home: asked for only once the source's own rows are there, so they never hold those up
     val mixedRows by androidx.compose.runtime.produceState(emptyList<Pair<String, HomeViewModel.ExpandableHomepageList>>(), vm.apiName.value, HomeLayout.mixed(), page is Resource.Success) {
         value = emptyList()
-        if (page is Resource.Success && HomeLayout.mixed().isNotEmpty()) value = runCatching { HomeLayout.loadMixed(vm.apiName.value) }.getOrDefault(emptyList())
+        if (page is Resource.Success && HomeLayout.mixed().isNotEmpty()) {
+            val got = runCatching { HomeLayout.loadMixed(vm.apiName.value) }.getOrDefault(emptyList())
+            // a load that was replaced (reload, another source) ends with the cancellation runCatching swallowed: its empty answer wiped the rows of the newer one
+            ensureActive()
+            value = got
+        }
     }
     val resume by vm.resumeWatching.observeAsState()
     val bookmarks by vm.bookmarks.observeAsState()
@@ -207,7 +235,7 @@ fun HomeScreen() {
             if (skin == null && com.lagradost.desktop.ui.fluent.Appearance.navPosition.let { it != com.lagradost.desktop.ui.fluent.NavPosition.Floating && it != com.lagradost.desktop.ui.fluent.NavPosition.Dock }) item(key = "header") {
                 HomeHeader(vm, apiName, rowNames)
             }
-            val resumeList = resume.orEmpty()
+            val resumeList = oneCardPerTitle(resume.orEmpty())
             val resumeShown = resumeList.isNotEmpty() && com.lagradost.desktop.ui.fluent.Appearance.homeContinue
             val bookmarksShown = bookmarks?.second?.isNotEmpty() == true
             if (resumeShown) {
@@ -222,14 +250,14 @@ fun HomeScreen() {
                             val r = card as? DataStoreHelper.ResumeWatchingResult
                             ResumeCard(
                                 card, resumeWidth, resumeSubtitle(card),
-                                remove = { r?.let { DataStoreHelper.removeLastWatched(it.parentId); vm.reloadStored() } },
+                                remove = { if (r != null) { removeResumeOfTitle(card, resume); vm.reloadStored() } },
                                 menu = {
                                     listOf(
                                         MenuItem("Resume", Icons.Play) { openCard(card) },
                                         MenuItem("Open title page", Icons.Info) { Navigator.openDetails(card) },
                                         MenuItem("Remove from list", Icons.Delete, destructive = true) {
-                                            r?.let {
-                                                DataStoreHelper.removeLastWatched(it.parentId)
+                                            if (r != null) {
+                                                removeResumeOfTitle(card, resume)
                                                 vm.reloadStored()
                                             }
                                         },
@@ -482,6 +510,9 @@ private fun HomeHero(all: List<LoadResponse>, height: Dp, compact: Boolean, widt
         if (hovered || !active) return@LaunchedEffect
         while (progress.floatValue < 1f) {
             kotlinx.coroutines.delay(HERO_TICK_MS.toLong())
+            // and while nobody uses the app (no press, wheel or key for a minute): the progress line redrew the whole window 8 times a second,
+            // most of what an app left open on Home cost (about 2 s of processor time a minute). It goes on at the next input
+            while (System.currentTimeMillis() - maxOf(com.lagradost.desktop.ui.fluent.InputMode.lastInputAt, heroShownSince) > 60_000L) kotlinx.coroutines.delay(1_000)
             progress.floatValue = (progress.floatValue + HERO_TICK_MS / HERO_MS.toFloat()).coerceAtMost(1f)
         }
         progress.floatValue = 0f
@@ -550,6 +581,9 @@ private fun HomeHero(all: List<LoadResponse>, height: Dp, compact: Boolean, widt
 internal val HERO_MS = System.getProperty("cloudstream.heroms")?.toIntOrNull()?.coerceAtLeast(2000) ?: 15_000
 internal const val HERO_TICK_MS = 120
 
+/** When Home was first shown: the hero counts the minute without input from then (each slide restarts its own timer) */
+private val heroShownSince = System.currentTimeMillis()
+
 @Composable
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
     this.clickable(remember { MutableInteractionSource() }, null, onClick = onClick)
@@ -575,16 +609,21 @@ internal fun HeroBackdrop(item: LoadResponse, tmdbBackdrop: String? = null, scro
             com.lagradost.desktop.ui.components.SoftImage(item.posterUrl, item.posterHeaders, Modifier.fillMaxSize(), alpha = 0.55f)
             if (backdrop != null) RemoteImage(backdrop, if (backdrop == own) item.posterHeaders else null, null, Modifier.fillMaxSize(), ContentScale.Crop, onSize = sizeSeen, inexact = backdrop == own)
         }
-        if (backdrop == null) {
-            // sharp poster on the right when the provider has no backdrop
-            Box(Modifier.fillMaxSize().padding(end = 96.dp, top = 84.dp, bottom = 150.dp), contentAlignment = Alignment.CenterEnd) {
+        if (backdrop == null) BoxWithConstraints(Modifier.fillMaxSize()) {
+            // sharp poster on the right when the provider has no backdrop. It keeps to the right of the title and the buttons: in a narrow window
+            // (under ~1100 px) it lay over the end of the name ("DD Swayam Prabha 25" lost its "25"); with too little room it is left out
+            val full = maxWidth
+            val zoneStart = maxOf(full * 0.5f, gutter + 500.dp)
+            val zone = full - 96.dp - zoneStart
+            if (zone >= 200.dp) Box(Modifier.fillMaxSize().padding(start = zoneStart, end = 96.dp, top = 84.dp, bottom = 150.dp), contentAlignment = Alignment.CenterEnd) {
                 val shape = RoundedCornerShape(com.lagradost.desktop.ui.fluent.FluentShapes.card)
                 // a landscape poster (a live event, a wide key art) stays landscape; only a portrait one is shown tall (cropping it to 2:3 cut its text off)
                 var ratio by remember(item.posterUrl) { mutableStateOf<Float?>(null) }
                 val landscape = (ratio ?: 0f) > 1.15f
                 RemoteImage(
                     item.posterUrl, item.posterHeaders, null,
-                    if (landscape) Modifier.fillMaxWidth(0.46f).aspectRatio((ratio ?: 1.78f).coerceIn(1.15f, 2.4f)).clip(shape) else Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(shape),
+                    if (landscape) Modifier.widthIn(max = (full - 96.dp) * 0.46f).fillMaxWidth().aspectRatio((ratio ?: 1.78f).coerceIn(1.15f, 2.4f)).clip(shape)
+                    else Modifier.fillMaxHeight().aspectRatio(2f / 3f, matchHeightConstraintsFirst = true).clip(shape),
                     if (landscape) ContentScale.Fit else ContentScale.Crop,
                     onSize = { w, h -> if (h > 0) ratio = w.toFloat() / h },
                 )
@@ -640,7 +679,7 @@ private fun HeroText(item: LoadResponse, compact: Boolean, height: Dp, tmdbLogo:
                 item.score.shown()?.let { s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                         com.lagradost.desktop.ui.fluent.Icon(Icons.StarFilled, size = 15.dp, tint = Color(0xFFFFC53D))
-                        FText(s.toString(10, 1), style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
+                        FText(s.toString(10, 1, removeTrailingZeros = false), style = Fluent.type.bodyStrong, color = Color.White, maxLines = 1)
                     }
                 }
                 item.contentRating?.takeIf { it.isNotBlank() }?.let { com.lagradost.desktop.ui.fluent.ArtChip(it) }

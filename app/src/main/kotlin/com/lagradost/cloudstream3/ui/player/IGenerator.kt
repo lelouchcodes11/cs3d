@@ -14,7 +14,12 @@ val LOADTYPE_INAPP = setOf(
 
 val LOADTYPE_INAPP_DOWNLOAD = setOf(
     ExtractorLinkType.VIDEO,
-    ExtractorLinkType.M3U8
+    ExtractorLinkType.M3U8,
+    // desktop: saved by mpv into a Matroska file (DownloadManager.recordSeparateAudio); a DASH link with DRM is still refused
+    ExtractorLinkType.DASH,
+    // desktop: saved through the torrent engine (DownloadManager.downloadSingleEpisode); tried after every other source
+    ExtractorLinkType.MAGNET,
+    ExtractorLinkType.TORRENT,
 )
 
 val LOADTYPE_CHROMECAST = setOf(

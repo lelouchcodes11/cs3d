@@ -140,7 +140,8 @@ object PluginManager {
         if (data == null) return
         lock.withLock {
             if (data.isOnline) {
-                val plugins = getPluginsOnline().filter { it.url != data.url }
+                // desktop: by file, not by address: two repositories can list the same .cs3 address, and uninstalling one copy took the other off the list
+                val plugins = getPluginsOnline().filter { it.filePath != data.filePath }
                 setKey(PLUGINS_KEY, plugins)
             } else {
                 val plugins = getPluginsLocal().filter { it.filePath != data.filePath }
@@ -368,9 +369,11 @@ object PluginManager {
         val urls = (getKey<Array<RepositoryData>>(REPOSITORIES_KEY)
             ?: emptyArray()) + PREBUILT_REPOSITORIES
 
+        // desktop: kept per repository: two repositories that list the same .cs3 address kept only the first one's entry, so the copy installed
+        // from the second one never matched its own repository and was never updated
         val onlinePlugins = urls.toList().amap {
             getRepoPlugins(it) ?: emptyList()
-        }.flatten().distinctBy { it.plugin.url }
+        }.flatten().distinctBy { it.repositoryData.url to it.plugin.url }
 
         // Iterates over all offline plugins, compares to remote repo and returns the plugins which are outdated
         val outdatedPlugins = getPluginsOnline().map { savedData ->
@@ -381,13 +384,13 @@ object PluginManager {
                 }.filter {
                     it.validOnlineData(activity)
                 }
-        }.flatten().distinctBy { it.onlineData.plugin.url }
+        }.flatten().distinctBy { it.savedData.filePath }
 
         debugPrint {
             "Outdated plugins: ${outdatedPlugins.filter { it.isOutdated }}"
         }
 
-        val updatedPlugins = mutableListOf<String>()
+        val updatedPlugins = java.util.Collections.synchronizedList(mutableListOf<String>())
         val updatedPaths = java.util.Collections.synchronizedSet(HashSet<String>())
 
         outdatedPlugins.amap { pluginData ->
@@ -452,7 +455,7 @@ object PluginManager {
     ) {
         assertNonRecursiveCallstack()
 
-        val newDownloadPlugins = mutableListOf<String>()
+        val newDownloadPlugins = java.util.Collections.synchronizedList(mutableListOf<String>())
         val urls = (getKey<Array<RepositoryData>>(REPOSITORIES_KEY)
             ?: emptyArray()) + PREBUILT_REPOSITORIES
         val onlinePlugins = urls.toList().amap {
@@ -958,6 +961,22 @@ object PluginManager {
         internalName: String,
         file: File,
         loadPlugin: Boolean,
+    ): Boolean =
+        // desktop: one download of a file at a time. "Install" on a card and "Install all" (or the update check) at once both loaded the extension
+        // into the app before either saw the other's copy: its sources were listed twice on Home until the next start
+        downloadLocks.computeIfAbsent(file.absolutePath) { Mutex() }.withLock {
+            downloadPluginLocked(activity, pluginUrl, pluginHash, internalName, file, loadPlugin)
+        }
+
+    private val downloadLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+
+    private suspend fun downloadPluginLocked(
+        activity: Activity,
+        pluginUrl: String,
+        pluginHash: String?,
+        internalName: String,
+        file: File,
+        loadPlugin: Boolean,
     ): Boolean {
         try {
             Log.d(TAG, "Downloading plugin: $pluginUrl to ${file.absolutePath}")
@@ -973,12 +992,13 @@ object PluginManager {
             )
 
             return if (loadPlugin) {
-                unloadPlugin(file.absolutePath)
-                loadPlugin(
-                    activity,
-                    newFile,
-                    data
-                )
+                // desktop: the new version's code is converted while the old one still serves (see Isolation.prepareUpdate), and the old one is
+                // unloaded only once a loading slot is held: it waited for one after the unload (3 s, with several updates at once)
+                com.lagradost.desktop.isolate.Isolation.prepareUpdate(file.absolutePath, newFile)
+                PluginLoadGate.limit.withPermit {
+                    unloadPlugin(file.absolutePath)
+                    loadPluginNow(activity, newFile, data)
+                }
             } else {
                 setPluginData(data)
                 true
@@ -1024,7 +1044,7 @@ object PluginManager {
             ?: emptyArray()) + PREBUILT_REPOSITORIES
         val onlinePlugins = urls.toList().amap {
             getRepoPlugins(it) ?: emptyList()
-        }.flatten().distinctBy { it.plugin.url }
+        }.flatten().distinctBy { it.repositoryData.url to it.plugin.url }
 
         val allPlugins = getPluginsOnline().flatMap { savedData ->
             onlinePlugins
@@ -1032,9 +1052,9 @@ object PluginManager {
                 .mapNotNull { onlineData ->
                     OnlinePluginData(savedData, onlineData).takeIf { it.validOnlineData(activity) }
                 }
-        }.distinctBy { it.onlineData.plugin.url }
+        }.distinctBy { it.savedData.filePath }
 
-        val updatedPlugins = mutableListOf<String>()
+        val updatedPlugins = java.util.Collections.synchronizedList(mutableListOf<String>())
 
         allPlugins.amap { pluginData ->
             if (pluginData.isDisabled) {
@@ -1044,8 +1064,9 @@ object PluginManager {
                 )
                 unloadPlugin(pluginData.savedData.filePath)
             } else {
+                // desktop: the file was deleted before the new one was downloaded, so "Update all" without a connection (or a repository that answered
+                // with an error) removed every installed extension; the download replaces the file only once the new one is complete and checked
                 val existingFile = File(pluginData.savedData.filePath)
-                if (existingFile.exists()) existingFile.delete()
 
                 if (downloadPlugin(
                         activity,

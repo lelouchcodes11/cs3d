@@ -64,6 +64,8 @@ object LogBuffer {
         if (fileWriter != null) return
         runCatching { dir.mkdirs() }
         val file = File(dir, name)
+        // what was logged before the file was opened (when main() began: the JVM's own start-up time) goes in first
+        for (line in lines) fileQueue.offer(line)
         fileWriter = Thread({
             var out: java.io.Writer? = null
             var w: java.io.Writer

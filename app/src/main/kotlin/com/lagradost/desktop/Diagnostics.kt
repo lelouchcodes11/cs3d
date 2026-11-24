@@ -16,10 +16,20 @@ import java.net.NetworkInterface
  * a token, key or password are masked, and nothing about accounts or the data folder is included.
  */
 object Diagnostics {
-    private val secret = Regex("""(?i)((?:token|key|apikey|api_key|auth|authorization|sig|signature|password|passwd|secret|cookie|session)=)[^&\s"']+""")
+    private const val SECRET_NAMES = "(?:auth_?token|access_?token|refresh_?token|token|api_?key|key|authorization|auth|signature|sig|password|passwd|pass|secret|cookie|session|realdebrid|alldebrid|torbox|premiumize|debridlink|offcloud|easydebrid|putio|rd_key|ad_key|tb_key|pm_key)"
+    private val secretParam = Regex("""(?i)(\b$SECRET_NAMES=)[^&|/\s"'}\]]+""")
+    private val secretJson = Regex("""(?i)("$SECRET_NAMES"\s*:\s*")[^"]+""")
+    private val secretEncodedJson = Regex("""(?i)(%22$SECRET_NAMES%22\s*%3A\s*%22)[^%&/\s"']+""")
+    private val basicAuthUrl = Regex("""(https?://)([^/\s@:]+):([^/\s@]+)@""")
+    private val authHeader = Regex("""(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}""")
 
-    /** Hides the value of every query parameter that looks like a secret */
-    fun mask(text: String): String = secret.replace(text) { it.groupValues[1] + "…" }
+    /** Hides query/path secrets, JSON/URL-encoded tokens (such as Stremio add-on configs), URL credentials and Authorization headers */
+    fun mask(text: String): String = text
+        .let { secretParam.replace(it) { m -> m.groupValues[1] + "…" } }
+        .let { secretJson.replace(it) { m -> m.groupValues[1] + "…" } }
+        .let { secretEncodedJson.replace(it) { m -> m.groupValues[1] + "…" } }
+        .let { basicAuthUrl.replace(it) { m -> m.groupValues[1] + "…:…@" } }
+        .let { authHeader.replace(it) { m -> m.groupValues[1] + " …" } }
 
     private fun run(vararg command: String, seconds: Long = 6): String = runCatching {
         val p = ProcessBuilder(*command).redirectErrorStream(true).start()

@@ -89,7 +89,8 @@ class SubDlApi : SubtitleAPI() {
     ): List<AbstractSubtitleEntities.SubtitleEntity>? {
         if (auth == null) return null
         val apiKey = auth.token.accessToken ?: return null
-        val queryText = query.query
+        // the title is one parameter of the address: "Tom & Jerry" was cut at the "&"
+        val queryText = java.net.URLEncoder.encode(query.query, "UTF-8").replace("+", "%20")
         val epNum = query.epNumber ?: 0
         val seasonNum = query.seasonNumber ?: 0
         val yearNum = query.year ?: 0

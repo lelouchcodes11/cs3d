@@ -106,22 +106,36 @@ data class VideoState(
         val hideErrorSources =
             QualityDataHelper.getProfileSetting(qualityProfile, ProfileSettings.HideErrorSources)
 
+        // desktop: every link's place is worked out once, before the sort. Read during it, values that change meanwhile (a torrent marked failed or
+        // played on another thread, a failure that is 30 min old in the middle of the sort, the "Prefer smooth sources" switch) gave one link two
+        // different places, and a long list (Torrentio: 50+ releases) failed with "Comparison method violates its general contract"
+        val smooth = com.lagradost.desktop.ui.fluent.Appearance.smoothSources
         return links.map { link ->
             // negative because we want to sort highest quality first
             link.toDisplayLink(qualityProfile, hideNegativeSources, hideErrorSources)
-        }.sortedWith(
+        }.map { d ->
+            val l = d.link.first
             // direct sources before torrents (they start in seconds and need nothing turned on); then the highest quality first; among equal quality the kinds of source that failed lately go last
             // (desktop: HostHealth; a link that failed itself keeps its place, the order of what was tried must not change)
-            // (torrents: the ones with hardly any seeders go last, they would not buffer; then by quality, then the most seeders)
+            // (torrents: by how many share them first, in steps (TorrentEngine.seedTier: under 3, 3-9, 10-29, 30-99, 100+), then by quality, then the most
+            // seeders; a 4K release with 5 seeders was tried before a 1080p one with 500, and a thin swarm never buffers)
             // (desktop: the source that played the last episode of this title comes first, setting "Last used source" in the sources list)
-            compareBy<DisplayLink> { if (com.lagradost.desktop.net.LastSource.isPreferred(it.link.first)) 0 else 1 }
-                .thenBy { if (com.lagradost.desktop.torrent.TorrentEngine.isTorrent(it.link.first)) 1 else 0 }
-                .thenBy { d -> com.lagradost.desktop.torrent.TorrentEngine.seeders(d.link.first)?.let { if (it < 3) 1 else 0 } ?: 0 }
+            d to longArrayOf(
+                if (com.lagradost.desktop.net.LastSource.isPreferred(l)) 0 else 1,
+                if (com.lagradost.desktop.torrent.TorrentEngine.isTorrent(l)) 1 else 0,
+                // (torrents: the one that played the episode before first, the ones that failed lately last, see TorrentEngine.history)
+                com.lagradost.desktop.torrent.TorrentEngine.history(l).toLong(),
+                if (smooth && com.lagradost.desktop.torrent.TorrentEngine.tooHeavy(l)) 1 else 0,
+                -com.lagradost.desktop.torrent.TorrentEngine.seedTier(l).toLong(),
                 // 4K, REMUX and huge files after the lighter ones (setting "Prefer smooth sources"); they stay in the list
-                .thenBy { d -> if (com.lagradost.desktop.ui.fluent.Appearance.smoothSources && com.lagradost.desktop.net.SourceWeight.heavy(d.link.first)) 1 else 0 }
-                .thenBy { -it.priority }
-                .thenBy { d -> -(com.lagradost.desktop.torrent.TorrentEngine.seeders(d.link.first) ?: 0) }.thenBy { if (hasLinkErrored(it.link)) 0 else com.lagradost.desktop.net.HostHealth.penalty(it.link.first) },
-        ).also { value -> sortedLinks[qualityProfile] = value }
+                if (smooth && com.lagradost.desktop.net.SourceWeight.heavy(l)) 1 else 0,
+                -d.priority.toLong(),
+                -(com.lagradost.desktop.torrent.TorrentEngine.seeders(l) ?: 0).toLong(),
+                if (hasLinkErrored(d.link)) 0 else com.lagradost.desktop.net.HostHealth.penalty(l).toLong(),
+            )
+        }.sortedWith(Comparator { a, b -> java.util.Arrays.compare(a.second, b.second) })
+            .map { it.first }
+            .also { value -> sortedLinks[qualityProfile] = value }
     }
 
     @Contract(pure = true)
@@ -397,8 +411,14 @@ class PlayerGeneratorViewModel : ViewModel() {
         }
     }
 
+    /** desktop: when the links of this episode were asked for (they can be up to 20 min older: the generator keeps them that long), see PlayerSession.reloadIfStale */
+    @Volatile
+    var linksRequestedAt = 0L
+        private set
+
     fun loadLinks(sourceTypes: Set<ExtractorLinkType> = LOADTYPE_INAPP) {
         Log.i(TAG, "loadLinks with generator=$generator and index=$episodeIndex")
+        linksRequestedAt = System.currentTimeMillis()
         currentJob?.cancel()
         val index = episodeIndex
 

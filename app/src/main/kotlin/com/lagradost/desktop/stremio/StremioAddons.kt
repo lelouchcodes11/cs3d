@@ -10,6 +10,9 @@ import com.lagradost.cloudstream3.APIHolder.allProviders
 import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.desktop.runtime.AndroidRuntime
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -146,9 +149,20 @@ object StremioAddons {
         syncProviders()
     }
 
-    suspend fun refreshAll() {
+    suspend fun refreshAll(onlyEnabled: Boolean = false) {
         load()
-        for (a in addons.toList()) refresh(a.manifestUrl)
+        val targets = addons.toList().filter { !onlyEnabled || it.enabled || it.manifest == null }
+        if (targets.isEmpty()) return
+        val results = coroutineScope {
+            targets.map { a -> async { a.manifestUrl to StremioClient.manifest(a.manifestUrl) } }.awaitAll()
+        }
+        for ((url, manifest) in results) {
+            val i = addons.indexOfFirst { it.manifestUrl == url }
+            if (i < 0) continue
+            addons[i] = if (manifest != null) addons[i].copy(manifest = manifest, error = null) else addons[i].copy(error = "Did not answer")
+        }
+        save()
+        syncProviders()
     }
 
     // ------------------------------------------------------------------ providers
@@ -189,9 +203,9 @@ object StremioAddons {
             load()
             syncProviders()
             val last = prefs().getLong(PREF + "_checked", 0L)
-            if (System.currentTimeMillis() - last > 24 * 3_600_000L || addons.any { it.manifest == null }) {
+            if (System.currentTimeMillis() - last > 24 * 3_600_000L || addons.any { it.enabled && it.manifest == null }) {
                 prefs().edit().putLong(PREF + "_checked", System.currentTimeMillis()).apply()
-                refreshAll()
+                refreshAll(onlyEnabled = true)
             }
         }
     }

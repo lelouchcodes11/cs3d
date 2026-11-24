@@ -69,6 +69,13 @@ sealed class Resource<out T> {
 fun logError(throwable: Throwable) {
     Log.d("ApiError", "-------------------------------------------------------------------")
     Log.d("ApiError", "safeApiCall: " + throwable.message)
+    // the log file never sees printStackTrace (stderr): where the call came from goes into the log itself
+    if (throwable !is kotlinx.coroutines.CancellationException) {
+        val frames = throwable.stackTraceToString().lineSequence().drop(1).map { it.trim() }
+            .filter { it.startsWith("at com.") && !it.startsWith("at com.fasterxml") }
+            .take(6).toList()
+        if (frames.isNotEmpty()) Log.d("ApiError", frames.joinToString(" <- "))
+    }
     throwable.printStackTrace()
     Log.d("ApiError", "-------------------------------------------------------------------")
 }

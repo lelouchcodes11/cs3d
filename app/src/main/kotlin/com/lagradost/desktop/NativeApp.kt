@@ -137,6 +137,11 @@ fun ApplicationScope.NativeWindow() {
                     delay(2000)
                 }
             }
+            // tracker changes that could not be sent last time (service down, offline) are tried again, a minute after the start
+            LaunchedEffect(Unit) {
+                delay(60_000)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.lagradost.desktop.core.SyncRetry.resume() }
+            }
             // Compose's canvas window can be recreated; it must keep letting the frame decide over the caption area
             LaunchedEffect(window) {
                 while (true) {
@@ -281,6 +286,9 @@ object NativeKeys {
                 val host = com.lagradost.desktop.runtime.AndroidRuntime.host
                 if (host.isFullscreen()) { host.setFullscreen(false); true } else false
             } || playerKey(e)
+            // Enter presses the main button of the top dialog, as in Windows (it did nothing); not while the keyboard moves the focus (Tab):
+            // then the focused button takes it
+            (e.key == Key.Enter || e.key == Key.NumPadEnter) && !InputMode.keyboard && Overlays.onEnter() -> true
             e.isAltPressed && e.key == Key.DirectionLeft -> Navigator.back()
             // Ctrl+F too, as in a browser (not on the video page, where F is full screen)
             e.isCtrlPressed && (e.key == Key.K || e.key == Key.E || (e.key == Key.F && Navigator.current.route !is com.lagradost.desktop.core.Route.Player)) -> {

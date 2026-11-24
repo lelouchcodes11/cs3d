@@ -50,13 +50,16 @@ object DownloadQueueManager {
     /** Start the queue, marks all queue objects as in progress.
      * Note that this may run twice without the service restarting
      * because MainActivity may be recreated. */
-    fun init(context: Context) {
+    // desktop: [resume] false in a second window of the same data folder: the first one is already downloading what was left, and a second
+    // copy appended to the same files (and took the first one's queue keys)
+    fun init(context: Context, resume: Boolean = true) {
         ioSafe {
             _queue.collect { queue ->
                 setKey(QUEUE_KEY, queue)
             }
         }
 
+        if (!resume) return
         ioSafe startQueue@{
             // Do not automatically start the queue if safe mode is activated.
             if (PluginManager.isSafeMode()) {

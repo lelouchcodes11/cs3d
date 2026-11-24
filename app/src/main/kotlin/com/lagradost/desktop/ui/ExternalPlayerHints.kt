@@ -42,7 +42,7 @@ object ExternalPlayerHints {
         EventQueue.invokeLater {
             Overlays.message(
                 "Energy Media Player was not found",
-                "Energy Media Player is a free app from the Microsoft Store. Install it and try again, or choose another player.",
+                "Install Energy Media Player (free) or Energy Media Player for Windows (paid) from the Microsoft Store and try again, or choose another player. Either one works.",
                 primary = "Open the Store",
                 onPrimary = { DesktopPlatform.openExternalBrowser(ExternalPlayers.ENERGY_STORE) },
             )

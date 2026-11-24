@@ -17,7 +17,9 @@ import java.lang.management.ManagementFactory
  */
 object HighPerformance {
     private const val TAG = "HighPerformance"
-    private const val NORMAL_SOFT_MAX = 768L * 1024 * 1024
+    private const val NORMAL_SOFT_MAX = 512L * 1024 * 1024
+    /** The light look (a weak PC): the heap is tidied up sooner still, its pages go back to Windows */
+    private const val LIGHT_SOFT_MAX = 320L * 1024 * 1024
     private const val SMOOTH_SOFT_MAX = 2048L * 1024 * 1024
     private const val NORMAL_PRIORITY_CLASS = 0x00000020
     private const val ABOVE_NORMAL_PRIORITY_CLASS = 0x00008000
@@ -32,6 +34,15 @@ object HighPerformance {
     @Volatile
     var note = "not applied"
         private set
+
+    /** The light look at start: a smaller heap target (the app's live data is 60-150 MB; the rest of a 512 MB heap is room for garbage) */
+    fun applyLight() {
+        runCatching {
+            ManagementFactory.getPlatformMXBean(com.sun.management.HotSpotDiagnosticMXBean::class.java)
+                .setVMOption("SoftMaxHeapSize", LIGHT_SOFT_MAX.coerceAtMost(Runtime.getRuntime().maxMemory()).toString())
+            note = "light: heap target ${LIGHT_SOFT_MAX / (1024 * 1024)} MB"
+        }.onFailure { note = "light: heap target unchanged (${it.message})" }
+    }
 
     fun apply(on: Boolean) {
         val parts = ArrayList<String>()

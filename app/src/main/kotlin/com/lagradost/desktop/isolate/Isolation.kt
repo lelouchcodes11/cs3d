@@ -1,6 +1,7 @@
 package com.lagradost.desktop.isolate
 
 import android.util.Log
+import kotlinx.coroutines.sync.withPermit
 import androidx.preference.PreferenceManager
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.plugins.PluginData
@@ -120,6 +121,25 @@ object Isolation {
 
     /** The file of the sandboxed extension installed from this address or file (null: it is not in the sandbox) */
     fun sandboxedPathFor(urlOrPath: String): String? = IsolatedHost.pathOfUrl(urlOrPath)
+
+    /**
+     * An update of a loaded extension was downloaded to [newFile]: its code is converted (dex to JVM, 1-4 s) BEFORE the old version is unloaded, where it
+     * runs (the sandbox, or this app). The swap then finds it converted: the extension was gone for those seconds (~30 s after start, when the update check
+     * runs), and a title, search or Home of it failed meanwhile ("This provider does not exist"). Best effort: a failure here is the old wait.
+     */
+    // three at a time, as extensions load (PluginLoadGate): the update check prepares all its updates at once, a CPU burst in both processes while the window is in use
+    private val prepareGate = kotlinx.coroutines.sync.Semaphore(3)
+
+    suspend fun prepareUpdate(oldPath: String, newFile: java.io.File) = prepareGate.withPermit {
+        val started = System.currentTimeMillis()
+        runCatching {
+            // the app converts it too (it reads the extension before handing it to the sandbox): both at the same time
+            val here = java.util.concurrent.CompletableFuture.supplyAsync { com.lagradost.desktop.dex.DexCache.jarFor(newFile) }
+            if (sandboxedPathFor(oldPath) != null) IsolatedHost.prepare(newFile.absolutePath)
+            here.get(120, java.util.concurrent.TimeUnit.SECONDS)
+        }.onFailure { Log.d(TAG, "${newFile.name} not prepared: $it") }
+            .onSuccess { Log.i(TAG, "${newFile.name} prepared before the swap in ${System.currentTimeMillis() - started} ms") }
+    }
 
     /**
      * The settings page of an extension in the sandbox. The page is code of the extension that needs the app's window, so it is run in the app: on this click and not

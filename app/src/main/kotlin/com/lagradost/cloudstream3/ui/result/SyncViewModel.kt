@@ -191,46 +191,27 @@ class SyncViewModel : ViewModel() {
         updateUserData()
     }
 
-    fun modifyMaxEpisode(episodeNum: Int) {
+    // desktop: [includeUnlisted] as for [autoStarted]: an episode count on its own does not put a title on the user's lists
+    fun modifyMaxEpisode(episodeNum: Int, includeUnlisted: Boolean = false) {
         Log.i(TAG, "modifyMaxEpisode = $episodeNum")
-        modifyData { status ->
-            status.watchedEpisodes = maxOf(
-                episodeNum,
-                status.watchedEpisodes ?: return@modifyData null
-            )
-            status
+        submit(com.lagradost.desktop.core.SyncRetry.MAX_EPISODE, episodeNum, includeUnlisted)
+    }
+
+    // desktop: what playback tells the trackers goes through SyncRetry: a change that cannot be sent (service down, network gone as the episode
+    // ended) is tried again later instead of being lost
+    private fun submit(kind: String, episode: Int = 0, includeUnlisted: Boolean = false) = ioSafe {
+        val total = (metadata.value as? Resource.Success)?.value?.totalEpisodes
+        syncs.toList().amap { (prefix, id) ->
+            com.lagradost.desktop.core.SyncRetry.submit(com.lagradost.desktop.core.SyncRetry.Op(prefix, id, kind, episode, includeUnlisted, total))
         }
     }
 
     // desktop: the list status follows playback. Watching when a title on a list (Planning, On hold, Dropped) is started, Completed when the last
     // episode is done. A title that is already Watching / Completed / Re-watching is left alone. A title on no list is only added when
     // [includeUnlisted] (Settings > Player > Add every title I play): playing something once must not fill the user's lists.
-    fun autoStarted(includeUnlisted: Boolean = false) {
-        modifyData { status ->
-            when (status.status) {
-                SyncWatchType.NONE -> if (includeUnlisted) {
-                    status.status = SyncWatchType.WATCHING
-                    status
-                } else null
-                SyncWatchType.PLANTOWATCH, SyncWatchType.ONHOLD, SyncWatchType.DROPPED -> {
-                    status.status = SyncWatchType.WATCHING
-                    status
-                }
-                else -> null
-            }
-        }
-    }
+    fun autoStarted(includeUnlisted: Boolean = false) = submit(com.lagradost.desktop.core.SyncRetry.STARTED, 0, includeUnlisted)
 
-    fun autoFinished(episode: Int, includeUnlisted: Boolean = false) {
-        modifyData { status ->
-            if (status.status == SyncWatchType.NONE && !includeUnlisted) return@modifyData null
-            val max = status.maxEpisodes ?: (metadata.value as? Resource.Success)?.value?.totalEpisodes ?: return@modifyData null
-            if (max <= 0 || episode < max || status.status == SyncWatchType.COMPLETED) return@modifyData null
-            status.watchedEpisodes = max
-            status.status = SyncWatchType.COMPLETED
-            status
-        }
-    }
+    fun autoFinished(episode: Int, includeUnlisted: Boolean = false) = submit(com.lagradost.desktop.core.SyncRetry.FINISHED, episode, includeUnlisted)
 
     /// modifies the current sync data, return null if you don't want to change it
     private fun modifyData(update: ((SyncAPI.AbstractSyncStatus) -> (SyncAPI.AbstractSyncStatus?))) =

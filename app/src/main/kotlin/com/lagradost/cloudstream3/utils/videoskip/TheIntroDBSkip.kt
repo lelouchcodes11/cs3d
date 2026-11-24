@@ -82,7 +82,7 @@ class TheIntroDBSkip : SkipAPI() {
 
     @Serializable
     data class Root(
-        @JsonProperty("type") @SerialName("type") val type: String,
+        @JsonProperty("type") @SerialName("type") val type: String? = null,
         @JsonProperty("intro") @SerialName("intro") val intro: List<Stamp> = emptyList(),
         @JsonProperty("recap") @SerialName("recap") val recap: List<Stamp> = emptyList(),
         @JsonProperty("credits") @SerialName("credits") val credits: List<Stamp> = emptyList(),

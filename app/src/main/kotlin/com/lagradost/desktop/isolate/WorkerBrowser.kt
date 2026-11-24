@@ -34,20 +34,30 @@ internal class WorkerBrowser(private val rpc: () -> RpcPeer?, private val extens
         private fun body(op: String, args: JSONObject): JsonNode = mapper.readTree(JSONObject(args.toString()).put("id", id).put("op", op).toString())
 
         override fun op(op: String, args: JSONObject) {
+            if (queue.isShutdown) return
             val request = body(op, args)
-            queue.execute {
-                val peer = rpc() ?: return@execute
-                runCatching { runBlocking { peer.call("wv", request, 30_000) } }.onFailure { Log.w(TAG, "page $id: $op failed: $it") }
+            runCatching {
+                queue.execute {
+                    val peer = rpc() ?: return@execute
+                    runCatching { runBlocking { peer.call("wv", request, 30_000) } }.onFailure { Log.w(TAG, "page $id: $op failed: $it") }
+                }
             }
+            if (op == "destroy") queue.shutdown()
         }
 
         override fun evaluate(script: String, callback: (String?) -> Unit) {
-            val request = body("eval", JSONObject().put("script", script))
-            queue.execute {
-                val peer = rpc()
-                val result = if (peer == null) null else runCatching { runBlocking { peer.call("wv", request, 90_000) } }.getOrNull()?.get("v")?.takeIf { !it.isNull }?.asText()
-                callback(result)
+            if (queue.isShutdown) {
+                callback(null)
+                return
             }
+            val request = body("eval", JSONObject().put("script", script))
+            runCatching {
+                queue.execute {
+                    val peer = rpc()
+                    val result = if (peer == null) null else runCatching { runBlocking { peer.call("wv", request, 90_000) } }.getOrNull()?.get("v")?.takeIf { !it.isNull }?.asText()
+                    callback(result)
+                }
+            }.onFailure { callback(null) }
         }
     }
 

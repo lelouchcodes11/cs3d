@@ -85,9 +85,17 @@ object OpenSubtitlesLegacy {
 
     /** The interface's search: by IMDb number when the title has one the older database knows, else by name; only the language asked for */
     suspend fun search(name: String, lang: String, imdb: String?, season: Int?, episode: Int?): List<Result> {
-        val language2 = lang.substringBefore('-').lowercase().ifBlank { "en" }
+        val tag = lang.trim().lowercase().replace('_', '-')
+        // Brazilian Portuguese and traditional Chinese have codes of their own here ("pob" / "pb", "zht" / "zt"): asked as "por" / "chi", a
+        // pt-BR or zh-TW viewer was given European Portuguese or simplified Chinese
+        val variant = when {
+            tag == "pob" || tag == "pb" || tag.startsWith("pt-br") -> "pob" to "pb"
+            tag == "zht" || tag == "zt" || (tag.startsWith("zh-") && Regex("tw|hk|mo|hant").containsMatchIn(tag.substringAfter('-'))) -> "zht" to "zt"
+            else -> null
+        }
+        val language2 = variant?.second ?: lang.substringBefore('-').lowercase().ifBlank { "en" }
         // the interface wants ISO 639-2 codes ("eng"); anything else (like "all") is answered with a broken redirect
-        val language3 = com.lagradost.cloudstream3.utils.SubtitleHelper.languages.firstOrNull { it.ISO_639_1 == language2 }?.ISO_639_2_B?.takeIf { it.isNotBlank() } ?: "eng"
+        val language3 = variant?.first ?: com.lagradost.cloudstream3.utils.SubtitleHelper.languages.firstOrNull { it.ISO_639_1 == language2 }?.ISO_639_2_B?.takeIf { it.isNotBlank() } ?: "eng"
         val series = (season ?: 0) > 0 && (episode ?: 0) > 0
         fun pathOf(byImdb: Boolean) = buildString {
             if (series) append("/episode-").append(episode)

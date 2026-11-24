@@ -126,14 +126,14 @@ object IptvPlaylists {
         val text = input.trim()
         if (text.isBlank()) return Result.failure(IllegalArgumentException("Paste a playlist address"))
         val xtream = Regex("""^(https?://[^/?#]+)/(?:get|player_api)\.php\?(.*)$""", RegexOption.IGNORE_CASE).find(text)?.let { m ->
-            val q = m.groupValues[2].split('&').associate { it.substringBefore('=') to java.net.URLDecoder.decode(it.substringAfter('=', ""), "UTF-8") }
+            // a password with a bare "%" (pa%ss) threw out of add(): the Add button stayed busy and nothing was said
+            val q = m.groupValues[2].split('&').associate { kv -> kv.substringBefore('=') to kv.substringAfter('=', "").let { v -> runCatching { java.net.URLDecoder.decode(v, "UTF-8") }.getOrDefault(v) } }
             val u = q["username"]; val p = q["password"]
             if (u.isNullOrBlank() || p.isNullOrBlank()) null else Triple(m.groupValues[1], u, p)
         }
         val url = xtream?.first ?: text
         if (playlists.any { it.url == url && it.user == xtream?.second }) return Result.failure(IllegalStateException("This playlist is already added"))
-        val host = runCatching { java.net.URI(url).host?.removePrefix("www.") }.getOrNull() ?: java.io.File(url).nameWithoutExtension
-        var name = wantedName?.trim()?.ifBlank { null } ?: host ?: "TV playlist"
+        var name = wantedName?.trim()?.ifBlank { null } ?: defaultName(url, xtream != null)
         var n = 2
         val base = name
         while (playlists.any { it.name == name } || apis.any { it.name == name }) name = "$base ($n)".also { n++ }
@@ -144,6 +144,26 @@ object IptvPlaylists {
         save()
         syncProviders()
         return Result.success(p to channels.size)
+    }
+
+    private val genericFiles = setOf("index", "playlist", "playlists", "get", "list", "tv", "iptv", "channels", "channel", "live", "m3u", "play", "stream", "streams")
+
+    /**
+     * A name for a pasted address: who publishes it and which list it is. Many lists live on one host (every iptv-org list on iptv-org.github.io,
+     * every GitHub file on raw.githubusercontent.com), so the host alone named them all alike: "iptv-org · isl" instead of "iptv-org.github.io (2)".
+     */
+    internal fun defaultName(url: String, xtream: Boolean): String {
+        val uri = runCatching { java.net.URI(url) }.getOrNull()
+        val host = uri?.host?.removePrefix("www.") ?: return java.io.File(url).nameWithoutExtension.ifBlank { "TV playlist" }
+        if (xtream) return host
+        val parts = uri.path.orEmpty().split('/').filter { it.isNotBlank() }
+        val owner = when {
+            host.endsWith(".github.io") || host.endsWith(".gitlab.io") -> host.substringBefore('.')
+            (host == "raw.githubusercontent.com" || host == "gist.githubusercontent.com") && parts.isNotEmpty() -> parts[0]
+            else -> host
+        }
+        val file = parts.lastOrNull()?.substringBeforeLast('.')?.takeIf { it.length >= 2 && it.lowercase() !in genericFiles }
+        return if (file != null) "$owner · $file" else owner
     }
 
     fun remove(id: String) {
@@ -203,7 +223,8 @@ internal object Channels {
     private suspend fun cached(p: IptvPlaylist): Cached = locks.getOrPut(p.id) { Mutex() }.withLock {
         cache[p.id]?.takeIf { System.currentTimeMillis() - it.at < TTL }?.let { return it }
         val read = if (p.xtream) xtream(p) else m3u(p)
-        Cached(System.currentTimeMillis(), read.first, read.second).also { cache[p.id] = it }
+        // an empty answer is not kept: the next Home load asks again instead of showing nothing for hours
+        Cached(System.currentTimeMillis(), read.first, read.second).also { if (it.channels.isNotEmpty()) cache[p.id] = it }
     }
 
     /** Reads the channels (the check when a playlist is added); kept, so Home does not read them again */
@@ -215,31 +236,47 @@ internal object Channels {
 
     private suspend fun text(address: String): String {
         val bytes = if (address.startsWith("http", true)) {
-            app.get(address, headers = mapOf("User-Agent" to IptvPlaylists.USER_AGENT), timeout = 60).okhttpResponse.body.bytes()
+            // an error page (403, 503) read as a playlist gave "no channels", kept for hours
+            app.get(address, headers = mapOf("User-Agent" to IptvPlaylists.USER_AGENT), timeout = 60).okhttpResponse.use { r ->
+                if (!r.isSuccessful) throw java.io.IOException("The playlist server answered HTTP ${r.code}")
+                r.body.bytes()
+            }
         } else java.io.File(if (address.startsWith("file:", true)) java.net.URI(address).path else address).readBytes()
         val plain = if (bytes.size > 2 && bytes[0] == 0x1F.toByte() && bytes[1] == 0x8B.toByte()) GZIPInputStream(ByteArrayInputStream(bytes)).readBytes() else bytes
         return String(plain, Charsets.UTF_8).removePrefix("﻿")
     }
 
-    private suspend fun m3u(p: IptvPlaylist): Pair<List<IptvChannel>, List<String>> = parseM3u(text(p.url))
+    private suspend fun m3u(p: IptvPlaylist): Pair<List<IptvChannel>, List<String>> = parseM3u(text(p.url), p.url)
 
     private val attr = Regex("""([\w-]+)="([^"]*)"""")
 
-    internal fun parseM3u(body: String): Pair<List<IptvChannel>, List<String>> {
+    internal fun parseM3u(body: String, address: String? = null): Pair<List<IptvChannel>, List<String>> {
+        val base = address?.takeIf { it.startsWith("http", true) }?.let { runCatching { java.net.URI(it.replace(" ", "%20")) }.getOrNull() }
         val out = ArrayList<IptvChannel>()
         val guides = ArrayList<String>()
         var info: String? = null
         val headers = LinkedHashMap<String, String>()
         var key: String? = null
         var licenseUrl: String? = null
-        fun reset() { info = null; headers.clear(); key = null; licenseUrl = null }
+        var extGroup: String? = null
+        fun reset() { info = null; headers.clear(); key = null; licenseUrl = null; extGroup = null }
+        // "User-Agent=..&Referer=.." (the form Kodi reads after "url|" and in inputstream.adaptive.stream_headers)
+        fun addHeaders(spec: String) = spec.split('&').forEach { kv ->
+            // a lone "%" (User-Agent=.. 100%) made the whole playlist fail to load
+            val k = kv.substringBefore('=').trim(); val raw = kv.substringAfter('=', ""); val v = runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+            if (k.isNotBlank() && v.isNotBlank()) headers[if (k.equals("user-agent", true)) "User-Agent" else if (k.equals("referer", true) || k.equals("referrer", true)) "Referer" else k] = v
+        }
         for (raw in body.lineSequence()) {
             val line = raw.trim()
             when {
                 line.isEmpty() -> {}
                 line.startsWith("#EXTM3U", true) -> attr.findAll(line).filter { it.groupValues[1].lowercase() in setOf("url-tvg", "x-tvg-url", "tvg-url") }
                     .forEach { m -> guides += m.groupValues[2].split(',').map { it.trim() }.filter { it.startsWith("http") } }
-                line.startsWith("#EXTINF", true) -> { reset(); info = line }
+                // options may come before #EXTINF (the usual JioTV-style lists: #KODIPROP keys and #EXTVLCOPT agents first) or after it: both belong to
+                // the next address, so they are cleared only once an address has used them
+                line.startsWith("#EXTINF", true) -> info = line
+                // the group of the next channel in lists that do not write group-title (they were all put under "Channels")
+                line.startsWith("#EXTGRP", true) -> extGroup = line.substringAfter(':', "").trim().ifBlank { null }
                 line.startsWith("#EXTVLCOPT", true) -> {
                     val (k, v) = line.substringAfter(':').let { it.substringBefore('=').lowercase() to it.substringAfter('=', "") }
                     when (k) {
@@ -251,30 +288,41 @@ internal object Channels {
                 }
                 line.startsWith("#EXTHTTP", true) -> runCatching {
                     val o = JSONObject(line.substringAfter(':'))
-                    for (k in o.keys()) headers[if (k.equals("cookie", true)) "Cookie" else if (k.equals("user-agent", true)) "User-Agent" else k] = o.getString(k)
+                    // a value that is not text (a number) made the whole line fail, and every header of it was lost
+                    for (k in o.keys()) o.opt(k)?.takeIf { it != JSONObject.NULL }?.toString()?.takeIf { it.isNotBlank() }
+                        ?.let { headers[if (k.equals("cookie", true)) "Cookie" else if (k.equals("user-agent", true)) "User-Agent" else k] = it }
                 }
                 line.startsWith("#KODIPROP", true) -> {
                     val (k, v) = line.substringAfter(':').let { it.substringBefore('=').lowercase() to it.substringAfter('=', "") }
                     if (k == "inputstream.adaptive.license_key" && v.isNotBlank()) {
                         if (v.startsWith("http", true)) licenseUrl = v.substringBefore('|') else key = v
                     }
+                    // the headers the stream needs, Kodi's way: they were dropped and such channels were refused (403)
+                    if ((k == "inputstream.adaptive.stream_headers" || k == "inputstream.adaptive.manifest_headers") && v.isNotBlank()) addHeaders(v)
                 }
                 line.startsWith("#") -> {}
                 else -> {
-                    val i = info
+                    // a bare address with no #EXTINF (a plain list of streams) is a channel too: such lists gave "no channels"
+                    val i = info ?: if (Regex("^(https?|rtmp|rtsp)://", RegexOption.IGNORE_CASE).containsMatchIn(line)) "#EXTINF:-1," else null
                     if (i != null) {
                         // the name follows the first comma after the attributes (a name may hold commas, an attribute value too)
-                        val comma = i.indexOf(',', (i.lastIndexOf('"') + 1).coerceAtLeast(0)).let { if (it < 0) i.indexOf(',') else it }
+                        // the first comma outside quotes: a quote in the name ("BBC "HD"") no longer hides it
+                        val comma = run {
+                            var quoted = false
+                            var at = -1
+                            for (k in i.indices) { val ch = i[k]; if (ch == '"') quoted = !quoted else if (ch == ',' && !quoted) { at = k; break } }
+                            if (at < 0) i.indexOf(',') else at // a quote never closed: the first comma, as before
+                        }
                         val a = attr.findAll(if (comma < 0) i else i.substring(0, comma)).associate { it.groupValues[1].lowercase() to it.groupValues[2] }
                         val title = if (comma < 0) "" else i.substring(comma + 1).trim()
                         // "url|User-Agent=..&Referer=.." (the form Kodi and many players read)
-                        val url = line.substringBefore('|')
-                        if ('|' in line) line.substringAfter('|').split('&').forEach { kv ->
-                            val k = kv.substringBefore('='); val v = java.net.URLDecoder.decode(kv.substringAfter('=', ""), "UTF-8")
-                            if (k.isNotBlank() && v.isNotBlank()) headers[if (k.equals("user-agent", true)) "User-Agent" else if (k.equals("referer", true) || k.equals("referrer", true)) "Referer" else k] = v
+                        // a path without a scheme is relative to the playlist's own address
+                        val url = line.substringBefore('|').let { u ->
+                            if (base != null && !Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:").containsMatchIn(u)) runCatching { base.resolve(u.replace(" ", "%20")).toString() }.getOrDefault(u) else u
                         }
+                        if ('|' in line) addHeaders(line.substringAfter('|'))
                         val name = title.ifBlank { a["tvg-name"].orEmpty() }.ifBlank { "Channel ${out.size + 1}" }
-                        out += IptvChannel(name, url, a["tvg-logo"]?.ifBlank { null }, a["group-title"]?.ifBlank { null } ?: "Channels", a["tvg-id"]?.ifBlank { null }, headers.toMap(), key, licenseUrl)
+                        out += IptvChannel(name, url, a["tvg-logo"]?.ifBlank { null }, a["group-title"]?.ifBlank { null } ?: extGroup ?: "Channels", a["tvg-id"]?.ifBlank { null }, headers.toMap(), key, licenseUrl)
                     }
                     reset()
                 }
@@ -293,7 +341,8 @@ internal object Channels {
         val body = app.get("$base/player_api.php?$auth&action=get_live_streams", headers = ua, timeout = 90).text
         if (!body.trimStart().startsWith("[")) throw IllegalStateException("the login was refused")
         val streams = JSONArray(body)
-        val user = java.net.URLEncoder.encode(p.user!!, "UTF-8"); val pass = java.net.URLEncoder.encode(p.pass!!, "UTF-8")
+        // (in a path a space is %20: URLEncoder's "+" stayed a plus, and a user name with a space got channels that never played)
+        val user = java.net.URLEncoder.encode(p.user!!, "UTF-8").replace("+", "%20"); val pass = java.net.URLEncoder.encode(p.pass!!, "UTF-8").replace("+", "%20")
         val list = (0 until streams.length()).map { streams.getJSONObject(it) }.map { o ->
             IptvChannel(
                 o.optString("name").trim().ifBlank { "Channel" }, "$base/live/$user/$pass/${o.optString("stream_id")}.m3u8",
@@ -318,7 +367,10 @@ internal object Guide {
 
     suspend fun shows(p: IptvPlaylist, c: IptvChannel): List<Show> {
         val g = locks.getOrPut(p.id) { Mutex() }.withLock {
-            cache[p.id]?.takeIf { System.currentTimeMillis() - it.at < 6 * 3_600_000L } ?: read(p).also { cache[p.id] = it }
+            cache[p.id]?.takeIf { System.currentTimeMillis() - it.at < 6 * 3_600_000L } ?: read(p).let { l ->
+                // a guide that could not be read (all downloads failed) is asked again in 10 minutes, not in 6 hours
+                if (l.byId.isEmpty()) Loaded(System.currentTimeMillis() - 6 * 3_600_000L + 10 * 60_000L, l.byId, l.idByName) else l
+            }.also { cache[p.id] = it }
         }
         val id = c.tvgId?.takeIf { g.byId.containsKey(it) } ?: g.idByName[norm(c.name)] ?: return emptyList()
         return g.byId[id].orEmpty()
@@ -370,8 +422,11 @@ internal object Guide {
     /** "20261029190000 +0100" -> epoch ms */
     private fun time(s: String?): Long = runCatching {
         val t = s!!.trim()
-        val local = java.time.LocalDateTime.parse(t.take(14), java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-        val zone = t.drop(14).trim().takeIf { it.isNotEmpty() }?.let { java.time.ZoneOffset.of(it.take(3) + ":" + it.drop(3).take(2)) } ?: java.time.ZoneOffset.UTC
+        // guides that leave out the seconds ("202610291900 +0100") had every programme dropped
+        val digits = t.takeWhile { it in '0'..'9' }.take(14)
+        if (digits.length < 12) return@runCatching 0L
+        val local = java.time.LocalDateTime.parse(digits.padEnd(14, '0'), java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+        val zone = t.drop(digits.length).trim().takeIf { it.isNotEmpty() }?.let { java.time.ZoneOffset.of(it.take(3) + ":" + it.drop(3).take(2)) } ?: java.time.ZoneOffset.UTC
         local.toInstant(zone).toEpochMilli()
     }.getOrDefault(0L)
 }
@@ -418,7 +473,8 @@ class IptvApi(val playlistId: String, displayName: String) : MainAPI() {
         }.joinToString("\n").ifBlank { null }
         return newLiveStreamLoadResponse(c.name, c.url, c.toJson()) {
             posterUrl = c.logo
-            this.plot = plot ?: c.group.takeIf { it.isNotBlank() }
+            // the group is already the tag: as the plot too it showed twice ("General" under "General")
+            this.plot = plot
             tags = listOfNotNull(c.group.takeIf { it.isNotBlank() })
         }
     }
@@ -432,7 +488,11 @@ class IptvApi(val playlistId: String, displayName: String) : MainAPI() {
             else -> ExtractorLinkType.VIDEO
         }
         val referer = c.headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value.orEmpty()
-        val keyParts = c.licenseKey?.takeIf { ':' in it && !it.trimStart().startsWith("{") }?.split(':')
+        // "kid:key" (hex) or Kodi's JSON form {"keys":[{"kty":"oct","kid":"..","k":".."}]} (base64url; the player reads both)
+        val keyParts = c.licenseKey?.trim()?.let { k ->
+            if (k.startsWith("{")) runCatching { JSONObject(k).getJSONArray("keys").getJSONObject(0).let { listOf(it.getString("kid"), it.getString("k")) } }.getOrNull()
+            else k.substringBefore(',').takeIf { ':' in it }?.split(':')
+        }
         if (keyParts != null || c.licenseUrl != null) {
             callback(newDrmExtractorLink(name, c.name, c.url, type, CLEARKEY_UUID) {
                 this.referer = referer; headers = c.headers

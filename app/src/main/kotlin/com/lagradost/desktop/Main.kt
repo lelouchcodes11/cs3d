@@ -139,10 +139,12 @@ fun main(args: Array<String>) {
         DisplaySync.sync(scale, 1f, (bounds.width * scale).toInt(), (bounds.height * scale).toInt())
     }
     val isLink = { arg: String -> arg.contains("://") || arg.startsWith("csshare") }
+    com.lagradost.desktop.platform.StartupProfile.mark("instance checks done")
     EventQueue.invokeAndWait {
         DesktopBootstrap.initApplication()
         AndroidRuntime.host = DesktopUiHost()
     }
+    com.lagradost.desktop.platform.StartupProfile.mark("android runtime ready")
     // The preferences exist now: the renderer is the user's choice (or the safe fall back after starts that did not become healthy; see Graphics), and the
     // caches are sized for the PC. Skia keeps up to 256 MB of textures by default; on a PC with integrated graphics that is the app's own RAM. 64 MB holds every
     // poster of a screen (measured: about 100 MB less memory after browsing a few pages), 32 MB on a weak PC.
@@ -151,7 +153,7 @@ fun main(args: Array<String>) {
     // High performance (Settings > General > Performance): more of this PC for a smooth window, see HighPerformance
     val highPc = !lightPc && com.lagradost.desktop.ui.fluent.Appearance.highPerformanceFromPrefs()
     System.setProperty("skiko.gpu.resourceCacheLimit", System.getProperty("skiko.gpu.resourceCacheLimit") ?: if (lightPc) "33554432" else if (highPc) "268435456" else "67108864")
-    if (highPc) com.lagradost.desktop.platform.HighPerformance.apply(true)
+    if (highPc) com.lagradost.desktop.platform.HighPerformance.apply(true) else if (lightPc) com.lagradost.desktop.platform.HighPerformance.applyLight()
     // Coil keeps the decoded pictures up to a quarter of the JVM's largest heap (a gigabyte on a 16 GB PC) and the heap grows to hold them; on a PC with little
     // free memory that is paging, which looks like the window hanging. 160 MB holds the pictures of several screens (64 MB on a weak PC).
     runCatching {

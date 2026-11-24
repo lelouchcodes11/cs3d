@@ -67,6 +67,9 @@ object ImageLoader {
                 add(OkHttpNetworkFetcherFactory(callFactory = {
                     buildDefaultClient(context).newBuilder()
                         .dispatcher(okhttp3.Dispatcher().apply { maxRequests = 64; maxRequestsPerHost = Integer.getInteger("cloudstream.imagehost", if (com.lagradost.desktop.platform.HighPerformance.atStart) 32 else 16) })
+                        // a picture without a User-Agent went out as OkHttp's "okhttp/x", which image hosts refuse: Wikimedia (where most TV playlist logos
+                        // live) answered 403/429 (measured 2026-11-18; 200 with a browser's). The extensions' own requests carry the browser's too.
+                        .addInterceptor { chain -> chain.request().let { r -> chain.proceed(if (r.header("User-Agent") == null) r.newBuilder().header("User-Agent", com.lagradost.cloudstream3.USER_AGENT).build() else r) } }
                         .addInterceptor(com.lagradost.desktop.net.CloudflarePass.pictures).build()
                 }))
                 // desktop: no BitmapFactoryDecoder/bitmapConfig (Android-only); resource ids need a fetcher on the JVM

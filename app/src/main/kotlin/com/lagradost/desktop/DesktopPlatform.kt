@@ -104,7 +104,13 @@ object DesktopPlatform {
         return File(home, if (isMac) macName else name)
     }
 
-    private fun readWindowsShellFolder(value: String): File? {
+    /** The answers of [readWindowsShellFolderNow]: each one started reg.exe, and Settings pages ask while they draw (tens of ms on the UI thread every time) */
+    private val shellFolders = java.util.concurrent.ConcurrentHashMap<String, java.util.Optional<File>>()
+
+    private fun readWindowsShellFolder(value: String): File? =
+        shellFolders.computeIfAbsent(value) { java.util.Optional.ofNullable(readWindowsShellFolderNow(it)) }.orElse(null)
+
+    private fun readWindowsShellFolderNow(value: String): File? {
         return try {
             val p = ProcessBuilder(
                 "reg", "query",

@@ -107,8 +107,19 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
     val spots = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateMapOf<Int, Pair<Float, Float>>() }
     val target = spots[selected]
     val spec = FluentMotion.springSoft<Float>()
-    val lineX by animateFloatAsState(target?.first ?: 0f, spec, label = "tabX")
-    val lineW by animateFloatAsState(target?.second ?: 0f, spec, label = "tabW")
+    // the line is put under the first tab at its full width when the strip appears (it grew out of a dot at the left edge); it glides only between tabs
+    val lineXAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    val lineWAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(target) {
+        val t = target ?: return@LaunchedEffect
+        if (lineWAnim.value == 0f) { lineXAnim.snapTo(t.first); lineWAnim.snapTo(t.second) }
+        else kotlinx.coroutines.coroutineScope {
+            launch { lineXAnim.animateTo(t.first, spec) }
+            launch { lineWAnim.animateTo(t.second, spec) }
+        }
+    }
+    val lineX = lineXAnim.value
+    val lineW = lineWAnim.value
     val density = androidx.compose.ui.platform.LocalDensity.current
     val customBtn = FluentSettings.buttonColorOverride != null || Appearance.buttonStyle != ButtonStyle.White
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
@@ -157,7 +168,8 @@ fun UnderlineTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, mo
                 }
             }
         }
-        if (target != null) {
+        // one tab is a heading: a line under it points at nothing
+        if (target != null && tabs.size > 1) {
             Box(
                 Modifier
                     .align(Alignment.BottomStart)

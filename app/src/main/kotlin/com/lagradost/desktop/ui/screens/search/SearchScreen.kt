@@ -155,6 +155,9 @@ fun SearchScreen(route: Route.Search) {
             // from the Home page: only the extension chosen there (the provider filters of the Search page do not apply)
             if (route.only != null) vm.searchAndCancel(query, setOf(route.only))
             else vm.searchAndCancel(query, activeProviders(types, apis))
+        } else {
+            // one letter is not searched: the results of the search before it stayed on the page under this query
+            vm.clearSearch()
         }
     }
     LaunchedEffect(route.nonce) {
@@ -209,11 +212,25 @@ fun SearchScreen(route: Route.Search) {
         val results = current.orEmpty().filterValues { it.list.isNotEmpty() }.let { all ->
             // an extension with a title that matches what was typed comes before one whose answer has none (some answer any search with their
             // newest titles: "interstellar" put a row of one unrelated drama on top, the film itself further down); the rest keep their order
+            // A row's place is that of its best title (named as typed, then every word in it), and how early in the row it is: Kisskh answered
+            // "breaking bad" with 48 "Bad ..." dramas and one match far down, and that row stood above AniVortex's "Breaking Bad" in first place.
+            // Inside a row the matching titles come first, the rest keep the extension's order.
             val words = searchWords(query)
-            if (words.isEmpty()) all else all.entries.sortedBy { e -> if (e.value.list.any { r -> matches(r.name, words) }) 0 else 1 }.associate { it.key to it.value }
+            val typed = words.joinToString(" ")
+            fun tier(name: String?) = when {
+                searchWords(name.orEmpty()).joinToString(" ") == typed -> 0
+                matches(name, words) -> 1
+                else -> 2
+            }
+            if (words.isEmpty()) all else all.entries
+                .sortedWith(compareBy({ e -> e.value.list.minOfOrNull { r -> tier(r.name) } ?: 2 }, { e -> e.value.list.indexOfFirst { r -> tier(r.name) < 2 }.let { if (it < 0) Int.MAX_VALUE else it } }))
+                .associate { e -> e.key to e.value.copy(list = e.value.list.sortedBy { r -> tier(r.name) }) }
         }.let { all ->
-            // the extension chosen on Home comes first when it has something (the others keep the order they answered in)
-            val first = com.lagradost.desktop.ui.shell.selectedHomeProvider()?.takeIf { route.only == null && it in all }
+            // the extension chosen on Home comes first when it has something that matches (the others keep the order they answered in): AnimePahe
+            // answers "breaking bad" with "Nanbaka", and as the Home extension that unrelated row was on top of the real show
+            val words = searchWords(query)
+            val first = com.lagradost.desktop.ui.shell.selectedHomeProvider()
+                ?.takeIf { route.only == null && it in all && (words.isEmpty() || all[it]!!.list.any { r -> matches(r.name, words) }) }
             if (first == null) all else all.entries.sortedBy { if (it.key == first) 0 else 1 }.associate { it.key to it.value }
         }.let { shown ->
             // the extensions the viewer pinned (Settings > General > Extension priority) before all the others, in their order
@@ -225,7 +242,20 @@ fun SearchScreen(route: Route.Search) {
             ResultsHeader(query, loading, searched, total, route.only, { Navigator.search(query) }, types, validTypes, merged, { types = it; DataStoreHelper.searchPreferenceTags = it; run() }, { merged = it }, { chooseProviders(apis) { apis = it; DataStoreHelper.searchPreferenceProviders = it.toList(); run() } }, inset = inset)
         }
 
-        val mergedList = if (merged) interleave(results.values.map { it.list }) else emptyList()
+        // one grid of every extension: titles named as typed first, then those with every word in them, then the rest (each group keeps the
+        // extensions' turn-about order); in answer order alone an unrelated first answer of the first extension led the grid
+        val mergedList = if (merged) {
+            val words = searchWords(query)
+            val typed = words.joinToString(" ")
+            interleave(results.values.map { it.list }).sortedBy { r ->
+                when {
+                    words.isEmpty() -> 0
+                    searchWords(r.name).joinToString(" ") == typed -> 0
+                    matches(r.name, words) -> 1
+                    else -> 2
+                }
+            }
+        } else emptyList()
         if (merged && mergedList.isNotEmpty()) {
             // all extensions in one grid: each card says which extension it is from (the same title came five times, "ONE PIECE · Anime", with no way to tell them apart)
             PosterGrid(mergedList, showType = true, subtitle = { card ->
@@ -240,7 +270,19 @@ fun SearchScreen(route: Route.Search) {
         } else {
             LazyColumn(Modifier.fillMaxSize().smoothWheel(listState), state = listState, contentPadding = PaddingValues(top = TopBarHeight + 8.dp, bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
                 item(key = "header") { header(gutter) }
-                results.entries.forEach { (name, list) ->
+                // extensions that found only one or two titles (a search for one film: most of them) sit side by side, a run of them in one area;
+                // each had a full-width row with one poster in it, and the page was mostly empty space to scroll through
+                val runs = ArrayList<List<Map.Entry<String, com.lagradost.cloudstream3.ui.search.ExpandableSearchList>>>()
+                results.entries.forEach { e ->
+                    val small = e.value.list.size <= 2
+                    val last = runs.lastOrNull()
+                    val lastSmall = last?.first()?.value?.let { it.list.size <= 2 } == true
+                    if (small && lastSmall) runs[runs.lastIndex] = last!! + e else runs += listOf(e)
+                }
+                runs.forEach { run ->
+                    if (run.size >= 2) item(key = "pack-${run.first().key}") {
+                        SmallResults(run.map { it.key to it.value }, query, cardWidth, gutter, seen) { name -> { val expanded = vm.expandAndReturn(name, query); (expanded?.list?.list ?: results[name]?.list.orEmpty()).toList() to (expanded?.hasNext ?: (vm.lastQuery == query)) } }
+                    } else run.first().let { (name, list) ->
                     item(key = "p-$name") {
                         val fresh = remember { name !in seen }
                         val appear = remember { androidx.compose.animation.core.Animatable(if (fresh) 0f else 1f) }
@@ -255,8 +297,9 @@ fun SearchScreen(route: Route.Search) {
                                 subtitle = "${list.list.size}${if (list.hasNext) "+" else ""} result${if (list.list.size == 1) "" else "s"}",
                                 onSeeAll = {
                                     val more: (suspend () -> Pair<List<com.lagradost.cloudstream3.SearchResponse>, Boolean>)? = if (!list.hasNext) null else ({
-                                        val expanded = vm.expandAndReturn(name)
-                                        (expanded?.list?.list ?: list.list).toList() to (expanded?.hasNext ?: true)
+                                        // the query this page shows: a "See all" reached with Back after another search pages no further
+                                        val expanded = vm.expandAndReturn(name, query)
+                                        (expanded?.list?.list ?: list.list).toList() to (expanded?.hasNext ?: (vm.lastQuery == query))
                                     })
                                     Navigator.go(Route.Section("$query · $name", list.list.toList(), more))
                                 },
@@ -273,7 +316,7 @@ fun SearchScreen(route: Route.Search) {
                             if (list.hasNext) {
                                 LaunchedEffect(state, list.list.size) {
                                     snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }.collect { last ->
-                                        if (last >= list.list.size - 3 && list.hasNext) scope.launch { vm.expandAndReturn(name) }
+                                        if (last >= list.list.size - 3 && list.hasNext) scope.launch { vm.expandAndReturn(name, query) }
                                     }
                                 }
                             }
@@ -281,6 +324,7 @@ fun SearchScreen(route: Route.Search) {
                                 PosterCard(card, { openCard(card) }, cardWidth)
                             }
                         }
+                    }
                     }
                 }
                 // a placeholder for the extensions that are still searching (a few of them, the rest is counted)
@@ -383,7 +427,7 @@ private fun ResultsHeader(
 private fun chooseProviders(selected: Set<String>, onDone: (Set<String>) -> Unit) {
     val ctx = DesktopBootstrap.activityOrNull() ?: return
     // the pinned ones first (in their order), the rest by name
-    val all = runCatching { ctx.filterProviderByPreferredMedia().map { it.name }.sorted() }.getOrNull().orEmpty()
+    val all = runCatching { ctx.filterProviderByPreferredMedia().map { it.name }.distinct().sorted() }.getOrNull().orEmpty() // one extension from two repos: one row (a repeated key crashes the list)
         .let { names -> com.lagradost.desktop.net.ExtensionPriority.ordered(names) { it } }
     val working = androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(selected.filter { it in all }) }
     Overlays.show(
@@ -606,4 +650,47 @@ private fun matches(title: String?, words: List<String>): Boolean {
     if (title.isNullOrBlank()) return false
     val t = searchWords(title).joinToString(" ")
     return words.all { it in t }
+}
+
+/**
+ * Several extensions that each found one or two titles, side by side: a block per extension (its name opens all of its results, the count, its
+ * posters), the blocks flowing over as many lines as the width needs
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SmallResults(
+    run: List<Pair<String, com.lagradost.cloudstream3.ui.search.ExpandableSearchList>>,
+    query: String,
+    cardWidth: androidx.compose.ui.unit.Dp,
+    gutter: androidx.compose.ui.unit.Dp,
+    seen: MutableSet<String>,
+    more: (String) -> (suspend () -> Pair<List<com.lagradost.cloudstream3.SearchResponse>, Boolean>),
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = gutter).padding(bottom = 30.dp),
+        horizontalArrangement = Arrangement.spacedBy(36.dp),
+        verticalArrangement = Arrangement.spacedBy(26.dp),
+    ) {
+        run.forEach { (name, list) ->
+            androidx.compose.runtime.key(name) {
+                val fresh = remember { name !in seen }
+                val appear = remember { androidx.compose.animation.core.Animatable(if (fresh) 0f else 1f) }
+                LaunchedEffect(Unit) {
+                    seen += name
+                    if (fresh) appear.animateTo(1f, androidx.compose.animation.core.tween(260))
+                }
+                val n = list.list.size
+                Column(Modifier.width(cardWidth * n + 14.dp * (n - 1)).graphicsLayer { alpha = appear.value }) {
+                    com.lagradost.desktop.ui.fluent.RichSectionHeader(
+                        name, subtitle = "$n${if (list.hasNext) "+" else ""} result${if (n == 1) "" else "s"}",
+                        onSeeAll = { Navigator.go(Route.Section("$query · $name", list.list.toList(), if (list.hasNext) more(name) else null)) },
+                    )
+                    Box(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        list.list.forEach { card -> androidx.compose.runtime.key(card.url) { PosterCard(card, { openCard(card) }, cardWidth) } }
+                    }
+                }
+            }
+        }
+    }
 }

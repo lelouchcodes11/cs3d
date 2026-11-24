@@ -146,8 +146,10 @@ class OpenSubtitlesApi : SubtitleAPI() {
         if (!canDoRequest() || OpenSubtitlesLegacy.comLooksBlocked()) return legacySearch(query)
         val langOpenSubTag = fromCodeToOpenSubtitlesTag(query.lang) ?: query.lang ?: ""
 
-        val imdbId = query.imdbId?.replace("tt", "")?.toInt() ?: 0
-        val queryText = query.query
+        // an id that is not a number ("", "tt123/") threw here and the whole search failed, the older interface was not asked either
+        val imdbId = query.imdbId?.replace("tt", "")?.trim()?.toIntOrNull() ?: 0
+        // "Tom & Jerry", "Mission: Impossible #2": the title is one parameter of the address, not cut at "&" or "#"
+        val queryText = java.net.URLEncoder.encode(query.query, "UTF-8").replace("+", "%20")
         val epNum = query.epNumber ?: 0
         val seasonNum = query.seasonNumber ?: 0
         val yearNum = query.year ?: 0

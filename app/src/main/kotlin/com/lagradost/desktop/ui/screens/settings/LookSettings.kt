@@ -128,8 +128,10 @@ fun GroupBuilder.layoutItems() {
             }
         }
     }
-    card("Interface size", "Makes everything larger or smaller than the Windows scale: ${(Appearance.uiScale * 100).toInt()} %", "zoom scale text size dpi") {
-        Slider(Appearance.uiScale, { Appearance.uiScale = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0.8f..1.3f, onValueChangeFinished = { changed() })
+    // the new size applies when the slider is let go: applied at every step it rescaled the window under the pointer and the slider jumped back and forth
+    var scaleDraft by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+    card("Interface size", "Makes everything larger or smaller than the Windows scale: ${((scaleDraft ?: Appearance.uiScale) * 100).toInt()} %", "zoom scale text size dpi") {
+        Slider(scaleDraft ?: Appearance.uiScale, { scaleDraft = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0.8f..1.3f, onValueChangeFinished = { scaleDraft?.let { Appearance.uiScale = it }; scaleDraft = null; changed() })
     }
     card("Screen dimmer", "Darker than your screen's lowest brightness", "brightness dim dark night low filter") {
         Slider(Appearance.dimmer, { Appearance.dimmer = (Math.round(it * 20f) / 20f) }, Modifier.width(220.dp), valueRange = 0f..0.8f, onValueChangeFinished = { changed() })
@@ -227,8 +229,24 @@ fun GroupBuilder.videoItems() {
 @Composable
 fun GroupBuilder.smoothSourcesItem() {
     fun changed() = Appearance.save()
-    card("Prefer smooth sources", "Tries lighter sources before 4K and REMUX, which often stall", "4k remux buffering stall quality") {
+    card("Prefer smooth sources", "Tries lighter sources before 4K and REMUX, which often stall", "4k remux buffering stall quality", glyph = Icons.Speed) {
         ToggleSwitch(Appearance.smoothSources, { Appearance.smoothSources = it; changed() })
+    }
+}
+
+/** Settings > General > Downloads: which source a download takes by itself */
+@Composable
+fun GroupBuilder.downloadQualityItem() {
+    card("Download quality", "Which file a download picks by itself. Larger ones are only taken when nothing else is there.", "download quality resolution size 1080p 720p smallest gb remux", glyph = Icons.Video) {
+        ComboBox(com.lagradost.desktop.net.DownloadQuality.entries.toList(), Appearance.downloadQuality, { it.label }, { Appearance.downloadQuality = it; Appearance.save() }, minWidth = 230.dp)
+    }
+}
+
+/** Settings > General > Downloads: how fast downloads may go together (a video that plays at the same time keeps its share) */
+@Composable
+fun GroupBuilder.downloadSpeedItem() {
+    card("Download speed limit", "All downloads together stay under it, so a video you watch meanwhile does not stall", "download speed limit bandwidth mb throttle slow", glyph = Icons.Speed) {
+        ComboBox(listOf(0, 1, 2, 5, 10, 20), Appearance.downloadSpeedMb, { if (it == 0) "No limit" else "$it MB/s" }, { Appearance.downloadSpeedMb = it; Appearance.save() }, minWidth = 230.dp)
     }
 }
 

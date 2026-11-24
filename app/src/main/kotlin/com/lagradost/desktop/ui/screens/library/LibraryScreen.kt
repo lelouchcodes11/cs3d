@@ -141,6 +141,14 @@ fun LibraryScreen() {
     val apis = vm.availableApiNames
     // how many titles of each kind the whole list has (the switch shows them; one without any anime hides the switch's Anime count as 0)
     val allTitles = titles?.flatMap { it.items }.orEmpty()
+    // the page opened on Watching, empty ("Nothing here yet"), with every title under Plan to Watch: once per visit, when the list comes in, an empty
+    // tab gives way to the first one with titles (a tab picked by hand later stays picked, even when empty)
+    var autoPicked by remember { mutableStateOf(false) }
+    LaunchedEffect(titles) {
+        if (autoPicked || titles.isNullOrEmpty()) return@LaunchedEffect
+        autoPicked = true
+        if (everything.ofKind(kind).isEmpty()) titles.indexOfFirst { it.items.ofKind(kind).isNotEmpty() }.takeIf { it >= 0 }?.let { vm.switchPage(it) }
+    }
 
     Box(Modifier.fillMaxSize()) {
         when {
@@ -186,32 +194,33 @@ fun LibraryScreen() {
                             // the service said it is down (AniList was switched off, MyAnimeList in maintenance): the list below is the one saved by the last good answer
                             apiName?.let { n -> com.lagradost.desktop.net.ServiceOutage.notes[n] }?.let { note ->
                                 com.lagradost.desktop.ui.fluent.NoticeBar(
-                                    note.message + if (allTitles.isNotEmpty()) " This is the list saved the last time it loaded." else "",
+                                    com.lagradost.desktop.i18n.Tr.t(note.message) + if (allTitles.isNotEmpty()) " " + com.lagradost.desktop.i18n.Tr.t("This is the list saved the last time it loaded.") else "",
                                     action = "Try again", onAction = { vm.reloadPages(true) },
                                 )
                                 Box(Modifier.height(16.dp))
                             }
-                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = if (allTitles.isEmpty()) null else "${if (kind == Kind.All) (if (allTitles.size == 1) "1 title" else "${allTitles.size} titles") else "${items.size} of ${allTitles.size} ${if (allTitles.size == 1) "title" else "titles"} · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = {
+                            com.lagradost.desktop.ui.fluent.PageHeader("Library", icon = Icons.Library, tint = androidx.compose.ui.graphics.Color(0xFF4C8DFF), subtitle = if (allTitles.isEmpty()) null else "${if (kind == Kind.All) (if (allTitles.size == 1) "1 title" else "${allTitles.size} titles") else "${items.size} of ${allTitles.count { it.isOfKind(kind) }} · ${kind.label}"}${apiName?.takeIf { apis.size > 1 }?.let { " · $it" } ?: ""}", trailing = {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    // an empty library has no row of controls: Refresh sits here
-                                    if (allTitles.isEmpty() && apis.size <= 1) IconButton(Icons.Refresh, { vm.reloadPages(true) }, tooltip = "Refresh", kind = ButtonKind.Standard)
+                                    // an empty library has no toolbar row below: list switcher and Refresh sit neatly beside Stats
+                                    if (allTitles.isEmpty()) {
+                                        if (apis.size > 1) ComboBox(apis, apiName?.takeIf { it in apis } ?: apis.firstOrNull(), { it }, { vm.switchList(it) }, icon = Icons.Cloud, minWidth = 140.dp)
+                                        IconButton(Icons.Refresh, { vm.reloadPages(true) }, tooltip = "Refresh", kind = ButtonKind.Standard)
+                                    }
                                     Button("Stats", { Navigator.go(com.lagradost.desktop.core.Route.Stats) }, kind = ButtonKind.Standard, icon = Icons.Chart)
                                 }
                             })
-                            if (allTitles.isNotEmpty() || apis.size > 1) Box(Modifier.height(18.dp))
-                            if (allTitles.isNotEmpty() || apis.size > 1) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                // an empty library (no list has a title): no search, sort or filter for nothing; the list choice and Refresh stay
-                                val anything = allTitles.isNotEmpty()
-                                if (anything) TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> vm.sort(ListSorting.Query, it.ifBlank { null }) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)
+                            if (allTitles.isNotEmpty()) Box(Modifier.height(18.dp))
+                            if (allTitles.isNotEmpty()) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextBox(query, { query = it; vm.currentSortingMethod?.let { m -> if (it.isBlank()) vm.sort(m, null) else vm.sort(ListSorting.Query, it) } }, Modifier.weight(1f).widthIn(max = 420.dp), placeholder = "Search your library", leadingIcon = Icons.Search)
                                 Box(Modifier.weight(0.01f))
-                                if (anything && vm.sortingMethods.size > 1) ComboBox(
+                                if (vm.sortingMethods.size > 1) ComboBox(
                                     vm.sortingMethods, vm.currentSortingMethod, { ctx.getString(it.stringRes) },
                                     { vm.sort(it, query.ifBlank { null }) }, icon = Icons.Sort, minWidth = 150.dp,
                                 )
                                 if (apis.size > 1) ComboBox(apis, apiName?.takeIf { it in apis } ?: apis.firstOrNull(), { it }, { vm.switchList(it) }, icon = Icons.Cloud, minWidth = 140.dp)
                                 // movies / TV shows / anime: one button with a menu (it is lit while a filter is on); the counts are those of the whole list
                                 var filterOpen by remember { mutableStateOf(false) }
-                                if (anything) Box {
+                                Box {
                                     IconButton(Icons.Filter, { filterOpen = true }, tooltip = "Show: ${kind.label}", kind = if (kind == Kind.All) ButtonKind.Standard else ButtonKind.Accent)
                                     if (filterOpen) com.lagradost.desktop.ui.fluent.MenuFlyout(
                                         Kind.entries.map { k -> MenuItem(k.label + "   " + allTitles.count { it.isOfKind(k) }, k.glyph, checked = k == kind) { kind = k; saveKind(k) } },

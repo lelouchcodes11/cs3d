@@ -68,6 +68,9 @@ object RangeProxy {
         sharedClient.newBuilder().connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS)).protocols(listOf(okhttp3.Protocol.HTTP_1_1)).build()
     }
 
+    /** Starts the local server ahead of the first video (the warm-up after the start): the first video started it on the UI thread */
+    fun warmUp() { server }
+
     private val server: HttpServer by lazy {
         HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 32).apply {
             executor = Executors.newCachedThreadPool { r -> Thread(r, "RangeProxy").apply { isDaemon = true } }
@@ -116,7 +119,7 @@ object RangeProxy {
         val builder = Request.Builder().url(entry.url.toHttpUrlOrNull() ?: throw IOException("bad address ${entry.url}"))
         var userAgent = false
         for ((k, v) in entry.headers) {
-            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Range", true)) continue
+            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Accept-Encoding", true) || k.equals("Range", true)) continue
             if (k.equals("User-Agent", true)) userAgent = true
             com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
         }
@@ -276,8 +279,14 @@ object RangeProxy {
                     // a host that ignored the range sends the file from its start
                     if (r.code == 200 && from > 0) input.skipNBytes(from)
                     if (position > from) input.skipNBytes(position - from)
+                    // a host that sends less than was asked (206 "bytes 0-1048575/..." for 0-4194303) is not a broken chunk: what it sent is used and the
+                    // next chunk starts after it (asking the same range again got the same short piece, until the retries ran out and the player lost the link)
+                    val served = if (r.code == 206) Regex("""bytes (\d+)-(\d+)/""").find(r.header("Content-Range").orEmpty())?.let { m ->
+                        if (m.groupValues[1].toLongOrNull() == from) m.groupValues[2].toLongOrNull() else null
+                    } else null
+                    val upTo = if (served != null && served >= position) minOf(last, served) else last
                     val buffer = ByteArray(64 * 1024)
-                    var left = last - position + 1
+                    var left = upTo - position + 1
                     while (left > 0 && !entry.cancelled) {
                         val n = input.read(buffer, 0, minOf(buffer.size.toLong(), left).toInt())
                         if (n < 0) break
@@ -286,7 +295,7 @@ object RangeProxy {
                         left -= n
                         failures = 0
                     }
-                    if (left > 0 && total >= 0 && position <= last && !entry.cancelled) throw IOException("chunk ended early")
+                    if (left > 0 && total >= 0 && position <= upTo && !entry.cancelled) throw IOException("chunk ended early")
                     if (total < 0 && left > 0) { position = end + 1 } // size unknown: the end of the file
                 }
             } catch (e: IOException) {

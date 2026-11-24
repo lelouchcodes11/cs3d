@@ -125,9 +125,10 @@ private fun TitleBarRow(modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(6.dp))
-        com.lagradost.desktop.ui.fluent.IconButton(
+        // not over the player: its own Back (the same arrow, in a round button like its other controls) is just below; two Backs of two sizes
+        if (com.lagradost.desktop.core.Navigator.current.route !is com.lagradost.desktop.core.Route.Player) com.lagradost.desktop.ui.fluent.IconButton(
             com.lagradost.desktop.ui.fluent.Icons.Back, { com.lagradost.desktop.core.Navigator.back() },
-            Modifier.noWindowDrag("barBack"), tooltip = "Back (Alt+Left)", enabled = com.lagradost.desktop.core.Navigator.canGoBack, size = 30.dp, iconSize = 14.dp,
+            Modifier.noWindowDrag("barBack"), tooltip = "Back (Alt+Left)", enabled = com.lagradost.desktop.core.Navigator.canGoBack, size = com.lagradost.desktop.ui.fluent.BackMetrics.bar, iconSize = com.lagradost.desktop.ui.fluent.BackMetrics.icon,
         )
         Box(Modifier.width(8.dp))
         com.lagradost.desktop.ui.components.brandLogo()?.let { androidx.compose.foundation.Image(it, null, Modifier.size(16.dp)) }

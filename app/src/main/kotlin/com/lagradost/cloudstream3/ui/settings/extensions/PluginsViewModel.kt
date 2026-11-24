@@ -60,7 +60,8 @@ class PluginsViewModel : ViewModel() {
     private var currentQuery: String? = null
 
     companion object {
-        private val repositoryCache: MutableMap<String, List<PluginWrapper>> = mutableMapOf()
+        // desktop: written by the page and by "Install all" at the same time (two threads): a concurrent map
+        private val repositoryCache: MutableMap<String, List<PluginWrapper>> = java.util.concurrent.ConcurrentHashMap()
         const val TAG = "PLG"
 
         private fun isDownloaded(
@@ -82,8 +83,10 @@ class PluginsViewModel : ViewModel() {
                 }
             }
 
+            // desktop: an empty answer (every plugin list of the repository timed out or failed once) is not kept: it was, and the repository showed
+            // "No extensions found" until the app was restarted
             return RepositoryManager.getRepoPlugins(repository)
-                ?.also { repositoryCache[repository.url] = it } ?: emptyList()
+                ?.also { if (it.isNotEmpty()) repositoryCache[repository.url] = it } ?: emptyList()
         }
 
         /**

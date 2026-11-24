@@ -1,5 +1,7 @@
 package com.lagradost.desktop.notify
 
+import kotlinx.coroutines.sync.withLock
+import com.lagradost.desktop.core.writeTextAtomic
 import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.getValue
@@ -71,9 +73,14 @@ object UpdateNotices {
         val behind: Int? get() = if (seen != null && out != null && out > seen) out - seen else null
     }
 
+    /** Episodes seen when the resume point is episode [resumeEpisode]; null when none is */
+    internal fun seenBefore(resumeEpisode: Int): Int? = (resumeEpisode - 1).takeIf { it > 0 }
+
     fun progress(n: Notice): Progress {
         val id = n.key.substringBefore(':').toIntOrNull()
-        val local = runCatching { DataStoreHelper.getLastWatched(id)?.episode }.getOrNull()
+        // the resume point is the episode to play next (the player moves it on once one is 90 % watched, and it stays on one half watched):
+        // the episodes before it are the ones seen. Counted as seen, a new episode the viewer had not started showed "Caught up"
+        val local = runCatching { DataStoreHelper.getLastWatched(id)?.episode }.getOrNull()?.let { seenBefore(it) }
         val aid = runCatching { DataStoreHelper.getSubscribedData(id)?.syncData?.get("anilist")?.toIntOrNull() }.getOrNull()
         val al = aid?.let { AniListProgress.known[it] }
         val seen = listOfNotNull(local, al?.seen).maxOrNull()
@@ -133,7 +140,12 @@ object UpdateNotices {
 
     // ------------------------------------------------------------------ checking
 
-    private suspend fun check() {
+    // the timed check and "Check now" never run together: both could add the same notice, and two rows with one key crash the Notifications tab
+    private val checkLock = kotlinx.coroutines.sync.Mutex()
+
+    private suspend fun check() = checkLock.withLock { checkLocked() }
+
+    private suspend fun checkLocked() {
         val subscriptions = DataStoreHelper.getAllSubscriptions()
         if (subscriptions.isEmpty()) return
         checking = true
@@ -162,25 +174,37 @@ object UpdateNotices {
             (e > (saved.lastSeenEpisodeCount[DubStatus.None] ?: Int.MIN_VALUE)) to e
         }
         DataStoreHelper.updateSubscribedData(id, saved, response)
-        if (!isNew || episode == Int.MIN_VALUE) return
-        val key = "$id:$episode"
+        // a new season: the count above is of the latest season's episodes only, so season 2 episode 1 never beat season 1's episode 12 and no
+        // notice came for any of season 2. The season seen last is kept here (the first check only notes it, it does not announce anything)
+        val season = latestSeason(response)
+        val seasonPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(AndroidRuntime.context)
+        val seenSeason = seasonPrefs.getInt("desktop_notice_season_$id", -1)
+        if (season != null && season != seenSeason) seasonPrefs.edit().putInt("desktop_notice_season_$id", season).apply()
+        val newSeason = season != null && seenSeason >= 0 && season > seenSeason
+        if (!(isNew || newSeason) || episode == Int.MIN_VALUE) return
+        // with the season in it: "id:3" was the same notice for episode 3 of every season
+        val key = if (season != null) "$id:$season:$episode" else "$id:$episode"
         if (items.any { it.key == key }) return
+        val text = if (newSeason) "Season $season, episode $episode is out" else "Episode $episode is out"
         val notice = Notice(
-            key, saved.name, "Episode $episode is out", saved.apiName, saved.url, saved.posterUrl, saved.posterHeaders,
+            key, saved.name, text, saved.apiName, saved.url, saved.posterUrl, saved.posterHeaders,
             System.currentTimeMillis(), false, episode,
         )
-        kotlinx.coroutines.withContext(Dispatchers.Main) {
+        val added = kotlinx.coroutines.withContext(Dispatchers.Main) {
+            if (items.any { it.key == key }) return@withContext false
             items.add(0, notice)
             popup = listOf(notice) + popup.filter { it.key != notice.key }
             while (items.size > MAX_KEPT) items.removeAt(items.size - 1)
+            true
         }
+        if (!added) return
         save()
         // the window in front already shows it (the badge), a tray balloon would only be noise
         val inFront = runCatching { com.lagradost.desktop.ui.DesktopUiHost.window?.isActive == true }.getOrDefault(false)
         if (!inFront) {
             val n = android.app.Notification()
             n.title = saved.name
-            n.text = com.lagradost.desktop.i18n.Tr.t("Episode $episode is out")
+            n.text = com.lagradost.desktop.i18n.Tr.t(text)
             Notifications.post("subscription", id, n)
         }
     }
@@ -195,7 +219,7 @@ object UpdateNotices {
                 put("poster", n.poster ?: JSONObject.NULL); put("time", n.time); put("read", n.read); put("ep", n.episode ?: JSONObject.NULL)
                 n.posterHeaders?.let { h -> put("headers", JSONObject(h)) }
             })
-            file.writeText(arr.toString())
+            file.writeTextAtomic(arr.toString())
         }.onFailure { Log.w(TAG, "save: $it") }
     }
 
@@ -212,10 +236,17 @@ object UpdateNotices {
                     if (o.isNull("ep")) null else o.optInt("ep"),
                 )
             }
-        }.getOrDefault(emptyList())
+        }.getOrDefault(emptyList()).distinctBy { it.key } // a file saved with a repeated notice (before the lock above) loads again
         kotlinx.coroutines.withContext(Dispatchers.Main) {
             items.clear()
             items.addAll(list)
         }
     }
+}
+
+/** The highest season a title lists (null: its episodes have no season) */
+internal fun latestSeason(r: EpisodeResponse): Int? = when (r) {
+    is com.lagradost.cloudstream3.AnimeLoadResponse -> r.episodes.values.flatten().mapNotNull { it.season }.maxOrNull()
+    is com.lagradost.cloudstream3.TvSeriesLoadResponse -> r.episodes.mapNotNull { it.season }.maxOrNull()
+    else -> null
 }

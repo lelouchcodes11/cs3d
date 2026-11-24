@@ -69,7 +69,8 @@ object AiringSchedule {
         val zone = java.time.ZoneId.systemDefault()
         val key = "$first/$days/$zone"
         timetableCache?.let { (k, at, list) -> if (!force && k == key && now - at < CACHE_MS) return list }
-        val from = first.atStartOfDay(zone).toEpochSecond().toInt()
+        // AniList's airingAt_greater leaves out the moment itself: an episode at midnight of the first day (00:00 in Japan, where many air) was missing
+        val from = first.atStartOfDay(zone).toEpochSecond().toInt() - 1
         val to = first.plusDays(days.toLong()).atStartOfDay(zone).toEpochSecond().toInt()
         val out = fetch(from, to)
         timetableCache = Triple(key, now, out)

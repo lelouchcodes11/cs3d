@@ -150,12 +150,15 @@ class StremioApi(val addonUrl: String, displayName: String) : MainAPI() {
         for (a in candidates) {
             val json = StremioClient.getJson(StremioClient.resourceUrl(a.manifestUrl, "meta", type, id), ttlMs = 30 * 60_000L) ?: continue
             val meta = json.optJSONObject("meta") ?: continue
-            return StremioClient.parseMeta(meta, type)
+            // {"meta":{}} (an add-on that does not know the title) opened a page with no name and the next add-on was never asked
+            val parsed = StremioClient.parseMeta(meta, type)
+            if (parsed.name.isBlank()) continue
+            return parsed
         }
         return null
     }
 
-    private fun minutes(runtime: String?): Int? = runtime?.let { Regex("(\\d+)").find(it)?.value?.toIntOrNull() }
+    private fun minutes(runtime: String?): Int? = StremioClient.runtimeMinutes(runtime)
 
     override suspend fun load(url: String): LoadResponse? {
         val (type, id) = parseUrl(url) ?: throw ErrorLoadingException("Not a Stremio title")

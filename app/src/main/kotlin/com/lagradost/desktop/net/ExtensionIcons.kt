@@ -20,8 +20,9 @@ import java.io.File
  */
 object ExtensionIcons {
     private const val TAG = "ExtensionIcons"
-    private val byUrl = HashMap<String, String>()
-    private val fileToUrl = HashMap<String, String>()
+    // written from the start-up fetch, the after-load fetch and the window thread at once: plain maps lost entries (icons missing until the next start)
+    private val byUrl = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val fileToUrl = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var started = false
     private val file: File get() = File(AndroidRuntime.dataDir, "extension_icons.json")

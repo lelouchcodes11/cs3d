@@ -31,14 +31,37 @@ import com.lagradost.cloudstream3.mapper
 class CloudflarePass private constructor(private val evenWithoutCookies: Boolean, private val inSandbox: Boolean = false) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        if (inSandbox) return chain.proceed(request).let { r -> if (challenged(r)) byApp(request)?.also { r.close() } ?: r else r }
+        if (inSandbox) {
+            // a site the app has just answered for: straight to the app. Asking Cloudflare first only fetched its refusal again (a second request for
+            // every page of AnimePahe, which also counts against the site's rate limit: 429s while Home loaded)
+            val host = request.url.host
+            if ((appServed[host] ?: 0L) > System.currentTimeMillis()) {
+                val r = byApp(request)
+                if (r != null && !challenged(r)) { appServed[host] = System.currentTimeMillis() + APP_SERVED_MS; return r }
+                appServed.remove(host)
+                if (r != null) return r
+            }
+            val direct = chain.proceed(request)
+            if (!challenged(direct)) return direct
+            val r = byApp(request) ?: return direct
+            direct.close()
+            if (!challenged(r)) appServed[host] = System.currentTimeMillis() + APP_SERVED_MS
+            return r
+        }
         val own = request.header("Cookie")
-        if (evenWithoutCookies || own?.contains("cf_clearance=") == true) return chain.proceed(withPass(request) ?: request)
+        if (evenWithoutCookies || own?.contains("cf_clearance=") == true) {
+            val withCf = withPass(request) ?: return chain.proceed(request)
+            val r = chain.proceed(withCf)
+            if (challenged(r)) dropRejected(withCf)
+            return r
+        }
         val response = chain.proceed(request)
         if (!challenged(response)) return response
         val again = withPass(request) ?: return response
         response.close()
-        return chain.proceed(again)
+        val retried = chain.proceed(again)
+        if (challenged(retried)) dropRejected(again)
+        return retried
     }
 
     /** [request] with the browser's Cloudflare cookies and User-Agent, or null when the browser holds no pass for its site */
@@ -61,6 +84,10 @@ class CloudflarePass private constructor(private val evenWithoutCookies: Boolean
         val sandbox = CloudflarePass(false, inSandbox = true)
 
         private const val MAX_BODY = 32L * 1024 * 1024
+
+        /** Sandbox: sites whose requests the app answered (Cloudflare refuses the sandbox there), until when (renewed by each answer) */
+        private val appServed = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        private const val APP_SERVED_MS = 10 * 60_000L
 
         /** The sandbox's side: the app's answer to [request], or null when it has none (no pass for the site, not allowed, too big) */
         private fun byApp(request: Request): Response? {
@@ -95,6 +122,8 @@ class CloudflarePass private constructor(private val evenWithoutCookies: Boolean
             val request = sandboxRequests.withPass(builder.build()) ?: return@withContext out
             runCatching {
                 com.lagradost.cloudstream3.app.baseClient.newCall(request).execute().use { r ->
+                    // Cloudflare still refused the browser's pass: that pass (only that one, see dropRejected) is dead, the next solve starts clean
+                    if (challenged(r)) dropRejected(request)
                     val length = r.body.contentLength()
                     if (length > MAX_BODY) return@use
                     val bytes = r.body.source().let { s -> s.request(MAX_BODY + 1); if (s.buffer.size > MAX_BODY) return@use; s.readByteArray() }
@@ -108,6 +137,12 @@ class CloudflarePass private constructor(private val evenWithoutCookies: Boolean
 
         // the app's side uses the browser's pass as [requests] does
         private val sandboxRequests = CloudflarePass(false)
+
+        /** Drops the pass [request] carried when Cloudflare refused it; a newer pass the browser got meanwhile stays */
+        internal fun dropRejected(request: Request) {
+            val sent = request.header("Cookie")?.split(';')?.map { it.trim() }?.firstOrNull { it.startsWith("cf_clearance=") }?.substringAfter('=') ?: return
+            runCatching { WebCookies.dropCloudflareCookies(request.url.host, onlyClearance = true, onlyValue = sent) }
+        }
 
         private fun isCloudflareCookie(nameValue: String): Boolean {
             val name = nameValue.substringBefore('=').trim()

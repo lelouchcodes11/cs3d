@@ -70,4 +70,27 @@ class EpisodeDataTest {
         val out = withTmdbEpisodes(listOf(ep(1), pack), mapOf(1 to tm(t(1), t(17))), anime = false)
         assertEquals(pack, out[1])
     }
+
+    @Test
+    fun playStartsAtTheLowestEpisodeWhateverTheSortOrder() {
+        val newestFirst = listOf(ep(3), ep(2), ep(1))
+        assertEquals(1, firstToPlay(newestFirst)?.episode)
+        // a season pack in front is no episode to play
+        val pack = ep(0, "S01 – Show.S01.1080p.zip [1080p, 1 GB]")
+        assertEquals(2, firstToPlay(listOf(pack, ep(3), ep(2)))?.episode)
+        assertEquals(pack, firstToPlay(listOf(pack)))
+        assertNull(firstToPlay(emptyList()))
+    }
+
+    @Test
+    fun spoilersOpenUpToTheFurthestEpisodeReachedInAnyOrder() {
+        val watched = { n: Int -> ep(n).copy(videoWatchState = VideoWatchState.Watched) }
+        // newest first: episodes 1 and 2 seen; 3 and 4 stay covered (by position in the list every one was open)
+        assertEquals(setOf(1, 2), openEpisodeIds(listOf(ep(4), ep(3), watched(2), watched(1))))
+        assertEquals(setOf(1, 2), openEpisodeIds(listOf(watched(1), watched(2), ep(3), ep(4))))
+        // nothing begun: the first one only
+        assertEquals(setOf(1), openEpisodeIds(listOf(ep(3), ep(2), ep(1))))
+        // one started further on opens the ones before it
+        assertEquals(setOf(1, 2, 3), openEpisodeIds(listOf(ep(1), ep(2), ep(3).copy(position = 10, duration = 100), ep(4))))
+    }
 }

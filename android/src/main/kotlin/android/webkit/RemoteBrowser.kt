@@ -74,7 +74,12 @@ internal class RemoteEngine(private val view: WebView, private val remote: Remot
     @Volatile private var url: String? = null
     @Volatile private var canBack = false
     @Volatile private var canForward = false
+    @Volatile private var destroyed = false
     private val interfaces = ConcurrentHashMap<String, Any>()
+
+    private fun sendOp(op: String, args: JSONObject) {
+        if (!destroyed) remote.op(op, args)
+    }
 
     init {
         RemoteBrowsers.engines[id] = WeakReference(this)
@@ -117,7 +122,7 @@ internal class RemoteEngine(private val view: WebView, private val remote: Remot
         } catch (e: NoSuchMethodException) {
             false
         }
-        remote.op(
+        sendOp(
             "client",
             JSONObject()
                 .put("intercept", overridden("shouldInterceptRequest", WebView::class.java, WebResourceRequest::class.java) || overridden("shouldInterceptRequest", WebView::class.java, String::class.java))
@@ -132,46 +137,53 @@ internal class RemoteEngine(private val view: WebView, private val remote: Remot
     }
 
     override fun load(url: String, headers: Map<String, String>, postData: ByteArray?) {
+        if (destroyed) return
         originalUrl = url
         val o = JSONObject().put("url", url).put("headers", JSONObject(headers)).put("settings", settingsJson()).put("cookies", cookiesFor(url))
         if (postData != null) o.put("post", Base64.getEncoder().encodeToString(postData))
-        remote.op("load", o)
+        sendOp("load", o)
     }
 
     override fun loadDataAt(baseUrl: String, data: String, mime: String, encoding: String) {
+        if (destroyed) return
         originalUrl = baseUrl
-        remote.op("loadData", JSONObject().put("base", baseUrl).put("data", data).put("mime", mime).put("encoding", encoding).put("settings", settingsJson()))
+        sendOp("loadData", JSONObject().put("base", baseUrl).put("data", data).put("mime", mime).put("encoding", encoding).put("settings", settingsJson()))
     }
 
-    override fun reload() = remote.op("reload", JSONObject())
-    override fun stopLoading() = remote.op("stop", JSONObject())
+    override fun reload() = sendOp("reload", JSONObject())
+    override fun stopLoading() = sendOp("stop", JSONObject())
     override fun canGoBack(): Boolean = canBack
     override fun canGoForward(): Boolean = canForward
-    override fun goBack() = remote.op("back", JSONObject())
-    override fun goForward() = remote.op("forward", JSONObject())
-    override fun clearCache() = remote.op("clearCache", JSONObject())
-    override fun clearStorage(origin: String?) = remote.op("clearStorage", JSONObject().put("origin", origin ?: JSONObject.NULL))
+    override fun goBack() = sendOp("back", JSONObject())
+    override fun goForward() = sendOp("forward", JSONObject())
+    override fun clearCache() = sendOp("clearCache", JSONObject())
+    override fun clearStorage(origin: String?) = sendOp("clearStorage", JSONObject().put("origin", origin ?: JSONObject.NULL))
     override fun find(text: String) {}
 
     override fun evaluate(script: String, callback: ValueCallback<String>?) {
-        remote.op("settings", JSONObject().put("settings", settingsJson()))
+        if (destroyed) {
+            if (callback != null) main.post { callback.onReceiveValue("null") }
+            return
+        }
+        sendOp("settings", JSONObject().put("settings", settingsJson()))
         remote.evaluate(script) { result -> if (callback != null) main.post { callback.onReceiveValue(result ?: "null") } }
     }
 
     override fun addJavascriptInterface(obj: Any, name: String) {
+        if (destroyed) return
         interfaces[name] = obj
         val methods = obj.javaClass.methods.filter { it.isAnnotationPresent(JavascriptInterface::class.java) }
             .groupBy { it.name }.map { (n, ms) -> JSONObject().put("name", n).put("counts", JSONArray(ms.map { it.parameterCount }.distinct())) }
-        remote.op("bridge", JSONObject().put("name", name).put("methods", JSONArray(methods)))
+        sendOp("bridge", JSONObject().put("name", name).put("methods", JSONArray(methods)))
     }
 
     override fun removeJavascriptInterface(name: String) {
         interfaces.remove(name)
-        remote.op("unbridge", JSONObject().put("name", name))
+        sendOp("unbridge", JSONObject().put("name", name))
     }
 
     override fun dispatchMouse(event: MotionEvent) {
-        remote.op(
+        sendOp(
             "mouse",
             JSONObject().put("action", event.getActionMasked()).put("x", event.getX().toDouble()).put("y", event.getY().toDouble())
                 .put("downTime", event.getDownTime()).put("eventTime", event.getEventTime())
@@ -179,7 +191,7 @@ internal class RemoteEngine(private val view: WebView, private val remote: Remot
         )
     }
 
-    override fun applyUserAgent(ua: String) = remote.op("settings", JSONObject().put("settings", settingsJson()))
+    override fun applyUserAgent(ua: String) = sendOp("settings", JSONObject().put("settings", settingsJson()))
 
     // the size and the place on screen are the app's: it shows the page in a window of its own (see RemoteBrowserHost) and tells this view its size
     override fun layoutChanged() {}
@@ -188,6 +200,8 @@ internal class RemoteEngine(private val view: WebView, private val remote: Remot
     override fun uiComponent(): java.awt.Component? = null
 
     override fun destroy() {
+        if (destroyed) return
+        destroyed = true
         RemoteBrowsers.engines.remove(id)
         remote.op("destroy", JSONObject())
     }

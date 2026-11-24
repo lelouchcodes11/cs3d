@@ -55,7 +55,13 @@ data class SubtitleData(
 
     /** Returns true if langCode is the same as the IETF tag */
     fun matchesLanguageCode(langCode: String): Boolean {
-        return getIETF_tag() == langCode
+        val tag = getIETF_tag() ?: return false
+        if (tag.equals(langCode, ignoreCase = true)) return true
+        // desktop: "pt-BR" wanted and a subtitle that says only "Portuguese" (pt), or the other way round: the same language, and it was never
+        // picked. Two different regions ("pt-PT" for "pt-BR") still differ, and Chinese is left exact (a bare "zh" is mostly the simplified script)
+        val a = tag.split('-', '_')
+        val b = langCode.split('-', '_')
+        return a[0].equals(b[0], ignoreCase = true) && !a[0].equals("zh", ignoreCase = true) && (a.size == 1 || b.size == 1)
     }
 
     /** Tries hard to figure out a valid IETF tag based on language code and name. Will return null if not found. */

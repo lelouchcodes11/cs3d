@@ -231,7 +231,10 @@ object AppContainerLauncher {
             return n.value
         }
 
-        override fun close() { kernel.CloseHandle(handle) }
+        // once only: the pipe is closed by the RPC peer and again by destroy(); Windows reuses a freed handle value, so a second CloseHandle could close
+        // an unrelated file or socket opened in between
+        private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+        override fun close() { if (closed.compareAndSet(false, true)) kernel.CloseHandle(handle) }
     }
 
     private class PipeOut(private val handle: Pointer) : OutputStream() {
@@ -247,7 +250,8 @@ object AppContainerLauncher {
             }
         }
 
-        override fun close() { kernel.CloseHandle(handle) }
+        private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+        override fun close() { if (closed.compareAndSet(false, true)) kernel.CloseHandle(handle) }
     }
 
     /**

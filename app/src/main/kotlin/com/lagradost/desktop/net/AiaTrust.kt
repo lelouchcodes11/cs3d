@@ -27,7 +27,7 @@ import javax.net.ssl.X509TrustManager
 object AiaTrust {
     private const val TAG = "AiaTrust"
     private const val CA_ISSUERS_OID = "1.3.6.1.5.5.7.48.2"
-    private const val NEGATIVE_TTL_MS = 30_000L
+    private const val NEGATIVE_TTL_MS = 120_000L
 
     private class Fetched(val certs: List<X509Certificate>, val at: Long)
 
@@ -89,18 +89,24 @@ object AiaTrust {
         return null
     }
 
-    private fun download(url: String): List<X509Certificate> {
+    // one download per address at a time: connections opened together (a page's pictures) each downloaded it, every one inside its TLS handshake
+    private val downloadLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    private fun download(url: String): List<X509Certificate> = synchronized(downloadLocks.computeIfAbsent(url) { Any() }) { downloadLocked(url) }
+
+    private fun downloadLocked(url: String): List<X509Certificate> {
         val now = System.currentTimeMillis()
         fetched[url]?.let { if (it.certs.isNotEmpty() || now - it.at < NEGATIVE_TTL_MS) return it.certs }
-        // a few tries: on a network that resets some connections one failure must not decide for the next minutes
+        // two tries: on a network that resets some connections one failure must not decide for the next minutes. Short limits: this runs inside a TLS
+        // handshake, where the connection's own time limits do not apply (3 tries of 5 + 5 s held a connection up to 30 s)
         var certs: List<X509Certificate> = emptyList()
-        for (attempt in 1..3) {
+        for (attempt in 1..2) {
             certs = try {
                 val uri = URI(url)
                 if (uri.scheme != "http" && uri.scheme != "https") emptyList() else {
                     val connection = uri.toURL().openConnection() as HttpURLConnection
-                    connection.connectTimeout = 5_000
-                    connection.readTimeout = 5_000
+                    connection.connectTimeout = 3_000
+                    connection.readTimeout = 3_000
                     connection.instanceFollowRedirects = true
                     val bytes = connection.inputStream.use { it.readNBytes(256 * 1024) }
                     factory.generateCertificates(ByteArrayInputStream(bytes)).filterIsInstance<X509Certificate>()

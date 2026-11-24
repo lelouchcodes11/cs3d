@@ -284,12 +284,12 @@ fun updateProfile(updated: DataStoreHelper.Account) {
 }
 
 /** A picture chosen in the Windows file dialog, copied into the data folder for this profile; null when cancelled */
-private fun pickProfilePicture(keyIndex: Int): String? {
+private fun pickProfilePicture(keyIndex: Int, keep: String?): String? {
     val dialog = java.awt.FileDialog(com.lagradost.desktop.ui.DesktopUiHost.window, "Choose a picture", java.awt.FileDialog.LOAD)
     dialog.setFilenameFilter { _, n -> n.lowercase().substringAfterLast('.') in setOf("png", "jpg", "jpeg", "webp", "bmp", "gif") }
     dialog.isVisible = true
     val file = dialog.file?.let { java.io.File(dialog.directory, it) }?.takeIf { it.isFile } ?: return null
-    return copyProfilePicture(keyIndex, file)
+    return copyProfilePicture(keyIndex, file, keep)
 }
 
 private val PICTURE_TYPES = setOf("png", "jpg", "jpeg", "webp", "bmp", "gif")
@@ -317,14 +317,23 @@ private fun addMyPictures(): Int {
 }
 
 /** [file] copied into the data folder as the picture of this profile */
-private fun copyProfilePicture(keyIndex: Int, file: java.io.File): String {
+// [keep] = the picture the saved profile still uses: removing it before Save would leave a cancelled edit with no picture
+private fun copyProfilePicture(keyIndex: Int, file: java.io.File, keep: String?): String {
     return runCatching {
         val dir = java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "files").also { it.mkdirs() }
         val copy = java.io.File(dir, "profile-$keyIndex-${System.currentTimeMillis()}." + file.extension.lowercase().ifBlank { "png" })
         file.copyTo(copy, overwrite = true)
-        dir.listFiles { f -> f.name.startsWith("profile-$keyIndex-") && f != copy }?.forEach { it.delete() }
+        dir.listFiles { f -> f.name.startsWith("profile-$keyIndex-") && f != copy && f.absolutePath != keep }?.forEach { it.delete() }
         copy.absolutePath
     }.getOrElse { file.absolutePath }
+}
+
+/** After Save: the copies of pictures this profile no longer uses */
+private fun removeOldProfilePictures(keyIndex: Int, inUse: String?) {
+    runCatching {
+        val dir = java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "files")
+        dir.listFiles { f -> f.name.startsWith("profile-$keyIndex-") && f.absolutePath != inUse }?.forEach { it.delete() }
+    }
 }
 
 /** The "Edit profile" window: name, show icon, animated character, or custom picture. */
@@ -348,6 +357,7 @@ private fun openProfileEditor(account: DataStoreHelper.Account, onSaved: () -> U
             onPrimary = {
                 val updated = account.copy(name = draft.name.trim(), customImage = draft.custom, defaultImageIndex = draft.index, lockPin = draft.pin)
                 updateProfile(updated)
+                removeOldProfilePictures(account.keyIndex, updated.customImage)
                 ProfileLooks.set(account.keyIndex, draft.asLook())
                 if (draft.startHere) StartProfile.set(account.keyIndex) else if (StartProfile.get() == account.keyIndex) StartProfile.set(null)
                 val kidsBefore = com.lagradost.desktop.core.Kids.isKids(account.keyIndex) to com.lagradost.desktop.core.Kids.allowed(account.keyIndex)
@@ -397,7 +407,7 @@ private fun openProfileEditor(account: DataStoreHelper.Account, onSaved: () -> U
                             }
                             FText(selectedInfo, style = Fluent.type.caption, color = c.textSecondary, maxLines = 1)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button("Upload…", { pickProfilePicture(account.keyIndex)?.let { draft.custom = it; draft.style = AvatarStyle.Picture } }, kind = ButtonKind.Subtle, icon = Icons.Folder, height = 28.dp)
+                                Button("Upload…", { pickProfilePicture(account.keyIndex, account.customImage)?.let { draft.custom = it; draft.style = AvatarStyle.Picture } }, kind = ButtonKind.Subtle, icon = Icons.Folder, height = 28.dp)
                                 if (draft.custom != null || draft.style != AvatarStyle.Icon || draft.character != ProfileIconCatalog.defaultFor(account.keyIndex).id) {
                                     Button("Reset", {
                                         val def = ProfileIconCatalog.defaultFor(account.keyIndex)
@@ -628,7 +638,7 @@ private fun openProfileEditor(account: DataStoreHelper.Account, onSaved: () -> U
                                             Box(
                                                 Modifier.size(58.dp).clip(CircleShape).border(if (on) 3.dp else Dp.Hairline, if (on) c.selectedEdge else c.stroke, CircleShape)
                                                     .fluentClickable(rememberInteraction(), true, CircleShape, Role.RadioButton) {
-                                                        draft.custom = copyProfilePicture(account.keyIndex, f)
+                                                        draft.custom = copyProfilePicture(account.keyIndex, f, account.customImage)
                                                         draft.style = AvatarStyle.Picture
                                                         pickedMine = f.name
                                                     },

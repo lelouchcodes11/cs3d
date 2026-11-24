@@ -36,7 +36,7 @@ kotlin {
 val appVersion = "4.9.1"
 
 /** This desktop app's own release version: the installer, the About page and the update checker (a GitHub release tag `v<this>`) */
-val desktopVersion = "1.1.3"
+val desktopVersion = "1.2.0"
 
 /**
  * Generates com.lagradost.cloudstream3.R and packages the resources: the Android libraries' res/
@@ -822,8 +822,14 @@ compose.desktop {
             "-XX:+UseShenandoahGC",
             // without a target the collector lets garbage pile up towards the heap's limit (a quarter of the PC's memory) before it runs: measured
             // 2.7 GB taken from Windows 70 s after a video that failed to load, with under 100 MB really in use. With the target it collects
-            // earlier (same case: 605 MB at most); the heap may still grow past it when the app really needs more
-            "-XX:SoftMaxHeapSize=768m",
+            // earlier (same case: 605 MB at most); the heap may still grow past it when the app really needs more. 512 MB, not 768 (2026-11-22): the
+            // live data after a minute on Home was about 60 MB, the heap had grown to 603 MB of mostly garbage
+            "-XX:SoftMaxHeapSize=512m",
+            // memory the app no longer uses goes back to Windows after 1 minute, not 5: after a video or a long browse the heap had grown to ~600 MB
+            // and Task Manager showed it for 5 more minutes with under 150 MB in use. A collection at least every 2 minutes lets that happen while idle
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:ShenandoahUncommitDelay=60000",
+            "-XX:ShenandoahGuaranteedGCInterval=120000",
             // a library that asks for a full collection (System.gc()) gets a concurrent one instead of a pause with every thread stopped
             "-XX:+ExplicitGCInvokesConcurrent",
             // start-up: the app's classes (about 12k) are loaded from a class-data-sharing archive that portableDist creates

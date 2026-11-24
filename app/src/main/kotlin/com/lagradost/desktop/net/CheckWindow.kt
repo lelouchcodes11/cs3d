@@ -48,7 +48,7 @@ object CheckWindow {
     /** How long the page may take to show a check (or the site) before it is given up */
     private const val LOOK_MS = 15_000L
 
-    private val challengeTitle = Regex("just a moment|attention required|verify you are human|checking your browser|one more step|security check|un instant|einen moment|un momento", RegexOption.IGNORE_CASE)
+    private val challengeTitle = Regex("just a moment|attention required|verify you are human|checking your browser|one more step|security check|performing security verification|human verification|ddos-guard|un instant|einen moment|un momento", RegexOption.IGNORE_CASE)
 
     fun isChallengeTitle(title: String?): Boolean = !title.isNullOrBlank() && challengeTitle.containsMatchIn(title)
 
@@ -116,9 +116,12 @@ object CheckWindow {
             openFor[host] = done
             var page: Page? = null
             try {
-                page = runCatching { onMain { Page(url, userAgent) } }.onFailure { Log.w(TAG, "no page could be made for the check of $host: $it") }.getOrNull()
+                // made whatever happens to this call: a check that passed while the page was being made (this call cancelled) left a page nobody closed,
+                // running the check page for the rest of the session. Now it is kept in [page] and the finally below closes it.
+                page = runCatching { withContext(NonCancellable) { onMain { Page(url, host, userAgent) } } }.onFailure { Log.w(TAG, "no page could be made for the check of $host: $it") }.getOrNull()
                     ?: return unattendedEnd()
-                run(page, host, onPassed)
+                kotlinx.coroutines.yield() // throws when this call was cancelled meanwhile (the finally closes the page)
+                run(page, url, host, onPassed)
                 stop()
             } finally {
                 openFor.remove(host, done)
@@ -131,7 +134,7 @@ object CheckWindow {
     }
 
     /** The page's life: looked at hidden, shown once it shows a check, closed when it is through, cancelled or out of time */
-    private suspend fun run(page: Page, host: String, onPassed: () -> Unit) {
+    private suspend fun run(page: Page, url: String, host: String, onPassed: () -> Unit) {
         val opened = System.currentTimeMillis()
         // 1. hidden: does the site still show a check? It is shown once the check page has loaded and had a moment to draw: shown at its title
         // it was a white box for seconds, and on the owner's PC for a whole minute
@@ -160,8 +163,10 @@ object CheckWindow {
         current = page
         Log.i(TAG, "the check of $host is shown to the user (for $name)")
         attention()
+        val shownAt = System.currentTimeMillis()
+        var blankRecovered = false
         var throughSince = 0L
-        val until = System.currentTimeMillis() + ATTENDED_MS
+        val until = shownAt + ATTENDED_MS
         while (System.currentTimeMillis() < until) {
             delay(250)
             page.dialog?.more = queued.get()
@@ -169,8 +174,25 @@ object CheckWindow {
                 CloudflareGate.cancelledByUser(host)
                 return
             }
+            if (!blankRecovered && System.currentTimeMillis() - shownAt > 8_000) {
+                blankRecovered = true
+                if (page.isVisiblyBlank()) {
+                    val fallbackUrl = runCatching {
+                        val u = java.net.URI(url)
+                        val isRoot = (u.rawPath.isNullOrEmpty() || u.rawPath == "/") && u.rawQuery.isNullOrEmpty()
+                        if (isRoot) null else "${u.scheme ?: "https"}://$host/"
+                    }.getOrNull()
+                    Log.i(TAG, "the check page of $host is still blank after 8 s: ${if (fallbackUrl != null) "loading $fallbackUrl" else "reloading"}")
+                    runCatching { com.lagradost.desktop.runtime.web.WebCookies.dropCloudflareCookies(host) }
+                    onMain {
+                        if (fallbackUrl != null) page.view.loadUrl(fallbackUrl) else page.view.reload()
+                    }
+                    continue
+                }
+            }
             val title = page.title
-            if (!title.isNullOrBlank() && !isChallengeTitle(title)) {
+            val cleared = page.finished && !isChallengeTitle(title) && runCatching { com.lagradost.desktop.runtime.web.WebCookies.hasClearance(host) }.getOrDefault(false)
+            if ((!title.isNullOrBlank() && !isChallengeTitle(title)) || cleared) {
                 if (throughSince == 0L) throughSince = System.currentTimeMillis()
                 if (System.currentTimeMillis() - throughSince > 800) {
                     Log.i(TAG, "the check of $host was passed in the window")
@@ -214,7 +236,7 @@ object CheckWindow {
         }
 
     /** The page of one check (made, shown and closed on the main thread; its title is read from anywhere) */
-    private class Page(url: String, userAgent: String?) {
+    private class Page(url: String, private val host: String, userAgent: String?) {
         @Volatile var title: String? = null
         @Volatile var finished = false
         @Volatile var finishedAt = 0L
@@ -224,6 +246,8 @@ object CheckWindow {
         val view: WebView = WebView(DesktopBootstrap.activity)
 
         init {
+            // (no pass is deleted here: this page opens 8 s into a hidden solve, often just as that solve earned a new pass, and deleting "the pass of
+            // the site" here deleted the new one; a pass Cloudflare refused is dropped where it was refused, see CloudflarePass.dropRejected)
             view.getSettings().apply {
                 setJavaScriptEnabled(true)
                 setDomStorageEnabled(true)
@@ -248,8 +272,35 @@ object CheckWindow {
             view.loadUrl(url)
         }
 
+        suspend fun isVisiblyBlank(): Boolean {
+            val result = CompletableDeferred<String?>()
+            runCatching {
+                onMain {
+                    view.evaluateJavascript(
+                        "(function(){var t=(document.body&&document.body.innerText||'').trim().length;var f=document.querySelectorAll('iframe').length;return t+','+f;})()",
+                    ) { result.complete(it) }
+                }
+            }.onFailure { return false }
+            val raw = withTimeoutOrNull(2_000) { result.await() }?.trim()?.trim('"') ?: return false
+            val parts = raw.split(',')
+            val textLen = parts.getOrNull(0)?.toIntOrNull() ?: return false
+            val iframes = parts.getOrNull(1)?.toIntOrNull() ?: return false
+            return textLen == 0 && iframes == 0
+        }
+
         fun show(extension: String?): Boolean {
-            val d = CheckDialog(DesktopBootstrap.activity, extension, url = { runCatching { view.getUrl() }.getOrNull() }, reload = { main.post { runCatching { view.reload() } } }, ownWindow = true)
+            val d = CheckDialog(
+                DesktopBootstrap.activity,
+                extension,
+                url = { runCatching { view.getUrl() }.getOrNull() },
+                reload = {
+                    main.post {
+                        runCatching { com.lagradost.desktop.runtime.web.WebCookies.dropCloudflareCookies(host) }
+                        runCatching { view.reload() }
+                    }
+                },
+                ownWindow = true,
+            )
             (view.getParent() as? ViewGroup)?.removeView(view)
             d.setContentView(view)
             d.setOnCancelListener { cancelled = true }

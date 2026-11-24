@@ -105,6 +105,15 @@ object IsolatedHost {
             // after a restart the extensions that were in it are loaded again
             val specs = synchronized(loaded) { loaded.values.toList() }
             for (spec in specs) runCatching { started.call("loadPlugin", loadBody(spec), 120_000) }.onFailure { Log.w(TAG, "${spec.internalName} did not load again: $it") }
+            // it died while the extensions were loaded again (one of them takes it down): a failed start, so the pause applies; before, every request
+            // started it twice more at once, for ever
+            if (started.isClosed) {
+                failedStarts++
+                lastFailedStart = System.currentTimeMillis()
+                lastError = "the sandbox stopped while its extensions were loaded again"
+                Log.e(TAG, "the sandbox ended while reloading its extensions ($failedStarts)")
+                return@withLock null
+            }
             started
         }
     }
@@ -129,6 +138,7 @@ object IsolatedHost {
         rpc.onClosed = { reason -> Log.w(TAG, "the sandbox ended: $reason"); child.destroy(); if (peer === rpc) peer = null; RemoteBrowserHost.closeFor(null) }
         peer = rpc
         settingsHash = 0
+        lastSentSettings = null
         try {
             rpc.call("ping", null, 60_000)
             syncSettings(rpc)
@@ -293,17 +303,59 @@ object IsolatedHost {
     }
 
     @Volatile private var lastSettingsCheck = 0L
+    /** The settings the running sandbox was last sent (null: it has none yet, the next copy is the whole one) */
+    @Volatile private var lastSentSettings: JsonNode? = null
+
+    private fun settingsDelta(old: JsonNode?, new: JsonNode): JsonNode {
+        if (old == null) return new
+        fun diff(o: JsonNode?, n: JsonNode?): com.fasterxml.jackson.databind.node.ObjectNode {
+            val r = mapper.createObjectNode()
+            n?.fields()?.forEach { (k, v) -> if (o?.get(k) != v) r.set<JsonNode>(k, v) }
+            val gone = o?.fieldNames()?.asSequence()?.filter { k -> n?.has(k) != true }?.toList().orEmpty()
+            // most of a file gone at once is a file that could not be read this time (it happened to the app's own settings once), not the user
+            // clearing them: nothing is removed then
+            if (gone.size > 10 && gone.size * 2 > (o?.size() ?: 0)) Log.w(TAG, "${gone.size} settings missing at once: not removed in the sandbox")
+            else gone.forEach { k -> r.set<JsonNode>(k, mapper.createObjectNode().put("t", "rm")) }
+            return r
+        }
+        val out = mapper.createObjectNode()
+        out.set<JsonNode>("default", diff(old.get("default"), new.get("default")))
+        out.set<JsonNode>("store", diff(old.get("store"), new.get("store")))
+        val files = mapper.createObjectNode()
+        val names = (old.get("files")?.fieldNames()?.asSequence().orEmpty() + new.get("files")?.fieldNames()?.asSequence().orEmpty()).toSet()
+        for (name in names) diff(old.get("files")?.get(name), new.get("files")?.get(name)).takeIf { it.size() > 0 }?.let { files.set<JsonNode>(name, it) }
+        out.set<JsonNode>("files", files)
+        new.get("userAgent")?.let { out.set<JsonNode>("userAgent", it) }
+        return out
+    }
+
+    private val settingsLock = Mutex()
+
+    /** Tells the sandbox to pick up changed settings (such as a new DNS choice) right away, without waiting for the next poll window */
+    fun notifySettingsChanged() {
+        lastSettingsCheck = 0L
+        settingsHash = 0
+        val rpc = rpcOrNull() ?: return
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { runCatching { syncSettings(rpc) } }
+    }
 
     private suspend fun syncSettings(rpc: RpcPeer) {
         // looked at most every second and a half: a call for each piece of a video would otherwise build the snapshot each time
         val now = System.currentTimeMillis()
         if (settingsHash != 0 && now - lastSettingsCheck < 1_500) return
-        lastSettingsCheck = now
-        val snapshot = settingsSnapshot()
-        val hash = snapshot.toString().hashCode()
-        if (hash == settingsHash) return
-        rpc.call("settings", snapshot, 30_000)
-        settingsHash = hash
+        settingsLock.withLock {
+            val t = System.currentTimeMillis()
+            if (settingsHash != 0 && t - lastSettingsCheck < 1_500) return
+            lastSettingsCheck = t
+            val snapshot = settingsSnapshot()
+            val hash = snapshot.toString().hashCode()
+            if (hash == settingsHash) return
+            // only what changed since the last copy, and what was removed: the whole copy each time put back keys the user had cleared and wrote the
+            // app's older value over one the extension had changed in the sandbox
+            rpc.call("settings", settingsDelta(lastSentSettings, snapshot), 30_000)
+            lastSentSettings = snapshot
+            settingsHash = hash
+        }
     }
 
     // ---- extensions --------------------------------------------------------------------------------------------------------------------------------
@@ -357,6 +409,14 @@ object IsolatedHost {
         return Loaded.Providers(reply.get("providers").map { RemoteMainAPI.Meta.from(spec.path, it) }, hasSettings, reply.get("extractors")?.map { RemoteExtractorApi.Meta.from(it) }.orEmpty())
     }
 
+    /** The sandbox converts the code of an extension file ahead of loading it (see Isolation.prepareUpdate); nothing happens when it is not running */
+    suspend fun prepare(path: String) {
+        val rpc = peer?.takeIf { !it.isClosed } ?: return
+        val container = AppContainerLauncher.container(CONTAINER)
+        if (!AppContainerLauncher.hasAccess(container, File(path), false)) AppContainerLauncher.grant(container, File(path), write = false)
+        rpc.call("prepare", mapper.createObjectNode().put("path", path), 120_000)
+    }
+
     suspend fun unloadPlugin(path: String) {
         synchronized(loaded) { loaded.remove(path) }
         synchronized(settingsPaths) { settingsPaths -= path }
@@ -368,14 +428,17 @@ object IsolatedHost {
     /** A call for an extension in the sandbox; [onEvent] gets what it sends while the call is open (a link, a subtitle) */
     suspend fun call(op: String, body: Any, timeoutMs: Long, onEvent: ((String, JsonNode) -> Unit)? = null): JsonNode {
         var attempt = 0
+        // what the first try already handed over (links, subtitles) would come a second time from a retry: the source list showed them twice
+        val delivered = java.util.concurrent.atomic.AtomicBoolean(false)
+        val events: ((String, JsonNode) -> Unit)? = onEvent?.let { handler -> { op, node -> delivered.set(true); handler(op, node) } }
         while (true) {
             val rpc = ensureRunning() ?: throw IllegalStateException("the extension sandbox is not available")
             try {
                 syncSettings(rpc)
-                return rpc.call(op, body, timeoutMs, onEvent)
+                return rpc.call(op, body, timeoutMs, events)
             } catch (t: IllegalStateException) {
                 // the process ended while it was working (a crash of the Java runtime in it): it is started again, with its extensions, and the request is made once more
-                if (attempt++ >= 1 || !rpc.isClosed) throw t
+                if (attempt++ >= 1 || !rpc.isClosed || delivered.get()) throw t
                 Log.w(TAG, "the sandbox ended during $op: starting it again")
             }
         }

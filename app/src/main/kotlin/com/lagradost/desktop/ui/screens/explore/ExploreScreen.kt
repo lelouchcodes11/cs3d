@@ -149,10 +149,11 @@ fun LazyListScope.exploreSections(f: ExploreFilters, rows: List<ExploreRow>, car
  * What Home shows under its notice when the extension it uses cannot be reached or has nothing: what is trending (TMDB's films and series, AniList's
  * anime), each title opening a search for it in the installed extensions. Home is never an empty page with an error on it.
  */
+// made once: new row objects at every rebuild of the list sent every shelf back to grey cards and loaded it again (the rows are the keys of their loads)
+private val discoverRows by lazy { Triple(ExploreClient.rows(ExploreKind.Movies, null, null), ExploreClient.rows(ExploreKind.Series, null, null), ExploreClient.rows(ExploreKind.Anime, null, null)) }
+
 fun LazyListScope.discoverSections(cardWidth: Dp) {
-    val movies = ExploreClient.rows(ExploreKind.Movies, null, null)
-    val series = ExploreClient.rows(ExploreKind.Series, null, null)
-    val anime = ExploreClient.rows(ExploreKind.Anime, null, null)
+    val (movies, series, anime) = discoverRows
     item(key = "discover-hero") { ExploreHero(movies.first()) }
     item(key = "discover-movies") { ExploreShelf(movies.first(), cardWidth) }
     item(key = "discover-anime") { ExploreShelf(anime.first(), cardWidth) }
@@ -184,7 +185,7 @@ internal fun ExploreHero(first: ExploreRow) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         typeLabel(item.type)?.let { ArtChip(it, accent = true) }
                         item.year?.let { ArtChip(it.toString()) }
-                        item.score.shown()?.let { ArtChip("★ " + it.toString(10, 1)) }
+                        item.score.shown()?.let { ArtChip("★ " + it.toString(10, 1, removeTrailingZeros = false)) }
                     }
                     FText(item.name, style = Fluent.type.titleLarge.copy(fontSize = 38.sp, lineHeight = 44.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black), color = Color.White, maxLines = 2)
                     item.overview?.let { FText(it, color = Color(0xD9FFFFFF), maxLines = 2) }
@@ -229,8 +230,22 @@ internal fun ExploreShelf(row: ExploreRow, cardWidth: Dp) {
         value = null
         value = runCatching { row.load() }.getOrDefault(emptyList())
     }
+    // "See all": the whole list in a grid, its next pages asked for as it is scrolled to the end (a shelf shows the first 20, a top 10 only ten)
+    val seeAll: (() -> Unit)? = cards?.takeIf { it.isNotEmpty() }?.let { first ->
+        {
+            var page = 1
+            val all = first.toMutableList()
+            val seen = first.mapTo(HashSet()) { it.url }
+            val more: suspend () -> Pair<List<com.lagradost.cloudstream3.SearchResponse>, Boolean> = {
+                val next = runCatching { row.loadPage(page + 1) }.getOrDefault(emptyList())
+                if (next.isNotEmpty()) { page++; all += next.filter { seen.add(it.url) } }
+                all.toList() to (next.isNotEmpty() && page < 25)
+            }
+            Navigator.go(com.lagradost.desktop.core.Route.Section(row.title, first, more))
+        }
+    }
     Column(Modifier.padding(bottom = Appearance.space(30.dp))) {
-        RichSectionHeader(row.title, Modifier.padding(horizontal = gutter))
+        RichSectionHeader(row.title, Modifier.padding(horizontal = gutter), onSeeAll = seeAll)
         Box(Modifier.height(12.dp))
         val list = cards
         when {

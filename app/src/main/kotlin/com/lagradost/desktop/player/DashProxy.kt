@@ -121,7 +121,7 @@ object DashProxy {
         val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: return null)
         var userAgent = false
         for ((k, v) in entry.headers) {
-            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Range", true) || k.equals("Cookie", true)) continue
+            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Accept-Encoding", true) || k.equals("Range", true) || k.equals("Cookie", true)) continue
             if (k.equals("User-Agent", true)) userAgent = true
             com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
         }
@@ -394,7 +394,7 @@ object DashProxy {
             if (System.currentTimeMillis() - entry.manifestAt < 1000) return
             runCatching {
                 val builder = Request.Builder().url(entry.url.toHttpUrlOrNull() ?: return)
-                for ((k, v) in entry.headers) if (!k.equals("Host", true) && !k.equals("Range", true) && !k.equals("Content-Length", true) && !k.equals("Cookie", true)) com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
+                for ((k, v) in entry.headers) if (!k.equals("Host", true) && !k.equals("Range", true) && !k.equals("Accept-Encoding", true) && !k.equals("Content-Length", true) && !k.equals("Cookie", true)) com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
                 entry.cookieFor(builder.build().url.host, entry.headers.entries.firstOrNull { it.key.equals("Cookie", true) }?.value)?.let { builder.header("Cookie", it) }
                 if (entry.headers.keys.none { it.equals("User-Agent", true) }) builder.header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
                 builder.cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
@@ -445,6 +445,9 @@ object DashProxy {
     private val freshClient by lazy {
         client.newBuilder().connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS)).protocols(listOf(okhttp3.Protocol.HTTP_1_1)).build()
     }
+
+    /** Starts the local server ahead of the first video (the warm-up after the start): the first video started it on the UI thread */
+    fun warmUp() { server }
 
     private val server: HttpServer by lazy {
         HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 32).apply {
@@ -511,7 +514,7 @@ object DashProxy {
         val builder = Request.Builder().url(url.toHttpUrlOrNull() ?: throw IOException("bad address $url"))
         var userAgent = false
         for ((k, v) in entry.headers) {
-            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Range", true) || k.equals("Cookie", true)) continue
+            if (k.equals("Host", true) || k.equals("Content-Length", true) || k.equals("Connection", true) || k.equals("Accept-Encoding", true) || k.equals("Range", true) || k.equals("Cookie", true)) continue
             if (k.equals("User-Agent", true)) userAgent = true
             com.lagradost.desktop.net.RawHeaders.set(builder, k, v)
         }

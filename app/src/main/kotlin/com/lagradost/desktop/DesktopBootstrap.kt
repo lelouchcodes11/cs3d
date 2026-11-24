@@ -13,7 +13,6 @@ import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKey as appGetKey
 import com.lagradost.cloudstream3.APIHolder
 import kotlin.reflect.full.createInstance
 import kotlinx.coroutines.sync.withLock
-import com.lagradost.cloudstream3.actions.temp.fcast.FcastManager
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.ui.APIRepository
 import com.lagradost.cloudstream3.utils.AppContextUtils.getApiDubstatusSettings
@@ -97,8 +96,11 @@ object DesktopBootstrap {
     /** Starts the app's task. Must run on the main thread after [initApplication]. */
     fun launch(link: String? = null) = ActivityStack.start(launcherIntent(link))
 
+    private val appInitialised = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** Initialise the runtime and the application object (no activity yet) */
     fun initApplication(dataDir: File? = null) {
+        if (!appInitialised.compareAndSet(false, true)) return
         runCatching { Security.insertProviderAt(org.conscrypt.Conscrypt.newProvider(), 1) } // before OkHttp is first used, see main()
         if (dataDir != null) AndroidRuntime.init(dataDir) else AndroidRuntime.init()
         // a new data folder after an update (a fresh portable copy, a wiped install folder) gets the settings of the last version back
@@ -327,7 +329,8 @@ object DesktopBootstrap {
         if (System.getProperty("cloudstream.worker") == null) ioSafe { com.lagradost.desktop.net.OAuthCallback.start() }
 
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: before fcast")
-        if (System.getProperty("cloudstream.worker") == null) FcastManager().init(act, false)
+        // desktop: no search for FCast receivers. Nothing in the app reads the devices it finds, and it kept a multicast DNS search going on every
+        // network adapter for as long as the app ran (its own threads, a packet every few seconds, processor time while idle)
         com.lagradost.desktop.platform.StartupProfile.mark("onCreate: after fcast")
 
         APIRepository.dubStatusActive = act.getApiDubstatusSettings()
@@ -352,8 +355,8 @@ object DesktopBootstrap {
             act.removeKey(USER_SELECTED_HOMEPAGE_API)
         }
 
-        // Start the download queue
-        DownloadQueueManager.init(act)
+        // Start the download queue: only the window that holds the downloads lock resumes what was left (two windows of one data folder wrote into the same files)
+        DownloadQueueManager.init(act, resume = DownloadsOwner.claim())
 
         // onCreate is done, the activity becomes visible
         if (activityLifecycle) {
@@ -416,5 +419,22 @@ object DesktopBootstrap {
             }
             builder.show().setDefaultFocus()
         }
+    }
+}
+
+/** The one app window of a data folder that resumes unfinished downloads: a lock on a file there, held until the process ends (Windows frees it then, also after a crash) */
+private object DownloadsOwner {
+    private var channel: java.nio.channels.FileChannel? = null
+    private var lock: java.nio.channels.FileLock? = null
+
+    fun claim(): Boolean = synchronized(this) {
+        if (lock != null) return true
+        runCatching {
+            val f = java.io.File(com.lagradost.desktop.runtime.AndroidRuntime.dataDir, "downloads.lock")
+            val ch = java.nio.channels.FileChannel.open(f.toPath(), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE)
+            val l = ch.tryLock()
+            if (l == null) { ch.close(); android.util.Log.i("Downloads", "another window of this data folder runs the downloads"); false }
+            else { channel = ch; lock = l; true }
+        }.getOrDefault(true)
     }
 }

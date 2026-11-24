@@ -332,7 +332,8 @@ private fun MenuChip(text: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun QualityPage(s: PlayerSession) {
     val video = s.videoTracks().sortedByDescending { it.height ?: 0 }
-    var pick by remember { mutableStateOf(video.indexOfFirst { it.id == s.currentVideo()?.id }) }
+    // keyed on what plays: a quality changed by the player (one step down while buffering) moves the check mark, and the old row can be picked again
+    var pick by remember(s.currentVideo()?.id, video.size) { mutableStateOf(video.indexOfFirst { it.id == s.currentVideo()?.id }) }
     if (video.isEmpty()) { Note(s.resolution?.let { "$it, the only quality of this source" } ?: "The only quality of this source"); return }
     ChoicePage(video.mapIndexed { i, t -> tier(t.width, t.height) ?: t.label ?: "${i + 1}" }, pick, details = video.map { t -> if (t.width != null && t.height != null) "${t.width}×${t.height}" else null }) {
         if (it != pick) { pick = it; s.selectVideo(video[it]) }
@@ -342,18 +343,18 @@ private fun QualityPage(s: PlayerSession) {
 @Composable
 private fun AudioPage(s: PlayerSession) {
     val audio = s.audioTracks()
-    var pick by remember { mutableStateOf(audio.indexOfFirst { it.id == s.currentAudio()?.id }.coerceAtLeast(0)) }
+    var pick by remember(s.currentAudio()?.id, audio.size) { mutableStateOf(audio.indexOfFirst { it.id == s.currentAudio()?.id }) }
     if (audio.isEmpty()) { Note("No audio track"); return }
-    ChoicePage(audio.mapIndexed { i, t -> audioLabel(t, i) }, pick) { if (it != pick) { pick = it; s.selectAudio(audio[it]) } }
+    ChoicePage(audio.mapIndexed { i, t -> audioLabel(t, i, audio) }, pick) { if (it != pick) { pick = it; s.selectAudio(audio[it]) } }
 }
 
 /** The audio tracks and the picture qualities of the video in one page: what a viewer means by "tracks" */
 @Composable
 private fun TracksPage(s: PlayerSession) {
     val audio = s.audioTracks()
-    var audioPick by remember { mutableStateOf(audio.indexOfFirst { it.id == s.currentAudio()?.id }.coerceAtLeast(0)) }
+    var audioPick by remember(s.currentAudio()?.id, audio.size) { mutableStateOf(audio.indexOfFirst { it.id == s.currentAudio()?.id }) }
     val video = s.videoTracks().sortedByDescending { it.height ?: 0 }
-    var videoPick by remember { mutableStateOf(video.indexOfFirst { it.id == s.currentVideo()?.id }) }
+    var videoPick by remember(s.currentVideo()?.id, video.size) { mutableStateOf(video.indexOfFirst { it.id == s.currentVideo()?.id }) }
     Column(Modifier.verticalScrollIfNeeded()) {
         SectionLabel("Video")
         if (video.isEmpty()) Note(s.resolution?.let { "$it, the only quality of this source" } ?: "The only quality of this source")
@@ -362,7 +363,7 @@ private fun TracksPage(s: PlayerSession) {
         }
         SectionLabel("Audio")
         if (audio.isEmpty()) Note("No audio track")
-        audio.forEachIndexed { i, t -> CheckRow(audioLabel(t, i), i == audioPick) { if (i != audioPick) { audioPick = i; s.selectAudio(t) } } }
+        audio.forEachIndexed { i, t -> CheckRow(audioLabel(t, i, audio), i == audioPick) { if (i != audioPick) { audioPick = i; s.selectAudio(t) } } }
     }
 }
 
@@ -493,7 +494,7 @@ private fun SkipPage() {
 }
 
 private fun originLabel(sub: SubtitleData): String = when (sub.origin) {
-    SubtitleOrigin.URL -> runCatching { java.net.URI(sub.url.trim()).host?.removePrefix("www.") }.getOrNull()?.let { "Online · $it" } ?: "Online"
+    SubtitleOrigin.URL -> if (com.lagradost.desktop.torrent.TorrentEngine.isOwnAddress(sub.url)) "In the torrent" else runCatching { java.net.URI(sub.url.trim()).host?.removePrefix("www.") }.getOrNull()?.let { "Online · $it" } ?: "Online"
     SubtitleOrigin.DOWNLOADED_FILE -> "Downloaded"
     SubtitleOrigin.EMBEDDED_IN_VIDEO -> "In the video"
 }
@@ -506,6 +507,9 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
     var groupOpen by remember { mutableStateOf(pickState?.originalName) }
     remember(s.listsVersion) { 0 } // subtitles that arrive while the menu is open: read again
     val groups = s.subtitles().groupBy { it.originalName }.entries.map { (name, list) -> name to list.sortedBy { it.nameSuffix.toIntOrNull() ?: 0 } }
+    // what the check of each online file found ("Fits this video", "Maybe another cut" ...), next to where it comes from
+    val fit = remember(s.listsVersion) { s.subtitleFitNotes() }
+    fun detailOf(sub: SubtitleData) = listOfNotNull(originLabel(sub), fit[sub.getId()]).joinToString(" · ")
     fun pick(sub: SubtitleData?) { pickState = sub; s.selectSubtitle(sub) }
     // the options come first: with a long list of files they were far below it and had to be scrolled to
     val state = rememberLazyListState()
@@ -519,18 +523,20 @@ private fun SubtitlesPage(s: PlayerSession, onPage: (MenuPage?) -> Unit) {
         item { ActionRow(Icons.Download, "Add the first online result") { onPage(null); s.addFirstOnlineSubtitle() } }
         item { NavRow(Icons.Language, "Translate…", null) { onPage(MenuPage.TranslateSubtitle) } }
         item { Divider() }
-        item { CheckRow("Off", pickState == null) { if (pickState != null) { groupOpen = null; pick(null) } } }
+        // the player's own choice counts too: a subtitle picked by itself (the online ones found when this page opened) or with S while the page
+        // was open left the row's memory at Off, and a click on Off did nothing
+        item { CheckRow("Off", pickState == null) { if (pickState != null || s.currentSubtitle() != null) { groupOpen = null; pick(null) } } }
         for ((name, list) in groups) {
             val inGroup = pickState?.originalName == name
             item(key = "g:$name") {
-                CheckRow(name.trim(), inGroup, detail = if (list.size > 1) "${list.size} files" else originLabel(list.first()), trailing = if (list.size > 1) (if (groupOpen == name) Icons.ChevronUp else Icons.ChevronDown) else null) {
+                CheckRow(name.trim(), inGroup, detail = if (list.size > 1) "${list.size} files" + list.count { fit[it.getId()] == "Fits this video" }.let { ok -> if (ok == 0) "" else " · $ok fit${if (ok == 1) "s" else ""} this video" } else detailOf(list.first()), trailing = if (list.size > 1) (if (groupOpen == name) Icons.ChevronUp else Icons.ChevronDown) else null) {
                     groupOpen = if (groupOpen == name && inGroup) null else name
                     if (!inGroup) pick(list.first())
                 }
             }
             if (list.size > 1 && groupOpen == name) {
                 itemsIndexed(list, key = { i, _ -> "o:$name:$i" }) { i, sub ->
-                    CheckRow(sub.nameSuffix.trim().ifBlank { "File ${i + 1}" }, pickState == sub, detail = originLabel(sub), indent = 24.dp) { if (pickState != sub) pick(sub) }
+                    CheckRow(sub.nameSuffix.trim().ifBlank { "File ${i + 1}" }, pickState == sub, detail = detailOf(sub), indent = 24.dp) { if (pickState != sub) pick(sub) }
                 }
             }
         }
@@ -779,10 +785,15 @@ private fun Modifier.verticalScrollIfNeeded(): Modifier {
 
 // ---- labels --------------------------------------------------------------------------------------
 
-internal fun audioLabel(t: com.lagradost.cloudstream3.ui.player.AudioTrack, index: Int): String {
-    val language = (t.language?.trim()?.takeIf { it.isNotBlank() }?.let { raw ->
+internal fun audioLabel(t: com.lagradost.cloudstream3.ui.player.AudioTrack, index: Int, all: List<com.lagradost.cloudstream3.ui.player.AudioTrack> = emptyList()): String {
+    fun languageOf(x: com.lagradost.cloudstream3.ui.player.AudioTrack, i: Int) = (x.language?.trim()?.takeIf { it.isNotBlank() }?.let { raw ->
         SubtitleHelper.fromTagToLanguageName(raw) ?: SubtitleHelper.fromTagToLanguageName(raw.replace('_', '-').substringBefore('-').lowercase()) ?: raw
-    } ?: t.label?.takeIf { it.isNotBlank() } ?: "Audio ${index + 1}").replaceFirstChar { it.uppercaseChar() }
+    } ?: x.label?.takeIf { it.isNotBlank() } ?: "Audio ${i + 1}").replaceFirstChar { it.uppercaseChar() }
+    val base = languageOf(t, index)
+    // two tracks of one language (Spanish of Spain and of Latin America): the stream's own name tells them apart, without its "4. " numbering
+    val twin = all.withIndex().count { (i, x) -> languageOf(x, i) == base } > 1
+    val own = t.label?.replace(Regex("""^\s*\d+[.)]\s*"""), "")?.trim()?.takeIf { it.isNotBlank() && !it.equals(base, true) }
+    val language = if (twin && own != null) (if (own.contains(base, ignoreCase = true)) own else "$base ($own)") else base
     val channels = when (val n = t.channelCount) {
         null -> ""
         in Int.MIN_VALUE..0 -> ""

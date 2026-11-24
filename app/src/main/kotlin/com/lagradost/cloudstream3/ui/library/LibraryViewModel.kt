@@ -66,7 +66,8 @@ class LibraryViewModel : ViewModel() {
         private set
 
     fun switchList(name: String) {
-        currentSyncApi = availableSyncApis[availableApiNames.indexOf(name)]
+        // desktop: a list that is gone (an account signed out meanwhile, a saved choice from before) is ignored: indexOf gave -1 and the page crashed
+        currentSyncApi = availableSyncApis.getOrNull(availableApiNames.indexOf(name)) ?: return
         _currentApiName.postValue(currentSyncApi?.name)
         reloadPages(true)
     }
@@ -79,14 +80,22 @@ class LibraryViewModel : ViewModel() {
     }
 
     private fun sort(method: ListSorting, query: String? = null, items: List<SyncAPI.Page>) {
-        currentSortingMethod = method
-        DataStoreHelper.librarySortingMode = method.ordinal
-
-        items.forEach { page ->
-            page.sort(method, query)
+        // desktop: typing in the library's search box orders the titles by closeness to the words; that is not a sort order the viewer
+        // picked. It replaced theirs ("A-Z" became "None", remembered after a restart) and clearing the box left the search's order.
+        if (method != ListSorting.Query || query == null) {
+            currentSortingMethod = method
+            DataStoreHelper.librarySortingMode = method.ordinal
         }
-        _pages.postValue(Resource.Success(items))
+
+        // desktop: new pages, not the old ones sorted in place: those were posted again as the very same (equal) list, so the page saw no
+        // change and kept the old order until something else redrew it
+        val sorted = items.map { page -> page.copy().also { it.sort(method, query) } }
+        _pages.postValue(Resource.Success(sorted))
     }
+
+    // desktop: each load is numbered; only the newest one may fill the page. Switching from a slow AniList to the local list showed
+    // the local list, then AniList's late answer replaced it while the switcher still said "Local".
+    private val loadGeneration = java.util.concurrent.atomic.AtomicInteger()
 
     fun reloadPages(forceReload: Boolean) {
         // Only skip loading if its not forced and pages is not empty
@@ -94,11 +103,13 @@ class LibraryViewModel : ViewModel() {
             currentSyncApi?.requireLibraryRefresh != true
         ) return
 
+        val generation = loadGeneration.incrementAndGet()
         ioSafe {
             currentSyncApi?.let { repo ->
                 _currentApiName.postValue(repo.name)
                 _pages.postValue(Resource.Loading())
                 val libraryResource = repo.library()
+                if (generation != loadGeneration.get()) return@let
                 val err = libraryResource.exceptionOrNull()
                 if (err != null) {
                     _pages.postValue(throwAbleToResource(err))

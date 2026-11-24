@@ -7,9 +7,10 @@
 # Prints the process id. Needs a built classpath: run classpath.ps1 once after building (it writes build/hidden-desktop/classpath.txt).
 # -Jar swaps android/build/libs/android.jar for another copy: two builds can then run at once for a fair A/B (see threads.ps1).
 # Never point -Data at real user data: copy it, and remove sign-ins and sync addresses first.
-param([int]$Port = 8771, [Parameter(Mandatory = $true)][string]$Data, [string]$Jar = "", [string]$Extra = "", [string]$Exe = "")
+param([int]$Port = 8771, [string]$Desktop = "", [Parameter(Mandatory = $true)][string]$Data, [string]$Jar = "", [string]$Extra = "", [string]$Exe = "")
 $ErrorActionPreference = "Stop"
-$desktop = "cs3d-hidden"
+# a desktop is good for ONE launch: a second app started on the same desktop dies within seconds, so each launch gets its own name
+$desktop = if ($Desktop) { $Desktop } else { "cs3d-hidden-" + [DateTime]::Now.ToString("HHmmss") }
 $root = (Resolve-Path "$PSScriptRoot\..\..").Path
 $work = Join-Path $root "build\hidden-desktop"
 $cpFile = Join-Path $work "classpath.txt"
@@ -41,7 +42,7 @@ $opts = @("-Xmx3g", "--enable-native-access=ALL-UNNAMED", "--add-opens=java.base
   "--add-opens=java.desktop/java.awt=ALL-UNNAMED", "--add-exports=java.desktop/sun.awt=ALL-UNNAMED", "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED",
   "-Xss4m", "-Dfile.encoding=UTF-8",
   # as the installed app starts (app/build.gradle.kts jpackage options): the extension sandbox needs the security manager allowed
-  "-Djava.security.manager=allow", "-Dsun.java2d.d3d=false", "-XX:+UseShenandoahGC", "-XX:SoftMaxHeapSize=768m", "-XX:+ExplicitGCInvokesConcurrent", "`"-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path)`"", "-Dcloudstream.devport=$Port", "-Dcloudstream.ipcport=$($Port + 44000)",
+  "-Djava.security.manager=allow", "-Dsun.java2d.d3d=false", "-XX:+UseShenandoahGC", "-XX:SoftMaxHeapSize=512m", "-XX:+ExplicitGCInvokesConcurrent", "`"-Dcloudstream.data=$(& $fwd (Resolve-Path $Data).Path)`"", "-Dcloudstream.devport=$Port", "-Dcloudstream.ipcport=$($Port + 44000)",
   # no GitHub release checks (60 a hour per address), silent players, mpv-2.dll and WebView2Loader.dll from the project
   "-Dcloudstream.updateApi=http://127.0.0.1:1/", "-Dcloudstream.mute=true", "`"-Dcloudstream.downloads=$(& $fwd (Join-Path (Resolve-Path $Data).Path 'test-downloads'))`"", "`"-Djna.library.path=$(& $fwd (Join-Path $root 'app\native\windows-x64'))`"",
   # where the installed app keeps its native files (WebView2 loader, mpv): without it a run outside the project folder falls back to JCEF pages

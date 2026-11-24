@@ -2,6 +2,9 @@ package com.lagradost.desktop.stremio
 
 import android.util.Log
 import com.lagradost.cloudstream3.app
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -18,12 +21,13 @@ object StremioClient {
         var url = input.trim()
         if (url.startsWith("stremio://", ignoreCase = true)) url = "https://" + url.substring(10)
         if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) url = "https://$url"
-        if (!url.substringBefore('?').endsWith("manifest.json", ignoreCase = true)) {
-            val base = url.substringBefore('?').trimEnd('/')
-            val query = if (url.contains('?')) "?" + url.substringAfter('?') else ""
-            url = "$base/manifest.json$query"
-        }
-        return url
+        val query = if (url.contains('?')) "?" + url.substringAfter('?') else ""
+        // "…/manifest.json/" got a second "/manifest.json"; the add-on's own settings page ("…/cfg/configure", where its install link is made)
+        // became "…/configure/manifest.json", which no add-on answers
+        var path = url.substringBefore('?').trimEnd('/')
+        if (path.endsWith("/configure", ignoreCase = true)) path = path.dropLast("/configure".length)
+        if (!path.endsWith("manifest.json", ignoreCase = true)) path = "$path/manifest.json"
+        return path + query
     }
 
     /** The address resources hang from: the manifest address without "/manifest.json" (the configuration of an add-on is part of the path) */
@@ -39,6 +43,26 @@ object StremioClient {
         return "${baseOf(manifestUrl)}/$resource/${enc(type)}/${enc(id)}$tail.json${queryOf(manifestUrl)}"
     }
 
+    /**
+     * Address safe to write to logs: drops credentials, query parameters and any configuration segment that Stremio add-ons put in the path
+     * (debrid API keys, auth tokens, base64/JSON configs before `/manifest.json`, `/catalog/`, `/meta/`, `/stream/` or `/subtitles/`).
+     */
+    internal fun safeUrl(url: String): String {
+        val noQuery = url.substringBefore('?').substringBefore('#')
+        val schemeEnd = noQuery.indexOf("://").takeIf { it >= 0 }?.let { it + 3 } ?: return noQuery.take(80)
+        val pathStart = noQuery.indexOf('/', schemeEnd)
+        if (pathStart < 0) return noQuery.substring(0, schemeEnd) + noQuery.substring(schemeEnd).substringAfter('@')
+        val host = noQuery.substring(schemeEnd, pathStart).substringAfter('@')
+        val path = noQuery.substring(pathStart)
+        val resource = Regex("""/(manifest\.json|(?:catalog|meta|stream|subtitles)/.*)$""", RegexOption.IGNORE_CASE).find(path)
+        val cleanPath = when {
+            resource == null -> if (path == "/") "/" else "/…"
+            resource.range.first > 0 -> "/…${resource.value}"
+            else -> resource.value
+        }
+        return (noQuery.substring(0, schemeEnd) + host + cleanPath).take(120)
+    }
+
     // ------------------------------------------------------------------ requests
 
     private class Cached(val at: Long, val body: String)
@@ -52,7 +76,7 @@ object StremioClient {
         return try {
             val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.get(url, timeout = timeoutSec, headers = mapOf("Accept" to "application/json")).also { runCatching { it.text } } }
             if (!r.isSuccessful) {
-                Log.w(TAG, "HTTP ${r.code} from ${url.substringBefore('?').take(120)}")
+                Log.w(TAG, "HTTP ${r.code} from ${safeUrl(url)}")
                 return null
             }
             val text = r.text
@@ -63,7 +87,10 @@ object StremioClient {
             }
             json
         } catch (t: Throwable) {
-            Log.w(TAG, "${url.substringBefore('?').take(120)}: ${t.javaClass.simpleName} ${t.message}")
+            // a cancelled request (the page was left, a time limit ran out) is not "no answer": swallowed, a left title page went on to ask
+            // every other add-on and then failed with "No add-on has details"
+            if (t is CancellationException) currentCoroutineContext().ensureActive()
+            Log.w(TAG, "${safeUrl(url)}: ${t.javaClass.simpleName} ${t.message}")
             null
         }
     }
@@ -75,7 +102,8 @@ object StremioClient {
             if (!r.isSuccessful) throw IllegalStateException("HTTP ${r.code}")
             StremioManifest.parse(r.text).also { if (it.id.isBlank() && it.name == "Add-on") throw IllegalStateException("not an add-on manifest") }
         } catch (t: Throwable) {
-            Log.w(TAG, "manifest $url: ${t.message}")
+            if (t is CancellationException) currentCoroutineContext().ensureActive()
+            Log.w(TAG, "manifest ${safeUrl(url)}: ${t.message}")
             null
         }
     }
@@ -87,6 +115,15 @@ object StremioClient {
     private fun strings(a: JSONArray?): List<String> = if (a == null) emptyList() else (0 until a.length()).mapNotNull { a.optString(it).takeIf { s -> s.isNotBlank() } }
 
     private fun JSONObject.str(name: String): String? = optString(name).takeIf { it.isNotBlank() && it != "null" }
+
+    /** "142 min", "2h22min" (the TMDB add-on), "1h 5m", "PT2H22M" -> minutes; the first number alone made "2h22min" 2 minutes */
+    internal fun runtimeMinutes(runtime: String?): Int? {
+        val t = runtime?.lowercase() ?: return null
+        val h = Regex("""([0-9]+)\s*h""").find(t)?.groupValues?.get(1)?.toIntOrNull()
+        val m = Regex("""([0-9]+)\s*m""").find(t)?.groupValues?.get(1)?.toIntOrNull()
+        if (h != null) return h * 60 + (m ?: 0)
+        return m ?: Regex("[0-9]+").find(t)?.value?.toIntOrNull()
+    }
 
     private fun yearOf(vararg texts: String?): Int? = texts.firstNotNullOfOrNull { t -> t?.let { Regex("(19|20)\\d{2}").find(it)?.value?.toIntOrNull() } }
 

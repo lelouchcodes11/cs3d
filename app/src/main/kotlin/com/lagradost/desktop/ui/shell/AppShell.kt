@@ -491,12 +491,43 @@ private fun ScreenWarmup() {
         // the icons of every page, parsed on a thread of its own: cheap in memory, so also when memory is short
         com.lagradost.desktop.ui.AndroidResourceImages.preloadVectors(density)
         // the player's native library (a 39 MB DLL and its bindings) loads here too: the first video loaded it on the UI thread, about 100 ms of the first frame of the player
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.lagradost.desktop.player.Mpv.INSTANCE } }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { com.lagradost.desktop.player.Mpv.INSTANCE }
+            // the first video also started the local stream servers and mpv's own first start (its libraries' set-up) on the UI thread, in the
+            // same frame as the video page: one frame of 120-170 ms right as the page changed. Both are done here once, off the UI thread.
+            runCatching { com.lagradost.desktop.player.HlsProxy.warmUp(); com.lagradost.desktop.player.DashProxy.warmUp(); com.lagradost.desktop.player.RangeProxy.warmUp() }
+            // every video asks the torrent engine whether its link is a torrent: the first question set the engine object up on the UI thread
+            runCatching { com.lagradost.desktop.torrent.TorrentEngine.isTorrent(null) }
+            runCatching {
+                val m = com.lagradost.desktop.player.Mpv.INSTANCE
+                m.mpv_create()?.let { core ->
+                    for ((k, v) in listOf("vo" to "null", "ao" to "null", "idle" to "yes", "config" to "no")) m.mpv_set_option_string(core, k, v)
+                    m.mpv_initialize(core)
+                    m.mpv_terminate_destroy(core)
+                }
+            }
+        }
         // the pages are composed off screen to warm them: with little free memory that work is what makes the window stall, so it is left out
+        // the GPU player's controls window (see OverlayPool), made while Home is calm instead of when the first video opens
+        if (com.lagradost.desktop.ui.fluent.Appearance.nativePlayer && com.lagradost.desktop.DesktopPlatform.isWindows && !lowOnMemory()) {
+            val giveUpAt = System.currentTimeMillis() + 120_000
+            while (System.currentTimeMillis() < giveUpAt) {
+                awaitCalmFrames()
+                if (Navigator.current.route == Route.Home && System.currentTimeMillis() - com.lagradost.desktop.ui.fluent.InputMode.lastInputAt > 3000) {
+                    java.awt.Window.getWindows().firstOrNull { it is androidx.compose.ui.awt.ComposeWindow && it.isShowing }
+                        ?.let { runCatching { com.lagradost.desktop.ui.screens.player.OverlayPool.prewarm(it) } }
+                    break
+                }
+                delay(1000)
+            }
+        }
         if (warmed || lowOnMemory()) return@LaunchedEffect
         var i = 0
         while (i < 5) {
             if (Navigator.current.route is Route.Player || lowOnMemory()) break
+            // only on Home: on a title page the next click is often Play, and a page composed here (Settings 126 ms, Search 129 ms measured on a
+            // title page) landed in the same moment as the video page coming in, the shake of the switch to the video
+            if (Navigator.current.route != Route.Home) { delay(1000); continue }
             // only while the window is calm: a page composed while the extensions are loading (or Chromium is starting) would add its own freeze
             awaitCalmFrames()
             // and only while nobody scrolls, clicks or types (measured: Settings composed here under the first scroll of Home made it stutter);
@@ -603,7 +634,7 @@ private fun TopBar(topNav: Boolean) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             // the title bar above the app has Back while the window is not maximized
             if ((topNav || dock || floating) && !com.lagradost.desktop.platform.WinChrome.windowedBar) {
-                IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("topBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)")
+                IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("topBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)", size = com.lagradost.desktop.ui.fluent.BackMetrics.bar, iconSize = com.lagradost.desktop.ui.fluent.BackMetrics.icon)
                 Box(Modifier.width(6.dp))
             }
             if (topNav) {

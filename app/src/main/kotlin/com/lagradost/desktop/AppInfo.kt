@@ -11,6 +11,9 @@ object AppInfo {
     const val REPO_URL = "https://github.com/$REPO"
     const val RELEASES_URL = "$REPO_URL/releases"
 
+    /** CS3D Web: the extensions in a browser, through the CS3D engine on the computer */
+    const val WEB_APP_URL = "https://cs3d-web.vercel.app"
+
     /** News, new versions, help and feedback */
     const val TELEGRAM_URL = "https://t.me/cs3d_official"
 

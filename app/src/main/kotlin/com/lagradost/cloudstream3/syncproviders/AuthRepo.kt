@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.mvvm.safe
 import com.lagradost.cloudstream3.syncproviders.AccountManager.Companion.NONE_ID
 import com.lagradost.cloudstream3.utils.txt
+import kotlinx.coroutines.sync.withLock
 
 /** General-purpose repo */
 class PlainAuthRepo(api: AuthAPI) : AuthRepo(api)
@@ -27,6 +28,9 @@ abstract class AuthRepo(open val api: AuthAPI) {
     val isAvailable get() = !api.requiresLogin || authUser() != null
 
     companion object {
+        /** One token refresh at a time per service (see [freshAuth]) */
+        private val refreshLocks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+
         private val oauthPayload: MutableMap<String, String?> = mutableMapOf()
 
         fun setOAuthPayload(idPrefix: String, payload: String?) {
@@ -51,13 +55,19 @@ abstract class AuthRepo(open val api: AuthAPI) {
     @Throws
     protected suspend fun freshAuth(): AuthData? {
         val data = authData() ?: return null
-        if (data.token.isAccessTokenExpired()) {
-            val newToken = api.refreshToken(data.token) ?: return null
-            val newAuth = AuthData(user = data.user, token = newToken)
+        if (!data.token.isAccessTokenExpired()) return data
+        // desktop: one refresh at a time per service. A title page asks for the status and the details at once; with an expired token both
+        // refreshed with the same refresh token, and MyAnimeList (which hands out a new refresh token each time) refused the second, so that
+        // call ran as signed out (and the saved refresh token could be the one already used up)
+        return refreshLocks.computeIfAbsent(idPrefix) { kotlinx.coroutines.sync.Mutex() }.withLock {
+            // another call refreshed it while this one waited
+            val current = authData() ?: return@withLock null
+            if (!current.token.isAccessTokenExpired()) return@withLock current
+            val newToken = api.refreshToken(current.token) ?: return@withLock null
+            val newAuth = AuthData(user = current.user, token = newToken)
             refreshUser(newAuth)
-            return newAuth
+            newAuth
         }
-        return data
     }
 
     @Throws

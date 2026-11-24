@@ -123,7 +123,12 @@ fun ExtensionsScreen() {
         val sel = selected ?: return@LaunchedEffect
         if (sel == INSTALLED) plugins.updatePluginListLocal()
         else if (sel == STREMIO) { /* Stremio page manages its own data */ }
-        else repoList.firstOrNull { it.url == sel }?.let { plugins.updatePluginList(ctx, listOf(it)) }
+        else {
+            val repo = repoList.firstOrNull { it.url == sel }
+            if (repo != null) plugins.updatePluginList(ctx, listOf(repo))
+            // the shown repository was removed: the page goes back to what is installed
+            else if (repos != null) selected = INSTALLED
+        }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -134,7 +139,14 @@ fun ExtensionsScreen() {
             val stacked = this@BoxWithConstraints.maxWidth < 820.dp
             val actions: @Composable () -> Unit = {
                 // the same as Settings > Updates & backup > Update Plugins: looks at every repository and installs newer versions of what is installed
-                com.lagradost.desktop.ui.fluent.PillButton("Update all", Icons.Refresh, primary = false, onImage = false, onClick = { ioTask { com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_manuallyReloadAndUpdatePlugins(ctx) } }, height = 42.dp)
+                com.lagradost.desktop.ui.fluent.PillButton("Update all", Icons.Refresh, primary = false, onImage = false, onClick = {
+                    ioTask {
+                        com.lagradost.cloudstream3.plugins.PluginManager.___DO_NOT_CALL_FROM_A_PLUGIN_manuallyReloadAndUpdatePlugins(ctx)
+                        // the Installed list kept showing the old versions after the update until the page was opened again
+                        ext.loadStats()
+                        if (selected == INSTALLED) plugins.updatePluginListLocal()
+                    }
+                }, height = 42.dp)
                 com.lagradost.desktop.ui.fluent.PillButton("Add repository", Icons.Add, primary = true, onClick = { addRepositoryDialog(ext) }, height = 42.dp)
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -235,13 +247,13 @@ fun ExtensionsScreen() {
                             EmptyPlugins(sel == INSTALLED)
                         } else {
                             val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-                            val columns = ((this@BoxWithConstraints.maxWidth - (if (compact) 250.dp else 320.dp) - 44.dp) / 460.dp).toInt().coerceIn(1, 3)
+                            val columns = ((this@BoxWithConstraints.maxWidth - (if (compact) 250.dp else 320.dp) - 44.dp) / 410.dp).toInt().coerceIn(1, 3)
                             val rows = items.chunked(columns)
                             Box(Modifier.fillMaxSize()) {
                                 FluentScrollbar(listState)
-                                LazyColumn(Modifier.fillMaxSize().smoothWheel(listState), state = listState, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current, end = 12.dp)) {
+                                LazyColumn(Modifier.fillMaxSize().smoothWheel(listState), state = listState, verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 32.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current, end = 12.dp)) {
                                     items(rows.size, key = { i -> rows[i].joinToString("|") { it.pluginWrapper.plugin.url + "|" + it.pluginWrapper.plugin.internalName } }) { i ->
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                             rows[i].forEach { item -> Box(Modifier.weight(1f)) { PluginCard(item, plugins, repo?.let { listOf(it) } ?: emptyList(), sel == INSTALLED) } }
                                             repeat(columns - rows[i].size) { Box(Modifier.weight(1f)) }
                                         }
@@ -326,7 +338,7 @@ private fun RepoRow(
                     when (problem) { "gone" -> "Not found"; "broken" -> "Not a repository"; else -> "Not answering" },
                     style = Fluent.type.caption, color = c.caution, maxLines = 1,
                 )
-                else FText(url, style = Fluent.type.caption, color = c.textTertiary, maxLines = if (url.startsWith("http")) 1 else 3)
+                else FText(if (url.startsWith("http")) shortRepoAddress(url) else url, style = Fluent.type.caption, color = c.textTertiary, maxLines = if (url.startsWith("http")) 1 else 3)
             }
             if (repo != null && hovered) IconButton(Icons.Delete, { confirmRemove(repo) }, tooltip = "Remove repository", size = 28.dp, iconSize = 14.dp)
         }
@@ -359,31 +371,34 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
         else -> com.lagradost.desktop.isolate.Isolation.reasonInApp(p.url)?.let { com.lagradost.desktop.i18n.Tr.f("Not in the sandbox: {0}", it) } ?: ""
     }
     val counts = when { sources == 1 -> com.lagradost.desktop.i18n.Tr.t("1 source"); sources > 1 -> com.lagradost.desktop.i18n.Tr.f("{0} sources", sources); else -> "" }
-    // one row: the icon, what the extension is and does, and its buttons at the right (the card is as tall as its text, not a fixed block with empty space in it)
+    // one compact row: the icon, title + version inline, subtitle, and buttons at the right
     Row(
-        Modifier.fillMaxWidth().hoverable(source).lightShadow(shape).clip(shape).cardSurface(shape, hovered).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().hoverable(source).lightShadow(shape).clip(shape).cardSurface(shape, hovered).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(46.dp).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
-            Icon(Icons.Extensions, size = 22.dp, tint = c.textTertiary)
+        Box(Modifier.size(42.dp).clip(RoundedCornerShape(FluentShapes.small)).background(c.control), contentAlignment = Alignment.Center) {
+            Icon(Icons.Extensions, size = 20.dp, tint = c.textTertiary)
             // the Installed page lists what is on the disk, which has no icon: the repositories' icon of the same plugin is used
             val iconUrl = p.iconUrl?.replace("%size%", "128")?.replace("%exact_size%", "128")
                 ?: if (local) com.lagradost.desktop.net.ExtensionIcons.iconForFile(p.url) else null
             // logos are made for the phone app's dark page: a white one with a see-through ground (AniVortex) vanished on the light tile of Light mode,
             // so it lies on a dark tile there (an opaque logo covers the tile, so it looks the same either way)
-            iconUrl?.let { RemoteImage(it, null, null, Modifier.size(46.dp).then(if (c.dark) Modifier else Modifier.background(androidx.compose.ui.graphics.Color(0xFF2C2C2E))), ContentScale.Crop) }
+            iconUrl?.let { RemoteImage(it, null, null, Modifier.size(42.dp).then(if (c.dark) Modifier else Modifier.background(androidx.compose.ui.graphics.Color(0xFF2C2C2E))), ContentScale.Crop) }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            // a local extension is named after its file (Multi.cs3): the name without the file ending
-            FText(p.name.replace(Regex("""(\.-?\d+)?\.(cs3|jar)$""", RegexOption.IGNORE_CASE), ""), style = Fluent.type.bodyStrong.copy(fontSize = 16.sp), maxLines = 1)
-            FText("v${p.version}" + (p.authors.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "  ·  by $it" } ?: ""), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
-            val line = listOf(about.ifBlank { counts }, runs).filter { it.isNotBlank() }.joinToString("  ·  ")
-            if (line.isNotBlank()) FText(line, style = Fluent.type.caption.copy(lineHeight = 18.sp), color = c.textSecondary, maxLines = 2, modifier = Modifier.padding(top = 2.dp))
+            // a local extension is named after its file (Multi.cs3): the name without the file ending; version sits inline beside it
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FText(p.name.replace(Regex("""(\.-?\d+)?\.(cs3|jar)$""", RegexOption.IGNORE_CASE), ""), Modifier.weight(1f, fill = false), style = Fluent.type.bodyStrong.copy(fontSize = 15.sp), maxLines = 1)
+                FText("v${p.version}", style = Fluent.type.caption, color = c.textTertiary, maxLines = 1)
+            }
+            val author = p.authors.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "by $it" }
+            val line = listOfNotNull(author, about.ifBlank { counts }.takeIf { it.isNotBlank() }, runs.takeIf { it.isNotBlank() }).joinToString(" · ")
+            if (line.isNotBlank()) FText(line, style = Fluent.type.caption.copy(lineHeight = 17.sp), color = c.textSecondary, maxLines = 2)
             val language = p.language?.takeIf { it.isNotBlank() }
             val type = p.tvTypes?.firstOrNull()
             if (language != null || type != null || p.status == PROVIDER_STATUS_DOWN) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
                     language?.let { Badge(fromTagToLanguageName(it) ?: it) }
                     if (p.status == PROVIDER_STATUS_DOWN) Badge("Down")
                     type?.let { Badge(it) }
@@ -399,9 +414,9 @@ private fun PluginCard(item: PluginViewData, vm: PluginsViewModel, repos: List<R
         }, tooltip = "Extension settings", kind = ButtonKind.Standard, size = 34.dp)
         if (item.isDownloaded) {
             // a round button like the settings one beside it: two different shapes side by side looked unfinished
-            IconButton(Icons.Delete, { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, local) } }, tooltip = "Uninstall", kind = ButtonKind.Standard, size = 34.dp)
+            IconButton(Icons.Delete, { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, local).invokeOnCompletion { busy = false } } }, tooltip = "Uninstall", kind = ButtonKind.Standard, size = 34.dp)
         } else {
-            com.lagradost.desktop.ui.fluent.PillButton(if (busy) "Installing…" else "Install", Icons.Download, primary = true, onClick = { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, false) } }, height = 34.dp)
+            com.lagradost.desktop.ui.fluent.PillButton(if (busy) "Installing…" else "Install", Icons.Download, primary = true, onClick = { if (!busy) { busy = true; vm.handlePluginAction(ctx, repoList, item.pluginWrapper, false).invokeOnCompletion { busy = false } } }, height = 34.dp)
         }
     }
 }
@@ -412,6 +427,9 @@ private fun confirmRemove(repo: RepositoryData) {
     Overlays.message("Remove repository?", "“${repo.name}” and the extensions installed from it will be removed.", primary = "Remove", onPrimary = {
         ioTask {
             RepositoryManager.removeRepository(DesktopBootstrap.activity, repo)
+            // desktop: the list of repositories and the numbers were not read again: the removed repository stayed on the page (its extensions with
+            // "Install" buttons) until the page was opened again
+            com.lagradost.desktop.core.AppVms.get<ExtensionsViewModel>().let { it.loadRepositories(); it.loadStats() }
             com.lagradost.cloudstream3.MainActivity.afterPluginsLoadedEvent.invoke(true)
         }
     })
@@ -445,6 +463,8 @@ private fun addRepositoryDialog(ext: ExtensionsViewModel) {
     Overlays.show(
         Overlays.Dialog(
             title = "Add repository", primary = "Add", close = "Cancel", width = 520.dp,
+            // Add with an empty box closed the window anyway (the name typed was lost)
+            primaryEnabled = { url.isNotBlank() },
             onPrimary = {
                 val input = url.trim()
                 if (input.isEmpty()) {
@@ -467,9 +487,35 @@ private fun addRepositoryDialog(ext: ExtensionsViewModel) {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 FText("Paste the address of a CloudStream repository (repo.json or its short code).", color = Fluent.colors.textSecondary)
-                TextBox(url, { url = it }, Modifier.fillMaxWidth(), placeholder = "https://…/repo.json or short code", leadingIcon = Icons.Link, focusRequester = remember { FocusRequester() })
+                val urlFocus = remember { FocusRequester() }
+                TextBox(url, { url = it }, Modifier.fillMaxWidth(), placeholder = "https://…/repo.json or short code", leadingIcon = Icons.Link, focusRequester = urlFocus)
+                // the address box has the keyboard when the window opens: paste and Enter
+                androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(50); runCatching { urlFocus.requestFocus() } }
                 TextBox(name, { name = it }, Modifier.fillMaxWidth(), placeholder = "Name (optional)")
             }
         },
     )
+}
+
+/**
+ * A repository's address as the list shows it: whose repository it is ("GitHub · phisher98/cloudstream-extensions-phisher"). The whole address
+ * ("https://raw.githubusercontent.com/...") was cut off before the part that tells repositories apart, so every row read the same.
+ * The full address is in the repository's own header and in "Copy link".
+ */
+internal fun shortRepoAddress(url: String): String {
+    val uri = runCatching { java.net.URI(url.trim()) }.getOrNull() ?: return url
+    val host = uri.host?.lowercase()?.removePrefix("www.") ?: return url
+    val parts = uri.path.orEmpty().split('/').filter { it.isNotBlank() }
+    val site = when (host) {
+        "raw.githubusercontent.com", "github.com", "gist.githubusercontent.com" -> "GitHub"
+        "gitlab.com" -> "GitLab"
+        "codeberg.org" -> "Codeberg"
+        else -> null
+    }
+    return when {
+        site != null && parts.size >= 2 -> "$site · ${parts[0]}/${parts[1]}"
+        site != null && parts.isNotEmpty() -> "$site · ${parts[0]}"
+        host.endsWith(".github.io") -> "GitHub · ${host.substringBefore('.')}" + (parts.firstOrNull()?.let { "/$it" } ?: "")
+        else -> host
+    }
 }

@@ -235,7 +235,11 @@ private fun LoadingPage(route: Route.Details, retry: () -> Unit) {
     LaunchedEffect(Unit) { appear.animateTo(1f, androidx.compose.animation.core.tween(FluentMotion.ms(300))) }
     Box(Modifier.fillMaxSize()) {
         com.lagradost.desktop.ui.components.SoftImage(route.poster, null, Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }, alpha = 0.5f)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x59000000), 0.5f to Color(0x99000000), 1f to c.bg)))
+        // the page's own colour over the picture (it was black: in Light mode the dark grey words then stood on mid grey and could hardly be read)
+        Box(Modifier.fillMaxSize().background(
+            if (c.dark) Brush.verticalGradient(0f to Color(0x59000000), 0.5f to Color(0x99000000), 1f to c.bg)
+            else Brush.verticalGradient(0f to c.bg.copy(alpha = 0.55f), 0.5f to c.bg.copy(alpha = 0.82f), 1f to c.bg),
+        ))
         Column(
             Modifier.align(Alignment.Center).padding(horizontal = gutter, vertical = 40.dp).widthIn(max = 640.dp)
                 .graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 14.dp.toPx() },
@@ -266,7 +270,11 @@ private fun FailurePage(route: Route.Details, message: String, retry: () -> Unit
     // the poster the page was opened with, soft, behind the words (the same picture the loading page had); the words and the buttons stand in the middle
     Box(Modifier.fillMaxSize()) {
         com.lagradost.desktop.ui.components.SoftImage(route.poster, null, Modifier.fillMaxSize(), alpha = 0.4f)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x59000000), 0.5f to Color(0x99000000), 1f to c.bg)))
+        // the page's own colour over the picture (it was black: in Light mode the dark grey words then stood on mid grey and could hardly be read)
+        Box(Modifier.fillMaxSize().background(
+            if (c.dark) Brush.verticalGradient(0f to Color(0x59000000), 0.5f to Color(0x99000000), 1f to c.bg)
+            else Brush.verticalGradient(0f to c.bg.copy(alpha = 0.55f), 0.5f to c.bg.copy(alpha = 0.82f), 1f to c.bg),
+        ))
         Column(
             Modifier.align(Alignment.Center).padding(horizontal = gutter, vertical = 40.dp).widthIn(max = 640.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -349,6 +357,26 @@ private fun isWatched(ep: ResultEpisode): Boolean {
     return ep.videoWatchState == com.lagradost.cloudstream3.ui.result.VideoWatchState.Watched || progress > 0.95f
 }
 
+/**
+ * The episodes shown with spoilers hidden: every one up to the furthest watched or started (by its number: in a list sorted newest first the
+ * position in the list said the opposite, and every episode ahead was shown), and each one watched or started. Nothing begun: the first one.
+ */
+internal fun openEpisodeIds(eps: List<ResultEpisode>): Set<Int> {
+    val reached = eps.filter { isWatched(it) || it.position > 0 }.maxOfOrNull { it.episode } ?: eps.minOfOrNull { it.episode } ?: return emptySet()
+    return eps.filter { it.episode <= reached || isWatched(it) || it.position > 0 }.map { it.id }.toSet()
+}
+
+/**
+ * What Play opens on a series nobody has started: the lowest numbered episode of the list shown, not its first card (a list sorted newest
+ * first, by rating or with a season pack in front put another episode, or an archive, under Play)
+ */
+internal fun firstToPlay(eps: List<ResultEpisode>): ResultEpisode? =
+    eps.filter { !isSeasonPack(it) }.minByOrNull { it.episode } ?: eps.firstOrNull()
+
+/** runCatching that lets a cancellation through: a lookup cancelled because its keys changed must not write its empty answer over the new one */
+private inline fun <T> orNullUnlessCancelled(block: () -> T): T? =
+    try { block() } catch (e: kotlin.coroutines.cancellation.CancellationException) { throw e } catch (_: Throwable) { null }
+
 // ---- season packs and episode data -------------------------------------------------------------
 
 private val packNameRegex = Regex("""(?i)\.(zip|rar|7z)\b|\b(season|complete)[ ._-]*pack\b""")
@@ -428,8 +456,12 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
     val trailers by vm.trailers.observeAsState()
     // TMDB: artwork, cast with photos, reviews, collection and where it streams, found by the ids the extension gave or by name and year
     val isMovieTitle = movie != null
-    val tmdb by androidx.compose.runtime.produceState<com.lagradost.desktop.tmdb.TmdbInfo?>(null, route.url, isMovieTitle, com.lagradost.desktop.tmdb.Tmdb.matchVersion) {
-        value = runCatching { com.lagradost.desktop.tmdb.Tmdb.info(d.title, d.yearText.str()?.take(4)?.toIntOrNull(), isMovieTitle, d.syncData.values) }.getOrNull()
+    // a live channel (a TV playlist, a live extension) is not on TMDB: a lookup by its name ("Visir (1080p)") gave unrelated films as "More like this"
+    val isLive = (movie as? Resource.Success)?.value?.second?.tvType == TvType.Live
+    // anime: its prequels, sequels and side stories (AniList), found by the AniList / MAL id of the page or by the title
+    val isAnime = d.typeText.str()?.let { it.contains("anime", true) || it.contains("ova", true) } == true || d.syncData.keys.any { it == "anilist" || it == "mal" }
+    val tmdb by androidx.compose.runtime.produceState<com.lagradost.desktop.tmdb.TmdbInfo?>(null, route.url, isMovieTitle, isLive, isAnime, com.lagradost.desktop.tmdb.Tmdb.matchVersion) {
+        value = if (isLive) null else orNullUnlessCancelled { com.lagradost.desktop.tmdb.Tmdb.info(d.title, d.yearText.str()?.take(4)?.toIntOrNull(), isMovieTitle, d.syncData.values, anime = isAnime) }
     }
     // the extension's own artwork wins; TMDB fills what it did not send
     val shownData = remember(d, tmdb) { tmdb?.let { t -> d.copy(logoUrl = d.logoUrl ?: t.logo, backgroundPosterUrl = d.backgroundPosterUrl?.takeIf { it != d.posterImage } ?: t.backdrop ?: d.backgroundPosterUrl, posterImage = d.posterImage ?: t.poster) } ?: d }
@@ -437,8 +469,6 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
     val showTrailers = remember { PreferenceManager.getDefaultSharedPreferences(DesktopBootstrap.activity).getBoolean(DesktopBootstrap.activity.getString(R.string.show_trailers_key), true) }
     val tmdbTrailer = tmdb?.trailerKey?.takeIf { showTrailers }?.let { "https://www.youtube.com/watch?v=$it" }
     val tmdbLinks = tmdb?.let { t -> listOfNotNull(t.imdbId?.let { "IMDb" to "https://www.imdb.com/title/$it/" }, "TMDB" to "https://www.themoviedb.org/${if (t.isMovie) "movie" else "tv"}/${t.id}") }.orEmpty()
-    // anime: its prequels, sequels and side stories (AniList), found by the AniList / MAL id of the page or by the title
-    val isAnime = d.typeText.str()?.let { it.contains("anime", true) || it.contains("ova", true) } == true || d.syncData.keys.any { it == "anilist" || it == "mal" }
     val related by androidx.compose.runtime.produceState<List<RelatedTitle>>(emptyList(), route.url, isAnime) {
         value = if (isAnime && com.lagradost.desktop.ui.fluent.Appearance.tmdbEnabled) runCatching { AnimeRelations.load(d.title, d.syncData) }.getOrDefault(emptyList()) else emptyList()
     }
@@ -454,7 +484,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
     val tmdbEpisodes by androidx.compose.runtime.produceState<Map<Int, Map<Int, com.lagradost.desktop.tmdb.Tmdb.TmdbEpisode>>>(emptyMap(), tmdb?.id, missingSeasons) {
         val t = tmdb
         value = if (t == null || t.isMovie || missingSeasons.isEmpty()) emptyMap()
-        else missingSeasons.mapNotNull { s -> runCatching { com.lagradost.desktop.tmdb.Tmdb.season(t.id, s) }.getOrNull()?.let { s to it } }.toMap()
+        else missingSeasons.mapNotNull { s -> orNullUnlessCancelled { com.lagradost.desktop.tmdb.Tmdb.season(t.id, s) }?.let { s to it } }.toMap()
     }
     val shownEpisodes = remember(sentEpisodes, tmdbEpisodes) { withTmdbEpisodes(sentEpisodes, tmdbEpisodes, isAnime) }
 
@@ -486,7 +516,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
 
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().smoothWheel(listState), contentPadding = PaddingValues(bottom = 48.dp + com.lagradost.desktop.ui.shell.LocalDockInset.current)) {
             item(key = "header") {
-                Header(vm, shownData, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: (episodes as? Resource.Success)?.value?.firstOrNull(), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty() || tmdbTrailer != null, (trailers.orEmpty().flatMap { t -> t.mirros.map { it.second } } + listOfNotNull(tmdbTrailer)).distinct(), tmdbLinks, tmdb,
+                Header(vm, shownData, route, wide, headerHeight, watch, favorite, subscribed, resume?.result ?: (movie as? Resource.Success)?.value?.second ?: firstToPlay((episodes as? Resource.Success)?.value.orEmpty()), resume?.progress?.progressLeft.str(), trailers.orEmpty().isNotEmpty() || tmdbTrailer != null, (trailers.orEmpty().flatMap { t -> t.mirros.map { it.second } } + listOfNotNull(tmdbTrailer)).distinct(), tmdbLinks, tmdb,
                     scroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else Float.MAX_VALUE },
                     filmLike = (episodes as? Resource.Success)?.value?.size == 1 && seasons.orEmpty().size <= 1 && shownData.onGoingText.str()?.contains("ongoing", true) != true)
             }
@@ -529,6 +559,12 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                                 onClick = { com.lagradost.desktop.ui.fluent.Appearance.hideSpoilers = !hideSpoilers; com.lagradost.desktop.ui.fluent.Appearance.save() },
                                 icon = if (hideSpoilers) Icons.Hide else Icons.Eye,
                             )
+                            // the whole season (or the range picked) in one go: one download per episode was the only way
+                            val downloadable = shownEpisodes.filter { !isSeasonPack(it) }
+                            if (downloadable.size >= 2 && episodes is Resource.Success) {
+                                val what = d.title + (seasonList.getOrNull(seasonIdx ?: 0)?.first.str()?.let { " · $it" } ?: "")
+                                com.lagradost.desktop.ui.fluent.Chip("Download all", false, onClick = { downloadAll(vm, downloadable, what) }, icon = Icons.Download)
+                            }
                             if (dubs.orEmpty().size > 1) ComboBox(dubs.orEmpty().map { it.second }, dubs.orEmpty().getOrNull(dubIdx ?: 0)?.second, { dubLabel(dubs.orEmpty(), it) }, { vm.changeDubStatus(it) }, minWidth = 100.dp)
                             if (ranges.orEmpty().size > 1) ComboBox(ranges.orEmpty().map { it.second }, ranges.orEmpty().getOrNull(rangeIdx ?: 0)?.second, { r -> ranges.orEmpty().firstOrNull { it.second == r }?.first.str() ?: "${r.startEpisode}-${r.endEpisode}" }, { vm.changeRange(it) }, minWidth = 120.dp)
                             if (sorts.orEmpty().size > 1) ComboBox(sorts.orEmpty().map { it.second }, sorts.orEmpty().getOrNull(sortIdx ?: 0)?.second, { s -> sorts.orEmpty().firstOrNull { it.second == s }?.first.str() ?: "Sort" }, { vm.setSort(it) }, icon = Icons.Sort, minWidth = 120.dp)
@@ -553,8 +589,7 @@ private fun DetailsContent(vm: ResultViewModel2, sync: SyncViewModel, route: Rou
                             val packs = shownEpisodes.filter { isSeasonPack(it) }
                             val rows = real.chunked(columns)
                             // spoilers: episodes up to current episode stay open; unviewed episodes after current episode are covered
-                            val currentEpIdx = real.indexOfLast { isWatched(it) || it.position > 0 }.coerceAtLeast(0)
-                            val openIds = if (!hideSpoilers) null else real.filterIndexed { i, ep -> i <= currentEpIdx || isWatched(ep) || ep.position > 0 }.map { it.id }.toSet()
+                            val openIds = if (!hideSpoilers) null else openEpisodeIds(real)
                             items(rows.size, key = { i -> "eprow-" + (rows[i].firstOrNull()?.id ?: i) + "-" + i }) { i ->
                                 Row(Modifier.reveal("eprow/" + route.url + "/" + (rows[i].firstOrNull()?.id ?: i), 200 + i.coerceAtMost(6) * 60).fillMaxWidth().padding(horizontal = gutter).padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                                     rows[i].forEach { ep -> Box(Modifier.weight(1f)) { EpisodeCard(vm, ep, d.backgroundPosterUrl ?: d.posterImage, d.posterHeaders, spoiler = openIds != null && ep.id !in openIds) } }
@@ -722,8 +757,9 @@ private fun Header(
 
         // which extension this page comes from (it decides the sources), small, at the right
         d.apiName.str()?.takeIf { it.isNotBlank() }?.let { api ->
-            Column(Modifier.align(Alignment.TopEnd).padding(top = com.lagradost.desktop.ui.shell.TopBarHeight + 20.dp, end = 36.dp), horizontalAlignment = Alignment.End) {
-                // a soft shadow: over bright artwork the white name was hard to read
+            // on a dark backing: over bright artwork (blond hair, snow) the white name was hard to read even with its shadow
+            Column(Modifier.align(Alignment.TopEnd).padding(top = com.lagradost.desktop.ui.shell.TopBarHeight + 14.dp, end = 30.dp)
+                .background(Color(0x8C000000), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 6.dp), horizontalAlignment = Alignment.End) {
                 val shade = androidx.compose.ui.graphics.Shadow(Color(0xB3000000), androidx.compose.ui.geometry.Offset(0f, 1f), 10f)
                 FText("SOURCE", style = Fluent.type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, letterSpacing = 1.4.sp, shadow = shade), color = Color(0xB3FFFFFF), maxLines = 1)
                 FText(api, style = Fluent.type.bodyStrong.copy(shadow = shade), color = Color.White, maxLines = 1)
@@ -763,7 +799,9 @@ private fun Header(
             }
             d.nextAiringEpisode.str()?.let { ep -> FText("$ep ${d.nextAiringDate.str().orEmpty()}", color = (com.lagradost.desktop.ui.fluent.LocalFluentDarkColors.current ?: c).accentText, maxLines = 1) }
             var expanded by remember { mutableStateOf(false) }
-            val plot = stripHtml(d.plotText.str().orEmpty())
+            // the engine's stand-in for a missing plot ("No Plot Found") is not shown: an empty line says the same more quietly
+            val noPlot = remember { listOf(R.string.normal_no_plot, R.string.torrent_no_plot).map { DesktopBootstrap.activity.getString(it) } }
+            val plot = stripHtml(d.plotText.str().orEmpty()).takeIf { it !in noPlot }.orEmpty()
             if (plot.isNotBlank()) {
                 FText(plot, style = Fluent.type.bodyLarge.copy(lineHeight = 26.sp), color = Color(0xD9FFFFFF), maxLines = if (expanded) 40 else 3, modifier = Modifier.widthIn(max = 620.dp).fluentClickable(rememberInteraction(), true, RoundedCornerShape(4.dp), Role.Button) { expanded = !expanded })
             }
@@ -854,7 +892,9 @@ private fun ActionRow(
                     vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, playEpisode))
                 }, height = 50.dp)
             }
-            resumeText?.takeIf { it.isNotBlank() }?.let { FText(it, color = Color(0xCCFFFFFF), style = Fluent.type.caption, maxLines = 2, modifier = Modifier.widthIn(max = 90.dp)) }
+            // only when Play really goes on from there: under 5 % watched it starts from the beginning and says "Play", and "22m remaining" beside it
+            // contradicted the button
+            resumeText?.takeIf { it.isNotBlank() && playEpisode.getRealPosition() > 0 }?.let { FText(it, color = Color(0xCCFFFFFF), style = Fluent.type.caption, maxLines = 2, modifier = Modifier.widthIn(max = 90.dp)) }
         }
         // the library: one round button, the list it is on is in its tooltip and menu
         Box {
@@ -869,8 +909,8 @@ private fun ActionRow(
         }
         // new-episode notifications: in the ⋯ menu (fewer buttons beside Play; the menu says whether they are on)
         // download: one tap for the film or the episode Play opens (it was only in the ⋯ menu of an episode); its state and progress show on the button
-        playEpisode?.let { ep -> HeaderDownloadButton(vm, ep, if (ep.tvType.isMovieType()) "this film" else "E${ep.episode}") }
-        if (hasTrailer && trailerUrls.isNotEmpty()) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { playTrailer(trailerUrls) }, size = 50.dp)
+        // (not for a live channel: it never ends, there is nothing to keep)
+        playEpisode?.takeIf { it.tvType != TvType.Live }?.let { ep -> HeaderDownloadButton(vm, ep, if (ep.tvType.isMovieType()) "this film" else "E${ep.episode}") }
         Box {
             com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.More, "More", { moreOpen = true }, size = 50.dp)
             if (moreOpen) {
@@ -879,7 +919,7 @@ private fun ActionRow(
                     buildList {
                         // the links of what Play opens are fetched again (an episode has this in its right-click / three dots menu too)
                         playEpisode?.let { ep -> add(MenuItem("Reload sources", Icons.Refresh) { vm.handleAction(EpisodeClickEvent(ACTION_RELOAD_EPISODE, ep)) }) }
-                        playEpisode?.let { ep -> add(MenuItem("Find torrents…", Icons.Download) { TorrentPicker.show(d.title, if (ep.tvType.isMovieType()) null else ep.episode, ep.poster, null) }) }
+                        playEpisode?.let { ep -> add(MenuItem("Find torrents…", Icons.Download) { TorrentPicker.show(d.title, if (ep.tvType.isMovieType()) null else ep.episode, ep.poster, null, season = if (ep.tvType.isMovieType()) null else ep.season) }) }
                         favorite?.let { fav ->
                             add(MenuItem(if (fav) "Remove from favourites" else "Add to favourites", if (fav) Icons.FavoriteFilled else Icons.Favorite, checked = fav) {
                                 vm.toggleFavoriteStatus(ctx) { new -> if (new != null) Toasts.show(if (new) "Added to favourites" else "Removed from favourites", false) }
@@ -902,6 +942,9 @@ private fun ActionRow(
                 )
             }
         }
+        // last in the row: TMDB's trailer is often found a few seconds after the page opened, and a button that appears before ⋯ pushed ⋯ (and
+        // Download) aside under the pointer, so a click meant for ⋯ opened the Download menu
+        if (hasTrailer && trailerUrls.isNotEmpty()) com.lagradost.desktop.ui.fluent.GlassCircleButton(Icons.Video, "Watch trailer", { playTrailer(trailerUrls) }, size = 50.dp)
     }
 }
 
@@ -968,7 +1011,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                 vm.handleAction(EpisodeClickEvent(ACTION_CLICK_DEFAULT, ep))
             },
             MenuItem("Choose how to play…", Icons.Settings) { vm.handleAction(EpisodeClickEvent(ACTION_SHOW_OPTIONS, ep)) },
-            MenuItem("Find torrents…", Icons.Download) { TorrentPicker.show(ep.headerName, ep.episode, ep.poster ?: fallback, fallbackHeaders) },
+            MenuItem("Find torrents…", Icons.Download) { TorrentPicker.show(ep.headerName, ep.episode, ep.poster ?: fallback, fallbackHeaders, season = ep.season) },
             MenuSeparator,
             MenuItem(if (watched) "Mark as unwatched" else "Mark as watched", Icons.Check) { vm.handleAction(EpisodeClickEvent(ACTION_MARK_AS_WATCHED, ep)) },
             MenuItem("Mark all up to here as watched", Icons.Accept) { vm.handleAction(EpisodeClickEvent(ACTION_MARK_WATCHED_UP_TO_THIS_EPISODE, ep)) },
@@ -1048,7 +1091,7 @@ private fun EpisodeCard(vm: ResultViewModel2, ep: ResultEpisode, fallback: Strin
                     }
                     if (ep.isFiller == true || ep.score != null) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (ep.isFiller == true) Badge("Filler")
-                        ep.score.shown()?.let { FText("★ " + it.toString(10, 1), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1) }
+                        ep.score.shown()?.let { FText("★ " + it.toString(10, 1, removeTrailingZeros = false), style = Fluent.type.caption, color = c.textTertiary, maxLines = 1) }
                     }
                 }
                 // the download of this episode, in sight (it was only in the menu beside it)
@@ -1125,7 +1168,7 @@ private fun TrackerCard(sync: SyncViewModel) {
     ) {
         Column(Modifier.weight(1f)) {
             FText("Tracking on ${names.joinToString(" · ")}", style = Fluent.type.bodyStrong, color = c.textSecondary, maxLines = 1)
-            down.firstOrNull()?.let { FText(it + " Changes are not saved until it answers.", style = Fluent.type.caption, color = c.caution, maxLines = 2) }
+            down.firstOrNull()?.let { FText(com.lagradost.desktop.i18n.Tr.t(it) + " " + com.lagradost.desktop.i18n.Tr.t("Changes are not saved until it answers."), style = Fluent.type.caption, color = c.caution, maxLines = 2) }
                 ?: if (unsaved) FText("Changed here, not saved yet", style = Fluent.type.caption, color = c.caution, maxLines = 1) else null
         }
         when {
@@ -1145,6 +1188,8 @@ private fun TrackerCard(sync: SyncViewModel) {
                     kind = if (unsaved) ButtonKind.Accent else ButtonKind.Standard, enabled = unsaved && down.size < names.size, height = 36.dp,
                 )
             }
+            // a service that is down could not be asked: "not found" would read as "not on your list"
+            down.isNotEmpty() -> {}
             else -> FText("Not found on these services", style = Fluent.type.caption, color = c.textTertiary)
         }
     }

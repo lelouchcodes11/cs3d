@@ -173,17 +173,48 @@ object ExternalPlayers {
 
     /** The Store page of Energy Media Player (DimitrovDev) */
     const val ENERGY_STORE = "ms-windows-store://pdp/?productid=9P9ZH5FL1BFK"
+    /** The free Energy Media Player (Store 9P9ZH5FL1BFK) */
     const val ENERGY_FAMILY = "6615IvanDimitrov89.EnergyPlayer_1gdjqnh0agk8c"
-    private const val ENERGY_AUMID = "$ENERGY_FAMILY!App"
+    /** The paid "Energy Media Player for Windows" (Store 9PB80MGK67RF, same developer and permissions): a package of its own */
+    const val ENERGY_PAID_FAMILY = "6615IvanDimitrov89.5586876157212_1gdjqnh0agk8c"
+    /** The paid one first: someone who bought it and kept the free one means the one they paid for */
+    private val ENERGY_FAMILIES = listOf(ENERGY_PAID_FAMILY, ENERGY_FAMILY)
 
     /**
-     * Whether Energy is installed: a Store app has no exe to find, but installing it puts its command alias in WindowsApps. (The alias itself is not
-     * used to open videos: Energy ignores a link given on its command line and reopens the last thing it played.)
+     * The installed Energy as its package family, or null. A Store app has no exe to find; its folder under Packages is there for the person who installed
+     * it, and the free one also puts its command alias in WindowsApps. (The alias is not used to open videos: Energy ignores a link given on its
+     * command line and reopens the last thing it played.)
      */
-    fun energyInstalled(): Boolean = DesktopPlatform.isWindows && System.getenv("LOCALAPPDATA")?.let { local ->
+    fun energyFamily(): String? {
+        if (!DesktopPlatform.isWindows) return null
+        val local = System.getenv("LOCALAPPDATA") ?: return null
+        ENERGY_FAMILIES.firstOrNull { File(File(local, "Packages"), it).isDirectory }?.let { return it }
         // the alias is a special link Java does not see as a file (exists() is false): it is looked for in the folder listing
-        File(File(local, "Microsoft"), "WindowsApps").list()?.any { it.equals("EnergyPlayer.exe", true) } == true || File(File(local, "Packages"), ENERGY_FAMILY).isDirectory
-    } == true
+        return if (File(File(local, "Microsoft"), "WindowsApps").list()?.any { it.equals("EnergyPlayer.exe", true) } == true) ENERGY_FAMILY else null
+    }
+
+    fun energyInstalled(): Boolean = energyFamily() != null
+
+    /**
+     * What Windows starts for [family]: "family!appId", the app id read from the installed package's entry in the registry (each app of a package is a
+     * key under it; the free player's is "App"). "App" when it can not be read.
+     */
+    internal fun energyAumid(family: String): String {
+        val id = energyAppId(family)
+        if (id == null) Log.i(TAG, "Energy: app id of $family not found in the registry, trying App")
+        return "$family!${id ?: "App"}"
+    }
+
+    /** The app id of [family] as the registry lists it for the installed package, or null */
+    internal fun energyAppId(family: String): String? {
+        val base = "Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\Repository\\Packages"
+        return runCatching {
+            val hkcu = com.sun.jna.platform.win32.WinReg.HKEY_CURRENT_USER
+            val full = com.sun.jna.platform.win32.Advapi32Util.registryGetKeys(hkcu, base)
+                .firstOrNull { it.startsWith(family.substringBefore('_') + "_") && it.endsWith("_" + family.substringAfterLast('_')) } ?: return@runCatching null
+            com.sun.jna.platform.win32.Advapi32Util.registryGetKeys(hkcu, "$base\\$full").let { apps -> apps.firstOrNull { it == "App" } ?: apps.firstOrNull() }
+        }.getOrNull()
+    }
 
     /** What Energy can play: plain files and HLS (no DASH, no protected streams) */
     fun energyCanPlay(link: ExtractorLink): Boolean =
@@ -201,12 +232,12 @@ object ExternalPlayers {
         val p = ProcessBuilder("CheckNetIsolation.exe", "LoopbackExempt", "-s").redirectErrorStream(true).start()
         val out = p.inputStream.bufferedReader().readText()
         p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
-        out.contains(ENERGY_FAMILY, ignoreCase = true)
+        out.contains(energyFamily() ?: ENERGY_FAMILY, ignoreCase = true)
     }.getOrDefault(false)
 
     /** Asks Windows (an admin prompt the person answers) to let Energy reach the app's servers on this PC; true when the prompt was shown */
     fun allowEnergyLoopback(): Boolean = runCatching {
-        val r = com.sun.jna.platform.win32.Shell32.INSTANCE.ShellExecute(null, "runas", "CheckNetIsolation.exe", "LoopbackExempt -a -n=$ENERGY_FAMILY", null, 0)
+        val r = com.sun.jna.platform.win32.Shell32.INSTANCE.ShellExecute(null, "runas", "CheckNetIsolation.exe", "LoopbackExempt -a -n=${energyFamily() ?: ENERGY_FAMILY}", null, 0)
         r.toLong() > 32
     }.getOrDefault(false)
 
@@ -233,7 +264,7 @@ object ExternalPlayers {
             val name = title?.replace('\n', ' ')?.replace('\r', ' ')?.takeIf { it.isNotBlank() } ?: "CloudStream"
             val playlist = File.createTempFile("energy-", ".m3u").apply { deleteOnExit(); writeText("#EXTM3U\r\n#EXTINF:-1,$name\r\n$address\r\n", Charsets.UTF_8) }
             Log.i(TAG, "Energy: ${address.take(300)}")
-            WinActivation.activateForFile(ENERGY_AUMID, playlist.absolutePath)
+            WinActivation.activateForFile(energyAumid(energyFamily() ?: ENERGY_FAMILY), playlist.absolutePath)
             Outcome(true)
         } catch (t: Throwable) {
             Log.w(TAG, "Energy did not start: $t")

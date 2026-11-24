@@ -134,6 +134,14 @@ fun DownloadsScreen() {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (folder != null) IconButton(Icons.Back, { folder = null; vm.clearChildren() }, tooltip = "All downloads", kind = ButtonKind.Standard, size = 40.dp)
                 com.lagradost.desktop.ui.fluent.PageHeader(folder?.data?.name ?: "Downloads", Modifier.weight(1f), icon = Icons.Download, tint = androidx.compose.ui.graphics.Color(0xFF3FBF7F), subtitle = if (folder != null) null else if ((downloaded ?: 0L) <= 0L && (free ?: 0L) > 0L) "${size(free ?: 0L)} free" else null) {
+                    // every download at once: pause the ones that run, or carry on with the paused ones (looked at once a second)
+                    var tick by remember { mutableStateOf(0) }
+                    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1000); tick++ } }
+                    val states = remember(tick) { runCatching { VideoDownloadManager.downloadStatus.toMap() }.getOrDefault(emptyMap()) }
+                    val running = states.filterValues { it == VideoDownloadManager.DownloadType.IsDownloading || it == VideoDownloadManager.DownloadType.IsPending }.keys
+                    val paused = states.filterValues { it == VideoDownloadManager.DownloadType.IsPaused }.keys
+                    if (running.isNotEmpty()) IconButton(Icons.Pause, { running.forEach { VideoDownloadManager.downloadEvent.invoke(it to VideoDownloadManager.DownloadActionType.Pause) }; tick++ }, tooltip = "Pause all downloads", kind = ButtonKind.Standard, size = 36.dp)
+                    else if (paused.isNotEmpty()) IconButton(Icons.Play, { paused.forEach { VideoDownloadManager.downloadEvent.invoke(it to VideoDownloadManager.DownloadActionType.Resume) }; tick++ }, tooltip = "Resume all downloads", kind = ButtonKind.Standard, size = 36.dp)
                     IconButton(Icons.Refresh, { vm.updateHeaderList(ctx) }, tooltip = "Refresh", kind = ButtonKind.Standard, size = 36.dp)
                 }
             }
@@ -154,7 +162,7 @@ fun DownloadsScreen() {
             is Resource.Failure -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FText(res.errorString, color = c.textSecondary) }
             is Resource.Success -> {
                 val items = res.value
-                if (items.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (items.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { // where the Library page has its empty message
                     com.lagradost.desktop.ui.fluent.EmptyState(Icons.Download, "No downloads yet", "Use the download action of an episode or movie to keep it offline.") {
                         com.lagradost.desktop.ui.fluent.Button("Browse titles", { com.lagradost.desktop.core.Navigator.goTab(com.lagradost.desktop.core.Tab.Home) }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Accent, icon = Icons.Home, height = 36.dp)
                     }
@@ -232,7 +240,14 @@ private fun DownloadRow(item: VisualDownloadCached, onOpenFolder: (VisualDownloa
                         style = Fluent.type.caption, color = if (live.paused) c.textSecondary else c.accentText, maxLines = 1,
                     )
                 }
-                if (live.failed > 0 && running.isEmpty()) FText("${live.failed} failed: press try again", style = Fluent.type.caption, color = c.critical, maxLines = 1)
+                if (live.failed > 0 && running.isEmpty()) {
+                    // why it failed, in plain words (the downloader's reason; it only said "failed")
+                    val why = episodes.firstNotNullOfOrNull { e ->
+                        if (VideoDownloadManager.downloadStatus[e.id] == VideoDownloadManager.DownloadType.IsFailed) VideoDownloadManager.failureReasons[e.id] else null
+                    }
+                    val head = if (episodes.size > 1) "${live.failed} failed" else "Failed"
+                    FText(head + (why?.let { ": $it" } ?: "") + (if (why?.contains("by itself") == true) "" else "  ·  press try again"), style = Fluent.type.caption, color = c.critical, maxLines = 2)
+                }
             }
             // the buttons are always there: pause or resume, cancel; try again; delete
             when {

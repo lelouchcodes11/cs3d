@@ -46,6 +46,14 @@ class SubtitleTranslateTest {
     }
 
     @Test
+    fun cuesWithoutBlankLinesBetweenThemKeepTheirTimings() {
+        val srt = "1\n00:00:01,000 --> 00:00:02,000\nHello\nthere\n2\n00:00:03,000 --> 00:00:04,000\nBye\n"
+        assertEquals("1\n00:00:01,000 --> 00:00:02,000\nHELLO\nTHERE\n2\n00:00:03,000 --> 00:00:04,000\nBYE\n", upper(srt, ".srt"))
+        val vtt = "WEBVTT\n\n00:01.000 --> 00:02.000\nOne\n00:03.000 --> 00:04.000\nTwo\n"
+        assertEquals("WEBVTT\n\n00:01.000 --> 00:02.000\nONE\n00:03.000 --> 00:04.000\nTWO\n", upper(vtt, ".vtt"))
+    }
+
+    @Test
     fun noCuesGivesNull() {
         assertNull(upper("just some text", ".srt"))
     }

@@ -20,9 +20,11 @@ Runs your CloudStream extensions on the desktop, with a real <code>mpv</code> pl
 
 <p align="center">
   <a href="../../releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/lelouchcodes11/cs3d?include_prereleases&label=release&color=3B7BFF"></a>
-  <a href="../../actions/workflows/ci.yml"><img alt="CI" src="https://github.com/lelouchcodes11/cs3d/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-3B7BFF"></a>
 </p>
+
+> [!TIP]
+> **New: CS3D Web, your extensions in the browser.** Browse, search every extension at once and play right in your browser, through the CS3D engine on your computer: **https://cs3d-web.vercel.app**
 
 > [!NOTE]
 > **A personal project.** I am not a developer. This app was made entirely for my own needs, using vibe coding (building with AI). It is shared as is: expect bugs, glitches and rough edges. Please report issues: I will fix them, but slowly. Pull requests are welcome.

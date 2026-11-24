@@ -14,9 +14,11 @@ import com.lagradost.desktop.runtime.web.JcefRuntime
 object Warmups {
     private const val TAG = "Warmups"
     private const val KEY_JCEF_USED = "jcef_used_last_run"
+    private val started = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** Called once the application object exists */
     fun start() {
+        if (!started.compareAndSet(false, true)) return
         JcefRuntime.onStarted = ::noteJcefUsed
         // Chromium (WebView) starts when an extension first needs a page or cookie (a site behind Cloudflare, for example), and the window pays for it
         // (its message pump runs on the window's thread). Starting it before the window shows when the last run needed it was tried: measured worse

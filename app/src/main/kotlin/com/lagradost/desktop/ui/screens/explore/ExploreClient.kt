@@ -14,8 +14,13 @@ enum class ExploreKind(val label: String) { Movies("Movies"), Series("TV series"
 /** Global: what the world watches. Local: titles made in the viewer's own country (and, when one is chosen, in one of its languages) */
 enum class ExploreScope { Global, Local }
 
-/** [ranked]: the list is an order (a top 10), so its posters get big numbers */
-class ExploreRow(val title: String, val subtitle: String?, val ranked: Boolean = false, val load: suspend () -> List<TmdbCard>)
+/**
+ * [ranked]: the list is an order (a top 10), so its posters get big numbers. [loadPage] gives page 1, 2, 3 ... of the list (an empty page: the end),
+ * so "See all" can go on past the first 20 titles of the shelf.
+ */
+class ExploreRow(val title: String, val subtitle: String?, val ranked: Boolean = false, val loadPage: suspend (Int) -> List<TmdbCard>) {
+    suspend fun load(): List<TmdbCard> = loadPage(1)
+}
 
 /**
  * Catalogs for the Explore page. TMDB for films and series (trending, in cinemas, top rated, by genre and by streaming service),
@@ -75,7 +80,7 @@ object ExploreClient {
         val dateGte = if (movie) "primary_release_date.gte" else "first_air_date.gte"
         val dateLte = if (movie) "primary_release_date.lte" else "first_air_date.lte"
         val dateSort = if (movie) "primary_release_date.desc" else "first_air_date.desc"
-        fun local(sort: String, vararg extra: Pair<String, String>): suspend () -> List<TmdbCard> = {
+        fun local(sort: String, vararg extra: Pair<String, String>): suspend (Int) -> List<TmdbCard> = { page ->
             val params = buildList {
                 add("sort_by" to sort)
                 if (lang != null && lang != "en") add("with_original_language" to lang)
@@ -83,30 +88,31 @@ object ExploreClient {
                 if (genreId != null) add("with_genres" to genreId.toString())
                 if (serviceId != null) { add("with_watch_providers" to serviceId.toString()); add("watch_region" to region); add("with_watch_monetization_types" to "flatrate|free|ads") }
                 addAll(extra)
+                add("page" to page.toString())
             }
             tmdb("local/$path/" + params.joinToString("&") { it.first + "=" + it.second }, movie) { Tmdb.list("/discover/$path", movie, *params.toTypedArray()) }
         }
         val rows = ArrayList<ExploreRow>()
         rows += ExploreRow(
             "Trending ${label}in $country", "New and popular right now", ranked = genreId == null && serviceId == null,
-            load = local("popularity.desc", dateGte to today.minusMonths(if (movie) 6L else 12L).toString(), dateLte to today.toString(), "vote_count.gte" to "3"),
+            loadPage = local("popularity.desc", dateGte to today.minusMonths(if (movie) 6L else 12L).toString(), dateLte to today.toString(), "vote_count.gte" to "3"),
         )
         // in the cinemas of the country (TMDB answers for the region itself); it has no language filter, so it is left out when one is chosen
         if (movie && genreId == null && serviceId == null && lang == null) {
-            rows += ExploreRow("In cinemas in $country", "Playing now") { tmdb("local/$region/nowplaying", true) { Tmdb.list("/movie/now_playing", true, "region" to region) } }
+            rows += ExploreRow("In cinemas in $country", "Playing now") { p -> tmdb("local/$region/nowplaying/$p", true) { Tmdb.list("/movie/now_playing", true, "region" to region, "page" to "$p") } }
         }
-        rows += ExploreRow("Most watched ${label}in $country", "All time, by number of votes", load = local("vote_count.desc"))
-        rows += ExploreRow("Top rated ${label}in $country", "Best scores, with enough votes", load = local("vote_average.desc", "vote_count.gte" to (if (lang != null) "150" else "300")))
-        rows += ExploreRow("New ${label}in $country", null, load = local(dateSort, dateLte to today.toString(), "vote_count.gte" to "2"))
+        rows += ExploreRow("Most watched ${label}in $country", "All time, by number of votes", loadPage = local("vote_count.desc"))
+        rows += ExploreRow("Top rated ${label}in $country", "Best scores, with enough votes", loadPage = local("vote_average.desc", "vote_count.gte" to (if (lang != null) "150" else "300")))
+        rows += ExploreRow("New ${label}in $country", null, loadPage = local(dateSort, dateLte to today.toString(), "vote_count.gte" to "2"))
         return rows
     }
 
     fun rows(kind: ExploreKind, genre: String?, service: String?, local: Boolean = false, language: String? = null): List<ExploreRow> {
         if (kind == ExploreKind.Anime) return listOf(
-            ExploreRow("Trending", "Rising this week", ranked = genre == null) { anilist("TRENDING_DESC", null, genre) },
-            ExploreRow("Airing now", "Episodes coming out") { anilist("POPULARITY_DESC", "RELEASING", genre) },
-            ExploreRow("Top rated", "Highest scores on AniList") { anilist("SCORE_DESC", null, genre) },
-            ExploreRow("Upcoming", "Not out yet") { anilist("POPULARITY_DESC", "NOT_YET_RELEASED", genre) },
+            ExploreRow("Trending", "Rising this week", ranked = genre == null) { anilist("TRENDING_DESC", null, genre, it) },
+            ExploreRow("Airing now", "Episodes coming out") { anilist("POPULARITY_DESC", "RELEASING", genre, it) },
+            ExploreRow("Top rated", "Highest scores on AniList") { anilist("SCORE_DESC", null, genre, it) },
+            ExploreRow("Upcoming", "Not out yet") { anilist("POPULARITY_DESC", "NOT_YET_RELEASED", genre, it) },
         )
         val movie = kind == ExploreKind.Movies
         if (local) return localRows(movie, genre, service, language)
@@ -116,34 +122,38 @@ object ExploreClient {
         val where = listOfNotNull(genre, service?.let { "on $it" }).joinToString(" ")
         if (genreId == null && serviceId == null) {
             val fallback = if (movie) "movie" else "series"
+            // page [p] of a TMDB list; Cinemeta stands in for page 1 only when TMDB cannot answer (it has no pages)
+            suspend fun list(key: String, path: String, p: Int, backup: String?, vararg params: Pair<String, String>): List<TmdbCard> =
+                tmdb("$key/$p", movie) { Tmdb.list(path, movie, *params, "page" to "$p") }.ifEmpty { if (backup != null && p == 1) cinemeta(fallback, backup) else emptyList() }
             return if (movie) listOf(
-                ExploreRow("Trending today", "The most watched films right now", ranked = true) { tmdb("trending", true) { Tmdb.list("/trending/movie/day", true) }.ifEmpty { cinemeta(fallback, "top") } },
-                ExploreRow("Popular", "What people are watching") { tmdb("popular", true) { Tmdb.list("/movie/popular", true, "region" to Tmdb.region) }.ifEmpty { cinemeta(fallback, "top") } },
-                ExploreRow("In cinemas", "Playing now") { tmdb("nowplaying", true) { Tmdb.list("/movie/now_playing", true, "region" to Tmdb.region) } },
-                ExploreRow("Coming soon", "Releasing in the next weeks") { tmdb("upcoming", true) { Tmdb.list("/movie/upcoming", true, "region" to Tmdb.region) } },
-                ExploreRow("Top rated", "Best of all time") { tmdb("toprated", true) { Tmdb.list("/movie/top_rated", true) }.ifEmpty { cinemeta(fallback, "imdbRating") } },
+                ExploreRow("Trending today", "The most watched films right now", ranked = true) { list("trending", "/trending/movie/day", it, "top") },
+                ExploreRow("Popular", "What people are watching") { list("popular", "/movie/popular", it, "top", "region" to Tmdb.region) },
+                ExploreRow("In cinemas", "Playing now") { list("nowplaying", "/movie/now_playing", it, null, "region" to Tmdb.region) },
+                ExploreRow("Coming soon", "Releasing in the next weeks") { list("upcoming", "/movie/upcoming", it, null, "region" to Tmdb.region) },
+                ExploreRow("Top rated", "Best of all time") { list("toprated", "/movie/top_rated", it, "imdbRating") },
             ) else listOf(
-                ExploreRow("Trending today", "The most watched series right now", ranked = true) { tmdb("trending", false) { Tmdb.list("/trending/tv/day", false) }.ifEmpty { cinemeta(fallback, "top") } },
-                ExploreRow("Popular", "What people are watching") { tmdb("popular", false) { Tmdb.list("/tv/popular", false) }.ifEmpty { cinemeta(fallback, "top") } },
-                ExploreRow("Airing today", "New episodes today") { tmdb("airing", false) { Tmdb.list("/tv/airing_today", false) } },
-                ExploreRow("On the air", "Running this week") { tmdb("ontheair", false) { Tmdb.list("/tv/on_the_air", false) } },
-                ExploreRow("Top rated", "Best of all time") { tmdb("toprated", false) { Tmdb.list("/tv/top_rated", false) }.ifEmpty { cinemeta(fallback, "imdbRating") } },
+                ExploreRow("Trending today", "The most watched series right now", ranked = true) { list("trending", "/trending/tv/day", it, "top") },
+                ExploreRow("Popular", "What people are watching") { list("popular", "/tv/popular", it, "top") },
+                ExploreRow("Airing today", "New episodes today") { list("airing", "/tv/airing_today", it, null) },
+                ExploreRow("On the air", "Running this week") { list("ontheair", "/tv/on_the_air", it, null) },
+                ExploreRow("Top rated", "Best of all time") { list("toprated", "/tv/top_rated", it, "imdbRating") },
             )
         }
         val today = LocalDate.now().toString()
-        fun discover(sort: String, vararg extra: Pair<String, String>): suspend () -> List<TmdbCard> = {
+        fun discover(sort: String, vararg extra: Pair<String, String>): suspend (Int) -> List<TmdbCard> = { page ->
             val params = buildList {
                 add("sort_by" to sort)
                 if (genreId != null) add("with_genres" to genreId.toString())
                 if (serviceId != null) { add("with_watch_providers" to serviceId.toString()); add("watch_region" to Tmdb.region); add("with_watch_monetization_types" to "flatrate|free|ads") }
                 addAll(extra)
+                add("page" to page.toString())
             }
-            tmdb("discover/$path/$genre/$service/$sort", movie) { Tmdb.list("/discover/$path", movie, *params.toTypedArray()) }
+            tmdb("discover/$path/$genre/$service/$sort/$page", movie) { Tmdb.list("/discover/$path", movie, *params.toTypedArray()) }
         }
         return listOf(
-            ExploreRow("Popular $where".trim(), null, load = discover("popularity.desc")),
-            ExploreRow("Top rated $where".trim(), null, load = discover("vote_average.desc", "vote_count.gte" to "300")),
-            ExploreRow("New $where".trim(), null, load = discover(if (movie) "primary_release_date.desc" else "first_air_date.desc", (if (movie) "primary_release_date.lte" else "first_air_date.lte") to today, "vote_count.gte" to "20")),
+            ExploreRow("Popular $where".trim(), null, loadPage = discover("popularity.desc")),
+            ExploreRow("Top rated $where".trim(), null, loadPage = discover("vote_average.desc", "vote_count.gte" to "300")),
+            ExploreRow("New $where".trim(), null, loadPage = discover(if (movie) "primary_release_date.desc" else "first_air_date.desc", (if (movie) "primary_release_date.lte" else "first_air_date.lte") to today, "vote_count.gte" to "20")),
         )
     }
 
@@ -176,13 +186,13 @@ object ExploreClient {
         }
     }
 
-    private suspend fun anilist(sort: String, status: String?, genre: String?): List<TmdbCard> = cached("al/$sort/$status/$genre") {
+    private suspend fun anilist(sort: String, status: String?, genre: String?, page: Int = 1): List<TmdbCard> = cached("al/$sort/$status/$genre/$page") {
         val filters = buildString {
             append("type: ANIME, isAdult: false, sort: [$sort]")
             if (status != null) append(", status: $status")
             if (genre != null) append(", genre: \"${genre.replace("\"", "")}\"")
         }
-        val query = "{ Page(perPage: 30) { media($filters) { id title { romaji english } coverImage { extraLarge } averageScore seasonYear genres format } } }"
+        val query = "{ Page(page: $page, perPage: 30) { media($filters) { id title { romaji english } coverImage { extraLarge } averageScore seasonYear genres format } } }"
         val json = JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.post("https://graphql.anilist.co", json = mapOf("query" to query), timeout = 20).text })
         val media = json.optJSONObject("data")?.optJSONObject("Page")?.optJSONArray("media") ?: return@cached emptyList()
         buildList {

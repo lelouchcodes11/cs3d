@@ -155,8 +155,15 @@ class SharedPreferencesImpl(private val file: File) : SharedPreferences {
     }
 
     private fun parse(stream: java.io.InputStream): MutableMap<String, Any?> {
+        // tolerate a UTF-8 BOM (e.g. a preference file edited with Notepad/PowerShell) instead of failing XML parse and discarding preferences
+        val buffered = java.io.PushbackInputStream(stream, 3)
+        val bom = ByteArray(3)
+        val n = buffered.read(bom)
+        if (n > 0 && !(n == 3 && bom[0] == 0xEF.toByte() && bom[1] == 0xBB.toByte() && bom[2] == 0xBF.toByte())) {
+            buffered.unread(bom, 0, n)
+        }
         val parser = android.util.Xml.newPullParser()
-        parser.setInput(stream, "UTF-8")
+        parser.setInput(buffered, "UTF-8")
         val result = HashMap<String, Any?>()
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {

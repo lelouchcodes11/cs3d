@@ -221,6 +221,9 @@ private object Clips {
     }
 }
 
+/** No input for this long: the profile pictures stop playing until the next press, wheel turn or key */
+private const val USER_AWAY_MS = 60_000L
+
 /**
  * Where an animated picture is in its animation, seconds (0 = at rest, the first frame). With [playing] it loops for as long as it is true.
  * Otherwise it plays smoothly every while, and only while the window has focus and motion is on:
@@ -237,7 +240,11 @@ private fun rememberClipTime(seconds: Float?, animated: Boolean, playing: Boolea
         if (!allowed) return@LaunchedEffect
         val rnd = java.util.Random(seed * 7919L + System.nanoTime())
         if (!playing) delay(1200L + rnd.nextInt(4000))
+        val since = System.currentTimeMillis()
         while (true) {
+            // at rest while nobody uses the app (no press, wheel or key for a minute): each play draws the whole window about 90 times, and an
+            // app left open on Home spent about a second of processor time a minute on a picture nobody looked at. A delay asks for no frame
+            if (!playing) while (System.currentTimeMillis() - maxOf(com.lagradost.desktop.ui.fluent.InputMode.lastInputAt, since) > USER_AWAY_MS) delay(2_000)
             // 30 pictures a second, each one frame of the window. It used to wait for every frame of the screen (withFrameNanos) and only change
             // the picture every 30th of a second: the whole window was drawn at the full refresh rate (144 times a second on a 144 Hz screen) for
             // the 3-4 s of each play, for a 40 dp picture. A delay asks for no frame; only the new picture does.

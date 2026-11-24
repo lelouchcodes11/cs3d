@@ -162,7 +162,7 @@ class AnimeSkipAuth : AuthAPI() {
 }
 
 class AnimeSkip : SkipAPI() {
-    override val name: String = "AniSkip"
+    override val name: String = "AnimeSkip"
     override val supportedTypes: Set<TvType> = setOf(TvType.Anime, TvType.OVA)
 
     val auth = PlainAuthRepo(animeSkipApi)

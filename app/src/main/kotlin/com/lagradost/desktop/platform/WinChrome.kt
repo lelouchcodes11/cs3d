@@ -105,6 +105,7 @@ object WinChrome {
     }
 
     private const val REVEAL_DWELL_MS = 140L
+    private const val NEAR_DWELL_MS = 450L
     private var hotSince = 0L
     private var nearTopSince = 0L
     private var lastRevealLog = 0L
@@ -175,16 +176,24 @@ object WinChrome {
         }.getOrNull()
         val atScreenTop = fake == null && inside && monitorTop != null && p[1] <= monitorTop + hot && x >= 0 && x < client[2] - client[0]
         // shown at the top edge; hidden at once when the pointer is off the bar (or off the window)
-        if ((over && y <= hot) || atScreenTop) {
+        // a little lower than the edge, the pointer has to rest a bit longer: the owner's log (2026-11-20) had it 10 px under the edge of the maximised
+        // window, next to where the window buttons are, for seconds, and the 3 px strip never showed the bar (passing over the dock does not show it)
+        val near = (8 * scale).toInt()
+        val dwell = when {
+            (over && y <= hot) || atScreenTop -> REVEAL_DWELL_MS
+            over && y <= near -> NEAR_DWELL_MS
+            else -> -1L
+        }
+        if (dwell >= 0) {
             if (hotSince == 0L) hotSince = now
-            if (now - hotSince >= REVEAL_DWELL_MS) revealed = true
+            if (now - hotSince >= dwell) revealed = true
         } else hotSince = 0L
         val inBarOnScreen = fake == null && inside && monitorTop != null && p[1] <= monitorTop + keep && x >= 0 && x < client[2] - client[0]
         if (revealed && !(over && y <= keep) && !inBarOnScreen) revealed = false
         captionHidden = !revealed
         // the owner (2026-11-09) saw the bar not come at the top edge of the maximized window and it could not be reproduced: when the pointer is near the
         // top of the window and the bar stays hidden for a while, what was measured is written to the log (once a minute at most)
-        if (!revealed && fake == null && y in -12..12 && x in 0 until (client[2] - client[0])) {
+        if (!revealed && fake == null && inside && y in -12..12 && x in 0 until (client[2] - client[0])) {
             if (nearTopSince == 0L) nearTopSince = now
             if (now - nearTopSince > 1_500 && now - lastRevealLog > 60_000) {
                 lastRevealLog = now

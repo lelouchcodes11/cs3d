@@ -92,6 +92,7 @@ fun SettingsCard(
     onClick: (() -> Unit)? = null,
     /** content under the text instead of beside it (a slider on a narrow window) */
     below: (@Composable () -> Unit)? = null,
+    glyph: String? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     val c = Fluent.colors
@@ -110,8 +111,13 @@ fun SettingsCard(
     ) {
         // the icon sits in a small tinted square in the colour of its page, like the page's entry in the list: the phone-style (Material) vectors
         // of the engine's rows and the Windows glyphs of the others then read as one set
-        if (icon != null && LocalRowIcons.current) IconBadge(36.dp) { tint -> Image(icon, null, Modifier.size(18.dp), colorFilter = ColorFilter.tint(if (enabled) tint else c.textDisabled)) }
-        else if (icon == null && LocalRowIcons.current && LocalReserveIcon.current) Box(Modifier.size(36.dp))
+        val hasBadge = icon != null || glyph != null
+        if (hasBadge && LocalRowIcons.current) IconBadge(36.dp) { tint ->
+            val color = if (enabled) tint else c.textDisabled
+            if (icon != null) Image(icon, null, Modifier.size(18.dp), colorFilter = ColorFilter.tint(color))
+            else if (glyph != null) Icon(glyph, size = 17.dp, tint = color)
+        }
+        else if (!hasBadge && LocalRowIcons.current && LocalReserveIcon.current) Box(Modifier.size(36.dp))
         // the control beside the text while the text keeps a readable width, under it (at the right) when not: in a half-screen window a 230 dp
         // drop-down left the description a column of one or two words per line ("Follow / Windows, or / always use / light or dark / surfaces")
         BesideOrUnder(Modifier.weight(1f), text = {

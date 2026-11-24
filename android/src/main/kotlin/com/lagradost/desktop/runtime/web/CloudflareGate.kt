@@ -64,6 +64,16 @@ object CloudflareGate {
         solves.remove(solve)
     }
 
+    /** Clears temporary per-host failure/cancel cooldowns and repeated-dialog pauses (e.g. when the user clicks Reload). */
+    fun clearRetryCooldowns() {
+        failedHosts.clear()
+        cancelledHosts.clear()
+        synchronized(this) {
+            shown.clear()
+            pausedUntil = 0L
+        }
+    }
+
     /** The user pressed Cancel: every solve in progress is stopped, and those sites are left alone for two minutes (their next request is not held up again) */
     fun cancelSolves() {
         val now = System.currentTimeMillis()

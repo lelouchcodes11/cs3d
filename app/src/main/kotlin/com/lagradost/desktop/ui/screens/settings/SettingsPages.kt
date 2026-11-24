@@ -33,6 +33,8 @@ internal fun generalGroups(): List<SettingGroup> {
         },
         group("Downloads") {
             pref(up.title(stringResource(R.string.download_path_pref)), "folder location save")
+            downloadQualityItem()
+            downloadSpeedItem()
             pref(up.key("download_parallel_key"), "simultaneous at once")
             pref(up.key("download_concurrent_key"), "threads speed")
         },
@@ -52,7 +54,7 @@ internal fun sourcesGroups(): List<SettingGroup> {
             link("Extensions", "Repositories and installed extensions: add, remove, update and see where each one runs", "repository repositories plugins install add remove", icon = painterResource(R.drawable.extension_24px)) {
                 com.lagradost.desktop.core.Navigator.goTab(com.lagradost.desktop.core.Tab.Extensions)
             }
-            link("Stremio add-ons, TV playlists and torrents", "Add-ons and IPTV playlists as sources, their subtitles, and torrent streaming", "stremio torrserver torrent magnet addon iptv m3u xtream playlist live tv channels", icon = painterResource(R.drawable.ic_baseline_tv_24)) { SettingsNav.page = "stremio" }
+            link("Stremio add-ons, TV playlists and torrents", "Add-ons and IPTV playlists as sources, their subtitles, and torrent streaming", "stremio torrserver torrent magnet addon iptv m3u xtream playlist live tv channels torrent buffer cache encrypted encryption peers engine downloaded parts", icon = painterResource(R.drawable.ic_baseline_tv_24)) { SettingsNav.page = "stremio" }
             // a copy of an extension under another address (a mirror of its site): it belongs with the extensions, not the network settings
             pref(general.title(stringResource(R.string.add_site_pref)), "domain mirror bypass blocked site clone copy")
         },
@@ -100,16 +102,16 @@ internal fun playerGroups(): List<SettingGroup> {
             smoothSourcesItem()
         },
         group("Subtitles") {
-            link(stringResource(R.string.player_subtitles_settings), stringResource(R.string.player_subtitles_settings_des), "captions font size colour outline shadow background") { SettingsNav.page = "subtitles" }
+            link(stringResource(R.string.player_subtitles_settings), stringResource(R.string.player_subtitles_settings_des), "captions font size colour outline shadow background", glyph = com.lagradost.desktop.ui.fluent.Icons.Subtitles) { SettingsNav.page = "subtitles" }
             pref(subtitleEncodingPreference(), "charset utf-8 language characters")
             // the same switch as "Sync every video" in the player's Subtitles menu
-            card("Auto subtitle sync (experimental)", "Matches subtitle files to the voices in every video (not live streams)", "automatic subtitle sync timing delay offset match voices align") {
+            card("Auto subtitle sync (experimental)", "Matches subtitle files to the voices in every video (not live streams)", "automatic subtitle sync timing delay offset match voices align", glyph = com.lagradost.desktop.ui.fluent.Icons.Sync) {
                 com.lagradost.desktop.ui.fluent.ToggleSwitch(com.lagradost.desktop.ui.screens.player.SubtitleSync.automatic, { com.lagradost.desktop.ui.screens.player.SubtitleSync.automatic = it })
             }
         },
         // the technical rows: one step away (Nuvio-style), still found by the search
         group("More") {
-            link("Advanced player settings", "Video decoding and upscaling, audio output and sound, the player controls and the cache", "advanced technical") { SettingsNav.page = "playeradvanced" }
+            link("Advanced player settings", "Video decoding and upscaling, audio output and sound, the player controls and the cache", "advanced technical", glyph = com.lagradost.desktop.ui.fluent.Icons.Settings) { SettingsNav.page = "playeradvanced" }
         },
     )
 }
@@ -201,9 +203,9 @@ internal fun accountGroups(): List<SettingGroup> {
 @Composable
 internal fun advancedGroups(): List<SettingGroup> = listOf(
     group("") {
-        link("Network and security", "DNS and blocked sites, Cloudflare checks and the sandbox that keeps extensions in check", "advanced") { SettingsNav.page = "security" }
-        link("Keyboard shortcuts", "Change the keys of the player, and see the keys of the whole app", "advanced") { SettingsNav.page = "shortcuts" }
-        link("Backup and reset", "Save and restore your data, set up again or start over", "advanced") { SettingsNav.page = "backup" }
+        link("Network and security", "DNS and blocked sites, Cloudflare checks and the sandbox that keeps extensions in check", "advanced", glyph = com.lagradost.desktop.ui.fluent.Icons.Lock) { SettingsNav.page = "security" }
+        link("Keyboard shortcuts", "Change the keys of the player, and see the keys of the whole app", "advanced", glyph = com.lagradost.desktop.ui.fluent.Icons.Help) { SettingsNav.page = "shortcuts" }
+        link("Backup and reset", "Save and restore your data, set up again or start over", "advanced", glyph = com.lagradost.desktop.ui.fluent.Icons.Backup) { SettingsNav.page = "backup" }
     },
 )
 
@@ -279,7 +281,7 @@ private fun GroupBuilder.mpvItem() {
         chosen.isBlank() -> "Found: ${found.absolutePath}. Pick mpv as the preferred video player, or use Open in mpv in the player's menu."
         else -> "Your choice: ${found.absolutePath}"
     }
-    card("External mpv", about, "mpv.exe mpvnet player open with play in") {
+    card("External mpv", about, "mpv.exe mpvnet player open with play in", glyph = com.lagradost.desktop.ui.fluent.Icons.Video) {
         androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
             if (chosen.isNotBlank()) com.lagradost.desktop.ui.fluent.Button("Find automatically", { com.lagradost.desktop.player.ExternalPlayers.setMpvPath(null) }, kind = com.lagradost.desktop.ui.fluent.ButtonKind.Subtle)
             com.lagradost.desktop.ui.fluent.Button("Choose mpv.exe…", { com.lagradost.desktop.ui.ExternalPlayerHints.chooseMpv() }, icon = com.lagradost.desktop.ui.fluent.Icons.Folder)
@@ -332,6 +334,7 @@ private fun subtitleEncodingPreference(): Preference.PreferenceItem.TextPreferen
     return Preference.PreferenceItem.TextPreference(
         title = "Subtitle encoding",
         subtitle = SubtitleEncoding.label(),
+        icon = painterResource(R.drawable.language_korean_latin_24px),
         onClick = { com.lagradost.desktop.ui.showSubtitleEncodingDialog() },
     )
 }

@@ -33,6 +33,8 @@ object TorrentSearch {
         val time: Long,
         val trusted: Boolean,
         val page: String?,
+        /** Trackers the source names for this torrent (AnimeTosho's magnet: nekoBT releases are announced on its own tracker) */
+        val ownTrackers: List<String> = emptyList(),
     ) {
         val group: String? = Regex("""^\s*\[([^\]]{1,40})]""").find(name)?.groupValues?.get(1)
         val resolution: Int? = Regex("""(?<!\d)(2160|1080|720|576|480|360)[pP]""").find(name)?.groupValues?.get(1)?.toIntOrNull()
@@ -41,15 +43,32 @@ object TorrentSearch {
         val batch: Boolean = Regex("""\bbatch\b|\bcomplete\b|(?<!\d)\d{1,3}\s*[-~]\s*\d{1,3}(?!\d)(?![pP])|\bS\d{1,2}(?!\s*E\d)\b""", RegexOption.IGNORE_CASE).containsMatchIn(name.substringBefore(".mkv"))
             && episode == null
         val episode: Int? get() = episodeOf(name)
+        /** The seasons a release says it holds ("S2", "Season 02", "2nd Season", "S01-S05"), null when it does not say */
+        val seasons: IntRange? get() = seasonsOf(name)
         val dualAudio: Boolean = Regex("""dual[ -]?audio""", RegexOption.IGNORE_CASE).containsMatchIn(name)
         val multiSubs: Boolean = Regex("""multi[ -]?subs?|multiple subtitle""", RegexOption.IGNORE_CASE).containsMatchIn(name)
-        val magnet: String get() = "magnet:?xt=urn:btih:$hash&dn=" + URLEncoder.encode(name, "UTF-8") + TRACKERS.joinToString("") { "&tr=" + URLEncoder.encode(it, "UTF-8") }
+        val magnet: String get() = "magnet:?xt=urn:btih:$hash&dn=" + URLEncoder.encode(name, "UTF-8") + (ownTrackers + TRACKERS).distinct().joinToString("") { "&tr=" + URLEncoder.encode(it, "UTF-8") }
     }
 
     private val TRACKERS = listOf(
         "http://nyaa.tracker.wf:7777/announce", "udp://open.stealth.si:80/announce", "udp://tracker.opentrackr.org:1337/announce",
         "udp://exodus.desync.com:6969/announce", "udp://tracker.torrent.eu.org:451/announce",
     )
+
+    /** The seasons a release name states: "S02", "S2E05", "Season 2", "2nd Season", a range "S01-S05" / "Season 1-3"; null when it states none */
+    fun seasonsOf(name: String): IntRange? {
+        val clean = name.replace(Regex("""\[[^\]]*]"""), " ")
+        Regex("""\bS(\d{1,2})\s*[-~]\s*S?(\d{1,2})\b|\bSeasons?\s*(\d{1,2})\s*[-~]\s*(\d{1,2})\b""", RegexOption.IGNORE_CASE).find(clean)?.let { m ->
+            val a = m.groupValues[1].ifEmpty { m.groupValues[3] }.toInt()
+            val b = m.groupValues[2].ifEmpty { m.groupValues[4] }.toInt()
+            if (a <= b) return a..b
+        }
+        Regex("""\bS(\d{1,2})(?=E\d|\b)|\bSeason\s*(\d{1,2})\b|\b(\d{1,2})(?:st|nd|rd|th)\s+Season\b""", RegexOption.IGNORE_CASE).find(clean)?.let { m ->
+            val n = m.groupValues.drop(1).firstOrNull { it.isNotEmpty() }?.toIntOrNull() ?: return null
+            return n..n
+        }
+        return null
+    }
 
     /** The episode a release name is about: "S01E06", "- 06", "EP06", "E06 ", "#06" (a version suffix v2 is fine); null for none or a range */
     fun episodeOf(name: String): Int? {
@@ -99,7 +118,8 @@ object TorrentSearch {
         val q = URLEncoder.encode(query, "UTF-8")
         when (p) {
             Provider.Nyaa -> parseNyaa(app.get("https://nyaa.si/?page=rss&q=$q&c=1_0&f=0", timeout = 20).text)
-            Provider.AnimeTosho -> parseTosho(app.get("https://feed.animetosho.org/json?q=$q", timeout = 20).text)
+            // feed.animetosho.org stopped resolving (2026: the .org site announced its shutdown); the feed goes on at .net
+            Provider.AnimeTosho -> parseTosho(app.get("https://feed.animetosho.net/json?q=$q", timeout = 20).text)
         }
     }
 
@@ -127,6 +147,7 @@ object TorrentSearch {
             Result(
                 Provider.AnimeTosho, o.optString("title"), hash, o.optInt("seeders", 0), o.optInt("leechers", 0), o.optLong("total_size", 0L),
                 o.optLong("timestamp", 0L) * 1000L, false, o.optString("link").takeIf { it.isNotBlank() },
+                o.optString("magnet_uri").split('&').filter { it.startsWith("tr=") }.map { java.net.URLDecoder.decode(it.removePrefix("tr="), "UTF-8") },
             )
         }
     }

@@ -104,7 +104,8 @@ object Tmdb {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, JSONObject>>?) = size > 80
     }
 
-    fun poster(path: String?, size: String = "w342") = path?.takeIf { it.isNotBlank() && it != "null" }?.let { IMG + size + it }
+    // a logo kept as SVG (networks, studios) is asked for as PNG: TMDB converts it, and the image decoder cannot read SVG (the logo stayed empty)
+    fun poster(path: String?, size: String = "w342") = path?.takeIf { it.isNotBlank() && it != "null" }?.let { IMG + size + (if (it.endsWith(".svg", true)) it.dropLast(4) + ".png" else it) }
 
     /**
      * The answers are kept on the disk too (data/cache/tmdb): an answer under 3 days old is used at once (a slow connection: the page does not wait for
@@ -287,7 +288,28 @@ object Tmdb {
      * What TMDB knows about a title an extension showed. The ids the extension gave (IMDb, TMDB) are used first, then a search by
      * name and year; null when nothing fits.
      */
-    suspend fun info(title: String, year: Int?, isMovie: Boolean, hints: Collection<String>): TmdbInfo? {
+    /** One result of a TMDB search, as [bestNamed] weighs it */
+    internal class SearchHit(val name: String, val original: String?, val year: Int?, val animated: Boolean)
+
+    private fun searchKey(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+
+    /**
+     * The index of the result that has the title [name] (its English or its original title, ignoring case and punctuation), or null when
+     * none has. Of several (a remake, a live-action version of an anime) the animated one for an [anime], then the one of [year] or the
+     * nearest to it, then TMDB's order.
+     */
+    internal fun bestNamed(hits: List<SearchHit>, name: String, year: Int?, anime: Boolean): Int? {
+        val want = searchKey(name)
+        if (want.isEmpty()) return null
+        val named = hits.indices.filter { i -> searchKey(hits[i].name) == want || hits[i].original?.let { searchKey(it) == want } == true }
+        return named.minWithOrNull(compareBy<Int>(
+            { i -> if (anime && !hits[i].animated) 1 else 0 },
+            { i -> if (year == null) 0 else hits[i].year?.let { kotlin.math.abs(it - year) } ?: 1000 },
+            { i -> i },
+        ))
+    }
+
+    suspend fun info(title: String, year: Int?, isMovie: Boolean, hints: Collection<String>, anime: Boolean = false): TmdbInfo? {
         // the viewer said which entry it is ("Wrong match?" on the title page), or that none is
         chosenMatch(title, isMovie)?.let { (m, chosen) -> return if (chosen > 0) load(chosen, m) else null }
         val joined = hints.joinToString(" ")
@@ -297,25 +319,43 @@ object Tmdb {
             val imdb = imdbRegex.find(joined)?.value
             if (imdb != null) {
                 val f = json("/find/$imdb", "external_source" to "imdb_id")
-                f?.optJSONArray(if (isMovie) "movie_results" else "tv_results")?.optJSONObject(0)?.let { id = it.optInt("id") }
+                // an entry without a number (id 0) is no match: it stopped the search by name, and the page got no artwork at all
+                f?.optJSONArray(if (isMovie) "movie_results" else "tv_results")?.optJSONObject(0)?.optInt("id")?.takeIf { it > 0 }?.let { id = it }
                 if (id == null) {
                     // the extension may call a series a film or the other way round
-                    f?.optJSONArray(if (isMovie) "tv_results" else "movie_results")?.optJSONObject(0)?.let { id = it.optInt("id"); movie = !isMovie }
+                    f?.optJSONArray(if (isMovie) "tv_results" else "movie_results")?.optJSONObject(0)?.optInt("id")?.takeIf { it > 0 }?.let { id = it; movie = !isMovie }
                 }
             }
         }
         if (id == null) {
             val names = listOf(title, cleanTitle(title)).filter { it.isNotBlank() }.distinct()
+            // a title of the same name is looked for in every search first (the name as shown and cleaned, with the year and without). The first
+            // result of a search narrowed by year was taken when none had the name: the year an extension gives is often that of a later season,
+            // and that search then found another series of that year ("Talking Bad" for "Breaking Bad" 2013)
+            var anyFirst: Int? = null
+            var plainFirst: Int? = null
             search@ for (n in names) for (y in listOf(year, null).distinct()) {
                 val res = json(
                     if (isMovie) "/search/movie" else "/search/tv", "query" to n,
                     *(if (y != null) arrayOf((if (isMovie) "year" else "first_air_date_year") to y.toString()) else emptyArray()),
                 )?.optJSONArray("results") ?: continue
-                val best = (0 until res.length()).map { res.getJSONObject(it) }.let { all ->
-                    all.firstOrNull { (if (isMovie) it.optString("title") else it.optString("name")).equals(n, true) } ?: all.firstOrNull()
-                } ?: continue
-                id = best.optInt("id"); break@search
+                val all = (0 until res.length()).mapNotNull { res.optJSONObject(it) }
+                if (all.isEmpty()) continue
+                val hits = all.map {
+                    SearchHit(
+                        if (isMovie) it.optString("title") else it.optString("name"),
+                        (if (isMovie) it.optString("original_title") else it.optString("original_name")).takeIf { s -> s.isNotBlank() },
+                        this@Tmdb.year(if (isMovie) it.optString("release_date") else it.optString("first_air_date")),
+                        it.optJSONArray("genre_ids")?.let { g -> (0 until g.length()).any { i -> g.optInt(i) == 16 } } == true,
+                    )
+                }
+                val named = bestNamed(hits, n, year, anime)
+                if (named != null) { id = all[named].optInt("id"); break@search }
+                if (anyFirst == null) anyFirst = all[0].optInt("id")
+                if (plainFirst == null && y == null) plainFirst = all[0].optInt("id")
             }
+            // none has the name (a translated title): TMDB's best guess, from a search not narrowed by year when there was one
+            if (id == null) id = plainFirst ?: anyFirst
         }
         val tid = id?.takeIf { it > 0 } ?: return null
         return load(tid, movie)

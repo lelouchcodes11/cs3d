@@ -1017,7 +1017,8 @@ object DevServer {
                 // dev: the subtitles the player page offers (name, language, origin, link) and the one that shows
                 val s = com.lagradost.desktop.ui.screens.player.PlayerSession.active ?: return ok(ex, "no player page")
                 val cur = s.currentSubtitle()
-                ok(ex, s.subtitles().joinToString("\n") { "${if (it == cur) "*" else " "} ${it.name.trim()} | lang=${it.languageCode} | ${it.origin} | ${it.url.take(110)}" })
+                val fit = runCatching { s.subtitleFitNotes() }.getOrDefault(emptyMap())
+                ok(ex, s.subtitles().joinToString("\n") { "${if (it == cur) "*" else " "} ${it.name.trim()} | lang=${it.languageCode} | ${it.origin} | ${fit[it.getId()] ?: "-"} | ${it.url.take(110)}" })
             }
             "/open" -> {
                 // dev: the title page of an item by address: /open?api=Cinemeta&url=stremio://item/movie/tt1254207&name=Big Buck Bunny
@@ -1040,6 +1041,10 @@ object DevServer {
                         }
                         out.append("collected=$ok links=${links.size} subs=${subs.size} ${subs.groupingBy { it }.eachCount()}\n")
                         links.take(12).forEach { out.append(" ${it.type} q=${it.quality} ${it.name.take(110)}\n") }
+                        // &play=1: those links in the player, in the order the player sorts them (torrents by seeders, then quality)
+                        if (q["play"] == "1" && links.isNotEmpty()) onEdt {
+                            com.lagradost.desktop.core.Navigator.go(com.lagradost.desktop.core.Route.Player(com.lagradost.cloudstream3.ui.player.ExtractorLinkGenerator(links.toList(), emptyList()), 0, null))
+                        }
                     }
                     com.lagradost.desktop.stremio.StremioAddons.addons.forEach { a -> out.append("${if (a.enabled) "on " else "off"} ${a.name} ${a.manifest?.version} catalogs=${a.manifest?.catalogs?.size} stream=${a.manifest?.providesStreams} subs=${a.manifest?.providesSubtitles} ${a.manifestUrl.take(70)}\n") }
                 }
@@ -1080,6 +1085,17 @@ object DevServer {
                 System.setProperty("http.nonProxyHosts", "localhost|127.0.0.1")
                 ok(ex, "offline=$on")
             }
+            "/torrenton" -> {
+                // dev: what "Turn on and download" in the torrent notice does (the notice is in the player's window, out of /click's reach)
+                com.lagradost.desktop.torrent.TorrentEngine.chooseEnabled(true)
+                com.lagradost.desktop.torrent.TorrentEngine.install { ok -> android.util.Log.i("DevServer", "torrent engine install: $ok") }
+                ok(ex, "installing")
+            }
+            "/support" -> {
+                // dev: the star / donation / news window shown every two days, now
+                onEdt { com.lagradost.desktop.ui.shell.SupportPrompt.show() }
+                ok(ex)
+            }
             "/download" -> {
                 // dev: downloads as the buttons do. On a title page: /download?start=1 (the film, or the &ep=<n>th episode shown, default the first).
                 // /download = what the downloader says of every download; /download?act=Pause|Resume|Stop&id=<id> ; /download?delete=<id>
@@ -1092,6 +1108,25 @@ object DevServer {
                     onEdt { vm.handleAction(com.lagradost.cloudstream3.ui.result.EpisodeClickEvent(com.lagradost.cloudstream3.ui.result.ACTION_DOWNLOAD_EPISODE, ep)) }
                     return ok(ex, "started id=${ep.id} ${ep.name} (${ep.headerName})")
                 }
+                // /download?url=<address>&name=<n>: a download of that address as a film of its own (the test server's failures: dropped, refused, too big)
+                q["url"]?.let { u ->
+                    val name = q["name"] ?: "Dev download"
+                    val id = (u + name).hashCode() and 0x3fffffff
+                    val ep = com.lagradost.cloudstream3.ui.result.buildResultEpisode(
+                        headerName = name, name = name, episode = 1, data = u, apiName = "Dev", id = id, index = 0,
+                        tvType = com.lagradost.cloudstream3.TvType.Movie, parentId = id + 1,
+                    )
+                    val link = kotlinx.coroutines.runBlocking {
+                        com.lagradost.cloudstream3.utils.newExtractorLink("Dev", name, u, com.lagradost.cloudstream3.utils.ExtractorLinkType.VIDEO)
+                    }
+                    com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.addToQueue(
+                        com.lagradost.cloudstream3.utils.downloader.DownloadObjects.DownloadQueueItem(
+                            ep, true, name, com.lagradost.cloudstream3.TvType.Movie, null, "Dev", id + 1, u, listOf(link), emptyList(),
+                        ).toWrapper(),
+                    )
+                    return ok(ex, "queued id=$id")
+                }
+                q["why"]?.let { id -> return ok(ex, "${dm.downloadStatus[id.toInt()]} | ${dm.failureReasons[id.toInt()]}") }
                 q["act"]?.let { a -> dm.downloadEvent.invoke(q["id"]!!.toInt() to com.lagradost.cloudstream3.utils.downloader.VideoDownloadManager.DownloadActionType.valueOf(a)); return ok(ex, "$a sent") }
                 q["delete"]?.let { id ->
                     com.lagradost.cloudstream3.utils.downloader.DownloadQueueManager.cancelDownload(id.toInt())
@@ -1299,9 +1334,30 @@ object DevServer {
                 onEdt { done = if (files != null) com.lagradost.desktop.ui.DropOpen.openFiles(files) else com.lagradost.desktop.ui.DropOpen.openText(q["text"] ?: "") }
                 ok(ex, done.toString())
             }
+            "/torrentdl" -> {
+                // dev: what a torrent download reads: /torrentdl?magnet=<magnet>&mb=4 asks the engine for the address (TorrentEngine.downloadLink),
+                // reads the first &mb= MB of it as the downloader would, then lets go of the torrent
+                val out = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    val started = System.currentTimeMillis()
+                    runCatching {
+                        val src = com.lagradost.cloudstream3.utils.newExtractorLink("dev", "dev", q["magnet"]!!, com.lagradost.cloudstream3.utils.ExtractorLinkType.MAGNET)
+                        val local = com.lagradost.desktop.torrent.TorrentEngine.downloadLink(src)
+                        try {
+                            val want = (q["mb"]?.toLongOrNull() ?: 4L) * 1024 * 1024
+                            val c = java.net.URL(local.url).openConnection() as java.net.HttpURLConnection
+                            c.setRequestProperty("Range", "bytes=0-${want - 1}")
+                            val total = c.getHeaderField("Content-Range") ?: c.getHeaderField("Content-Length")
+                            var read = 0L
+                            c.inputStream.use { s -> val b = ByteArray(65536); while (read < want) { val n = s.read(b); if (n < 0) break; read += n } }
+                            "address ${local.url}\nHTTP ${c.responseCode} size $total\nread ${read / 1024} KB in ${System.currentTimeMillis() - started} ms"
+                        } finally { com.lagradost.desktop.torrent.TorrentEngine.downloadDone(local) }
+                    }.getOrElse { "failed: $it" }
+                }
+                ok(ex, out)
+            }
             "/torrents" -> {
                 // dev: the torrent picker of a title: /torrents?q=Overgeared&ep=6
-                onEdt { com.lagradost.desktop.ui.screens.details.TorrentPicker.show(q["q"] ?: "Overgeared", q["ep"]?.toIntOrNull(), q["poster"], null) }
+                onEdt { com.lagradost.desktop.ui.screens.details.TorrentPicker.show(q["q"] ?: "Overgeared", q["ep"]?.toIntOrNull(), q["poster"], null, season = q["season"]?.toIntOrNull()) }
                 ok(ex)
             }
             "/sandboxstats" -> {

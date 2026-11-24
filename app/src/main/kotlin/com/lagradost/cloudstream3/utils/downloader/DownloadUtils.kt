@@ -94,6 +94,13 @@ object DownloadUtils {
         return timeFormated?.asString(context) ?: ""
     }
 
+    /** desktop: "[videoName] [subtitleName]", the subtitle's part made safe for a file name and short enough for the whole to stay in 240 characters */
+    internal fun subtitleFileName(videoName: String, subtitleName: String): String {
+        val part = DownloadFileManagement.sanitizeFilename(subtitleName)
+            .take((240 - videoName.length - 1).coerceAtLeast(0)).trimEnd('.', ' ')
+        return "$videoName $part"
+    }
+
     internal fun downloadSubtitle(
         context: Context?,
         link: ExtractorSubtitleLink,
@@ -104,7 +111,9 @@ object DownloadUtils {
             VideoDownloadManager.downloadThing(
                 context ?: return@ioSafe,
                 link,
-                "$fileName ${link.name}",
+                // desktop: the subtitle's own name went into the file name as it came ("English: SDH", "Português/BR"): Windows refused it,
+                // or the part after ":" became a hidden stream of another file, and the subtitle was never saved
+                subtitleFileName(fileName, link.name),
                 folder,
                 if (link.url.contains(".srt")) "srt" else "vtt",
                 false,
@@ -119,14 +128,17 @@ object DownloadUtils {
         meta: DownloadObjects.DownloadEpisodeMetadata,
     ) {
         context?.let { ctx ->
-            val fileName = getFileName(ctx, meta)
             val folder = getFolder(meta.type ?: return, meta.mainName)
-            downloadSubtitle(
-                ctx,
-                ExtractorSubtitleLink(link.name, link.url, "", link.headers),
-                fileName,
-                folder
-            )
+            ioSafe {
+                // desktop: the name the video of this episode is saved under, so the subtitle is found with it
+                val fileName = VideoDownloadManager.claimFileName(ctx, meta.id, folder, getFileName(ctx, meta))
+                downloadSubtitle(
+                    ctx,
+                    ExtractorSubtitleLink(link.name, link.url, "", link.headers),
+                    fileName,
+                    folder
+                )
+            }
         }
     }
 

@@ -76,6 +76,7 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
     // on screen
     @Volatile private var screenParent: WinDef.HWND? = null
     @Volatile private var wasOnScreen = false
+    private var visibilityResetFor: WinDef.HWND? = null
     private var canvas: Canvas? = null
 
     init {
@@ -235,7 +236,13 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
         load(baseUrl, emptyMap(), null)
     }
 
-    override fun reload() = withPage { Com.call(it, 31) }
+    override fun reload() = withPage { core ->
+        screenParent?.let { parent ->
+            visibilityResetFor = null
+            fitInto(parent)
+        }
+        Com.call(core, 31)
+    }
     override fun stopLoading() {
         rt.post { if (isReady) core?.let { Com.call(it, 43) } }
     }
@@ -268,9 +275,9 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
         navigating = url
         val redirect = Com.getBool(a, 5)
         if (!redirect && programmatic.remove(url)) return
-        if (!overridesOverrideUrl) return
+        if (destroyed || !overridesOverrideUrl) return
         val req = WebResourceRequestImpl(Uri.parse(url), "GET", emptyMap(), true, redirect, Com.getBool(a, 4))
-        if (onMainSync(5000, false) { view.client.shouldOverrideUrlLoading(view, req) }) Com.putBool(a, 8, true)
+        if (onMainSync(1500, false) { view.client.shouldOverrideUrlLoading(view, req) }) Com.putBool(a, 8, true)
     }
 
     private fun onContentLoading(core: Pointer) {
@@ -660,7 +667,9 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
         if (destroyed) return
         destroyed = true
         screenParent = null
-        host?.let { rt.park(it) }
+        visibilityResetFor = null
+        // Never call SetParent synchronously on the caller's thread (can deadlock with the webview2 STA):
+        // close() runs on the webview2 thread and destroys the host window safely there.
         close()
     }
 
@@ -669,8 +678,32 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
         val window = host ?: return
         val r = WinDef.RECT()
         User32.INSTANCE.GetClientRect(parent, r)
-        User32.INSTANCE.MoveWindow(window, 0, 0, max(1, r.right - r.left), max(1, r.bottom - r.top), true)
-        controller?.let { Com.call(it, 23) }
+        val w = max(1, r.right - r.left)
+        val h = max(1, r.bottom - r.top)
+        User32.INSTANCE.MoveWindow(window, 0, 0, w, h, true)
+        onHostResized()
+        controller?.let { c ->
+            // Moving a WebView2 host out of the off-screen parking window can leave Chromium's
+            // DirectComposition surface stuck on DefaultBackgroundColor until visibility toggles
+            // at a real non-zero size.
+            if (w > 1 && h > 1 && visibilityResetFor != parent) {
+                visibilityResetFor = parent
+                Com.putBool(c, 4, false)
+                Com.putBool(c, 4, true)
+            }
+            Com.call(c, 23)
+        }
+    }
+
+    private fun attachToScreen(parent: WinDef.HWND) {
+        val window = host ?: return
+        if (destroyed || screenParent != parent) return
+        visibilityResetFor = null
+        User32.INSTANCE.SetParent(window, parent)
+        User32.INSTANCE.ShowWindow(window, 4) // SW_SHOWNOACTIVATE
+        fitInto(parent)
+        // Follow-up sync in case SwingPanel laid out the Canvas right after addNotify()
+        rt.postDelayed(150) { if (!destroyed && screenParent == parent) fitInto(parent) }
     }
 
     /** The AWT component that shows the page: a heavyweight canvas whose window becomes the parent of the page's window */
@@ -685,18 +718,14 @@ internal class WebView2Engine(private val view: WebView) : Wv2Browser(), WebView
             screenParent = parent
             wasOnScreen = true
             lastActivity = System.currentTimeMillis()
-            withPage { _ ->
-                val window = host ?: return@withPage
-                if (screenParent != parent) return@withPage
-                User32.INSTANCE.SetParent(window, parent)
-                fitInto(parent)
-            }
+            withPage { _ -> attachToScreen(parent) }
         }
 
         override fun removeNotify() {
             screenParent = null
+            visibilityResetFor = null
             // back into the hidden window before this canvas' window is destroyed (that would destroy the page's window with it)
-            host?.let { rt.park(it) }
+            if (!destroyed) host?.let { rt.park(it) }
             layoutChanged()
             super.removeNotify()
         }

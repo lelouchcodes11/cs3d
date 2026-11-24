@@ -362,14 +362,34 @@ object LinkLab {
             }
         })
         return try {
+            // -Dlinklab.alang=<code>: the audio language chosen before (as the player session passes it)
+            player.hlsAudioLanguage = System.getProperty("linklab.alang")
             player.loadPlayer(DesktopBootstrap.activity, false, link, null, null, emptySet(), null, true, false)
             val first = withTimeoutOrNull(30_000) { outcome.await() } ?: "TIMEOUT opening"
             if (first != "opened") first else {
+                // -Dlinklab.mpvset=name=value;;name=value: mpv properties set once it plays (sid=3 turns a subtitle track on)
+                System.getProperty("linklab.mpvset")?.split(";;")?.forEach { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { player.setMpvProperty(it[0], it[1]) } }
                 kotlinx.coroutines.delay(System.getProperty("linklab.wait")?.toLongOrNull() ?: 2500)
                 val pos = player.getMpvPropertyString("time-pos")?.toDoubleOrNull() ?: 0.0
+                // -Dlinklab.mpvget=name,name: mpv properties printed at the end of the wait (sub-text: the subtitle line shown)
+                System.getProperty("linklab.mpvget")?.split(',')?.forEach { n -> println("mpvget $n=${player.getMpvPropertyString(n)}") }
                 val codec = player.getMpvPropertyString("video-format") ?: "-"
                 val size = (player.getMpvPropertyString("video-params/w") ?: "?") + "x" + (player.getMpvPropertyString("video-params/h") ?: "?")
-                if (pos > 0.4) "PLAY $codec $size t=${"%.1f".format(pos)}" else "OPENED but no progress ($codec $size t=$pos)"
+                // -Dlinklab.switchto=<quality id> (as the quality menu lists it, e.g. live:0 or edition:0): picked after the wait, then where it plays 6 s later
+                val switched = System.getProperty("linklab.switchto")?.let { id ->
+                    val qualities = player.getVideoTracks().allVideoTracks.joinToString { "${it.id}=${it.height}" }
+                    player.setMaxVideoSize(0, 0, id)
+                    kotlinx.coroutines.delay(6000)
+                    " | qualities [$qualities] -> $id: ${player.getMpvPropertyString("video-params/w")}x${player.getMpvPropertyString("video-params/h")} t=${player.getMpvPropertyString("time-pos")?.toDoubleOrNull()?.let { "%.1f".format(it) }}"
+                } ?: (System.getProperty("linklab.audioto")?.let { id ->
+                    // -Dlinklab.audioto=<audio id as the menu lists it, e.g. hlsaudio:1>: picked after the wait, then what plays 6 s later
+                    val before = player.getVideoTracks()
+                    player.setPreferredAudioTrack(null, id, null)
+                    kotlinx.coroutines.delay(6000)
+                    val after = player.getVideoTracks()
+                    " | audio [${before.allAudioTracks.joinToString { "${it.id}=${it.language}" }}] was ${before.currentAudioTrack?.id} -> $id: now ${after.currentAudioTrack?.id} (${after.currentAudioTrack?.language}) t=${player.getMpvPropertyString("time-pos")?.toDoubleOrNull()?.let { "%.1f".format(it) }}"
+                } ?: "")
+                (if (pos > 0.4) "PLAY $codec $size t=${"%.1f".format(pos)}" else "OPENED but no progress ($codec $size t=$pos)") + switched
             }
         } catch (t: Throwable) {
             "EXC ${t.javaClass.simpleName}: ${t.message?.take(60)}"

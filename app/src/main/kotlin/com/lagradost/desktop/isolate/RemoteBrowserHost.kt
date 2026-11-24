@@ -69,10 +69,14 @@ object RemoteBrowserHost {
         val flags = Flags()
         @Volatile var dialog: android.app.Dialog? = null
         @Volatile var closed = false
+        /** When the extension last used the page, or the page last told it something (see [sweepIdle]) */
+        @Volatile var lastUse = System.currentTimeMillis()
 
         /** When the page first showed a Cloudflare check that it has not passed since (0: it does not show one); the window for it opens if the page does not pass by itself */
         @Volatile var challengeSince = 0L
         @Volatile var autoShown = false
+        /** The "not shown" line was logged for this challenge (it is looked at again every 3 s: 164 identical lines in 11 minutes) */
+        @Volatile var refusalLogged = false
         @Volatile var refusedByUser = false
         private val queue = Executors.newSingleThreadExecutor { r -> Thread(r, "wvhost-$id").also { it.isDaemon = true } }
 
@@ -84,6 +88,7 @@ object RemoteBrowserHost {
         /** An event for the extension, in the order the page made them */
         fun send(event: String, data: ObjectNode = mapper.createObjectNode()) {
             if (closed) return
+            lastUse = System.currentTimeMillis()
             queue.execute { ask(event, data, 15_000) }
         }
 
@@ -119,6 +124,7 @@ object RemoteBrowserHost {
         val op = b.get("op")?.asText().orEmpty()
         if (op == "open") return open(id, b.get("path")?.asText().orEmpty())
         val page = pages[id] ?: error("no page $id")
+        page.lastUse = System.currentTimeMillis()
         return when (op) {
             "client" -> {
                 page.flags.apply {
@@ -130,8 +136,9 @@ object RemoteBrowserHost {
                 null
             }
             "settings" -> { onMain { applySettings(page.view, b.get("settings")) }; null }
-            "load" -> { onMain { load(page, b) }; null }
-            "loadData" -> { onMain { loadData(page, b) }; null }
+            // the address is checked here, off the UI thread (its name look-up can take seconds); the check on the UI thread then finds the answer kept
+            "load" -> { b.get("url")?.asText()?.let { runCatching { PrivateNetworkGuard.isAllowed(it) } }; onMain { load(page, b) }; null }
+            "loadData" -> { b.get("base")?.asText()?.let { runCatching { PrivateNetworkGuard.isAllowed(it) } }; onMain { loadData(page, b) }; null }
             "reload" -> { onMain { page.view.reload() }; null }
             "stop" -> { onMain { page.view.stopLoading() }; null }
             "back" -> { onMain { page.view.goBack() }; null }
@@ -166,12 +173,13 @@ object RemoteBrowserHost {
                 page.view = WebView(DesktopBootstrap.activity).also { v ->
                     v.getSettings().setAllowFileAccess(false)
                     v.networkGuard = PrivateNetworkGuard::isAllowed
+                    v.setBackgroundColor(com.lagradost.desktop.net.CheckWindow.pageColor())
                     v.setWebViewClient(forwardClient(page))
                     v.setWebChromeClient(forwardChrome(page))
                 }
             }
         }.onFailure { Log.w(TAG, "no page could be made for ${File(path).name}: $it") }.isSuccess
-        if (made) pages[id] = page else page.shutdown()
+        if (made) { pages[id] = page; startSweep() } else page.shutdown()
         return mapper.createObjectNode().put("ok", made)
     }
 
@@ -344,9 +352,17 @@ object RemoteBrowserHost {
 
         private fun answer(flag: Boolean, event: String, url: String?, message: String?, default: String? = null, result: JsResult): Boolean {
             if (!flag) return false
-            val r = page.ask(event, mapper.createObjectNode().put("url", url).put("message", message?.take(5_000)).put("default", default), 65_000) ?: return false
-            if (r.get("handled")?.asBoolean() != true) return false
-            if (r.get("ok")?.asBoolean() == true) { if (result is JsPromptResult && r.get("text")?.isNull == false) result.confirm(r.get("text").asText()) else result.confirm() } else result.cancel()
+            // asked off the window's thread: this runs on it, and an extension that answers late (or never) froze the whole app for up to 65 s. The result
+            // is given later (the engine accepts it from any thread); not handled by the extension: what the browser does by itself (an alert is closed with OK,
+            // a confirm or prompt is cancelled)
+            Thread({
+                val r = page.ask(event, mapper.createObjectNode().put("url", url).put("message", message?.take(5_000)).put("default", default), 65_000)
+                when {
+                    r == null || r.get("handled")?.asBoolean() != true -> if (event == "alert") result.confirm() else result.cancel()
+                    r.get("ok")?.asBoolean() == true -> if (result is JsPromptResult && r.get("text")?.isNull == false) result.confirm(r.get("text").asText()) else result.confirm()
+                    else -> result.cancel()
+                }
+            }, "browser-dialog").apply { isDaemon = true }.start()
             return true
         }
 
@@ -372,7 +388,7 @@ object RemoteBrowserHost {
         onMain { hideWindow(page) }
     }
 
-    private val challengeTitle = Regex("just a moment|attention required|verify you are human|checking your browser|one more step", RegexOption.IGNORE_CASE)
+    private val challengeTitle = Regex("just a moment|attention required|verify you are human|checking your browser|one more step|security check|performing security verification|human verification|ddos-guard|un instant|einen moment|un momento", RegexOption.IGNORE_CASE)
 
     /**
      * What the page's title says. An extension's check often runs in a dialog that the sandbox cannot show (the dialog is a fragment of an activity that has no screen
@@ -387,6 +403,7 @@ object RemoteBrowserHost {
             main.postDelayed({ showChallenge(page) }, CHALLENGE_SHOW_MS)
         } else {
             page.challengeSince = 0L
+            page.refusalLogged = false
             if (page.autoShown) { page.autoShown = false; hideWindow(page) }
         }
     }
@@ -396,8 +413,9 @@ object RemoteBrowserHost {
         if (System.currentTimeMillis() - page.challengeSince < CHALLENGE_SHOW_MS - 500) return
         val names = APIHolder.allProviders.toList().filter { it.sourcePlugin == page.path }.map { it.name }.toSet()
         val allowed = CloudflareGate.allowsDialogFor(names, File(page.path).name)
-        Log.i(TAG, "the check of ${names.joinToString()} is still on after ${CHALLENGE_SHOW_MS / 1000} s: " + if (allowed) "its page is shown" else "not shown (solvers off or the extension is not the one in use)")
+        if (allowed || !page.refusalLogged) Log.i(TAG, "the check of ${names.joinToString()} is still on after ${CHALLENGE_SHOW_MS / 1000} s: " + if (allowed) "its page is shown" else "not shown (solvers off or the extension is not the one in use)")
         if (!allowed) {
+            page.refusalLogged = true
             // looked at again later: the user may switch to that extension
             main.postDelayed({ showChallenge(page) }, 3_000)
             return
@@ -408,28 +426,57 @@ object RemoteBrowserHost {
 
     private fun showWindow(page: Page, extension: String?): Boolean {
         if (page.dialog != null) return true
-        // once an hour at most for an extension, also across restarts (opening the app again soon does not bring the same check back)
+        // once an hour at most after the user cancelled a check of this extension, also across restarts
         if (com.lagradost.desktop.runtime.web.CaptchaQuiet.recentlyShown(File(page.path).name)) {
-            Log.i(TAG, "a check window of ${File(page.path).name} was shown less than an hour ago: not again")
+            Log.i(TAG, "a check window of ${File(page.path).name} was dismissed less than an hour ago: not again")
             return false
         }
         val ctx = DesktopBootstrap.activity
         (page.view.getParent() as? ViewGroup)?.removeView(page.view)
         // the page alone: the window around it (title, what to do, the site, Cancel) is drawn by the app (see CheckDialog), like an extension's own
         // check window looks when it runs in the app; it was a bare line of text, the page and a grey button
-        val dialog = CheckDialog(ctx, extension, url = { runCatching { page.view.getUrl() }.getOrNull() }, reload = { main.post { runCatching { page.view.reload() } } })
+        val dialog = CheckDialog(
+            ctx,
+            extension,
+            url = { runCatching { page.view.getUrl() }.getOrNull() },
+            reload = {
+                main.post {
+                    runCatching { page.view.getUrl()?.let { host(it) }?.let { WebCookies.dropCloudflareCookies(it) } }
+                    runCatching { page.view.reload() }
+                }
+            },
+            ownWindow = true,
+        )
         dialog.setContentView(page.view)
-        dialog.setOnCancelListener { userCancelled(page) }
+        dialog.setOnCancelListener { userCancelled(page, markQuiet = true) }
         page.dialog = dialog
         dialog.show()
-        if (dialog.isShowing()) com.lagradost.desktop.runtime.web.CaptchaQuiet.markShown(File(page.path).name)
-        // the app's own rules for such windows (not over and over) may have refused it: then there is no window to keep
+        // the app's own rules for such windows may have refused it: then there is no window to keep
         if (!dialog.isShowing()) { page.dialog = null; (page.view.getParent() as? ViewGroup)?.removeView(page.view); return false }
         // the extension lays its own clicks out by the size of its view (Turnstile's box): it is told the size the page really has
         for (delay in longArrayOf(600, 1_800)) main.postDelayed({
             val v = page.view
             if (!page.closed && page.dialog != null && v.getWidth() > 0 && v.getHeight() > 0) page.send("size", mapper.createObjectNode().put("w", v.getWidth()).put("h", v.getHeight()))
         }, delay)
+        // If a challenge page sits completely blank 8 s after being shown (stalled precursor/compositor), drop stale CF cookies and reload once
+        main.postDelayed({
+            if (page.closed || page.dialog !== dialog) return@postDelayed
+            runCatching {
+                page.view.evaluateJavascript(
+                    "(function(){var t=(document.body&&document.body.innerText||'').trim().length;var f=document.querySelectorAll('iframe').length;return t+','+f;})()",
+                ) { raw ->
+                    val parts = raw?.trim()?.trim('"')?.split(',') ?: return@evaluateJavascript
+                    val textLen = parts.getOrNull(0)?.toIntOrNull() ?: return@evaluateJavascript
+                    val iframes = parts.getOrNull(1)?.toIntOrNull() ?: return@evaluateJavascript
+                    if (textLen == 0 && iframes == 0 && !page.closed && page.dialog === dialog) {
+                        val h = runCatching { page.view.getUrl()?.let { host(it) } }.getOrNull()
+                        Log.i(TAG, "the check page of ${h ?: File(page.path).name} is still blank after 8 s: reloading")
+                        if (h != null) runCatching { WebCookies.dropCloudflareCookies(h) }
+                        runCatching { page.view.reload() }
+                    }
+                }
+            }
+        }, 8_000)
         return true
     }
 
@@ -441,9 +488,10 @@ object RemoteBrowserHost {
         (page.view.getParent() as? ViewGroup)?.removeView(page.view)
     }
 
-    private fun userCancelled(page: Page) {
+    private fun userCancelled(page: Page, markQuiet: Boolean = true) {
         if (page.dialog == null) return
         page.refusedByUser = true // the window is not put up again for this page
+        if (markQuiet) com.lagradost.desktop.runtime.web.CaptchaQuiet.markShown(File(page.path).name)
         hideWindow(page)
         val peer = rpcProvider() ?: return
         Thread({ runCatching { runBlocking { peer.call("dialogCancel", mapper.createObjectNode().put("id", page.id), 10_000) } } }, "wvhost-cancel").apply { isDaemon = true }.start()
@@ -461,9 +509,33 @@ object RemoteBrowserHost {
         }
     }
 
+    @Volatile private var sweeping = false
+
+    private fun startSweep() {
+        if (sweeping) return
+        sweeping = true
+        main.postDelayed(::sweepIdle, 60_000L)
+    }
+
+    /**
+     * A hidden page that its extension has neither used nor heard from for [PAGE_IDLE_MS] is closed: an extension that made a page at start
+     * (a token from hexa.su) and never destroyed it kept the browser engine running for good (about 340 MB in its processes, with nothing on
+     * screen). A page shown to the user (a check window) stays. Used again later, the extension gets "no page", as after the sandbox restarts.
+     */
+    private fun sweepIdle() {
+        val now = System.currentTimeMillis()
+        for (p in pages.values.toList()) {
+            if (p.dialog == null && now - p.lastUse > PAGE_IDLE_MS) {
+                Log.i(TAG, "page ${p.id} of ${File(p.path).name} unused for ${(now - p.lastUse) / 60_000} min: closed")
+                close(p)
+            }
+        }
+        if (pages.isEmpty()) sweeping = false else main.postDelayed(::sweepIdle, 60_000L)
+    }
+
     /** The Reload button of Home: every check window that is up is closed, as if its Cancel was pressed */
-    fun cancelWindows() {
-        main.post { for (p in pages.values.toList()) if (p.dialog != null) userCancelled(p) }
+    fun cancelWindows(fromReload: Boolean = false) {
+        main.post { for (p in pages.values.toList()) if (p.dialog != null) userCancelled(p, markQuiet = !fromReload) }
     }
 
     /** The sandbox ended, or the extension was unloaded: its pages go with it */
@@ -473,6 +545,7 @@ object RemoteBrowserHost {
 
     /** A check that is still on this long after it appeared is shown to the user */
     private const val CHALLENGE_SHOW_MS = 6_000L
+    private const val PAGE_IDLE_MS = 5 * 60_000L
 
 }
 

@@ -39,9 +39,29 @@ object PrivateNetworkGuard {
         if (host in testAllowedHosts) return true
         val now = System.currentTimeMillis()
         cache[host]?.let { if (now - it.at < CACHE_MS) return it.allowed }
-        val allowed = compute(host)
+        // The look-up of a name can take seconds when the DNS is slow or failing. Asked on the UI thread (a page load, and every request a page
+        // makes goes through the browser's network guard on that thread), it froze the whole app: 8 s in a real log (23:56, names not resolving).
+        // There it waits a short while; a name still not looked up then counts as one that does not resolve (as below) and the answer is kept
+        // for the next request once it comes.
+        if (javax.swing.SwingUtilities.isEventDispatchThread()) {
+            val job = pending.computeIfAbsent(host) { h -> lookups.submit(java.util.concurrent.Callable { remember(h, compute(h)) }) }
+            return try {
+                job.get(UI_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } catch (e: Exception) {
+                host.contains('.')
+            }
+        }
+        return remember(host, compute(host))
+    }
+
+    private const val UI_WAIT_MS = 800L
+    private val pending = ConcurrentHashMap<String, java.util.concurrent.Future<Boolean>>()
+    private val lookups = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "network-guard-lookup").apply { isDaemon = true } }
+
+    private fun remember(host: String, allowed: Boolean): Boolean {
         if (cache.size > 2_000) cache.clear()
-        cache[host] = Verdict(allowed, now)
+        cache[host] = Verdict(allowed, System.currentTimeMillis())
+        pending.remove(host)
         return allowed
     }
 

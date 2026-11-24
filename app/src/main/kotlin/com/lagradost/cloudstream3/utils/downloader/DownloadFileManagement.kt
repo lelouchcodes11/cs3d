@@ -18,9 +18,26 @@ object DownloadFileManagement {
         for (c in RESERVED_CHARS) {
             tempName = tempName.replace(c, ' ')
         }
+        // desktop: what else Windows refuses in a file or folder name: control characters (a scraped title ending in a line break), a trailing dot,
+        // and the device names (a series called "Con" or "Aux" could not get a folder, the download failed with "Cant create directory")
+        tempName = tempName.map { if (it < ' ') ' ' else it }.joinToString("")
         if (removeSpaces) tempName = tempName.replace(" ", "")
-        return tempName.replace("  ", " ").trim(' ')
+        tempName = tempName.replace("  ", " ").trim(' ').trimEnd('.', ' ')
+        // desktop: Windows takes at most 255 characters in one file or folder name: an episode whose "name" was its whole plot could not be
+        // saved ("Could not create"). Cut where a character is not split in two
+        if (tempName.length > MAX_NAME_LENGTH) {
+            var cut = MAX_NAME_LENGTH
+            if (tempName[cut - 1].isHighSurrogate()) cut--
+            tempName = tempName.substring(0, cut).trimEnd('.', ' ')
+        }
+        if (tempName.substringBefore('.').uppercase() in WINDOWS_DEVICE_NAMES) tempName = "_$tempName"
+        return tempName
     }
+
+    /** desktop: room is left for " (id)", the extension and a subtitle's language after it (Windows: 255 at most) */
+    private const val MAX_NAME_LENGTH = 200
+
+    private val WINDOWS_DEVICE_NAMES = setOf("CON", "PRN", "AUX", "NUL") + (1..9).flatMap { listOf("COM$it", "LPT$it") }
 
     /**
      * Used for getting video player subs.

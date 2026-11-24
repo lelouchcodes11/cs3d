@@ -84,7 +84,7 @@ object HomeLayout {
                     name to com.lagradost.cloudstream3.ui.home.HomeViewModel.ExpandableHomepageList(com.lagradost.cloudstream3.HomePageList(name, list.list, list.isHorizontalImages), 1, false)
                 }
             }
-        }.flatMap { it.await() }
+        }.flatMap { it.await() }.distinctBy { it.first } // a source that answers every request with the same rows: one of each (a repeated row key crashes Home)
     }
 
     /** The "Customise Home" window: a switch and two arrows for every row of the page that is showing */

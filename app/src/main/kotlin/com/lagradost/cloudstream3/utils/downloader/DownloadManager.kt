@@ -22,6 +22,7 @@ import androidx.preference.PreferenceManager
 import com.lagradost.cloudstream3.APIHolder.getApiFromNameNull
 import com.lagradost.cloudstream3.BuildConfig
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKey
+import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKeys
 import com.lagradost.cloudstream3.CommonActivity.showToast
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.removeKey
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.setKey
@@ -96,12 +97,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
 import java.io.IOException
 import java.io.OutputStream
@@ -124,6 +127,8 @@ object VideoDownloadManager {
 
     const val TAG = "VDM"
     private const val DOWNLOAD_NOTIFICATION_TAG = "FROM_DOWNLOADER"
+    /** desktop: how long a download waits for more sources after the first one came (see downloadEpisodeWithoutLinks) */
+    private const val DOWNLOAD_LINK_GRACE_MS = 25_000L
 
     private const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
@@ -183,9 +188,11 @@ object VideoDownloadManager {
     /** the process failed due to some reason, so we retry and also try the next mirror */
     private val DOWNLOAD_FAILED = DownloadStatus(retrySame = true, tryNext = true, success = false)
 
-    /** The download only downloaded partial */
+    /** The download only downloaded partial. desktop: not a success. It was counted as one, so a film that broke off after 50 MB (and once
+     * more on the retry) was taken as downloaded: it was never marked failed, "Try again" and the retry by itself never came, and a cut-off
+     * file stayed. Now it fails, keeps its file and resumes from there; no other source is tried (it would start from the beginning) */
     private val DOWNLOAD_PARTIAL_SUCCESS =
-        DownloadStatus(retrySame = true, tryNext = false, success = true)
+        DownloadStatus(retrySame = true, tryNext = false, success = false)
 
     /** 50MB minimum size */
     const val DOWNLOAD_PARTIAL_MIN_SIZE = 1_048_576L * 50L
@@ -791,6 +798,10 @@ object VideoDownloadManager {
     ) {
         val size get() = chuckStartByte.size
 
+        /** desktop: why the last piece could not be fetched (an HTTP status), for the reason the download failed */
+        @Volatile
+        var lastError: String? = null
+
         /** returns what byte it has downloaded,
          * so start at 10 and download 4 bytes = return 14
          *
@@ -821,12 +832,37 @@ object VideoDownloadManager {
                 referer = referer,
                 verify = false
             )
+            // desktop: what the server answered was written as the video whatever it was: an expired link's error page (403, 404) went into the
+            // middle of the file, and a server that sends the whole file (200) to a request from the middle had its first bytes written where
+            // the middle belongs. 416: nothing is left after startByte (a whole file being resumed)
+            val code = request.code
+            if (code == 416) {
+                request.body.closeQuietly()
+                return@withContext currentByte
+            }
+            if (code !in 200..299) {
+                request.body.closeQuietly()
+                throw IOException("HTTP $code")
+            }
             val requestStream = request.body.byteStream()
 
-            var read: Int
+            var read = 0
 
             try {
-                while (requestStream.read(buffer, 0, bufferSize).also { read = it } >= 0) {
+                if (code != 206 && startByte > 0) {
+                    var skip = startByte
+                    while (skip > 0 && isActive) {
+                        val n = requestStream.read(buffer, 0, minOf(bufferSize.toLong(), skip).toInt())
+                        if (n < 0) break
+                        skip -= n
+                    }
+                    if (skip > 0) return@withContext currentByte
+                }
+                // desktop: isActive: a stopped download read on to the end of the file (the read does not notice the stop), so a stopped film went
+                // on downloading in the background and its place in the queue stayed taken until it had all come
+                while (isActive && requestStream.read(buffer, 0, bufferSize).also { read = it } >= 0) {
+                    // desktop: Settings > Downloads > "Download speed limit" (shared by every download)
+                    com.lagradost.desktop.net.DownloadThrottle.take(read)
                     val start = currentByte
                     currentByte += read.toLong()
 
@@ -871,7 +907,8 @@ object VideoDownloadManager {
                     return false
                 } catch (_: CancellationException) {
                     return false
-                } catch (_: Throwable) {
+                } catch (t: Throwable) {
+                    lastError = t.message ?: t.javaClass.simpleName
                     continue
                 }
             }
@@ -1064,6 +1101,24 @@ object VideoDownloadManager {
             }
 
             metadata.totalBytes = items.totalLength
+
+            // desktop: a film bigger than the room left on the disk downloaded for an hour and then failed with the disk full (and left
+            // other programs without room). Its size is known now: refused at once, with how much is needed (a little room is kept free)
+            val total = items.totalLength ?: 0L
+            val need = total - (if (items.isResumed && stream.startAt in 1 until total) stream.startAt else 0L)
+            val free = runCatching { stream.file.filePath()?.let { java.io.File(it).absoluteFile.parentFile?.usableSpace } }.getOrNull()
+            if (need > 0 && free != null && free > 0 && free < need + DISK_SPARE) {
+                lastFailureReason = "not enough space: ${gb(need)} needed, ${gb(free)} free"
+                Log.w(TAG, lastFailureReason!!)
+                // the empty file it made is not left behind (a resumed one keeps what it has)
+                if (stream.startAt == 0L) {
+                    fileStream.closeQuietly()
+                    stream.delete()
+                }
+                metadata.type = DownloadType.IsFailed
+                return@withContext metadata.failedStatus()
+            }
+
             metadata.type = DownloadType.IsDownloading
             metadata.setDownloadFileInfoTemplate(
                 DownloadedFileInfo(
@@ -1127,34 +1182,45 @@ object VideoDownloadManager {
                                 val responseSize = response.size
                                 metadata.addBytes(response.size)
 
-                                if (response.startByte == metadata.bytesWritten) {
-                                    // if we are first in the queue then write it directly
-                                    fileStream.write(
-                                        response.bytes,
-                                        0,
-                                        responseSize.toInt()
-                                    )
-                                    metadata.addBytesWritten(responseSize)
-                                } else {
-                                    // otherwise append to queue, we need to clone the bytes as they will be overridden otherwise
-                                    pendingData[response.startByte] =
-                                        response.copy(bytes = response.bytes.clone())
-                                }
+                                // desktop: a write that failed (the disk full) was taken for a network error and the bytes were skipped: every
+                                // later piece then waited for them, and the download hung at "Downloading" for ever (or, in one connection, a
+                                // cut-off file was marked done). Now it fails and says why
+                                try {
+                                    if (response.startByte == metadata.bytesWritten) {
+                                        // if we are first in the queue then write it directly
+                                        fileStream.write(
+                                            response.bytes,
+                                            0,
+                                            responseSize.toInt()
+                                        )
+                                        metadata.addBytesWritten(responseSize)
+                                    } else {
+                                        // otherwise append to queue, we need to clone the bytes as they will be overridden otherwise
+                                        pendingData[response.startByte] =
+                                            response.copy(bytes = response.bytes.clone())
+                                    }
 
-                                while (true) {
-                                    // remove the current queue start, so no possibility of
-                                    // while(true) { continue } in case size = 0, and removed extra
-                                    // garbage
-                                    val pending = pendingData.remove(metadata.bytesWritten) ?: break
+                                    while (true) {
+                                        // remove the current queue start, so no possibility of
+                                        // while(true) { continue } in case size = 0, and removed extra
+                                        // garbage
+                                        val pending = pendingData.remove(metadata.bytesWritten) ?: break
 
-                                    val size = pending.size
+                                        val size = pending.size
 
-                                    fileStream.write(
-                                        pending.bytes,
-                                        0,
-                                        size.toInt()
-                                    )
-                                    metadata.addBytesWritten(size)
+                                        fileStream.write(
+                                            pending.bytes,
+                                            0,
+                                            size.toInt()
+                                        )
+                                        metadata.addBytesWritten(size)
+                                    }
+                                } catch (e: IOException) {
+                                    logError(e)
+                                    lastFailureReason = e.message
+                                    metadata.type = DownloadType.IsFailed
+                                    this.cancel()
+                                    return@callback
                                 }
                             }
                         }
@@ -1195,6 +1261,7 @@ object VideoDownloadManager {
                         if (!items.resolveSafe(index, buffer = buffer, callback = callback)) {
                             fileMutex.withLock {
                                 if (metadata.type != DownloadType.IsStopped) {
+                                    if (lastFailureReason == null) lastFailureReason = items.lastError ?: "a piece could not be fetched"
                                     metadata.type = DownloadType.IsFailed
                                 }
                             }
@@ -1238,6 +1305,16 @@ object VideoDownloadManager {
                 return@withContext DOWNLOAD_INVALID_INPUT
             }
 
+            // desktop: a connection that broke off in the last (open-ended) piece ended the read like the end of the file did, and a cut-off film was
+            // marked done. Short of the size the server announced (a little slack for servers that round it): failed, and resume carries on from here.
+            val announced = metadata.totalBytes
+            if (announced != null && announced > 0 && metadata.bytesWritten < announced - maxOf(announced / 100, 1_000_000L)) {
+                Log.w(TAG, "download ended at ${metadata.bytesWritten} of $announced bytes: kept as failed, not done")
+                lastFailureReason = "cut off"
+                metadata.type = DownloadType.IsFailed
+                return@withContext metadata.failedStatus()
+            }
+
             metadata.type = DownloadType.IsDone
             return@withContext DOWNLOAD_SUCCESS
         } catch (e: IOException) {
@@ -1250,6 +1327,7 @@ object VideoDownloadManager {
             logError(t)
             // note that when failing we don't want to delete the file,
             // only user interaction has that power
+            lastFailureReason = t.message ?: t.javaClass.simpleName
             metadata.type = DownloadType.IsFailed
             return@withContext metadata.failedStatus()
         } finally {
@@ -1278,6 +1356,19 @@ object VideoDownloadManager {
             isHLS = true
         )
         var fileStream: OutputStream? = null
+        // desktop: DASH (picture and sound are separate files by design) is recorded by mpv into one Matroska file
+        if (link.type == ExtractorLinkType.DASH) {
+            return@withContext try {
+                recordSeparateAudio(context, link, name, folder, context.getBasePath().second, metadata)
+            } catch (t: Throwable) {
+                logError(t)
+                lastFailureReason = t.message
+                metadata.type = DownloadType.IsFailed
+                DOWNLOAD_FAILED
+            } finally {
+                metadata.close()
+            }
+        }
         try {
             val extension = "mp4"
 
@@ -1318,7 +1409,17 @@ object VideoDownloadManager {
                 )
             )
 
-            val items = M3u8Helper2.hslLazy(m3u8, selectBest = true, requireAudio = true)
+            val items = try {
+                M3u8Helper2.hslLazy(m3u8, selectBest = true, requireAudio = true)
+            } catch (t: Throwable) {
+                // desktop: the sound is a stream of its own (CNCVerse titles): joining the picture segments would give a film without sound.
+                // mpv records picture and sound together into a Matroska file instead
+                if (t.message?.contains("no video with audio", ignoreCase = true) != true) throw t
+                fileStream.closeQuietly()
+                stream.delete()
+                fileStream = null
+                return@withContext recordSeparateAudio(context, link, name, folder, basePath, metadata)
+            }
 
             metadata.hlsTotal = items.size
             metadata.type = DownloadType.IsDownloading
@@ -1380,11 +1481,14 @@ object VideoDownloadManager {
                         val bytes = items.resolveLinkSafe(index) ?: run {
                             fileMutex.withLock {
                                 if (metadata.type != DownloadType.IsStopped) {
+                                    if (lastFailureReason == null) lastFailureReason = "a piece could not be fetched"
                                     metadata.type = DownloadType.IsFailed
                                 }
                             }
                             return@launch
                         }
+                        // desktop: the speed limit counts the segments of a stream too (outside the lock: the other segments go on meanwhile)
+                        com.lagradost.desktop.net.DownloadThrottle.take(bytes.size)
 
                         fileMutex.withLock {
                             try {
@@ -1422,6 +1526,7 @@ object VideoDownloadManager {
                             } catch (t: Throwable) {
                                 // this is in case of write fail
                                 logError(t)
+                                lastFailureReason = t.message
                                 if (metadata.type != DownloadType.IsStopped) {
                                     metadata.type = DownloadType.IsFailed
                                 }
@@ -1468,9 +1573,102 @@ object VideoDownloadManager {
         }
     }
 
+    /**
+     * desktop: an HLS video whose sound is a separate stream, saved by [com.lagradost.desktop.player.MpvRecorder] into "name.mkv". Its progress goes
+     * through the same counters as the segments of an HLS download (1000 steps of the length), so the Downloads page shows it like any other;
+     * it starts from the beginning when it is resumed.
+     */
+    private suspend fun recordSeparateAudio(
+        context: Context,
+        link: ExtractorLink,
+        name: String,
+        folder: String,
+        basePath: String?,
+        metadata: DownloadMetaData,
+    ): DownloadStatus = withContext(Dispatchers.IO) {
+        val (baseFile, _) = context.getBasePath()
+        if (baseFile == null) return@withContext DOWNLOAD_BAD_CONFIG
+        val stream = setupStream(baseFile, name, folder, "mkv", false)
+        val path = stream.file.filePath() ?: return@withContext DOWNLOAD_BAD_CONFIG
+        val out = java.io.File(path)
+        val steps = 1000
+        metadata.hlsTotal = steps
+        metadata.hlsProgress = 0
+        metadata.hlsWrittenProgress = 0
+        metadata.setDownloadFileInfoTemplate(DownloadedFileInfo(totalBytes = 0, relativePath = folder, displayName = getDisplayName(name, "mkv"), basePath = basePath))
+        metadata.type = DownloadType.IsDownloading
+        var stopAsked = false
+        metadata.setOnStop { stopAsked = true }
+        var lastBytes = 0L
+        val result = com.lagradost.desktop.player.MpvRecorder.record(link, out, progress = { done, total ->
+            if (total > 0) {
+                val step = ((done / total) * steps).toInt().coerceIn(0, steps)
+                while (metadata.hlsProgress < step) {
+                    val now = out.length()
+                    val grew = (now - lastBytes).coerceAtLeast(0)
+                    lastBytes = now
+                    metadata.addSegment(grew)
+                    metadata.addBytesWritten(grew)
+                    metadata.setWrittenSegment(metadata.hlsProgress - 1)
+                }
+            }
+        }, control = {
+            when {
+                stopAsked || metadata.type == DownloadType.IsStopped -> "stop"
+                metadata.type == DownloadType.IsPaused -> "pause"
+                else -> "run"
+            }
+        })
+        metadata.removeStopListener()
+        when {
+            result.ok -> { metadata.type = DownloadType.IsDone; DOWNLOAD_SUCCESS }
+            result.stopped -> { metadata.onDelete(); runCatching { stream.delete() }; DOWNLOAD_STOPPED }
+            else -> {
+                android.util.Log.w("DownloadManager", "separate-audio download failed: ${result.reason}")
+                lastFailureReason = result.reason
+                runCatching { stream.delete() }
+                metadata.type = DownloadType.IsFailed
+                DOWNLOAD_FAILED
+            }
+        }
+    }
+
     /** desktop: why the last stream download gave up (read once by the clean-up of the failed download, for the message) */
     @Volatile
     private var lastFailureReason: String? = null
+
+    /** desktop: why each download failed, in plain words, for its row on the Downloads page (it only said "failed: press try again") */
+    val failureReasons = java.util.concurrent.ConcurrentHashMap<Int, String>()
+
+    /** desktop: how often each download was tried again by itself after its connection broke off (this run) */
+    private val autoRetries = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+    private const val AUTO_RETRIES = 2
+
+    /** desktop: room left free on the disk by a download (Windows and other programs need some) */
+    private const val DISK_SPARE = 500L * 1024 * 1024
+
+    private fun gb(bytes: Long) = if (bytes >= 1024L * 1024 * 1024) "%.1f GB".format(java.util.Locale.ROOT, bytes / 1073741824.0) else "${bytes / 1048576} MB"
+
+    internal fun isConnectionDrop(reason: String?) = failureText(reason).startsWith("the connection kept")
+
+    /** desktop: the downloader's own reason (an exception message, a note) in plain words */
+    internal fun failureText(reason: String?): String {
+        val r = reason?.lowercase() ?: return "no source could be saved"
+        return when {
+            "no video with audio" in r -> "this source sends picture and sound as separate streams, which can not be saved yet"
+            r.startsWith("not enough space:") -> "there is not enough room on the disk (" + reason.substringAfter(':').trim() + ")"
+            "not enough space" in r || "no space left" in r || "disk is full" in r -> "the disk is full"
+            "access is denied" in r || "permission denied" in r -> "the download folder can not be written to"
+            "no links" in r -> "no source was found for it"
+            Regex("""\b40[13]\b""").containsMatchIn(r) || "forbidden" in r || "unauthorized" in r -> "the source refused it (its link may have expired)"
+            Regex("""\b404\b""").containsMatchIn(r) || "not found" in r -> "the file is no longer on the source"
+            Regex("""\b5\d\d\b""").containsMatchIn(r) -> "the source's server had an error"
+            "cut off" in r || "timeout" in r || "timed out" in r || "reset" in r || "closed" in r || "unexpected end" in r || "piece could not" in r ->
+                "the connection kept breaking off (try again carries on where it stopped)"
+            "unknownhost" in r || "unable to resolve" in r || "no address" in r -> "the source's address could not be found (offline?)"
+            else -> "no source could be saved"
+        }
+    }
 
     private fun getDisplayName(name: String, extension: String): String {
         return "$name.$extension"
@@ -1486,11 +1684,42 @@ object VideoDownloadManager {
         tryResume: Boolean = false,
     ): DownloadStatus {
         // no support for these file formats
-        if (link.type == ExtractorLinkType.MAGNET || link.type == ExtractorLinkType.TORRENT || link.type == ExtractorLinkType.DASH) {
+        // desktop: a DASH link without DRM is saved by mpv (see recordSeparateAudio), through downloadHLS
+        // desktop: a torrent is saved from the torrent engine's address on this PC (the episode asked for, when it is a season pack), read like a
+        // file on the web; the torrent is let go of when the download ends
+        if (link.type == ExtractorLinkType.MAGNET || link.type == ExtractorLinkType.TORRENT) {
+            // desktop: the engine can wait up to two minutes for peers. A download cancelled in that time started anyway once they answered
+            // (or went on to the next source when they did not), with nothing on screen to stop it
+            var stopped = false
+            val stopListener = { event: Pair<Int, DownloadActionType> ->
+                if (event.first == ep.id && event.second == DownloadActionType.Stop) stopped = true
+            }
+            downloadEvent += stopListener
+            val local = try {
+                com.lagradost.desktop.torrent.TorrentEngine.downloadLink(link)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                android.util.Log.w("DownloadManager", "torrent download not started: ${t.message}")
+                return if (stopped) DOWNLOAD_STOPPED else DOWNLOAD_INVALID_INPUT
+            } finally {
+                downloadEvent -= stopListener
+            }
+            if (stopped) {
+                com.lagradost.desktop.torrent.TorrentEngine.downloadDone(local)
+                return DOWNLOAD_STOPPED
+            }
+            return try {
+                downloadSingleEpisode(context, source, folder, ep, local, notificationCallback, tryResume)
+            } finally {
+                com.lagradost.desktop.torrent.TorrentEngine.downloadDone(local)
+            }
+        }
+        if (link.type == ExtractorLinkType.DASH && link is com.lagradost.cloudstream3.utils.DrmExtractorLink) {
             return DOWNLOAD_INVALID_INPUT
         }
 
-        val name = getFileName(context, ep)
+        val name = claimFileName(context, ep.id, folder ?: "", getFileName(context, ep))
 
         // Make sure this is cancelled when download is done or cancelled.
         val extractorJob = ioSafe {
@@ -1519,7 +1748,7 @@ object VideoDownloadManager {
 
         try {
             when (link.type) {
-                ExtractorLinkType.M3U8 -> {
+                ExtractorLinkType.M3U8, ExtractorLinkType.DASH -> {
                     val startIndex = if (tryResume) {
                         context.getKey<DownloadedFileInfo>(
                             KEY_DOWNLOAD_INFO,
@@ -1561,7 +1790,55 @@ object VideoDownloadManager {
             return DOWNLOAD_FAILED
         } finally {
             extractorJob.cancel()
+            releaseFileName(ep.id)
         }
+    }
+
+    /** desktop: "folder/name" (in lower case, as Windows ignores case in file names) -> the download that saves under it in this run */
+    private val fileNamesInUse = HashMap<String, Int>()
+
+    /**
+     * desktop: the file name (without its extension) download [id] saves under in [folder]. Two titles with the same name (a film and its
+     * remake, or one film from two sources) were given the same file: the second download deleted the first one's finished file and wrote
+     * its own in its place, or both wrote into one file at the same time. The name this download used before is kept (a resume finds its part
+     * file); a name another download has, finished or running, gets this download's id after it.
+     */
+    internal fun claimFileName(context: Context, id: Int, folder: String, name: String): String {
+        val withId = "$name ($id)"
+        fun base(info: DownloadedFileInfo) = info.displayName.substringBeforeLast('.')
+        val own = safe { context.getKey<DownloadedFileInfo>(KEY_DOWNLOAD_INFO, id.toString()) }
+        // other downloads, saved or partly saved, whose file is still there under one of the two names
+        val others = safe {
+            getKeys(KEY_DOWNLOAD_INFO)?.mapNotNull { key ->
+                val otherId = key.substringAfterLast('/').toIntOrNull() ?: return@mapNotNull null
+                if (otherId == id) return@mapNotNull null
+                val info = getKey<DownloadedFileInfo>(key) ?: return@mapNotNull null
+                if (info.relativePath != folder) return@mapNotNull null
+                val other = base(info)
+                if (!other.equals(name, true) && !other.equals(withId, true)) return@mapNotNull null
+                if (safe { info.toFile(context)?.exists() } != true) return@mapNotNull null
+                other.lowercase()
+            }
+        }.orEmpty()
+        synchronized(fileNamesInUse) {
+            fun running(candidate: String): Boolean {
+                val user = fileNamesInUse["$folder/$candidate".lowercase()]
+                return user != null && user != id
+            }
+            val ownName = own?.takeIf { it.relativePath == folder }?.let { base(it) }?.takeIf { it.equals(name, true) || it.equals(withId, true) }
+            val chosen = when {
+                ownName != null && !running(ownName) -> ownName
+                !running(name) && name.lowercase() !in others -> name
+                else -> withId
+            }
+            fileNamesInUse["$folder/$chosen".lowercase()] = id
+            return chosen
+        }
+    }
+
+    /** desktop: the names [claimFileName] gave download [id] are free again (its saved file info keeps the one it used) */
+    private fun releaseFileName(id: Int) {
+        synchronized(fileNamesInUse) { fileNamesInUse.values.removeAll { it == id } }
     }
 
 
@@ -1724,6 +2001,7 @@ object VideoDownloadManager {
             }
 
             // desktop: a download that failed before a single byte came leaves no empty file behind, and says why it failed (it ended without a word)
+            var retryIn = 0L
             if (status == DownloadType.IsFailed && !isCancelled) {
                 safe {
                     val file = context.getKey<DownloadedFileInfo>(KEY_DOWNLOAD_INFO, id.toString())?.toFile(context)
@@ -1733,18 +2011,47 @@ object VideoDownloadManager {
                     val reason = lastFailureReason
                     lastFailureReason = null
                     val what = downloadQueueWrapper.downloadItem?.let { item -> item.resultName + (if (item.isMovie) "" else " E${item.episode.episode}") } ?: "The download"
-                    val why = when {
-                        reason?.contains("no video with audio", ignoreCase = true) == true ->
-                            "this source sends picture and sound as separate streams, which can not be saved yet"
-                        else -> "no source could be saved"
+                    val why = failureText(reason)
+                    // a connection that broke off is mostly gone a moment later, and a new try carries on where it stopped: tried again by itself
+                    // (twice, 20 s and then 60 s later) instead of waiting for "Try again" (a long download overnight ended at "failed")
+                    val tries = autoRetries[id] ?: 0
+                    if (isConnectionDrop(reason) && tries < AUTO_RETRIES) {
+                        autoRetries[id] = tries + 1
+                        retryIn = if (tries == 0) 20_000L else 60_000L
+                        failureReasons[id] = "the connection kept breaking off: trying again by itself in ${retryIn / 1000} s"
+                    } else {
+                        failureReasons[id] = why
+                        com.lagradost.desktop.ui.Toasts.show("$what was not downloaded: $why. Try Download > Choose a source…", true)
                     }
-                    com.lagradost.desktop.ui.Toasts.show("$what was not downloaded: $why. Try Download > Choose a source…", true)
                 }
             }
+
+            // desktop: a failed download keeps what it needs to be tried again. The "stop" below makes the queue drop the saved package, so
+            // "Try again" on the Downloads page found nothing to start and did nothing. Kept from the first source (it is not queued by
+            // itself at the next start: only the "in queue" list is)
+            val keep = if (status == DownloadType.IsFailed && !isCancelled) safe { context.getKey<DownloadResumePackage>(KEY_RESUME_PACKAGES, id.toString()) } else null
 
             downloadStatusEvent.invoke(Pair(id, status))
             downloadStatus[id] = status
             downloadEvent.invoke(Pair(id, DownloadActionType.Stop))
+            // a download that got part of the file carries on with the same source from where it stopped (it started over: a film that broke
+            // off at 1.5 GB of 2 GB was fetched again from the first byte); one that got nothing tries every source again
+            val partial = keep?.linkIndex != null && safe {
+                val file = context.getKey<DownloadedFileInfo>(KEY_DOWNLOAD_INFO, id.toString())?.toFile(context)
+                file != null && file.exists() == true && (file.length() ?: 0L) > 0L
+            } == true
+            keep?.let { safe { setKey(KEY_RESUME_PACKAGES, id.toString(), DownloadResumePackage(it.item, if (partial) it.linkIndex else null)) } }
+            if (retryIn > 0L && keep != null) {
+                val wait = retryIn
+                ioSafe {
+                    delay(wait)
+                    // not if it was tried again, cancelled or deleted in the meantime
+                    if (downloadStatus[id] != DownloadType.IsFailed) return@ioSafe
+                    val pkg = getDownloadResumePackage(context, id) ?: return@ioSafe
+                    Log.i(TAG, "download $id: connection dropped, trying again by itself")
+                    DownloadQueueManager.addToQueue(pkg.toWrapper())
+                }
+            }
 
             // Force refresh the queue when failed.
             // May lead to some redundant calls, but ensures that the queue is always up to date.
@@ -1798,8 +2105,15 @@ object VideoDownloadManager {
             val item = downloadResumePackage.item
             val id = item.ep.id
             if (currentDownloads.value.contains(id)) { // IF IT IS ALREADY DOWNLOADING, RESUME IT
-                downloadEvent.invoke(id to DownloadActionType.Resume)
-                return
+                // desktop: only an earlier download of this episode that was cancelled (or has just ended) is still here: a new instance for an
+                // episode exists only once the old one has left the queue. Its "resume" turned the cancelled download back on, and this instance
+                // returned without ever ending, so it held a place in the queue until the app closed (with one download at a time, the
+                // queue stopped). It now waits for the old one to finish and then downloads
+                val gone = withTimeoutOrNull(120_000L) { currentDownloads.first { !it.contains(id) } } != null
+                if (!gone) {
+                    isFailed = true
+                    return
+                }
             }
 
             _currentDownloads.update { downloads ->
@@ -1996,7 +2310,8 @@ object VideoDownloadManager {
                             ?.map { ExtractorSubtitleLink(it.name, it.url, "", it.headers) }
                             ?.take(3) // max subtitles download hardcoded (?_?)
                             ?.forEach { link ->
-                                val fileName = getFileName(context, meta)
+                                // desktop: the name the video is saved under (see claimFileName), so its subtitles go with it
+                                val fileName = claimFileName(context, meta.id, folder, getFileName(context, meta))
                                 downloadSubtitle(context, link, fileName, folder)
                             }
 
@@ -2054,6 +2369,8 @@ object VideoDownloadManager {
                 displayNotification(context, downloadItem.episode.id, linkLoadingNotification)
             }
 
+            // desktop: when the first source came, for the grace below
+            val firstLinkAt = java.util.concurrent.atomic.AtomicLong(0L)
             linkLoadingJob = ioSafe {
                 generator.generateLinks(
                     offset = 0,
@@ -2062,22 +2379,37 @@ object VideoDownloadManager {
                     sourceTypes = LOADTYPE_INAPP_DOWNLOAD,
                     callback = {
                         it.first?.let { link ->
-                            currentLinks.add(link)
+                            synchronized(currentLinks) { currentLinks.add(link) }
+                            firstLinkAt.compareAndSet(0L, System.currentTimeMillis())
                         }
                     },
                     subtitleCallback = { sub ->
-                        currentSubs.add(sub)
+                        synchronized(currentSubs) { currentSubs.add(sub) }
                     })
             }
 
-            // Wait for link loading completion
-            linkLoadingJob?.join()
+            // Wait for link loading completion.
+            // desktop: not for the very last source. The slowest extractors of a title run to their time limits: a download of a film waited
+            // ~2 minutes "pending" (CineStream, 56 sources) while the player of the same title started in 15 s. Once a source is in, the others
+            // get DOWNLOAD_LINK_GRACE_MS more (most of them come within it), then the best of what came is downloaded (the rest still follow it
+            // if it fails).
+            var stoppedEarly = false
+            while (linkLoadingJob?.isActive == true) {
+                val first = firstLinkAt.get()
+                if (first != 0L && System.currentTimeMillis() - first > DOWNLOAD_LINK_GRACE_MS) {
+                    stoppedEarly = true
+                    linkLoadingJob?.cancel()
+                    break
+                }
+                delay(250)
+            }
+            if (!stoppedEarly) linkLoadingJob?.join()
 
             // Remove link loading notification
             NotificationManagerCompat.from(context)
                 .cancel(DOWNLOAD_NOTIFICATION_TAG, downloadItem.episode.id)
 
-            if (linkLoadingJob?.isCancelled == true) {
+            if (linkLoadingJob?.isCancelled == true && !stoppedEarly) {
                 // Same as if no links, but no toast.
                 // Cancelled link loading is presumed to be user initiated
                 isCancelled = true
@@ -2089,6 +2421,7 @@ object VideoDownloadManager {
                         Toast.LENGTH_SHORT
                     )
                 }
+                lastFailureReason = "no links"
                 isFailed = true
                 return
             } else {
@@ -2107,14 +2440,20 @@ object VideoDownloadManager {
                 )
             }
 
-            val sortedLinks = currentLinks.sortedBy { link ->
-                // Negative, because the highest priority should be first
-                -getLinkPriority(profile.id, link)
-            }
+            // desktop: torrents after every direct source (they need the engine and peers), the best shared of them first
+            val sortedLinks = synchronized(currentLinks) { currentLinks.toList() }.sortedWith(
+                compareBy<ExtractorLink> { if (com.lagradost.desktop.torrent.TorrentEngine.isTorrent(it)) 1 else 0 }
+                    .thenBy { -com.lagradost.desktop.torrent.TorrentEngine.seedTier(it) }
+                    // desktop: Settings > Downloads > "Download quality" (up to 1080p and not huge by default; before, an 11.4 GB file was taken
+                    // when a 2 GB 1080p one was in the list)
+                    .then(com.lagradost.desktop.net.DownloadChoice.comparator(com.lagradost.desktop.ui.fluent.Appearance.downloadQuality))
+                    // Negative, because the highest priority should be first
+                    .thenBy { -getLinkPriority(profile.id, it) }
+            )
 
             downloadEpisodeWithLinks(
                 sortedLinks,
-                sortSubs(currentSubs),
+                sortSubs(synchronized(currentSubs) { currentSubs.toSet() }),
             )
         }
     }

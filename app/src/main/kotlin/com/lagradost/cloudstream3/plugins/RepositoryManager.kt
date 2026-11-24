@@ -121,6 +121,13 @@ object RepositoryManager {
         return "sha256-" + digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    /**
+     * desktop: repository lists, plugin lists and plugin files are plain files, asked for as an app and not as a browser. Git hosts with a bot
+     * check (Anubis on git.disroot.org: FStream) answer every "Mozilla/5.0 ..." agent with a "Making sure you're not a bot" page, so the
+     * repository read as broken and its extensions never updated (2026-11-20).
+     */
+    private val FILE_HEADERS = mapOf("User-Agent" to "CloudStream-Desktop")
+
     /* Convert raw.githubusercontent.com urls to cdn.jsdelivr.net if enabled in settings */
     fun convertRawGitUrl(url: String): String {
         if (getKey<Boolean>(context!!.getString(R.string.jsdelivr_proxy_key)) != true) return url
@@ -129,16 +136,27 @@ object RepositoryManager {
         return "https://cdn.jsdelivr.net/gh/$user/$repo@$rest"
     }
 
+    private val REPO_LINK_PREFIX = Regex("^(cloudstreamrepo://|https?://cs\\.repo/\\??)")
+    private val HTTP_PREFIX = Regex("^https?://")
+
+    /**
+     * desktop: the address of a repository written as a link: a plain https address, a "cloudstreamrepo://" link or a "https://cs.repo/?" link
+     * (null for anything else: a short code). A "https://cs.repo/?raw.githubusercontent.com/..." link was taken as the address itself (it starts with
+     * https), and "cloudstreamrepo://https://..." was given back with its "cloudstreamrepo://" left on: both said "No repository was found".
+     */
+    internal fun repoLinkToUrl(url: String): String? {
+        val fixedUrl = url.trim()
+        if (REPO_LINK_PREFIX.containsMatchIn(fixedUrl)) {
+            val rest = fixedUrl.replace(REPO_LINK_PREFIX, "")
+            return if (HTTP_PREFIX.containsMatchIn(rest)) rest else "https://$rest"
+        }
+        return fixedUrl.takeIf { HTTP_PREFIX.containsMatchIn(it) }
+    }
+
     suspend fun parseRepoUrl(url: String): String? {
         val fixedUrl = url.trim()
-        return if (fixedUrl.contains("^https?://".toRegex())) {
-            fixedUrl
-        } else if (fixedUrl.contains("^(cloudstreamrepo://)|(https://cs\\.repo/\\??)".toRegex())) {
-            fixedUrl.replace("^(cloudstreamrepo://)|(https://cs\\.repo/\\??)".toRegex(), "").let {
-                return@let if (!it.contains("^https?://".toRegex()))
-                    "https://${it}"
-                else fixedUrl
-            }
+        return if (repoLinkToUrl(fixedUrl) != null) {
+            repoLinkToUrl(fixedUrl)
         } else if (fixedUrl.matches("^[a-zA-Z0-9!_-]+$".toRegex())) {
             safeAsync {
                 if (fixedUrl.startsWith("!")) {
@@ -169,7 +187,7 @@ object RepositoryManager {
         var status: String? = "unreachable"
         return safeAsync {
             // Take manifestVersion and such into account later
-            val r = app.get(convertRawGitUrl(url), cacheTime = 15, cacheUnit = TimeUnit.MINUTES)
+            val r = app.get(convertRawGitUrl(url), headers = FILE_HEADERS, cacheTime = 15, cacheUnit = TimeUnit.MINUTES)
             r.parsedSafe<Repository>().also { status = if (it != null) null else if (r.code in 400..499) "gone" else "broken" }
         }.also { runCatching { if (status == null) problems.remove(url) else problems[url] = status!! } }
     }
@@ -177,11 +195,27 @@ object RepositoryManager {
     private suspend fun parsePlugins(pluginUrls: String): List<SitePlugin> {
         // Take manifestVersion and such into account later
         return try {
-            app.get(convertRawGitUrl(pluginUrls), cacheTime = 15, cacheUnit = TimeUnit.MINUTES)
-                .parsed<Array<SitePlugin>>().toList()
+            parsePluginList(app.get(convertRawGitUrl(pluginUrls), headers = FILE_HEADERS, cacheTime = 15, cacheUnit = TimeUnit.MINUTES).text)
         } catch (t: Throwable) {
             logError(t)
             emptyList()
+        }
+    }
+
+    /**
+     * desktop: a plugin list is read entry by entry. It was read as a whole, so one entry the app cannot read (no "authors", "authors": null, a
+     * "version" that is not a number) threw away every extension of that list: the repository said it lists no extensions.
+     */
+    internal fun parsePluginList(text: String): List<SitePlugin> {
+        val root = com.lagradost.cloudstream3.mapper.readTree(text)
+        if (root == null || !root.isArray) throw java.io.IOException("not a plugin list")
+        return root.mapNotNull { node ->
+            try {
+                com.lagradost.cloudstream3.mapper.treeToValue(node, SitePlugin::class.java)
+            } catch (e: Exception) {
+                logError(e)
+                null
+            }
         }
     }
 
@@ -208,15 +242,42 @@ object RepositoryManager {
             val parentDir = file.parentFile ?: return@safeAsync null
             parentDir.mkdirs()
 
+            val response = app.get(convertRawGitUrl(pluginUrl), headers = FILE_HEADERS).okhttpResponse
+            // desktop: the answer was saved whatever it was: a 404 / 429 / 503 page (GitHub limiting a network) replaced a working
+            // extension with HTML, and without a hash in the repository nothing noticed until the extension failed to load
+            if (!response.isSuccessful) {
+                response.close()
+                throw java.io.IOException("the extension download answered HTTP ${response.code}: ${file.name} kept as it was")
+            }
+            val body = response.body
+
             // Prevent corrupting the plugin file if the operation fails
-            val tempFile = File.createTempFile(file.name, ".tmp", context.cacheDir)
+            // desktop: made once there is an answer; a request that failed (offline, timed out) left an empty temp file in the cache every time
+            val tempFile = try {
+                File.createTempFile(file.name, ".tmp", context.cacheDir)
+            } catch (e: Exception) {
+                response.close()
+                throw e
+            }
 
-            val body = app.get(convertRawGitUrl(pluginUrl)).okhttpResponse.body
-
-            body.byteStream().use { body ->
-                tempFile.outputStream().use { fileSteam ->
-                    body.copyTo(fileSteam)
+            try {
+                body.byteStream().use { body ->
+                    tempFile.outputStream().use { fileSteam ->
+                        body.copyTo(fileSteam)
+                    }
                 }
+            } catch (e: Exception) {
+                // a cut-off download left its temp file in the cache for ever
+                tempFile.delete()
+                throw e
+            }
+
+            // an extension is a zip file (classes.dex + manifest.json); anything else is an error page or a cut-off download
+            val magic = runCatching { tempFile.inputStream().use { s -> ByteArray(2).also { s.read(it) } } }.getOrNull()
+            if (magic == null || magic[0] != 'P'.code.toByte() || magic[1] != 'K'.code.toByte()) {
+                val size = tempFile.length()
+                tempFile.delete()
+                throw java.io.IOException("the extension download of ${file.name} is not an extension file ($size bytes): kept the old one")
             }
 
             if (expectedFileHash != null) {
@@ -239,11 +300,20 @@ object RepositoryManager {
                     StandardCopyOption.ATOMIC_MOVE
                 )
             } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(
-                    tempFile.toPath(),
-                    file.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                )
+                try {
+                    Files.move(
+                        tempFile.toPath(),
+                        file.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                } catch (e: Exception) {
+                    tempFile.delete()
+                    throw e
+                }
+            } catch (e: Exception) {
+                // desktop: the file could not be replaced (another program holds it): the download stayed in the cache for ever
+                tempFile.delete()
+                throw e
             }
 
             file

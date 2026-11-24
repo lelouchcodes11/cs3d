@@ -214,7 +214,8 @@ object Navigator {
                 if (route is Route.Player) playerOpenedAt = System.currentTimeMillis()
                 lastWasBack = false
                 stack.add(Entry(route))
-                while (stack.size > 40) stack.removeAt(0).vms.clear()
+                // the oldest page above the first one goes: Back still ends on Home after a long chain of titles
+                while (stack.size > 40) stack.removeAt(1).vms.clear()
             }
             if (dimMs <= 0) push() else {
                 enteringPlayer = true

@@ -244,8 +244,14 @@ object BackupUtils {
         }
     }
 
-    fun backup(context: Context?) = ioSafe {
-        if (context == null) return@ioSafe
+    fun backup(context: Context?) = ioSafe { writeBackup(context) }
+
+    /**
+     * Writes a backup file now, on the calling thread; false when none was written. Erase everything (Settings) waits for it and does not erase after a
+     * failed backup: failures were only a toast, and the erase went ahead without the copy the user had asked for.
+     */
+    fun writeBackup(context: Context?): Boolean {
+        if (context == null) return false
         var fileStream: OutputStream? = null
         var printStream: PrintWriter? = null
 
@@ -253,7 +259,7 @@ object BackupUtils {
             if (!context.checkWrite()) {
                 toast(context.getString(R.string.backup_failed))
                 context.getActivity()?.requestRW()
-                return@ioSafe
+                return false
             }
 
             val date = SimpleDateFormat("yyyy_MM_dd_HH_mm", Locale.getDefault()).format(
@@ -267,14 +273,17 @@ object BackupUtils {
             printStream = PrintWriter(fileStream)
             printStream.print(backupFile.toJson())
             printStream.flush()
+            // a PrintWriter keeps write errors to itself (a full disk still said "Backup saved" for a cut-off file)
+            if (printStream.checkError()) throw IOException("the backup file could not be written completely")
             toast(
                 "Backup saved as $displayName.txt" +
                     (getCurrentBackupDir(context).first?.filePath()?.let { " in $it" } ?: "")
             )
+            return true
         } catch (e: Exception) {
             logError(e)
             try {
-                toast(txt(R.string.backup_failed_error_format, e.toString()).asString(context))
+                toast("The backup could not be saved: " + plainFileError(e, restoring = false))
             } catch (e: Exception) {
                 logError(e)
             }
@@ -282,6 +291,7 @@ object BackupUtils {
             printStream?.closeQuietly()
             fileStream?.closeQuietly()
         }
+        return false
     }
 
     @Throws(IOException::class)
@@ -338,7 +348,7 @@ object BackupUtils {
             AppRestart.request()
         } catch (e: Exception) {
             logError(e)
-            toast(activity.getString(R.string.restore_failed_format).format(e.toString()))
+            toast("The backup could not be restored: " + plainFileError(e, restoring = true))
         }
     }
 
@@ -385,6 +395,18 @@ object BackupUtils {
      * so the messages of backing up and restoring go to the desktop toast host directly.
      */
     private fun toast(text: String) = com.lagradost.desktop.ui.Toasts.show(text, true)
+
+    /** Why a backup file could not be written or read, in plain words (it was the bare exception: "Error backing up java.nio.file.AccessDeniedException: ...") */
+    private fun plainFileError(e: Throwable, restoring: Boolean): String {
+        val m = (e.message ?: "").lowercase()
+        return when {
+            e is java.nio.file.AccessDeniedException || "access is denied" in m || "permission" in m -> "this PC does not allow the app to use that folder. Pick another backup folder in Settings."
+            "not enough space" in m || "no space" in m || "disk full" in m -> "the disk is full."
+            e is java.io.FileNotFoundException || e is java.nio.file.NoSuchFileException -> if (restoring) "the file could not be found." else "the backup folder does not exist any more. Pick another one in Settings."
+            restoring && (e is com.fasterxml.jackson.core.JsonProcessingException || "json" in m || "token" in m) -> "this file is not a CloudStream backup, or it is damaged."
+            else -> e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+        }
+    }
 
     fun FragmentActivity.setUpBackup() {
         try {

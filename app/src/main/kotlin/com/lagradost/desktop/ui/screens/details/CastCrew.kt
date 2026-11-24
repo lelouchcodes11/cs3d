@@ -115,7 +115,8 @@ private fun openPerson(p: CastEntry) { p.id?.let { Navigator.go(Route.Person(it,
 fun CastAndCrewTab(info: TmdbInfo?, extensionCast: List<ActorData>, actorsText: String?, mediaTitle: String, seasonNumbers: List<Int>) {
     val c = Fluent.colors
     var season by remember(info?.id) { mutableStateOf<Int?>(null) }
-    val credits by produceState(info?.allCredits(), info?.id, season) { info?.let { value = creditsOf(it, season) } }
+    // no TMDB entry any more ("Wrong match?" > No match): the extension's cast again, not the cast of the entry that was dropped
+    val credits by produceState(info?.allCredits(), info?.id, season) { value = info?.let { creditsOf(it, season) } }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val shown = credits
         val cast = shown?.castEntries() ?: extensionCast.take(60).map { CastEntry(null, it.actor.name, it.actor.image, it.roleString) }
@@ -216,7 +217,10 @@ internal fun CastCard(name: String, image: String?, role: String?, badge: String
 @Composable
 fun FullCastScreen(route: Route.FullCast) {
     val c = Fluent.colors
-    val info by produceState<TmdbInfo?>(null, route.tmdbId) { value = Tmdb.byId(route.tmdbId, route.isMovie) }
+    // TMDB not answering gave "Loading…" for ever: [failed] shows a message with Try again ([tries] loads once more)
+    var tries by remember { mutableStateOf(0) }
+    var failed by remember { mutableStateOf(false) }
+    val info by produceState<TmdbInfo?>(null, route.tmdbId, tries) { failed = false; value = Tmdb.byId(route.tmdbId, route.isMovie); failed = value == null }
     var season by remember { mutableStateOf(route.initialSeason) }
     var query by remember { mutableStateOf("") }
     val credits by produceState<Credits?>(null, info, season) { value = info?.let { creditsOf(it, season) } }
@@ -236,7 +240,11 @@ fun FullCastScreen(route: Route.FullCast) {
                 }
             }
             val cr = credits
-            if (cr == null) item { FText("Loading…", color = c.textSecondary) }
+            if (cr == null) item {
+                if (failed) com.lagradost.desktop.ui.fluent.EmptyState(Icons.Warning, "The cast list could not be loaded", "TMDB did not answer. Check the connection and try again.") {
+                    Button("Try again", { tries++ }, kind = ButtonKind.Accent, icon = Icons.Refresh, height = 36.dp)
+                } else FText("Loading…", color = c.textSecondary)
+            }
             else {
                 fun matches(p: CastEntry) = query.isBlank() || p.name.contains(query.trim(), true) || p.role?.contains(query.trim(), true) == true
                 val sections = buildList {

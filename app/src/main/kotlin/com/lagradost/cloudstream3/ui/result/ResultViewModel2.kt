@@ -2652,12 +2652,22 @@ class ResultViewModel2 : ViewModel() {
             currentShowFillers = showFillers
 
             // set api
-            val api = APIHolder.getApiFromNameNull(apiName) ?: APIHolder.getApiFromUrlNull(url)
+            var api = APIHolder.getApiFromNameNull(apiName) ?: APIHolder.getApiFromUrlNull(url)
+            // desktop: an extension being updated is unloaded and loaded again (a few seconds in the sandbox, ~30 s after start): a title opened
+            // then said "This provider does not exist". It is waited for (the page shows its loading state meanwhile).
+            if (api == null && apiName.isNotBlank()) {
+                val until = System.currentTimeMillis() + 15_000
+                while (api == null && System.currentTimeMillis() < until) {
+                    kotlinx.coroutines.delay(250)
+                    api = APIHolder.getApiFromNameNull(apiName) ?: APIHolder.getApiFromUrlNull(url)
+                }
+                if (api != null) android.util.Log.i("RVM2", "$apiName came back (it was being loaded again)")
+            }
             if (api == null) {
                 _page.postValue(
                     Resource.Failure(
                         false,
-                        "This provider does not exist"
+                        "The extension of this title is not installed (or it was removed)"
                     )
                 )
                 return@ioSafe

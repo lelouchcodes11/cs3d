@@ -53,6 +53,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -372,8 +373,18 @@ private fun <T> DropdownList(items: List<T>, selected: T?, label: (T) -> String,
         if (short) {
             // fits its content like a Windows ComboBox
             val scroll = androidx.compose.foundation.rememberScrollState()
+            // the row the arrow keys moved to is scrolled into view (it went below the visible part of a list of 10+ rows, and Enter picked a row nobody saw)
+            val spans = remember { HashMap<Int, Pair<Int, Int>>() }
+            LaunchedEffect(index) {
+                val (top, bottom) = spans[index] ?: return@LaunchedEffect
+                val view = scroll.viewportSize
+                if (view <= 0) return@LaunchedEffect
+                if (top < scroll.value) scroll.animateScrollTo(top) else if (bottom > scroll.value + view) scroll.animateScrollTo(bottom - view)
+            }
             Column(Modifier.width(IntrinsicSize.Max).verticalScroll(scroll).padding(vertical = 4.dp)) {
-                items.forEachIndexed { i, item -> Row(i, item) }
+                items.forEachIndexed { i, item ->
+                    Box(Modifier.onGloballyPositioned { c -> val y = c.positionInParent().y.toInt(); spans[i] = y to (y + c.size.height) }) { Row(i, item) }
+                }
             }
         } else {
             LaunchedEffect(index) { runCatching { list.animateScrollToItem((index - 3).coerceAtLeast(0)) } }
@@ -405,8 +416,12 @@ object Overlays {
         val dismissOnOutside: Boolean = false,
         /** No card: the body fills the window over the dimmed area (a picture viewer); Esc and the body's own buttons close it */
         val fullscreen: Boolean = false,
+        /** Enter presses [primary] (off for a window that comes by itself, while the person may be typing elsewhere) */
+        val enterPresses: Boolean = true,
         val body: @Composable (dismiss: () -> Unit) -> Unit,
     )
+
+    private val DESTRUCTIVE = listOf("remove", "clear", "reset", "erase", "delete", "cancel", "uninstall", "sign out", "log out", "restart", "stop")
 
     val dialogs = mutableStateListOf<Dialog>()
 
@@ -426,6 +441,17 @@ object Overlays {
         onPrimary: () -> Unit = {},
         close: String? = if (primary == null) "OK" else "Cancel",
     ) = show(Dialog(title, primary = primary, onPrimary = onPrimary, close = close) { FText(text, color = Fluent.colors.textSecondary) })
+
+    /** Enter: the top dialog's main button, when it has one and it can be pressed; returns whether it was pressed */
+    fun onEnter(): Boolean {
+        val top = dialogs.lastOrNull() ?: return false
+        if (top.fullscreen || top.primary == null || !top.primaryEnabled() || !top.enterPresses) return false
+        // never a button that removes or ends something: an Enter meant for something else must not delete a profile or erase the data
+        val p = top.primary.lowercase()
+        if (DESTRUCTIVE.any { it in p }) return false
+        try { top.onPrimary() } finally { dismiss(top) }
+        return true
+    }
 
     /** Esc: closes the top dialog; returns whether one was open */
     fun onEscape(): Boolean {
@@ -478,7 +504,8 @@ private fun ContentDialogCard(d: Overlays.Dialog, windowWidth: Dp, windowHeight:
     val dismiss = { Overlays.dismiss(d) }
     // never wider than the window, and a list never taller than what is left of it under the title and above the buttons
     val width = minOf(d.width, (windowWidth - 48.dp).coerceAtLeast(280.dp))
-    val bodyMax = minOf(d.bodyMax, (windowHeight - 250.dp).coerceAtLeast(200.dp))
+    // a dialog without a title has that much more room
+    val bodyMax = minOf(d.bodyMax, (windowHeight - (if (d.title == null) 196.dp else 250.dp)).coerceAtLeast(200.dp))
     Column(
         Modifier
             .padding(24.dp)

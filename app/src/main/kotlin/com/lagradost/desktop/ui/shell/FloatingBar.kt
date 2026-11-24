@@ -100,7 +100,7 @@ internal fun FloatingTopBar() {
         androidx.compose.runtime.CompositionLocalProvider(com.lagradost.desktop.ui.fluent.LocalFluentColors provides (if (overArt) com.lagradost.desktop.ui.fluent.LocalFluentDarkColors.current ?: Fluent.colors else Fluent.colors)) {
         Row(Modifier.fillMaxSize().padding(start = 14.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!com.lagradost.desktop.platform.WinChrome.windowedBar) {
-                IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("topBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)")
+                IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("topBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)", size = com.lagradost.desktop.ui.fluent.BackMetrics.bar, iconSize = com.lagradost.desktop.ui.fluent.BackMetrics.icon)
                 Box(Modifier.width(6.dp))
             }
             // a window with its title bar above the app already shows the logo there: not twice

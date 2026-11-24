@@ -19,9 +19,10 @@ import com.lagradost.cloudstream3.mvvm.safeApiCall
 import com.lagradost.cloudstream3.newSearchResponseList
 import com.lagradost.cloudstream3.utils.Coroutines.atomicListOf
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 
 class APIRepository(val api: MainAPI) {
@@ -31,6 +32,8 @@ class APIRepository(val api: MainAPI) {
         private const val DEFAULT_TIMEOUT = 120_000L
         private const val MAX_TIMEOUT = 4 * DEFAULT_TIMEOUT
         private const val MIN_TIMEOUT = 5_000L
+        /** How long the slow rows of a home page are waited for once one row is in (see getMainPage) */
+        private const val SLOW_ROW_GRACE_MS = 20_000L
 
         var dubStatusActive = HashSet<DubStatus>()
 
@@ -166,26 +169,69 @@ class APIRepository(val api: MainAPI) {
                 } ?: run {
                     if (api.sequentialMainPage) {
                         var first = true
-                        api.mainPage.map { data ->
+                        // desktop: a row that fails is left out (it failed the whole page), see the parallel case below
+                        var error: Throwable? = null
+                        val out = api.mainPage.map { data ->
                             if (!first) // dont want to sleep on first request
                                 delay(api.sequentialMainPageDelay)
                             first = false
 
-                            api.getMainPage(
-                                page,
-                                MainPageRequest(data.name, data.data, data.horizontalImages)
-                            )
+                            try {
+                                api.getMainPage(
+                                    page,
+                                    MainPageRequest(data.name, data.data, data.horizontalImages)
+                                )
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Throwable) {
+                                if (error == null) error = e
+                                android.util.Log.w("APIRepository", "${api.name}: row \"${data.name}\" failed: $e")
+                                null
+                            }
                         }
+                        error?.let { if (out.all { it == null }) throw it }
+                        out
                     } else {
-                        with(CoroutineScope(coroutineContext)) {
-                            api.mainPage.map { data ->
+                        // desktop: each row on its own. One row that failed (a category address the site changed) cancelled the others, and
+                        // the whole page was an error; one that hung held the page for the full timeout (2 min). Now a failed row is left out,
+                        // a slow one gets [SLOW_ROW_GRACE_MS] after the first row came, and only a page whose rows all failed is an error.
+                        kotlinx.coroutines.supervisorScope {
+                            val firstRow = kotlinx.coroutines.CompletableDeferred<Unit>()
+                            val rows = api.mainPage.map { data ->
                                 async {
                                     api.getMainPage(
                                         page,
                                         MainPageRequest(data.name, data.data, data.horizontalImages)
-                                    )
+                                    ).also { firstRow.complete(Unit) }
                                 }
-                            }.map { it.await() }
+                            }
+                            val cutOff = launch {
+                                firstRow.await()
+                                delay(SLOW_ROW_GRACE_MS)
+                                rows.forEachIndexed { i, row ->
+                                    if (row.isActive) {
+                                        android.util.Log.i("APIRepository", "${api.name}: row \"${api.mainPage.getOrNull(i)?.name}\" still loading ${SLOW_ROW_GRACE_MS / 1000} s after the others: left out")
+                                        row.cancel()
+                                    }
+                                }
+                            }
+                            var error: Throwable? = null
+                            val out = rows.mapIndexed { i, row ->
+                                try {
+                                    row.await()
+                                } catch (e: Throwable) {
+                                    if (e !is kotlinx.coroutines.CancellationException) {
+                                        if (error == null) error = e
+                                        android.util.Log.w("APIRepository", "${api.name}: row \"${api.mainPage.getOrNull(i)?.name}\" failed: $e")
+                                    }
+                                    null
+                                }
+                            }
+                            cutOff.cancel()
+                            // the page itself was cancelled (timeout, another extension picked): not a result
+                            ensureActive()
+                            error?.let { if (out.all { it == null }) throw it }
+                            out
                         }
                     }
                 }

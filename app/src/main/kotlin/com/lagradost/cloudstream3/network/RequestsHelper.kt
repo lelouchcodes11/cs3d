@@ -57,9 +57,11 @@ fun buildDefaultClient(context: Context, ignoreSSL: Boolean = false): OkHttpClie
         .cache(
             // Note that you need to add a ResponseInterceptor to make this 100% active.
             // The server response dictates if and when stuff should be cached.
+            // desktop: a file system that does not fail a finished request when Windows refuses to replace a cache file in use (see CacheFileSystem)
             Cache(
-                directory = File(context.cacheDir, "http_cache"),
-                maxSize = 50L * 1024L * 1024L // 50 MiB
+                com.lagradost.desktop.net.CacheFileSystem(),
+                okio.Path.Companion.run { File(context.cacheDir, "http_cache").toOkioPath() },
+                50L * 1024L * 1024L // 50 MiB
             )
         ).apply {
             when (dns) {
@@ -67,7 +69,7 @@ fun buildDefaultClient(context: Context, ignoreSSL: Boolean = false): OkHttpClie
                 2 -> addCloudFlareDns()
 //                3 -> addOpenDns()
                 4 -> addAdGuardDns()
-                5 -> addDNSWatchDns()
+                // 5 was DNS.WATCH, which shut down: a choice of it saved earlier uses the system DNS (every lookup failed)
                 6 -> addQuad9Dns()
                 7 -> addDnsSbDns()
                 8 -> addCanadianShieldDns()

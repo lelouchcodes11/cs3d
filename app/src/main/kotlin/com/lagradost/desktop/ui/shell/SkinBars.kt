@@ -90,7 +90,7 @@ internal fun SkinTopBar(spec: SkinSpec) {
         val tiny = maxWidth < 780.dp
         Row(Modifier.fillMaxSize().padding(start = if (narrow) 4.dp else 24.dp, end = if (narrow) 12.dp else 36.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!WinChrome.windowedBar) {
-                IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("skinBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)")
+                IconButton(Icons.Back, { Navigator.back() }, Modifier.noWindowDrag("skinBack"), enabled = Navigator.canGoBack, tooltip = "Back (Alt+Left)", size = com.lagradost.desktop.ui.fluent.BackMetrics.bar, iconSize = com.lagradost.desktop.ui.fluent.BackMetrics.icon)
                 Box(Modifier.width(6.dp))
             } else Box(Modifier.width(12.dp))
             if (narrow) brandLogo?.let { androidx.compose.foundation.Image(it, "CloudStream", Modifier.size(26.dp).noWindowDrag("skinMark").fluentClickable(rememberInteraction(), true, RoundedCornerShape(6.dp), Role.Button) { Navigator.goTab(Tab.Home) }) }

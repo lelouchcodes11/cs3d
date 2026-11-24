@@ -517,6 +517,8 @@ private fun PlayerContent(s: PlayerSession) {
     fun onKey(e: KeyEvent): Boolean {
         // a dialog (subtitle style, search, the shortcuts list) has the keys while it is open
         if (com.lagradost.desktop.ui.fluent.Overlays.dialogs.isNotEmpty()) return false
+        // a text box of the menu (subtitle delay, source search) has the keys: "150" typed there jumped the video to 10 %, 50 %, 0 % (the window sees keys first)
+        if (s.typing && e.key != Key.Escape) return false
         // Ctrl (or Shift, Alt) pressed and let go on its own (PlayerKeys.loneModifier says whether another key came in between)
         if (KeyCombo.isModifier(e.key)) {
             if (e.type == KeyEventType.KeyUp) PlayerKeys.takeLoneModifier(e)?.let { lone -> PlayerKeymap.actionFor(lone)?.let { return runAction(it) } }
@@ -1372,7 +1374,7 @@ private fun PlayerChrome(
                 .padding(start = 20.dp, end = 20.dp + com.lagradost.desktop.ui.shell.captionInset, top = 16.dp, bottom = 64.dp),
         ) {
             Row(Modifier.fillMaxWidth().onGloballyPositioned { onTop(it.boundsInRoot()) }, verticalAlignment = Alignment.CenterVertically) {
-                GlassIconButton(Icons.Back, "Back (Esc)", Modifier.noWindowDrag("playerBack")) { Navigator.back() }
+                GlassIconButton(Icons.Back, "Back (Esc)", Modifier.noWindowDrag("playerBack"), size = com.lagradost.desktop.ui.fluent.BackMetrics.player) { Navigator.back() }
                 Box(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     FText(s.title, style = Fluent.type.subtitle.copy(fontSize = 19.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color.White, maxLines = 1)

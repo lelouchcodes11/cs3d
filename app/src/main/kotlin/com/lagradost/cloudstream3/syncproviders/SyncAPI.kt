@@ -146,8 +146,9 @@ abstract class SyncAPI : AuthAPI() {
 
                 ListSorting.RatingHigh -> items.sortedBy { -(it.personalRating?.toInt(100) ?: 0) }
                 ListSorting.RatingLow -> items.sortedBy { (it.personalRating?.toInt(100) ?: 0) }
-                ListSorting.AlphabeticalA -> items.sortedBy { it.name }
-                ListSorting.AlphabeticalZ -> items.sortedBy { it.name }.reversed()
+                // desktop: letters of either case together ("xxxHOLiC" came after "Zom 100": every small letter sorted after every capital)
+                ListSorting.AlphabeticalA -> items.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+                ListSorting.AlphabeticalZ -> items.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }).reversed()
                 ListSorting.UpdatedNew -> items.sortedBy { it.lastUpdatedUnixTime?.times(-1) }
                 ListSorting.UpdatedOld -> items.sortedBy { it.lastUpdatedUnixTime }
                 ListSorting.ReleaseDateNew -> items.sortedByDescending { it.releaseDate }

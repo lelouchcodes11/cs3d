@@ -54,6 +54,8 @@ import com.lagradost.cloudstream3.utils.DataStoreHelper.getViewPos
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.EnumSet
@@ -245,22 +247,34 @@ class HomeViewModel : ViewModel() {
         MutableLiveData<Resource<Map<String, ExpandableHomepageList>>>(Resource.Loading())
     val page: LiveData<Resource<Map<String, ExpandableHomepageList>>> = _page
 
-    val lock: MutableSet<String> = mutableSetOf()
+    val lock: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+
+    /**
+     * desktop: what the page is given is a copy of the rows. The live map itself was posted, so the value after a row got its next page
+     * equalled the one before (the same map) and Compose's state ignored it: a row on Home never showed the titles of its next pages.
+     */
+    private fun pageSnapshot(): Map<String, ExpandableHomepageList> = synchronized(expandable) {
+        expandable.entries.associateTo(LinkedHashMap()) { (k, v) -> k to v.copy(list = v.list.copy()) }
+    }
 
     suspend fun expandAndReturn(name: String): ExpandableHomepageList? {
-        if (lock.contains(name)) return null
-        lock += name
-
-        repo?.apply {
-            waitForHomeDelay()
-
+        if (!lock.add(name)) return null
+        // desktop: the lock is let go however this ends; a "See all" page left while its next page loaded (the request cancelled) kept the
+        // row locked, and it never loaded another page
+        try {
+            val r = repo ?: return expandable[name]
+            r.waitForHomeDelay()
             expandable[name]?.let { current ->
                 debugAssert({ !current.hasNext }) {
                     "Expand called when not needed"
                 }
 
                 val nextPage = current.currentPage + 1
-                val next = getMainPage(nextPage, mainPage.indexOfFirst { it.name == name })
+                val next = r.getMainPage(nextPage, r.mainPage.indexOfFirst { it.name == name })
+                // desktop: another source was chosen meanwhile (its rows are in the map now, often with the same names: "Latest", "Trending"),
+                // or this request was cancelled: the answer belongs to nobody
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo !== r) return null
                 if (next is Resource.Success) {
                     next.value.filterNotNull().forEach { main ->
                         main.items.forEach { newList ->
@@ -273,8 +287,9 @@ class HomeViewModel : ViewModel() {
                                     "Expanded contained an item that was previously already in the list\n${list.name} = ${this.list.list}\n${newList.name} = ${newList.list}"
                                 }
 
-                                this.list.list += newList.list
-                                this.list.list.distinctBy { it.url } // just to be sure we are not adding the same shit for some reason
+                                // desktop: the distinct list is kept (its result was thrown away, and a page that repeated titles of the one
+                                // before put them in the row twice; the row asks for more by its length, so it also stopped paging too early)
+                                this.list.list = (this.list.list + newList.list).distinctBy { it.url }
                             } ?: debugWarning {
                                 "Expanded an item not in main load named $key, current list is ${expandable.keys}"
                             }
@@ -284,12 +299,11 @@ class HomeViewModel : ViewModel() {
                     current.hasNext = false
                 }
             }
-            _page.postValue(Resource.Success(expandable))
+            _page.postValue(Resource.Success(pageSnapshot()))
+            return expandable[name]
+        } finally {
+            lock -= name
         }
-
-        lock -= name
-
-        return expandable[name]
     }
 
     // this is soo over engineered, but idk how I can make it clean without making the main api harder to use :pensive:
@@ -377,6 +391,9 @@ class HomeViewModel : ViewModel() {
                 }
             }
         }
+        // desktop: the runCatching above also swallows the cancellation of a source that was left while its artwork was looked up: its
+        // banner was then posted over the page of the source chosen next
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         android.util.Log.i("HomeVM", "banner: ${previewResponses.size} of ${pick.size} titles, posted once after ${System.currentTimeMillis() - t0} ms")
         if (previewResponses.isEmpty()) {
             _preview.postValue(Resource.Failure(false, "No homepage responses"))
@@ -413,28 +430,33 @@ class HomeViewModel : ViewModel() {
         // again twice spares the user the error page and "Try again"
         var first = repo?.getMainPage(1, null)
         var attempt = 0
-        while (first is Resource.Failure && attempt < 2 && repo?.name == api.name) {
+        while (first is Resource.Failure && attempt < 2 && repo?.name == api.name && isActive) {
             attempt++
             android.util.Log.w("HomeVM", "${api.name}: ${first.errorString.take(160)}, retrying")
             kotlinx.coroutines.delay(800L * attempt)
             first = repo?.getMainPage(1, null)
         }
+        // desktop: another source was chosen while this one loaded. Its request was cancelled, but the extension's answer (or the "error" a
+        // cancelled request turns into) still came back here and replaced the page of the source now chosen
+        if (!isActive) return@ioSafe
         when (val data = first) {
             is Resource.Success -> {
                 try {
-                    expandable.clear()
-                    data.value.forEach { home ->
-                        home?.items?.forEach { list ->
-                            val filteredList =
-                                context?.filterHomePageListByFilmQuality(list) ?: list
-                            expandable[list.name] =
-                                ExpandableHomepageList(
-                                    filteredList.copy(
-                                        list = CopyOnWriteArrayList(
-                                            filteredList.list
-                                        )
-                                    ), 1, home.hasNext
-                                )
+                    synchronized(expandable) {
+                        expandable.clear()
+                        data.value.forEach { home ->
+                            home?.items?.forEach { list ->
+                                val filteredList =
+                                    context?.filterHomePageListByFilmQuality(list) ?: list
+                                expandable[list.name] =
+                                    ExpandableHomepageList(
+                                        filteredList.copy(
+                                            list = CopyOnWriteArrayList(
+                                                filteredList.list
+                                            )
+                                        ), 1, home.hasNext
+                                    )
+                            }
                         }
                     }
 
@@ -464,8 +486,10 @@ class HomeViewModel : ViewModel() {
                     }
                     // desktop: the rows are shown at once (the banner is a skeleton of its own size meanwhile); the banner follows
                     // with all its titles together instead of the rows waiting for the titles
-                    _page.postValue(Resource.Success(expandable))
+                    _page.postValue(Resource.Success(pageSnapshot()))
                     loadBanner(bannerCandidates)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     _randomItems.postValue(emptyList())
                     logError(e)
@@ -481,7 +505,8 @@ class HomeViewModel : ViewModel() {
 
             else -> Unit
         }
-        isCurrentlyLoadingName = null
+        // desktop: only this load's own mark (a load that ended after another source was chosen cleared that one's, and it was loaded twice)
+        if (isCurrentlyLoadingName == api.name) isCurrentlyLoadingName = null
     }
 
     fun click(callback: SearchClickCallback) {

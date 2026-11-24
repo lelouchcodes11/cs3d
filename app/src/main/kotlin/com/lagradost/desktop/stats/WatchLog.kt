@@ -1,5 +1,7 @@
 package com.lagradost.desktop.stats
 
+import com.lagradost.desktop.core.writeTextAtomic
+import com.lagradost.desktop.core.keepUnreadable
 import android.util.Log
 import com.lagradost.desktop.runtime.AndroidRuntime
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +62,11 @@ object WatchLog {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val file: File get() = File(AndroidRuntime.dataDir, "watchlog.json")
 
+    init {
+        // the minutes of the last few seconds are only in memory: closing the app (window, tray Exit) writes them
+        Runtime.getRuntime().addShutdownHook(Thread({ runCatching { flush() } }, "watchlog-flush"))
+    }
+
     private fun today(): String = LocalDate.now(ZoneId.systemDefault()).toString()
 
     private fun ensureLoaded() {
@@ -86,7 +93,11 @@ object WatchLog {
                     days[day] = o.keys().asSequence().associateWith { k -> o.optLong(k) }.toMutableMap()
                 }
             }
-        }.onFailure { Log.w(TAG, "load: $it") }
+        }.onFailure {
+            Log.w(TAG, "load: $it")
+            // an unreadable file would be written over by the next save: keep a copy
+            file.keepUnreadable()
+        }
     }
 
     /** [ms] more of the title were played now */
@@ -181,7 +192,7 @@ object WatchLog {
             root.put("days", d)
             root.toString()
         }
-        runCatching { file.writeText(text) }.onFailure { Log.w(TAG, "save: $it") }
+        runCatching { file.writeTextAtomic(text) }.onFailure { Log.w(TAG, "save: $it") }
         lastSave = System.currentTimeMillis()
     }
 

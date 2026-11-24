@@ -112,7 +112,7 @@ private fun AddAddonCard() {
         if (offered.isNotEmpty()) {
             FText("Popular", style = Fluent.type.caption, color = c.textTertiary)
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (s in offered) com.lagradost.desktop.ui.fluent.Tooltip(s.about) { Button(s.name + if (s.needsP2p) "  (torrents)" else "", { add(s.url) }, icon = Icons.Add, enabled = !busy) }
+                for (s in offered) com.lagradost.desktop.ui.fluent.Tooltip(s.about) { Button(s.name + if (s.needsP2p) " (torrents)" else "", { add(s.url) }, icon = Icons.Add, enabled = !busy) }
             }
         }
     }
